@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Metis capabilities</title>
+  <desc id="desc">Four aligned capability cards for repository work, execution, coordination, and artifacts.</desc>
+  <style>
+    :root { color-scheme: light dark; --text:#111827; --muted:#4b5563; --border:#d1d5db; --soft:#f3f4f6; --mark:#374151; }
+    @media (prefers-color-scheme: dark) { :root { --text:#f3f4f6; --muted:#b6c0ce; --border:#475569; --soft:#253044; --mark:#cbd5e1; } }
+    .text{fill:var(--text)} .muted{fill:var(--muted)} .card{fill:none;stroke:var(--border)} .soft{fill:var(--soft)} .mark{fill:none;stroke:var(--mark)}
+  </style>
+  <g font-family="Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif">
+    <text class="text" x="600" y="30" text-anchor="middle" font-size="21" font-weight="700" letter-spacing="1.2">CORE CAPABILITIES</text>
+    <text class="muted" x="600" y="56" text-anchor="middle" font-size="14">One workspace for understanding, changing, and validating code</text>
+    <g transform="translate(40 82)">
+      <rect class="card" width="540" height="112" rx="15"/><rect class="soft" x="22" y="22" width="44" height="44" rx="12"/>
+      <path class="mark" d="M34 35h20v18H34zM38 31h12" stroke-width="2.5" stroke-linejoin="round"/>
+      <text class="text" x="84" y="45" font-size="18" font-weight="700">Repository work</text><text class="muted" x="84" y="72" font-size="14">Read, search, create, and edit project files.</text>
+    </g>
+    <g transform="translate(620 82)">
+      <rect class="card" width="540" height="112" rx="15"/><rect class="soft" x="22" y="22" width="44" height="44" rx="12"/>
+      <path class="mark" d="m34 35 8 8-8 8m12 0h9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="text" x="84" y="45" font-size="18" font-weight="700">Execution</text><text class="muted" x="84" y="72" font-size="14">Run commands and use their output as context.</text>
+    </g>
+    <g transform="translate(40 218)">
+      <rect class="card" width="540" height="112" rx="15"/><rect class="soft" x="22" y="22" width="44" height="44" rx="12"/>
+      <circle class="mark" cx="38" cy="39" r="6" stroke-width="2.5"/><circle class="mark" cx="52" cy="51" r="6" stroke-width="2.5"/><path class="mark" d="M41 44l6 3" stroke-width="2.5"/>
+      <text class="text" x="84" y="45" font-size="18" font-weight="700">Agent workflow</text><text class="muted" x="84" y="72" font-size="14">Manage sessions and coordinate bounded subagent work.</text>
+    </g>
+    <g transform="translate(620 218)">
+      <rect class="card" width="540" height="112" rx="15"/><rect class="soft" x="22" y="22" width="44" height="44" rx="12"/>
+      <path class="mark" d="M34 35h20v20H34zm5 6h10m-10 6h10" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="text" x="84" y="45" font-size="18" font-weight="700">Artifacts</text><text class="muted" x="84" y="72" font-size="14">Export session output for review and follow-up work.</text>
+    </g>
+  </g>
+</svg>
