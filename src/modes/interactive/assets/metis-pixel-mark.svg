@@ -1,5 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="160 151 192 193" role="img" aria-labelledby="title desc">
   <title id="title">Metis pixel mark</title>
-  <desc id="desc">A minimal black geometric M on a transparent background.</desc>
-  <path id="mark" fill="#070707" d="M180 171h40v37h24v38h24v-38h24v-37h40v153h-40v-78h-24v39h-24v-39h-24v78h-40z"/>
+  <desc id="desc">A minimal geometric M on a transparent background.</desc>
+  <style>
+    :root { color-scheme: light dark; --mark: #070707; }
+    @media (prefers-color-scheme: dark) { :root { --mark: #f8fafc; } }
+  </style>
+  <path id="mark" fill="var(--mark)" d="M180 171h40v37h24v38h24v-38h24v-37h40v153h-40v-78h-24v39h-24v-39h-24v78h-40z"/>
 </svg>
