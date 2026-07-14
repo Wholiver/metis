@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">Same model, better coding outcomes</title>
+  <desc id="desc">Metis surrounds the same coding model with relevant context, reusable experience, evidence-based implementation, and verified completion.</desc>
+  <style>
+    :root { color-scheme: light dark; --text:#111827; --muted:#4b5563; --border:#d1d5db; --soft:#f3f4f6; --mark:#374151; --line:#9ca3af; }
+    @media (prefers-color-scheme: dark) { :root { --text:#f3f4f6; --muted:#b6c0ce; --border:#475569; --soft:#253044; --mark:#cbd5e1; --line:#94a3b8; } }
+    .text{fill:var(--text)} .muted{fill:var(--muted)} .card{fill:none;stroke:var(--border)} .soft{fill:var(--soft)} .mark{fill:none;stroke:var(--mark)} .line{fill:none;stroke:var(--line)}
+  </style>
+  <g font-family="Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif">
+    <text class="text" x="600" y="31" text-anchor="middle" font-size="21" font-weight="700" letter-spacing="1.2">SAME MODEL, BETTER CODING OUTCOMES</text>
+    <text class="muted" x="600" y="58" text-anchor="middle" font-size="14">Metis improves effective performance without changing model weights</text>
+
+    <g transform="translate(78 88)">
+      <rect class="card" width="260" height="78" rx="16"/>
+      <circle class="soft" cx="42" cy="39" r="22"/>
+      <path class="mark" d="M33 33h18v13H33zm4-5h10m-7 23h4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="text" x="78" y="35" font-size="17" font-weight="700">Coding model</text>
+      <text class="muted" x="78" y="57" font-size="13">Same underlying weights</text>
+    </g>
+    <path class="line" d="M352 127h76m-12-10 12 10-12 10" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(442 88)">
+      <rect class="card" width="316" height="78" rx="16"/>
+      <rect class="soft" x="20" y="17" width="44" height="44" rx="12"/>
+      <path class="mark" d="M32 31h20v18H32zm4-5h12" stroke-width="2.4" stroke-linejoin="round"/>
+      <text class="text" x="80" y="35" font-size="17" font-weight="700">Metis agent layer</text>
+      <text class="muted" x="80" y="57" font-size="13">Context · memory · workflow · checks</text>
+    </g>
+    <path class="line" d="M772 127h76m-12-10 12 10-12 10" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(862 88)">
+      <rect class="card" width="260" height="78" rx="16"/>
+      <circle class="soft" cx="42" cy="39" r="22"/>
+      <path class="mark" d="m31 40 7 7 15-17" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <text class="text" x="78" y="35" font-size="17" font-weight="700">Better outcomes</text>
+      <text class="muted" x="78" y="57" font-size="13">Stronger real-task execution</text>
+    </g>
+
+    <g transform="translate(40 210)">
+      <rect class="card" width="265" height="170" rx="16"/>
+      <text class="muted" x="24" y="34" font-size="13" font-weight="700">01</text>
+      <text class="text" x="24" y="68" font-size="17" font-weight="700">Relevant context</text>
+      <text class="muted" x="24" y="99" font-size="14"><tspan x="24">Search code and authoritative</tspan><tspan x="24" dy="21">sources before editing.</tspan></text>
+    </g>
+    <g transform="translate(325 210)">
+      <rect class="card" width="265" height="170" rx="16"/>
+      <text class="muted" x="24" y="34" font-size="13" font-weight="700">02</text>
+      <text class="text" x="24" y="68" font-size="17" font-weight="700">Reusable experience</text>
+      <text class="muted" x="24" y="99" font-size="14"><tspan x="24">Carry decisions and lessons</tspan><tspan x="24" dy="21">into later work.</tspan></text>
+    </g>
+    <g transform="translate(610 210)">
+      <rect class="card" width="265" height="170" rx="16"/>
+      <text class="muted" x="24" y="34" font-size="13" font-weight="700">03</text>
+      <text class="text" x="24" y="68" font-size="17" font-weight="700">Evidence-based work</text>
+      <text class="muted" x="24" y="99" font-size="14"><tspan x="24">Follow repository constraints</tspan><tspan x="24" dy="21">instead of guessing.</tspan></text>
+    </g>
+    <g transform="translate(895 210)">
+      <rect class="card" width="265" height="170" rx="16"/>
+      <text class="muted" x="24" y="34" font-size="13" font-weight="700">04</text>
+      <text class="text" x="24" y="68" font-size="17" font-weight="700">Verified completion</text>
+      <text class="muted" x="24" y="99" font-size="14"><tspan x="24">Build, test, and compare with</tspan><tspan x="24" dy="21">the original request.</tspan></text>
+    </g>
+    <text class="muted" x="600" y="412" text-anchor="middle" font-size="13">System-level improvement · no model retraining required</text>
+  </g>
+</svg>
