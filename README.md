@@ -7,11 +7,12 @@
 </p>
 
 <p align="center">
-  <strong>Help coding models finish work faster, remember what matters, and verify the result.</strong>
+  <strong>Help coding models write better code and finish faster with better context, reusable experience, and verified results.</strong>
 </p>
 
 <p align="center">
   <a href="#why-metis">Why Metis</a> ·
+  <a href="#better-coding-performance">Coding performance</a> ·
   <a href="#what-makes-it-reliable">Reliability</a> ·
   <a href="#quick-start">Quick start</a>
 </p>
@@ -35,9 +36,26 @@ metis --help
 
 ## Why Metis
 
-Metis is an agent layer for coding models. It does not replace the model. It gives the model a better way to search, remember, work, and check its own result.
+Metis is an agent layer for coding models. It does not replace the model or change its weights. It improves the model's effective coding performance by giving it a better way to search, remember, work, and check its own result.
 
-That means less time spent repeating context, fewer missed requirements, and more completed tasks.
+That means better repository understanding, fewer unsupported assumptions and missed requirements, stronger task completion, and less time spent repeating context.
+
+### Better coding performance
+
+<p align="center">
+  <img src="docs/images/metis-coding-performance.svg" width="100%" alt="How Metis helps the same coding model achieve better coding outcomes" />
+</p>
+
+For the same underlying model, Metis strengthens the system around it:
+
+- **Relevant context** — search the repository and authoritative sources before editing.
+- **Reusable experience** — carry useful decisions, lessons, and technical knowledge into later work.
+- **Evidence-based implementation** — follow existing code, constraints, and project conventions instead of guessing.
+- **Verified completion** — build, test, inspect output, and compare the result with the original request.
+
+These mechanisms can improve practical coding outcomes without retraining or replacing the model. Results still depend on the model, task, tools, and environment.
+
+### Faster completion
 
 <p align="center">
   <img src="docs/images/metis-speed.svg" width="100%" alt="User test comparing Metis and OpenCode task completion time" />
