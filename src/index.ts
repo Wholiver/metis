@@ -252,6 +252,7 @@ export {
 	type RetrySettings,
 	SettingsManager,
 	type SettingsManagerCreateOptions,
+	type WorkingMemorySettings,
 } from "./core/settings-manager.ts";
 // Skills
 export {

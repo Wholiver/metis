@@ -13,6 +13,11 @@ export interface CompactionSettings {
 	keepRecentTokens?: number; // default: 20000
 }
 
+export interface WorkingMemorySettings {
+	enabled?: boolean; // default: true
+	checkpointInterval?: number; // default: 8 non-log tool calls
+}
+
 export interface BranchSummarySettings {
 	reserveTokens?: number; // default: 16384 (tokens reserved for prompt + LLM response)
 	skipPrompt?: boolean; // default: false - when true, skips "Summarize branch?" prompt and defaults to no summary
@@ -87,6 +92,7 @@ export interface Settings {
 	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
+	workingMemory?: WorkingMemorySettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
@@ -779,6 +785,22 @@ export class SettingsManager {
 			enabled: this.getCompactionEnabled(),
 			reserveTokens: this.getCompactionReserveTokens(),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(),
+		};
+	}
+
+	getWorkingMemoryEnabled(): boolean {
+		return this.settings.workingMemory?.enabled ?? true;
+	}
+
+	getWorkingMemoryCheckpointInterval(): number {
+		const configured = this.settings.workingMemory?.checkpointInterval;
+		return configured !== undefined && Number.isFinite(configured) && configured >= 1 ? Math.floor(configured) : 8;
+	}
+
+	getWorkingMemorySettings(): { enabled: boolean; checkpointInterval: number } {
+		return {
+			enabled: this.getWorkingMemoryEnabled(),
+			checkpointInterval: this.getWorkingMemoryCheckpointInterval(),
 		};
 	}
 

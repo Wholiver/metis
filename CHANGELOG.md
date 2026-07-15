@@ -2,6 +2,24 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.1.0-rc.1] - 2026-07-15
+
+### Highlights
+
+- Upgraded the append-only task log into live working memory with explicit read, checkpoint, error, and completion actions.
+- Restored the latest checkpoint after startup, resume, interruption, and manual or automatic context compaction.
+
+### Agent reliability
+
+- Added configurable checkpoint reminders after non-log tool activity and immediate transient reminders after tool errors.
+- Kept reminders out of UI, RPC, session persistence, and Dream logs.
+- Preserved the existing Dream consolidation, scheduling, log path, and cleanup behavior while retaining diagnosed errors in the complete log history.
+
+### Compatibility and documentation
+
+- Preserved legacy `{ content }` log calls as completion entries and retained the legacy `getPiUserAgent` utility export.
+- Documented working-memory defaults, configuration, recovery behavior, and the checkpoint-to-Dream lifecycle in English and Simplified Chinese.
+
 ## [1.0.0-rc.2] - 2026-07-13
 
 ### Fixes

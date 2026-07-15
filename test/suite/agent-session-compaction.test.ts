@@ -4,6 +4,8 @@ import {
 	fauxAssistantMessage,
 	type Model,
 } from "@earendil-works/metis-ai";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { estimateTokens } from "../../src/core/compaction/index.ts";
 import { createHarness, type Harness } from "./harness.ts";
@@ -85,6 +87,27 @@ function seedCompactableSession(harness: Harness): void {
 	harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 }
 
+function seedWorkingMemory(harness: Harness): void {
+	const sessionId = harness.sessionManager.getSessionId();
+	mkdirSync(join(harness.tempDir, ".temp"), { recursive: true });
+	writeFileSync(
+		join(harness.tempDir, ".temp", `${sessionId}_log.md`),
+		"## [2026-01-01 10:00] Checkpoint\nGoal: survive compaction\n",
+	);
+}
+
+function expectWorkingMemoryAtContextTail(harness: Harness): void {
+	const lastMessage = harness.session.messages.at(-1);
+	expect(lastMessage).toMatchObject({
+		role: "custom",
+		customType: "working_memory",
+		display: false,
+	});
+	expect(lastMessage && "content" in lastMessage ? lastMessage.content : "").toContain(
+		"Goal: survive compaction",
+	);
+}
+
 describe("AgentSession compaction characterization", () => {
 	const harnesses: Harness[] = [];
 
@@ -125,6 +148,32 @@ describe("AgentSession compaction characterization", () => {
 		expect(result.estimatedTokensAfter).toBe(estimatedTokensAfter);
 		expect(compactionEntries).toHaveLength(1);
 		expect(harness.session.messages[0]?.role).toBe("compactionSummary");
+	});
+
+	it("reinjects working memory after manual compaction and includes it in token estimation", async () => {
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 1 } },
+			extensionFactories: [
+				(metis) => {
+					metis.on("session_before_compact", async (event) => ({
+						compaction: {
+							summary: "manual summary",
+							firstKeptEntryId: event.preparation.firstKeptEntryId,
+							tokensBefore: event.preparation.tokensBefore,
+						},
+					}));
+				},
+			],
+		});
+		harnesses.push(harness);
+		seedCompactableSession(harness);
+		seedWorkingMemory(harness);
+
+		const result = await harness.session.compact();
+		const expectedTokens = harness.session.messages.reduce((sum, message) => sum + estimateTokens(message), 0);
+
+		expectWorkingMemoryAtContextTail(harness);
+		expect(result.estimatedTokensAfter).toBe(expectedTokens);
 	});
 
 	it("throws when compacting without a model", async () => {
@@ -168,6 +217,19 @@ describe("AgentSession compaction characterization", () => {
 		expect(compactionEntries).toHaveLength(1);
 		expect(compactionEnd?.result?.estimatedTokensAfter).toBeGreaterThan(0);
 		expect(getStreamCallCount()).toBe(1);
+	});
+
+	it("reinjects working memory after automatic compaction", async () => {
+		const harness = await createHarness({ withConfiguredAuth: false });
+		harnesses.push(harness);
+		seedCompactableSession(harness);
+		seedWorkingMemory(harness);
+		useSummaryStreamFn(harness, "auto working-memory summary");
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+
+		await sessionInternals._runAutoCompaction("threshold", false);
+
+		expectWorkingMemoryAtContextTail(harness);
 	});
 
 	it("cancels in-progress manual compaction when abortCompaction is called", async () => {
