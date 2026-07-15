@@ -354,6 +354,35 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("workingMemory", () => {
+		it("is enabled by default with an eight-call checkpoint interval", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getWorkingMemorySettings()).toEqual({ enabled: true, checkpointInterval: 8 });
+		});
+
+		it("supports disabling and overriding the checkpoint interval", () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({ workingMemory: { enabled: false, checkpointInterval: 3 } }),
+			);
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getWorkingMemoryEnabled()).toBe(false);
+			expect(manager.getWorkingMemoryCheckpointInterval()).toBe(3);
+		});
+
+		it("falls back to eight calls for invalid intervals", () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({ workingMemory: { checkpointInterval: 0 } }),
+			);
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getWorkingMemoryCheckpointInterval()).toBe(8);
+		});
+	});
+
 	describe("externalEditor", () => {
 		const originalVisual = process.env.VISUAL;
 		const originalEditor = process.env.EDITOR;

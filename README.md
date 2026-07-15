@@ -79,6 +79,8 @@ Metis used about 57% less time in this comparison. This is one user test, not a 
 
 Metis checks its brain map before starting technical work. It can reuse relevant decisions, project knowledge, and technical lessons from earlier sessions instead of rediscovering them every time.
 
+During long tasks, Metis keeps an append-only working log with compact checkpoints, diagnosed errors, verification state, and next steps. It restores the latest state after resume, interruption, or context compaction; Dream later consolidates the complete history.
+
 ### Dream
 
 Dream reviews completed work and consolidates useful notes into structured memories and lessons. Temporary task context becomes reusable knowledge, while low-value details can be cleaned up.

@@ -123,6 +123,26 @@ Set `METIS_SKIP_VERSION_CHECK=1` to disable the Metis version update check. Use 
 }
 ```
 
+### Working Memory
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `workingMemory.enabled` | boolean | `true` | Enable live log checkpoints, recovery injection, and checkpoint reminders |
+| `workingMemory.checkpointInterval` | number | `8` | Non-`log` tool calls allowed between working-memory writes before a reminder |
+
+```json
+{
+  "workingMemory": {
+    "enabled": true,
+    "checkpointInterval": 8
+  }
+}
+```
+
+The append-only log remains at `.temp/<sessionId>_log.md`. `log` reads return the latest checkpoint plus later error and completion events, capped at 12 KiB. Dream continues to consolidate the complete file using its existing schedule and cleanup rules.
+
+To disable live working memory and its transient reminders, set `workingMemory.enabled` to `false`.
+
 ### Branch Summary
 
 | Setting | Type | Default | Description |
