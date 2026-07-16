@@ -6,6 +6,7 @@ import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import { isUiLanguage, type UiLanguage } from "./ui-language.ts";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -91,6 +92,7 @@ export interface Settings {
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
+	uiLanguage?: UiLanguage; // global-only TUI language preference; default: "auto"
 	compaction?: CompactionSettings;
 	workingMemory?: WorkingMemorySettings;
 	branchSummary?: BranchSummarySettings;
@@ -736,6 +738,17 @@ export class SettingsManager {
 	setTheme(theme: string): void {
 		this.globalSettings.theme = theme;
 		this.markModified("theme");
+		this.save();
+	}
+
+	getUiLanguage(): UiLanguage {
+		const value = this.globalSettings.uiLanguage;
+		return isUiLanguage(value) ? value : "auto";
+	}
+
+	setUiLanguage(language: UiLanguage): void {
+		this.globalSettings.uiLanguage = language;
+		this.markModified("uiLanguage");
 		this.save();
 	}
 

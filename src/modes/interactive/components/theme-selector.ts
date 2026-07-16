@@ -1,5 +1,6 @@
 import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@earendil-works/metis-tui";
 import { getAvailableThemes, getSelectListTheme } from "../theme/theme.ts";
+import { t } from "../i18n/index.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 
 const THEME_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -28,7 +29,7 @@ export class ThemeSelectorComponent extends Container {
 		const themeItems: SelectItem[] = themes.map((name) => ({
 			value: name,
 			label: name,
-			description: name === currentTheme ? "(current)" : undefined,
+			description: name === currentTheme ? `(${t("common.current")})` : undefined,
 		}));
 
 		// Add top border

@@ -14,6 +14,7 @@ import {
 } from "@earendil-works/metis-tui";
 import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../../core/http-dispatcher.ts";
 import type { DefaultProjectTrust, WarningSettings } from "../../../core/settings-manager.ts";
+import { translateSettingLabel } from "../i18n/settings-labels.ts";
 import {
 	getSelectListTheme,
 	getSettingsListTheme,
@@ -717,6 +718,10 @@ export class SettingsSelectorComponent extends Container {
 			currentValue: config.showTerminalProgress ? "true" : "false",
 			values: ["true", "false"],
 		});
+
+		for (const item of items) {
+			item.label = translateSettingLabel(item.id, item.label);
+		}
 
 		// Add borders
 		this.addChild(new DynamicBorder());

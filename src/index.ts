@@ -254,6 +254,12 @@ export {
 	type SettingsManagerCreateOptions,
 	type WorkingMemorySettings,
 } from "./core/settings-manager.ts";
+export {
+	RESOLVED_UI_LANGUAGES,
+	type ResolvedUiLanguage,
+	SUPPORTED_UI_LANGUAGES,
+	type UiLanguage,
+} from "./core/ui-language.ts";
 // Skills
 export {
 	formatSkillsForPrompt,
@@ -363,6 +369,7 @@ export {
 	keyHint,
 	keyText,
 	LoginDialogComponent,
+	LanguageSelectorComponent,
 	ModelSelectorComponent,
 	OAuthSelectorComponent,
 	type RenderDiffOptions,
