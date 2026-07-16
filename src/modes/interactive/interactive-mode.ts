@@ -87,6 +87,7 @@ import type { SourceInfo } from "../../core/source-info.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
+import { SUPPORTED_UI_LANGUAGES, type UiLanguage } from "../../core/ui-language.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
@@ -116,6 +117,7 @@ import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
 import { FooterComponent } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
+import { LanguageSelectorComponent } from "./components/language-selector.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
@@ -136,6 +138,12 @@ import { TrustSelectorComponent } from "./components/trust-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { getModelSearchText } from "./model-search.ts";
+import {
+	getUiLanguage,
+	setUiLanguage,
+	t,
+	translateBuiltinCommandDescription,
+} from "./i18n/index.ts";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -175,6 +183,14 @@ const TOKYO_NIGHT_GRADIENT = [
 	"#bb9af7",
 ];
 
+const RESOURCE_SECTION_KEYS = {
+	Context: "resource.context",
+	Skills: "resource.skills",
+	Prompts: "resource.prompts",
+	Extensions: "resource.extensions",
+	Themes: "resource.themes",
+} as const;
+
 function hexToRgbTuple(hex: string): { r: number; g: number; b: number } {
 	return {
 		r: Number.parseInt(hex.slice(1, 3), 16),
@@ -213,6 +229,7 @@ function formatMetisLogo(): string {
 class ExpandableText extends Text implements Expandable {
 	private readonly getCollapsedText: () => string;
 	private readonly getExpandedText: () => string;
+	private expanded: boolean;
 
 	constructor(
 		getCollapsedText: () => string,
@@ -224,10 +241,16 @@ class ExpandableText extends Text implements Expandable {
 		super(expanded ? getExpandedText() : getCollapsedText(), paddingX, paddingY);
 		this.getCollapsedText = getCollapsedText;
 		this.getExpandedText = getExpandedText;
+		this.expanded = expanded;
 	}
 
 	setExpanded(expanded: boolean): void {
+		this.expanded = expanded;
 		this.setText(expanded ? this.getExpandedText() : this.getCollapsedText());
+	}
+
+	refresh(): void {
+		this.setText(this.expanded ? this.getExpandedText() : this.getCollapsedText());
 	}
 }
 
@@ -435,6 +458,7 @@ export class InteractiveMode {
 
 	// Built-in header (logo + keybinding hints + changelog)
 	private builtInHeader: Component | undefined = undefined;
+	private localizedResourceSections: ExpandableText[] = [];
 
 	// Custom header from extension (undefined = use built-in header)
 	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
@@ -461,6 +485,7 @@ export class InteractiveMode {
 		this.runtimeHost = runtimeHost;
 		this.options = options;
 		this.autoTrustOnReloadCwd = options.autoTrustOnReloadCwd;
+		setUiLanguage(this.settingsManager.getUiLanguage());
 		this.runtimeHost.setBeforeSessionInvalidate(() => {
 			this.resetExtensionUI();
 		});
@@ -558,7 +583,7 @@ export class InteractiveMode {
 		// Define commands for autocomplete
 		const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
 			name: command.name,
-			description: command.description,
+			description: translateBuiltinCommandDescription(command.name, command.description, { appName: APP_NAME }),
 		}));
 
 		const modelCommand = slashCommands.find((command) => command.name === "model");
@@ -747,46 +772,51 @@ export class InteractiveMode {
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
-
-			const expandedInstructions = [
-				hint("app.interrupt", "to interrupt"),
-				hint("app.clear", "to clear"),
-				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
-				hint("app.exit", "to exit (empty)"),
-				hint("app.suspend", "to suspend"),
-				keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
-				hint("app.thinking.cycle", "to cycle thinking level"),
-				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
-				hint("app.model.select", "to select model"),
-				hint("app.tools.expand", "to expand tools"),
-				hint("app.thinking.toggle", "to expand thinking"),
-				hint("app.editor.external", "for external editor"),
-				rawKeyHint("/", "for commands"),
-				rawKeyHint("!", "to run bash"),
-				rawKeyHint("!!", "to run bash (no context)"),
-				hint("app.message.followUp", "to queue follow-up"),
-				hint("app.message.dequeue", "to edit all queued messages"),
-				hint("app.clipboard.pasteImage", "to paste image"),
-				rawKeyHint("drop files", "to attach"),
-			].join("\n");
-			const compactInstructions = [
-				hint("app.interrupt", "interrupt"),
-				rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
-				rawKeyHint("/", "commands"),
-				rawKeyHint("!", "bash"),
-			].join(theme.fg("muted", " · "));
-			const compactShortcuts = `${theme.fg("muted", "Shortcuts")} ${compactInstructions}`;
-			const compactOnboarding = `${theme.fg("muted", "More     ")}${theme.fg(
-				"dim",
-				`${keyText("app.tools.expand")} startup help and loaded resources`,
-			)}`;
-			const onboarding = theme.fg(
-				"dim",
-				`Ask Metis about docs, SDK, extensions, themes, skills, or commands.`,
-			);
+			const buildExpandedInstructions = () =>
+				[
+					hint("app.interrupt", t("header.toInterrupt")),
+					hint("app.clear", t("header.toClear")),
+					rawKeyHint(`${keyText("app.clear")} twice`, t("header.toExit")),
+					hint("app.exit", t("header.toExitEmpty")),
+					hint("app.suspend", t("header.toSuspend")),
+					keyHint("tui.editor.deleteToLineEnd", t("header.toDeleteEnd")),
+					hint("app.thinking.cycle", t("header.toCycleThinking")),
+					rawKeyHint(
+						`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`,
+						t("header.toCycleModels"),
+					),
+					hint("app.model.select", t("header.toSelectModel")),
+					hint("app.tools.expand", t("header.toExpandTools")),
+					hint("app.thinking.toggle", t("header.toExpandThinking")),
+					hint("app.editor.external", t("header.externalEditor")),
+					rawKeyHint("/", t("header.forCommands")),
+					rawKeyHint("!", t("header.runBash")),
+					rawKeyHint("!!", t("header.runBashNoContext")),
+					hint("app.message.followUp", t("header.queueFollowUp")),
+					hint("app.message.dequeue", t("header.editQueued")),
+					hint("app.clipboard.pasteImage", t("header.pasteImage")),
+					rawKeyHint(t("header.dropFiles"), t("header.attach")),
+				].join("\n");
+			const buildCompactInstructions = () =>
+				[
+					hint("app.interrupt", t("header.interrupt")),
+					rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, t("header.clearExit")),
+					rawKeyHint("/", t("header.commands")),
+					rawKeyHint("!", t("header.bash")),
+				].join(theme.fg("muted", " · "));
+			const buildCollapsedHeader = () => {
+				const compactShortcuts = `${theme.fg("muted", t("header.shortcuts"))} ${buildCompactInstructions()}`;
+				const compactOnboarding = `${theme.fg("muted", t("header.more"))}${theme.fg(
+					"dim",
+					t("header.startupHelp", { key: keyText("app.tools.expand") }),
+				)}`;
+				return `${logo}\n${compactShortcuts}\n${compactOnboarding}\n\n${theme.fg("dim", t("header.onboarding"))}`;
+			};
+			const buildExpandedHeader = () =>
+				`${logo}\n${buildExpandedInstructions()}\n\n${theme.fg("dim", t("header.onboarding"))}`;
 			this.builtInHeader = new ExpandableText(
-				() => `${logo}\n${compactShortcuts}\n${compactOnboarding}\n\n${onboarding}`,
-				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
+				buildCollapsedHeader,
+				buildExpandedHeader,
 				this.getStartupExpansionState(),
 				1,
 				0,
@@ -1415,6 +1445,7 @@ export class InteractiveMode {
 	}): void {
 		// Resource rendering is idempotent; chat clears no longer clear this separate container.
 		this.loadedResourcesContainer.clear();
+		this.localizedResourceSections = [];
 
 		const showListing = options?.force || this.options.verbose || !this.settingsManager.getQuietStartup();
 		const showDiagnostics = showListing || options?.showDiagnosticsWhenQuiet === true;
@@ -1436,13 +1467,18 @@ export class InteractiveMode {
 			expandedBody = collapsedBody,
 			color: ThemeColor = "mdHeading",
 		): void => {
+			const localizedName = () => {
+				const key = RESOURCE_SECTION_KEYS[name as keyof typeof RESOURCE_SECTION_KEYS];
+				return key ? t(key) : name;
+			};
 			const section = new ExpandableText(
-				() => `${sectionHeader(name, color)}\n${collapsedBody}`,
-				() => `${sectionHeader(name, color)}\n${expandedBody}`,
+				() => `${sectionHeader(localizedName(), color)}\n${collapsedBody}`,
+				() => `${sectionHeader(localizedName(), color)}\n${expandedBody}`,
 				this.getStartupExpansionState(),
 				0,
 				0,
 			);
+			this.localizedResourceSections.push(section);
 			this.loadedResourcesContainer.addChild(section);
 			this.loadedResourcesContainer.addChild(new Spacer(1));
 		};
@@ -2646,6 +2682,11 @@ export class InteractiveMode {
 			// Handle commands
 			if (text === "/settings") {
 				this.showSettingsSelector();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/language") {
+				this.showLanguageSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -4267,7 +4308,7 @@ export class InteractiveMode {
 				await this.session.setModel(model);
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
-				this.showStatus(`Model: ${model.id}`);
+				this.showStatus(t("status.model", { model: model.id }));
 				void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
 				this.checkDaxnutsEasterEgg(model);
 			} catch (error) {
@@ -4387,6 +4428,39 @@ export class InteractiveMode {
 		});
 	}
 
+	private showLanguageSelector(): void {
+		this.showSelector((done) => {
+			const selector = new LanguageSelectorComponent(
+				this.settingsManager.getUiLanguage(),
+				(language) => {
+					this.settingsManager.setUiLanguage(language);
+					setUiLanguage(language);
+					done();
+					this.setupAutocompleteProvider();
+					if (this.builtInHeader instanceof ExpandableText) this.builtInHeader.refresh();
+					for (const section of this.localizedResourceSections) section.refresh();
+					this.footer.invalidate();
+					this.ui.invalidate();
+					this.ui.requestRender();
+
+					const resolvedLanguage = getUiLanguage();
+					const selected = SUPPORTED_UI_LANGUAGES.find((item) => item.code === language);
+					const resolved = SUPPORTED_UI_LANGUAGES.find((item) => item.code === resolvedLanguage);
+					const label =
+						language === "auto" && resolved
+							? `${t("language.automatic")} (${resolved.nativeName})`
+							: (selected?.nativeName ?? language);
+					this.showStatus(t("language.selected", { language: label }));
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector.getSelectList() };
+		});
+	}
+
 	private showModelSelector(initialSearchInput?: string): void {
 		this.showSelector((done) => {
 			const selector = new ModelSelectorComponent(
@@ -4401,7 +4475,7 @@ export class InteractiveMode {
 						this.footer.invalidate();
 						this.updateEditorBorderColor();
 						done();
-						this.showStatus(`Model: ${model.id}`);
+						this.showStatus(t("status.model", { model: model.id }));
 						void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
 						this.checkDaxnutsEasterEgg(model);
 					} catch (error) {

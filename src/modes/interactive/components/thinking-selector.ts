@@ -1,6 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/metis-agent-core";
 import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@earendil-works/metis-tui";
 import { getSelectListTheme } from "../theme/theme.ts";
+import { t } from "../i18n/index.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 
 const THINKING_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -8,14 +9,14 @@ const THINKING_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	maxPrimaryColumnWidth: 32,
 };
 
-const LEVEL_DESCRIPTIONS: Record<ThinkingLevel, string> = {
-	off: "No reasoning",
-	minimal: "Very brief reasoning (~1k tokens)",
-	low: "Light reasoning (~2k tokens)",
-	medium: "Moderate reasoning (~8k tokens)",
-	high: "Deep reasoning (~16k tokens)",
-	xhigh: "Maximum reasoning (~32k tokens)",
-};
+const LEVEL_DESCRIPTION_KEYS = {
+	off: "thinking.off",
+	minimal: "thinking.minimal",
+	low: "thinking.low",
+	medium: "thinking.medium",
+	high: "thinking.high",
+	xhigh: "thinking.xhigh",
+} as const;
 
 /**
  * Component that renders a thinking level selector with borders
@@ -34,7 +35,7 @@ export class ThinkingSelectorComponent extends Container {
 		const thinkingLevels: SelectItem[] = availableLevels.map((level) => ({
 			value: level,
 			label: level,
-			description: LEVEL_DESCRIPTIONS[level],
+			description: t(LEVEL_DESCRIPTION_KEYS[level]),
 		}));
 
 		// Add top border

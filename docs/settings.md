@@ -51,6 +51,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `theme` | string | `"dark"` | Theme name (`"dark"`, `"light"`, or custom) |
+| `uiLanguage` | string | `"auto"` | Global-only TUI language. Supported values: `"auto"`, `"en"`, `"zh-CN"`, `"zh-TW"`, `"ja"`, `"ko"`, `"es"`, `"fr"`, `"de"`, `"pt"`, `"ru"`, `"it"` |
 | `externalEditor` | string | `$VISUAL`, then `$EDITOR`, then Notepad on Windows or `nano` elsewhere | Command for Ctrl+G external editor; takes precedence over environment variables |
 | `quietStartup` | boolean | `false` | Hide startup header |
 | `defaultProjectTrust` | string | `"ask"` | Fallback project trust behavior: `"ask"`, `"always"`, or `"never"`. Global setting only |
@@ -64,6 +65,12 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `outputPad` | number | `1` | Horizontal padding for user messages, assistant messages, and thinking (0 or 1) |
 | `autocompleteMaxVisible` | number | `5` | Max visible items in autocomplete dropdown (3-20) |
 | `showHardwareCursor` | boolean | `false` | Show the terminal cursor while TUI positions it for IME support |
+
+Use `/language` to change `uiLanguage`. The selector applies the language immediately and saves it to
+`~/.metis/agent/settings.json`; project settings cannot override it. In `"auto"` mode Metis checks
+`LC_ALL`, `LC_MESSAGES`, and `LANG`, then the runtime locale. Unsupported locales fall back to English.
+This setting localizes built-in TUI text only. Agent responses, command names, model/provider names,
+extensions, tool output, print/JSON/RPC modes, and SDK behavior are unchanged.
 
 For VS Code, include `--wait` so metis resumes after the editor exits:
 
