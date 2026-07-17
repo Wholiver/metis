@@ -2,6 +2,14 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.1.0-rc.2] - 2026-07-17
+
+### Interactive terminal
+
+- Added `/language` with automatic locale detection and 11 selectable interface languages.
+- Persisted the selected UI language globally and redrew built-in terminal interface text immediately after a change.
+- Kept Agent responses, prompts, command tokens, extensions, tool output, print, JSON, RPC, and SDK behavior unchanged.
+
 ## [1.1.0-rc.1] - 2026-07-15
 
 ### Highlights
