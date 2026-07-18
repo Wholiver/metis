@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="src/modes/interactive/assets/metis-pixel-mark.svg" width="144" alt="Metis pixel mark" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/modes/interactive/assets/metis-pixel-mark-white-on-black.png" />
+    <img src="src/modes/interactive/assets/metis-pixel-mark.png" width="144" alt="Metis pixel mark" />
+  </picture>
 </p>
 
 <p align="center">
@@ -43,7 +46,10 @@ That means better repository understanding, fewer unsupported assumptions and mi
 ### Better coding performance
 
 <p align="center">
-  <img src="docs/images/metis-coding-performance.svg" width="100%" alt="How Metis helps the same coding model achieve better coding outcomes" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/metis-coding-performance.dark.png" />
+    <img src="docs/images/metis-coding-performance.png" width="100%" alt="How Metis helps the same coding model achieve better coding outcomes" />
+  </picture>
 </p>
 
 For the same underlying model, Metis strengthens the system around it:
@@ -58,7 +64,10 @@ These mechanisms can improve practical coding outcomes without retraining or rep
 ### Faster completion
 
 <p align="center">
-  <img src="docs/images/metis-speed.svg" width="100%" alt="User test comparing Metis and OpenCode task completion time" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/metis-speed.dark.png" />
+    <img src="docs/images/metis-speed.png" width="100%" alt="User test comparing Metis and OpenCode task completion time" />
+  </picture>
 </p>
 
 In one user test with the same task:
@@ -72,7 +81,10 @@ Metis used about 57% less time in this comparison. This is one user test, not a 
 ## What makes it reliable
 
 <p align="center">
-  <img src="docs/images/metis-capabilities.svg" width="100%" alt="Metis memory, Dream, search, and verification features" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/metis-capabilities.dark.png" />
+    <img src="docs/images/metis-capabilities.png" width="100%" alt="Metis memory, Dream, search, and verification features" />
+  </picture>
 </p>
 
 ### Memory and Lessons
@@ -98,7 +110,10 @@ Together, these behaviors help the same coding model work with better context, f
 ## How it works
 
 <p align="center">
-  <img src="docs/images/metis-workflow.svg" width="100%" alt="Metis workflow: Understand, Build, Verify" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/metis-workflow.dark.png" />
+    <img src="docs/images/metis-workflow.png" width="100%" alt="Metis workflow: Understand, Build, Verify" />
+  </picture>
 </p>
 
 1. **Understand** — read the request, recall relevant lessons, and investigate the codebase.
@@ -110,9 +125,9 @@ Together, these behaviors help the same coding model work with better context, f
 
 ### Interfaces
 
-Metis supports an interactive terminal, print and JSON output, RPC integration, and an SDK for Node.js applications.
+Metis supports an interactive terminal, print and JSON output, RPC integration, a Desktop server, and an SDK for Node.js applications. Desktop uses the persistent local server; normal CLI/TUI commands continue to run directly.
 
-The package exports the SDK from `@wholiver_hu/metis` and the RPC entry point from `@wholiver_hu/metis/rpc-entry`.
+The package exports the SDK from `@wholiver_hu/metis`, the RPC entry point from `@wholiver_hu/metis/rpc-entry`, and the server entry point from `@wholiver_hu/metis/server-entry`. See [Desktop Server](docs/server.md).
 
 ### Commands
 
