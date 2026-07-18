@@ -2,6 +2,14 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.1.0-rc.3] - 2026-07-18
+
+### Agent research workflow
+
+- Required deep, multi-query web investigation before substantive work, with authoritative-source verification through web fetches.
+- Added disposable research scratch guidance so durable conclusions can survive unfinished work without polluting live working memory.
+- Clarified tool guidance and user-facing output rules for research-driven tasks.
+
 ## [1.1.0-rc.2] - 2026-07-17
 
 ### Interactive terminal
