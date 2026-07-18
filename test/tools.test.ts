@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/bash-executor.ts";
 import { type BashOperations, createBashTool, createLocalBashOperations } from "../src/core/tools/bash.ts";
 import { computeEditsDiff } from "../src/core/tools/edit-diff.ts";
+import { createWebFetchToolDefinition } from "../src/core/tools/webfetch.ts";
+import { createWebSearchToolDefinition } from "../src/core/tools/websearch.ts";
 import {
 	createEditTool,
 	createFindTool,
@@ -363,6 +365,26 @@ describe("Coding Agent Tools", () => {
 			expect(createCodingTools(testDir).map((tool) => tool.name)).toContain("log");
 			expect(createCodingTools(testDir).map((tool) => tool.name)).toContain("user_intent");
 			expect(createCodingTools(testDir).map((tool) => tool.name)).toContain("remember_user_intent");
+		});
+	});
+
+	describe("web research tool prompting", () => {
+		it("requires deep investigation instead of one-shot web lookups", () => {
+			const websearch = createWebSearchToolDefinition();
+			const webfetch = createWebFetchToolDefinition();
+
+			expect(websearch.promptSnippet).toContain("complementary web searches");
+			expect(websearch.promptGuidelines).toContain(
+				"For every task, use websearch before substantive work; a single shallow query or search-result snippet is never sufficient.",
+			);
+			expect(websearch.promptGuidelines?.join(" ")).toContain("authoritative source pages");
+			expect(websearch.promptGuidelines?.join(" ")).toContain("official documentation");
+			expect(websearch.promptGuidelines?.join(" ")).toContain("Do not cite or mention research sources");
+			expect(webfetch.promptSnippet).toContain("authoritative web sources");
+			expect(webfetch.promptGuidelines?.join(" ")).toContain("primary or authoritative pages");
+			expect(webfetch.promptGuidelines?.join(" ")).toContain("resolve material conflicts");
+			expect(webfetch.promptGuidelines?.join(" ")).toContain("license permits it");
+			expect(webfetch.promptGuidelines?.join(" ")).toContain("Do not cite or mention fetched sources");
 		});
 	});
 

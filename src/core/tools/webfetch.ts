@@ -82,10 +82,13 @@ export function createWebFetchToolDefinition(
 	return {
 		name: "webfetch",
 		label: "web fetch",
-		description: "Fetches content from a specified URL and converts it to markdown, text, or html.",
-		promptSnippet: "Fetch content from a URL.",
+		description: "Fetches and inspects web sources, converting a specified URL to markdown, text, or html.",
+		promptSnippet: "Fetch and inspect authoritative web sources.",
 		promptGuidelines: [
-			"Use webfetch to read the content of web pages or API endpoints.",
+			"Use webfetch to inspect primary or authoritative pages behind websearch results; never treat search snippets as sufficient evidence.",
+			"Fetch enough current, independent sources to resolve material conflicts, compatibility questions, and risks before acting.",
+			"You may reuse a credible source's architecture or code only when its license permits it; preserve required notices or attribution and verify project compatibility, security, and tests.",
+			"Do not cite or mention fetched sources in user-facing output unless the user explicitly asks.",
 			"Prefer markdown format for documentation and articles.",
 			"The URL must be a fully-formed valid URL."
 		],

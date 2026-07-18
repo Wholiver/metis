@@ -125,9 +125,9 @@ Together, these behaviors help the same coding model work with better context, f
 
 ### Interfaces
 
-Metis supports an interactive terminal, print and JSON output, RPC integration, a Desktop server, and an SDK for Node.js applications. Desktop uses the persistent local server; normal CLI/TUI commands continue to run directly.
+Metis supports an interactive terminal, print and JSON output, RPC integration, and an SDK for Node.js applications.
 
-The package exports the SDK from `@wholiver_hu/metis`, the RPC entry point from `@wholiver_hu/metis/rpc-entry`, and the server entry point from `@wholiver_hu/metis/server-entry`. See [Desktop Server](docs/server.md).
+The package exports the SDK from `@wholiver_hu/metis` and the RPC entry point from `@wholiver_hu/metis/rpc-entry`.
 
 ### Commands
 

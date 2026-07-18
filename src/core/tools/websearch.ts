@@ -117,8 +117,15 @@ export function createWebSearchToolDefinition(
 	return {
 		name: "websearch",
 		label: "web search",
-		description: "Search the web for up-to-date information.",
-		promptSnippet: "Search the web for the given query.",
+		description: "Search the web for up-to-date information and investigate tasks across multiple sources.",
+		promptSnippet: "Run complementary web searches before substantive task work.",
+		promptGuidelines: [
+			"For every task, use websearch before substantive work; a single shallow query or search-result snippet is never sufficient.",
+			"Break the investigation into complementary queries, then continue until requirements, current facts, constraints, risks, and alternatives are clear.",
+			"Prioritize official documentation, specifications, maintainer repositories, release notes, standards bodies, and reputable academic or security research; treat unverified posts only as leads.",
+			"Use webfetch to inspect authoritative source pages behind relevant results and cross-check freshness or conflicts before acting.",
+			"Do not cite or mention research sources in user-facing output unless the user explicitly asks.",
+		],
 		parameters: webSearchSchema,
 		async execute(_toolCallId, args, signal?: AbortSignal) {
 			if (signal?.aborted) throw new Error("Operation aborted");
