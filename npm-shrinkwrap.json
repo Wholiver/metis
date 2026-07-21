@@ -4815,7 +4815,7 @@
 			"version": "0.80.3",
 			"license": "MIT",
 			"dependencies": {
-				"@earendil-works/metis-ai": "^0.80.3",
+				"@earendil-works/metis-ai": "file:../metis-ai",
 				"ignore": "7.0.5",
 				"typebox": "1.1.38",
 				"yaml": "2.9.0"
