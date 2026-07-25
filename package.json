@@ -31,7 +31,8 @@
 		"CONTRIBUTING.zh-CN.md",
 		"AGENTS.md",
 		"README.zh-CN.md",
-		"npm-shrinkwrap.json"
+		"npm-shrinkwrap.json",
+		"scripts/prepare-video-transcription.mjs"
 	],
 	"scripts": {
 		"clean": "node scripts/clean.mjs",
@@ -41,17 +42,21 @@
 		"copy-binary-assets": "shx cp package.json dist/ && shx cp README.md dist/ && shx cp CHANGELOG.md dist/ && shx mkdir -p dist/theme && shx cp src/modes/interactive/theme/*.json dist/theme/ && shx mkdir -p dist/assets && shx cp src/modes/interactive/assets/*.png dist/assets/ && shx mkdir -p dist/export-html/vendor && shx cp src/core/export-html/template.html dist/export-html/ && shx cp src/core/export-html/vendor/*.js dist/export-html/vendor/ && shx cp -r docs dist/ && shx cp -r examples dist/ && shx cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm dist/",
 		"test": "vitest --run",
 		"shrinkwrap": "node ../../scripts/generate-coding-agent-shrinkwrap.mjs",
-		"prepublishOnly": "npm run build"
+		"prepublishOnly": "npm run build",
+		"postinstall": "node scripts/prepare-video-transcription.mjs"
 	},
 	"dependencies": {
+		"@derhuerst/ffprobe-static": "5.3.0",
 		"@earendil-works/metis-agent-core": "file:vendor/metis-agent-core",
 		"@earendil-works/metis-ai": "file:vendor/metis-ai",
 		"@earendil-works/metis-tui": "file:vendor/metis-tui",
+		"@huggingface/transformers": "4.2.0",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"chalk": "5.6.2",
 		"cheerio": "^1.2.0",
 		"cross-spawn": "7.0.6",
 		"diff": "8.0.4",
+		"ffmpeg-static": "5.3.0",
 		"glob": "13.0.6",
 		"highlight.js": "10.7.3",
 		"hosted-git-info": "9.0.3",

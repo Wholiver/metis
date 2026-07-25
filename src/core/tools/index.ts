@@ -67,6 +67,16 @@ export {
 	type ReadToolOptions,
 } from "./read.ts";
 export {
+	createVideoTool,
+	createVideoToolDefinition,
+	type VideoAction,
+	type VideoMetadata,
+	type VideoOperations,
+	type VideoToolDetails,
+	type VideoToolInput,
+	type VideoToolOptions,
+} from "./video.ts";
+export {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
 	formatSize,
@@ -113,6 +123,7 @@ import { createLogTool, createLogToolDefinition, type LogToolOptions } from "./l
 import { createRememberUserIntentTool, createRememberUserIntentToolDefinition } from "./remember-user-intent.ts";
 import { createUserIntentTool, createUserIntentToolDefinition } from "./user-intent.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
+import { createVideoTool, createVideoToolDefinition, type VideoToolOptions } from "./video.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
 import { createSubagentTool, createSubagentToolDefinition, type SubagentToolOptions } from "./subagent.ts";
 import { createWebSearchTool, createWebSearchToolDefinition, type WebSearchToolOptions } from "./websearch.ts";
@@ -133,7 +144,8 @@ export type ToolName =
 	| "ls"
 	| "subagent"
 	| "websearch"
-	| "webfetch";
+	| "webfetch"
+	| "video";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -148,6 +160,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"subagent",
 	"websearch",
 	"webfetch",
+	"video",
 ]);
 
 export interface ToolsOptions {
@@ -162,6 +175,7 @@ export interface ToolsOptions {
 	subagent?: SubagentToolOptions;
 	websearch?: WebSearchToolOptions;
 	webfetch?: WebFetchToolOptions;
+	video?: VideoToolOptions;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
@@ -192,6 +206,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createWebSearchToolDefinition(options?.websearch);
 		case "webfetch":
 			return createWebFetchToolDefinition(options?.webfetch);
+		case "video":
+			return createVideoToolDefinition(cwd, options?.video);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -225,6 +241,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createWebSearchTool(options?.websearch);
 		case "webfetch":
 			return createWebFetchTool(options?.webfetch);
+		case "video":
+			return createVideoTool(cwd, options?.video);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -242,6 +260,7 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createSubagentToolDefinition(cwd, options?.subagent),
 		createWebSearchToolDefinition(options?.websearch),
 		createWebFetchToolDefinition(options?.webfetch),
+		createVideoToolDefinition(cwd, options?.video),
 	];
 }
 
@@ -251,6 +270,7 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 		createGrepToolDefinition(cwd, options?.grep),
 		createFindToolDefinition(cwd, options?.find),
 		createLsToolDefinition(cwd, options?.ls),
+		createVideoToolDefinition(cwd, options?.video),
 	];
 }
 
@@ -269,6 +289,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		subagent: createSubagentToolDefinition(cwd, options?.subagent),
 		websearch: createWebSearchToolDefinition(options?.websearch),
 		webfetch: createWebFetchToolDefinition(options?.webfetch),
+		video: createVideoToolDefinition(cwd, options?.video),
 	};
 }
 
@@ -284,6 +305,7 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createSubagentTool(cwd, options?.subagent),
 		createWebSearchTool(options?.websearch),
 		createWebFetchTool(options?.webfetch),
+		createVideoTool(cwd, options?.video),
 	];
 }
 
@@ -293,6 +315,7 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 		createGrepTool(cwd, options?.grep),
 		createFindTool(cwd, options?.find),
 		createLsTool(cwd, options?.ls),
+		createVideoTool(cwd, options?.video),
 	];
 }
 
@@ -311,5 +334,6 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		subagent: createSubagentTool(cwd, options?.subagent),
 		websearch: createWebSearchTool(options?.websearch),
 		webfetch: createWebFetchTool(options?.webfetch),
+		video: createVideoTool(cwd, options?.video),
 	};
 }

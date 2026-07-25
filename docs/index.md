@@ -67,6 +67,7 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 
 ## Reference
 
+- [Video tool](video.md) - inspect local video through timestamped 3×3 storyboards and transcripts.
 - [Session format](session-format.md) - JSONL session file format, entry types, and SessionManager API.
 
 ## Platform setup

@@ -1,5 +1,5 @@
-import { chmodSync, cpSync, mkdirSync, readdirSync } from "node:fs";
-import { extname, join } from "node:path";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -33,6 +33,19 @@ copyMatching(
 	join(root, "dist/core/export-html/vendor"),
 	new Set([".js"]),
 );
+
+const executableExtension = process.platform === "win32" ? ".exe" : "";
+const videoBinaries = [
+	["ffmpeg", join(root, "node_modules/ffmpeg-static", `ffmpeg${executableExtension}`)],
+	["ffprobe", join(root, "node_modules/@derhuerst/ffprobe-static", `ffprobe${executableExtension}`)],
+];
+for (const [name, source] of videoBinaries) {
+	if (!existsSync(source)) continue;
+	const target = join(root, "dist/video-bin", `${name}${executableExtension}`);
+	mkdirSync(dirname(target), { recursive: true });
+	cpSync(source, target);
+	chmodSync(target, 0o755);
+}
 
 for (const executable of ["cli.js", "rpc-entry.js"]) {
 	chmodSync(join(root, "dist", executable), 0o755);

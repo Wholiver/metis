@@ -31,6 +31,7 @@ import {
 	createUserIntentTool,
 	createReadOnlyTools,
 	createReadTool,
+	createVideoTool,
 	createSubagentTool,
 	createWebSearchTool,
 	createWebFetchTool,
@@ -122,6 +123,7 @@ export {
 	createCodingTools,
 	createReadOnlyTools,
 	createReadTool,
+	createVideoTool,
 	createBashTool,
 	createEditTool,
 	createLogTool,
@@ -261,7 +263,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
 	}
 
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "log", "remember_user_intent", "user_intent", "subagent", "websearch", "webfetch"];
+	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "log", "remember_user_intent", "user_intent", "subagent", "websearch", "webfetch", "video"];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
