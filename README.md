@@ -27,7 +27,7 @@
 Requires Node.js `>=22.19.0` and npm.
 
 ```bash
-npm i -g @wholiver_hu/metis@rc && npm approve-scripts --allow-scripts-pending
+npm i -g @wholiver_hu/metis@rc
 metis
 ```
 
