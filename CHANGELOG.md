@@ -2,6 +2,12 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.2.0-rc.2] - 2026-07-25
+
+### Packaging & Installation
+
+- Removed install lifecycle scripts (`postinstall`) to allow clean, warning-free global installation across npm 11 and earlier npm versions.
+
 ## [1.2.0-rc.1] - 2026-07-25
 
 ### Video tools
