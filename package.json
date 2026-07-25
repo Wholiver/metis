@@ -1,6 +1,6 @@
 {
 	"name": "@wholiver_hu/metis",
-	"version": "1.2.0-rc.1",
+	"version": "1.2.0-rc.2",
 	"description": "A terminal-first coding agent that helps models search, remember, execute, and verify more reliably",
 	"type": "module",
 	"metisConfig": {
@@ -42,8 +42,7 @@
 		"copy-binary-assets": "shx cp package.json dist/ && shx cp README.md dist/ && shx cp CHANGELOG.md dist/ && shx mkdir -p dist/theme && shx cp src/modes/interactive/theme/*.json dist/theme/ && shx mkdir -p dist/assets && shx cp src/modes/interactive/assets/*.png dist/assets/ && shx mkdir -p dist/export-html/vendor && shx cp src/core/export-html/template.html dist/export-html/ && shx cp src/core/export-html/vendor/*.js dist/export-html/vendor/ && shx cp -r docs dist/ && shx cp -r examples dist/ && shx cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm dist/",
 		"test": "vitest --run",
 		"shrinkwrap": "node ../../scripts/generate-coding-agent-shrinkwrap.mjs",
-		"prepublishOnly": "npm run build",
-		"postinstall": "node scripts/prepare-video-transcription.mjs"
+		"prepublishOnly": "npm run build"
 	},
 	"dependencies": {
 		"@derhuerst/ffprobe-static": "5.3.0",
