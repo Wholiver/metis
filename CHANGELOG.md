@@ -2,6 +2,13 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.2.0-rc.1] - 2026-07-25
+
+### Video tools
+
+- Added video inspection tool with timestamped 3×3 storyboard extraction and transcript processing.
+- Bundled platform ffmpeg and ffprobe binary preparation helpers.
+
 ## [1.1.0-rc.3] - 2026-07-18
 
 ### Agent research workflow
