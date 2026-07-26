@@ -2,6 +2,21 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.2.0-rc.3] - 2026-07-27
+
+### CLI sessions and Subagents
+
+- Hid Dream and Subagent worker sessions from current-folder and all-project `/resume` lists.
+- Added a strict synchronization barrier so parent Agents wait for every running Subagent before continuing work.
+- Displayed the number of running Subagents in the interactive footer.
+- Added automatic AI-generated session titles after the first completed exchange.
+
+### Providers and runtime compatibility
+
+- Added guided setup for custom OpenAI-compatible providers, including model discovery and persisted configuration.
+- Kept Dream and Subagent child processes runnable when Metis is launched through Electron.
+- Allowed the RPC entrypoint to honor explicit print and mode arguments.
+
 ## [1.2.0-rc.2] - 2026-07-25
 
 ### Packaging & Installation
