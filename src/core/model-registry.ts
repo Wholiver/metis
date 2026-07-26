@@ -19,8 +19,8 @@ import {
 	type SimpleStreamOptions,
 } from "@earendil-works/metis-ai/compat";
 import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/metis-ai/oauth";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import { type Static, Type } from "typebox";
 import { Compile } from "typebox/compile";
 import type { TLocalizedValidationError } from "typebox/error";
@@ -354,6 +354,7 @@ export class ModelRegistry {
 	private providerRequestConfigs: Map<string, ProviderRequestConfig> = new Map();
 	private modelRequestHeaders: Map<string, Record<string, string>> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
+	private providerDisplayNames: Map<string, string> = new Map();
 	private loadError: string | undefined = undefined;
 	readonly authStorage: AuthStorage;
 	private modelsJsonPath: string | undefined;
@@ -372,12 +373,17 @@ export class ModelRegistry {
 		return new ModelRegistry(authStorage, undefined);
 	}
 
+	getModelsJsonPath(): string | undefined {
+		return this.modelsJsonPath;
+	}
+
 	/**
 	 * Reload models from disk (built-in + custom from models.json).
 	 */
 	refresh(): void {
 		this.providerRequestConfigs.clear();
 		this.modelRequestHeaders.clear();
+		this.providerDisplayNames.clear();
 		this.loadError = undefined;
 
 		// Ensure dynamic API/OAuth registrations are rebuilt from current provider state.
@@ -500,6 +506,10 @@ export class ModelRegistry {
 			const modelOverrides = new Map<string, Map<string, ModelOverride>>();
 
 			for (const [providerName, providerConfig] of Object.entries(config.providers)) {
+				if (providerConfig.name) {
+					this.providerDisplayNames.set(providerName, providerConfig.name);
+				}
+
 				if (providerConfig.baseUrl || providerConfig.compat) {
 					overrides.set(providerName, {
 						baseUrl: providerConfig.baseUrl,
@@ -787,6 +797,7 @@ export class ModelRegistry {
 		const oauthProvider = this.authStorage.getOAuthProviders().find((p) => p.id === provider);
 
 		return (
+			this.providerDisplayNames.get(provider) ??
 			registeredProvider?.name ??
 			registeredProvider?.oauth?.name ??
 			oauthProvider?.name ??
@@ -987,4 +998,108 @@ export interface ProviderConfigInput {
 		headers?: Record<string, string>;
 		compat?: Model<Api>["compat"];
 	}>;
+}
+
+/**
+ * Fetch available models from an OpenAI-compatible endpoint.
+ */
+export async function fetchOtherProviderModels(baseUrl: string, apiKey?: string): Promise<string[]> {
+	const cleanBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+	const urlsToTry: string[] = [];
+
+	if (cleanBaseUrl.endsWith("/v1")) {
+		urlsToTry.push(`${cleanBaseUrl}/models`);
+	} else {
+		urlsToTry.push(`${cleanBaseUrl}/v1/models`);
+		urlsToTry.push(`${cleanBaseUrl}/models`);
+	}
+
+	const headers: Record<string, string> = {
+		"User-Agent": "metis",
+	};
+	if (apiKey) {
+		headers["Authorization"] = `Bearer ${apiKey}`;
+	}
+
+	for (const url of urlsToTry) {
+		try {
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+			const res = await fetch(url, {
+				method: "GET",
+				headers,
+				signal: controller.signal,
+			});
+			clearTimeout(timeoutId);
+
+			if (!res.ok) continue;
+
+			const data = (await res.json()) as any;
+			const items = Array.isArray(data)
+				? data
+				: Array.isArray(data?.data)
+					? data.data
+					: Array.isArray(data?.models)
+						? data.models
+						: [];
+
+			const modelIds = items
+				.map((item: any) => (typeof item === "string" ? item : item?.id))
+				.filter((id: any): id is string => typeof id === "string" && id.trim().length > 0);
+
+			if (modelIds.length > 0) {
+				return Array.from(new Set(modelIds));
+			}
+		} catch {
+			// Try next candidate URL
+		}
+	}
+
+	return [];
+}
+
+/**
+ * Save configuration for custom 'other' provider to models.json
+ */
+export function saveOtherProviderConfig(
+	modelsPath: string,
+	providerId: string,
+	name: string,
+	baseUrl: string,
+	modelIds: string[] = [],
+): void {
+	let config: { providers?: Record<string, any> } = { providers: {} };
+	if (existsSync(modelsPath)) {
+		try {
+			const content = readFileSync(modelsPath, "utf-8");
+			const parsed = JSON.parse(stripJsonComments(content));
+			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+				config = parsed as { providers?: Record<string, any> };
+			}
+		} catch {
+			config = { providers: {} };
+		}
+	} else {
+		const dir = dirname(modelsPath);
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+		}
+	}
+
+	config.providers = config.providers || {};
+	const existingProvider = config.providers[providerId] || {};
+
+	const finalModelIds = modelIds.length > 0 ? modelIds : ["default"];
+	const modelEntries = finalModelIds.map((id) => ({ id }));
+
+	config.providers[providerId] = {
+		...existingProvider,
+		name,
+		baseUrl,
+		api: existingProvider.api || "openai-completions",
+		models: modelEntries,
+	};
+
+	writeFileSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 }

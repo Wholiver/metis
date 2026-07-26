@@ -9,4 +9,13 @@ process.emitWarning = (() => {}) as typeof process.emitWarning;
 
 configureHttpDispatcher();
 
-main(["--mode", "rpc", ...process.argv.slice(2)]);
+const userArgs = process.argv.slice(2);
+const hasMode = userArgs.includes("--mode");
+const hasPrint = userArgs.includes("--print") || userArgs.includes("-p");
+
+if (!hasMode && !hasPrint) {
+	main(["--mode", "rpc", ...userArgs]);
+} else {
+	main(userArgs);
+}
+

@@ -346,6 +346,7 @@ const timer = setInterval(() => {
 	const helper = spawn(process.argv[0], ["-e", cleanupScript], {
 		env: {
 			...process.env,
+			ELECTRON_RUN_AS_NODE: "1",
 			[DREAM_CLEANUP_HELPER_ENV]: "1",
 			METIS_DREAM_CLEANUP_TEMP_DIR: resolve(cwd, ".temp"),
 			METIS_DREAM_CLEANUP_STATE_PATH: dreamStatePath,
@@ -444,7 +445,7 @@ async function triggerDreamPhase(ctx: ExtensionContext, manual = false) {
 		}
 
 		const child = spawn(process.argv[0], childArgs, {
-			env: { ...process.env, [DREAM_CHILD_ENV]: "1" },
+			env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", [DREAM_CHILD_ENV]: "1" },
 			stdio: "ignore",
 			detached: true,
 		});

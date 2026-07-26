@@ -35,6 +35,7 @@ import {
 	resetApiProviders,
 	streamSimple,
 } from "@earendil-works/metis-ai/compat";
+import { generateSessionName } from "./session-name-generator.ts";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
@@ -140,7 +141,14 @@ export type AgentSessionEvent =
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
 	| { type: "entry_appended"; entry: SessionEntry }
 	| { type: "session_info_changed"; name: string | undefined }
+	| {
+			type: "session_name_generation";
+			status: "started" | "completed" | "failed";
+			name?: string;
+			error?: string;
+	  }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
+	| { type: "subagent_status"; runningCount: number; runningJobIds: readonly string[] }
 	| {
 			type: "compaction_end";
 			reason: "manual" | "threshold" | "overflow";
@@ -189,6 +197,8 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Whether to automatically generate an AI-summarized session title. Default: true */
+	autoSessionName?: boolean;
 }
 
 export interface ExtensionBindings {
@@ -324,6 +334,10 @@ export class AgentSession {
 	private _extensionErrorListener?: ExtensionErrorListener;
 	private _extensionErrorUnsubscriber?: () => void;
 
+	private _isGeneratingSessionName = false;
+	private _sessionNameError?: string;
+	private _autoSessionName = true;
+
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
 
@@ -344,6 +358,9 @@ export class AgentSession {
 	private _workingMemoryCheckpointDue = false;
 	private _workingMemoryErrorDue = false;
 	private _workingMemoryNeedsRefresh = true;
+	private _subagentLaunchBatchOpen = false;
+	private _subagentBarrierActiveToolNames: string[] | undefined;
+	private readonly _pendingSubagentResults = new Map<string, string>();
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -354,6 +371,7 @@ export class AgentSession {
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
 		this._modelRegistry = config.modelRegistry;
+		this._autoSessionName = config.autoSessionName ?? false;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
@@ -448,6 +466,7 @@ export class AgentSession {
 	}
 
 	private _createWorkingMemoryReminder(): CustomMessage | undefined {
+		if (this._subagentLaunchBatchOpen || this._runningSubagentIds.size > 0) return undefined;
 		if (!this.settingsManager.getWorkingMemoryEnabled()) return undefined;
 		if (!this._workingMemoryCheckpointDue && !this._workingMemoryErrorDue) return undefined;
 
@@ -525,6 +544,15 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
+			const subagentBarrierActive = this._subagentLaunchBatchOpen || this._runningSubagentIds.size > 0;
+			const canExtendLaunchBatch = this._subagentLaunchBatchOpen && toolCall.name === "subagent";
+			if (subagentBarrierActive && !canExtendLaunchBatch) {
+				return {
+					block: true,
+					reason: "Blocked while Subagent work is active. Do not call tools, create checkpoints, log progress, or continue work. Wait until every running Subagent returns.",
+				};
+			}
+
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
 				return undefined;
@@ -625,6 +653,78 @@ export class AgentSession {
 			steering: [...this._steeringMessages],
 			followUp: [...this._followUpMessages],
 		});
+	}
+
+	private readonly _runningSubagentIds = new Set<string>();
+
+	private _restoreToolsAfterSubagentBarrier(): void {
+		if (!this._subagentBarrierActiveToolNames) return;
+		const toolNames = this._subagentBarrierActiveToolNames;
+		this._subagentBarrierActiveToolNames = undefined;
+		this.setActiveToolsByName(toolNames);
+	}
+
+	private _closeSubagentLaunchBatch(): void {
+		if (!this._subagentLaunchBatchOpen) return;
+		this._subagentLaunchBatchOpen = false;
+		if (this._runningSubagentIds.size > 0) {
+			this.setActiveToolsByName([]);
+		} else {
+			this._restoreToolsAfterSubagentBarrier();
+			this._flushPendingSubagentResults();
+		}
+	}
+
+	private _queueSubagentResult(jobId: string, result: string): void {
+		this._pendingSubagentResults.set(jobId, result);
+		if (this._subagentLaunchBatchOpen || this._runningSubagentIds.size > 0) return;
+		this._flushPendingSubagentResults();
+	}
+
+	private _flushPendingSubagentResults(): void {
+		const results = [...this._pendingSubagentResults.entries()];
+		if (results.length === 0) return;
+		this._pendingSubagentResults.clear();
+		const content = results
+			.map(([completedJobId, completedResult]) => `[Subagent Job ${completedJobId} finished]\n\n${completedResult}`)
+			.join("\n\n");
+		void this.sendCustomMessage({
+			customType: "subagent_result",
+			content: [{ type: "text", text: content }],
+			display: true,
+		}, { triggerTurn: true, deliverAs: "followUp" }).catch(console.error);
+	}
+
+	private _setSubagentRunning(jobId: string, running: boolean): void {
+		const previousCount = this._runningSubagentIds.size;
+		if (running) {
+			if (!this._subagentBarrierActiveToolNames) {
+				this._subagentBarrierActiveToolNames = this.getActiveToolNames();
+			}
+			this._subagentLaunchBatchOpen = true;
+			this._runningSubagentIds.add(jobId);
+			this.setActiveToolsByName(this._toolRegistry.has("subagent") ? ["subagent"] : []);
+		} else {
+			this._runningSubagentIds.delete(jobId);
+			if (this._runningSubagentIds.size === 0 && !this._subagentLaunchBatchOpen) {
+				this._restoreToolsAfterSubagentBarrier();
+			}
+		}
+		if (this._runningSubagentIds.size !== previousCount) {
+			this._emit({
+				type: "subagent_status",
+				runningCount: this._runningSubagentIds.size,
+				runningJobIds: [...this._runningSubagentIds],
+			});
+		}
+	}
+
+	getRunningSubagentCount(): number {
+		return this._runningSubagentIds.size;
+	}
+
+	getRunningSubagentIds(): string[] {
+		return [...this._runningSubagentIds];
 	}
 
 	// Track last assistant message for auto-compaction check
@@ -781,6 +881,7 @@ export class AgentSession {
 				toolResults: event.toolResults,
 			};
 			await this._extensionRunner.emit(extensionEvent);
+			this._closeSubagentLaunchBatch();
 			this._turnIndex++;
 		} else if (event.type === "message_start") {
 			const extensionEvent: MessageStartEvent = {
@@ -1013,6 +1114,14 @@ export class AgentSession {
 	/** Current session display name, if set */
 	get sessionName(): string | undefined {
 		return this.sessionManager.getSessionName();
+	}
+
+	get isGeneratingSessionName(): boolean {
+		return this._isGeneratingSessionName;
+	}
+
+	get sessionNameError(): string | undefined {
+		return this._sessionNameError;
 	}
 
 	/** Scoped models for cycling (from --models flag) */
@@ -2576,13 +2685,8 @@ export class AgentSession {
 					read: { autoResizeImages },
 					bash: { commandPrefix: shellCommandPrefix, shellPath },
 					subagent: {
-						sendMessage: (jobId, result) => {
-							this.sendCustomMessage({
-								customType: "subagent_result",
-								content: [{ type: "text", text: `[Subagent Job ${jobId} finished]\n\n${result}` }],
-								display: true
-							}, { triggerTurn: true, deliverAs: "followUp" }).catch(console.error);
-						}
+						onStatusChange: (jobId, running) => this._setSubagentRunning(jobId, running),
+						sendMessage: (jobId, result) => this._queueSubagentResult(jobId, result),
 					}
 				});
 
@@ -2859,6 +2963,53 @@ export class AgentSession {
 		const event = { type: "session_info_changed", name: this.sessionManager.getSessionName() } as const;
 		this._emit(event);
 		void this._extensionRunner.emit(event);
+	}
+
+	/**
+	 * Ensure the session has a display name. If none is set, generate an AI summary title asynchronously.
+	 */
+	async ensureSessionName(): Promise<string | undefined> {
+		if (!this._autoSessionName || this.sessionName || this._isGeneratingSessionName) {
+			return this.sessionName;
+		}
+
+		if (!this.model) {
+			return undefined;
+		}
+
+		const hasUser = this.messages.some((m) => m.role === "user");
+		const hasAssistant = this.messages.some((m) => m.role === "assistant");
+		if (!hasUser || !hasAssistant) {
+			return undefined;
+		}
+
+		this._isGeneratingSessionName = true;
+		this._sessionNameError = undefined;
+		this._emit({ type: "session_name_generation", status: "started" });
+
+		try {
+			const name = await generateSessionName({
+				model: this.model,
+				modelRegistry: this._modelRegistry,
+				messages: this.messages,
+			});
+
+			if (name) {
+				this.setSessionName(name);
+				this._emit({ type: "session_name_generation", status: "completed", name });
+				return name;
+			} else {
+				this._emit({ type: "session_name_generation", status: "completed" });
+			}
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this._sessionNameError = message;
+			this._emit({ type: "session_name_generation", status: "failed", error: message });
+		} finally {
+			this._isGeneratingSessionName = false;
+		}
+
+		return this.sessionName;
 	}
 
 	// =========================================================================

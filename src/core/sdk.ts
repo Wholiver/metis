@@ -82,6 +82,8 @@ export interface CreateAgentSessionOptions {
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
 	resourceLoader?: ResourceLoader;
 
+	/** Whether to automatically generate an AI-summarized session title. Default: true */
+	autoSessionName?: boolean;
 	/** Session manager. Default: SessionManager.create(cwd) */
 	sessionManager?: SessionManager;
 
@@ -410,6 +412,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		excludedToolNames,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
+		autoSessionName: options.autoSessionName ?? true,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 

@@ -23,6 +23,7 @@ function createSession(options: {
   provider?: string;
   reasoning?: boolean;
   thinkingLevel?: string;
+  runningSubagents?: number;
   usage?: AssistantUsage;
 }): AgentSession {
   const usage = options.usage;
@@ -55,6 +56,7 @@ function createSession(options: {
       getCwd: () => "/tmp/project",
     },
     getContextUsage: () => ({ contextWindow: 200_000, percent: 12.3 }),
+    getRunningSubagentCount: () => options.runningSubagents ?? 0,
     modelRegistry: {
       isUsingOAuth: () => false,
     },
@@ -145,6 +147,24 @@ describe("FooterComponent width handling", () => {
     for (const line of lines) {
       expect(visibleWidth(line)).toBeLessThanOrEqual(width);
     }
+  });
+
+  it("shows one running subagent above the model line", () => {
+    const session = createSession({ sessionName: "", runningSubagents: 1 });
+    const footer = new FooterComponent(session, createFooterData(1));
+    const lines = footer.render(80).map(stripAnsi);
+
+    expect(lines).toHaveLength(3);
+    expect(lines[1].trim()).toBe("1 running subagent");
+    expect(lines[2]).toContain("test-model");
+  });
+
+  it("pluralizes multiple running subagents", () => {
+    const session = createSession({ sessionName: "", runningSubagents: 3 });
+    const footer = new FooterComponent(session, createFooterData(1));
+    const lines = footer.render(80).map(stripAnsi);
+
+    expect(lines[1].trim()).toBe("3 running subagents");
   });
 
   it("shows the latest cache hit rate when cache usage is present", () => {

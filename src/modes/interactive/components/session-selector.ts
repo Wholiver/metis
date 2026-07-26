@@ -19,7 +19,13 @@ import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint, keyText } from "./keybinding-hints.ts";
-import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.ts";
+import {
+	filterAndSortSessions,
+	filterResumeSessions,
+	hasSessionName,
+	type NameFilter,
+	type SortMode,
+} from "./session-selector-search.ts";
 
 type SessionScope = "current" | "all";
 
@@ -359,7 +365,7 @@ class SessionList implements Component, Focusable {
 	}
 
 	setSessions(sessions: SessionInfo[], showCwd: boolean): void {
-		this.allSessions = sessions;
+		this.allSessions = filterResumeSessions(sessions);
 		this.showCwd = showCwd;
 		this.filterSessions(this.searchInput.getValue());
 	}

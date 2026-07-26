@@ -55,6 +55,7 @@ import {
 	getAuthPath,
 	getDebugLogPath,
 	getDocsPath,
+	getModelsPath,
 	getShareViewerUrl,
 	VERSION,
 } from "../../config.ts";
@@ -76,6 +77,7 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
+import { fetchOtherProviderModels, saveOtherProviderConfig } from "../../core/model-registry.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.ts";
@@ -2911,6 +2913,10 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 
+			case "subagent_status":
+				this.ui.requestRender();
+				break;
+
 			case "entry_appended":
 				if (event.entry.type === "custom") {
 					this.addCustomEntryToChat(event.entry);
@@ -4833,26 +4839,38 @@ export class InteractiveMode {
 		const authStorage = this.session.modelRegistry.authStorage;
 		const oauthProviders = authStorage.getOAuthProviders();
 		const oauthProviderIds = new Set(oauthProviders.map((provider) => provider.id));
-		const options: AuthSelectorProvider[] = oauthProviders.map((provider) => ({
-			id: provider.id,
-			name: provider.name,
-			authType: "oauth",
-		}));
+		const options: AuthSelectorProvider[] = oauthProviders
+			.map((provider) => ({
+				id: provider.id,
+				name: provider.name,
+				authType: "oauth" as const,
+			}))
+			.sort((a, b) => a.name.localeCompare(b.name));
 
 		const modelProviders = new Set(this.session.modelRegistry.getAll().map((model) => model.provider));
+		const apiKeyOptions: AuthSelectorProvider[] = [];
 		for (const providerId of modelProviders) {
+			if (providerId === "other") continue;
 			if (!isApiKeyLoginProvider(providerId, oauthProviderIds)) {
 				continue;
 			}
-			options.push({
+			apiKeyOptions.push({
 				id: providerId,
 				name: this.session.modelRegistry.getProviderDisplayName(providerId),
 				authType: "api_key",
 			});
 		}
 
-		const filteredOptions = authType ? options.filter((option) => option.authType === authType) : options;
-		return filteredOptions.sort((a, b) => a.name.localeCompare(b.name));
+		apiKeyOptions.sort((a, b) => a.name.localeCompare(b.name));
+		apiKeyOptions.push({
+			id: "other",
+			name: "others",
+			authType: "api_key",
+		});
+
+		if (authType === "oauth") return options;
+		if (authType === "api_key") return apiKeyOptions;
+		return [...options, ...apiKeyOptions];
 	}
 
 	private getLogoutProviderOptions(): AuthSelectorProvider[] {
@@ -4921,6 +4939,8 @@ export class InteractiveMode {
 						await this.showLoginDialog(providerOption.id, providerOption.name);
 					} else if (providerOption.id === BEDROCK_PROVIDER_ID) {
 						this.showBedrockSetupDialog(providerOption.id, providerOption.name);
+					} else if (providerOption.id === "other") {
+						await this.showOtherProviderLoginDialog(providerOption.id, providerOption.name);
 					} else {
 						await this.showApiKeyLoginDialog(providerOption.id, providerOption.name);
 					}
@@ -5000,7 +5020,18 @@ export class InteractiveMode {
 			const availableModels = this.session.modelRegistry.getAvailable();
 			const providerModels = availableModels.filter((model) => model.provider === providerId);
 			if (!hasDefaultModelProvider(providerId)) {
-				selectionError = `${actionLabel}, but no default model is configured for provider "${providerId}". Use /model to select a model.`;
+				if (providerModels.length > 0) {
+					selectedModel = providerModels[0];
+					try {
+						await this.session.setModel(selectedModel);
+					} catch (error: unknown) {
+						selectedModel = undefined;
+						const errorMessage = error instanceof Error ? error.message : String(error);
+						selectionError = `${actionLabel}, but selecting model failed: ${errorMessage}. Use /model to select a model.`;
+					}
+				} else {
+					selectionError = `${actionLabel}, but no default model is configured for provider "${providerId}". Use /model to select a model.`;
+				}
 			} else if (providerModels.length === 0) {
 				selectionError = `${actionLabel}, but no models are available for that provider. Use /model to select a model.`;
 			} else {
@@ -5104,6 +5135,71 @@ export class InteractiveMode {
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			if (errorMsg !== "Login cancelled") {
 				this.showError(`Failed to save API key for ${providerName}: ${errorMsg}`);
+			}
+		}
+	}
+
+	private async showOtherProviderLoginDialog(providerId: string, providerName: string): Promise<void> {
+		const previousModel = this.session.model;
+
+		const dialog = new LoginDialogComponent(
+			this.ui,
+			providerId,
+			(_success, _message) => {},
+			providerName,
+		);
+
+		this.editorContainer.clear();
+		this.editorContainer.addChild(dialog);
+		this.ui.setFocus(dialog);
+		this.ui.requestRender();
+
+		const restoreEditor = () => {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+			this.ui.requestRender();
+		};
+
+		try {
+			// Page 1: Input provider name
+			const customName = (await dialog.showPrompt("Enter provider name:")).trim();
+			if (!customName) {
+				throw new Error("Provider name cannot be empty.");
+			}
+
+			// Update title for Page 2 and 3
+			dialog.setTitle(`Login to ${customName}`);
+
+			// Page 2: Input API base URL
+			const baseUrl = (await dialog.showPrompt("Enter API base URL:")).trim();
+			if (!baseUrl) {
+				throw new Error("API base URL cannot be empty.");
+			}
+
+			// Page 3: Input API key
+			const apiKey = (await dialog.showPrompt("Enter API key:")).trim();
+			if (!apiKey) {
+				throw new Error("API key cannot be empty.");
+			}
+
+			dialog.showProgress("Fetching available models from endpoint...");
+			const fetchedModelIds = await fetchOtherProviderModels(baseUrl, apiKey);
+
+			this.session.modelRegistry.authStorage.set(providerId, { type: "api_key", key: apiKey });
+
+			const modelsPath = this.session.modelRegistry.getModelsJsonPath() ?? getModelsPath();
+			saveOtherProviderConfig(modelsPath, providerId, customName, baseUrl, fetchedModelIds);
+
+			this.session.modelRegistry.refresh();
+
+			restoreEditor();
+			await this.completeProviderAuthentication(providerId, customName, "api_key", previousModel);
+		} catch (error: unknown) {
+			restoreEditor();
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			if (errorMsg !== "Login cancelled") {
+				this.showError(`Failed to save configuration for ${providerName}: ${errorMsg}`);
 			}
 		}
 	}

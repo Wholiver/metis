@@ -14,22 +14,42 @@ const subagentSchema = Type.Object({
 	task: Type.String({ description: "The task to be executed by the subagent" }),
 });
 
+export const SUBAGENT_COORDINATION_GUIDANCE = [
+	"Spawn a background subagent to execute a task in parallel.",
+	"When you already intend to launch two or more subagents at the same planning point, issue all of those subagent tool calls consecutively as one uninterrupted batch.",
+	"Do not place reasoning text, status text, or any other tool call between consecutive planned subagent calls.",
+	"Do not emit a user-facing launch count or waiting notice after the calls; the application UI already shows every running subagent.",
+	"As soon as any subagent has started, every currently running subagent forms one strict synchronization barrier.",
+	"After the final planned launch, end the turn without status text. Do not take any next step, call any tool, continue independent work, acknowledge or summarize a result, or produce an answer until every running subagent has returned.",
+	"Receiving one result never releases this barrier while another subagent is still running; keep waiting silently until the last result arrives, then process all received results together.",
+	"This barrier applies to a single subagent and to multiple subagents, whether their tasks are related or independent. There are no exceptions for separate work.",
+	"This batching rule does not apply when the need for another subagent is discovered only after substantial intervening work or a long interval.",
+	"Never repeat, duplicate, independently investigate, browse, search, verify, checkpoint, log, or use another tool while this barrier is active.",
+	"Do not acknowledge or summarize partial subagent results, and do not produce an interim answer; synthesize once after all results arrive.",
+	"Do not emit waiting, acknowledgement, progress, or status-only messages while results are pending.",
+	"Each finished subagent automatically sends a system message containing its result.",
+].join(" ");
+
 export type SubagentToolInput = Static<typeof subagentSchema>;
 
 export interface SubagentToolOptions {
 	sendMessage?: (jobId: string, result: string) => void;
+	onStatusChange?: (jobId: string, running: boolean) => void;
 }
 
 function getMetisInvocation(): { command: string; args: string[] } {
 	const currentScript = process.argv[1];
 	const isBunVirtualScript = currentScript?.startsWith("/$bunfs/root/");
+	const isElectron = Boolean(process.versions.electron || process.env.ELECTRON_RUN_AS_NODE);
+
 	if (currentScript && !isBunVirtualScript && existsSync(currentScript)) {
-		return { command: process.execPath, args: [currentScript] };
+		const nodeCmd = isElectron ? "node" : process.execPath;
+		return { command: nodeCmd, args: [currentScript] };
 	}
 
 	const execName = path.basename(process.execPath).toLowerCase();
 	const isGenericRuntime = /^(node|bun)(\.exe)?$/.test(execName);
-	if (!isGenericRuntime) {
+	if (!isGenericRuntime && !isElectron) {
 		return { command: process.execPath, args: [] };
 	}
 
@@ -43,14 +63,15 @@ export function createSubagentToolDefinition(
 	return {
 		name: "subagent",
 		label: "subagent",
-		description: "Spawn a background subagent to execute a task in parallel. You MUST WAIT for the subagent to finish before proceeding. Do NOT perform other tasks. When the subagent finishes, it will automatically push a system message to wake you up with the result.",
+		description: SUBAGENT_COORDINATION_GUIDANCE,
 		promptSnippet: "Delegate tasks to subagents",
 		parameters: subagentSchema,
+		executionMode: "sequential",
 		async execute(toolCallId, { title, task }, _signal, _onUpdate, _ctx) {
 			const jobId = toolCallId.slice(-6);
 			
 			const tempFile = path.join(cwd, `.metis-subagent-${jobId}.txt`);
-			await fs.writeFile(tempFile, task, "utf-8");
+			await fs.writeFile(tempFile, `[SUBAGENT TASK]\n${task}`, "utf-8");
 
 			const invocation = getMetisInvocation();
 			const args = [
@@ -69,7 +90,7 @@ export function createSubagentToolDefinition(
 				cwd,
 				detached: true,
 				stdio: ["ignore", outFd, outFd],
-				env: { ...process.env, METIS_OFFLINE: "1" }
+				env: { ...process.env, METIS_OFFLINE: "1", ELECTRON_RUN_AS_NODE: "1" }
 			});
 
 			try {
@@ -78,7 +99,16 @@ export function createSubagentToolDefinition(
 				// Ignore
 			}
 
+			let settled = false;
+			const settle = (): boolean => {
+				if (settled) return false;
+				settled = true;
+				options?.onStatusChange?.(jobId, false);
+				return true;
+			};
+
 			child.on("close", async () => {
+				if (!settle()) return;
 				try {
 					await fs.unlink(tempFile);
 				} catch (e) {
@@ -95,11 +125,16 @@ export function createSubagentToolDefinition(
 					}
 				}
 			});
+			child.on("error", (error) => {
+				if (!settle()) return;
+				options?.sendMessage?.(jobId, `(Subagent failed to start: ${error.message})`);
+			});
 
+			options?.onStatusChange?.(jobId, true);
 			child.unref();
 
 			return {
-				content: [{ type: "text", text: `Subagent Job ${jobId} started in the background. You MUST WAIT for it to finish. Do NOT perform any other tool calls. Wait patiently for the system message that will automatically wake you up with the final output.` }],
+				content: [{ type: "text", text: `Subagent Job ${jobId} started in the background. Finish any already-planned consecutive subagent calls first, without intervening text. Do not emit a user-facing launch count or waiting notice; the application UI already shows every running subagent. After the final planned launch, end the turn without status text. From the moment any subagent starts, every running subagent forms one strict synchronization barrier. Do not call tools, continue independent work, checkpoint, log, acknowledge partial results, summarize, or answer. Wait silently until every running subagent has returned, even when tasks are independent, then process all results together. Results arrive automatically.` }],
 				details: undefined
 			};
 		},

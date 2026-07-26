@@ -71,6 +71,7 @@ export interface HarnessOptions {
 	resourceLoader?: ResourceLoader;
 	extensionFactories?: Array<ExtensionFactory | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
+	autoSessionName?: boolean;
 }
 
 export interface Harness {
@@ -185,6 +186,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		allowedToolNames: options.allowedToolNames,
 		excludedToolNames: options.excludedToolNames,
 		extensionRunnerRef,
+		autoSessionName: options.autoSessionName,
 	});
 
 	const events: AgentSessionEvent[] = [];

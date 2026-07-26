@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../src/core/session-manager.ts";
-import { filterAndSortSessions } from "../src/modes/interactive/components/session-selector-search.ts";
+import {
+	filterAndSortSessions,
+	filterResumeSessions,
+} from "../src/modes/interactive/components/session-selector-search.ts";
 
 function makeSession(
 	overrides: Partial<SessionInfo> & { id: string; modified: Date; allMessagesText: string },
@@ -19,6 +22,17 @@ function makeSession(
 }
 
 describe("session selector search", () => {
+	it("hides Dream and Subagent sessions from resume lists", () => {
+		const sessions = [
+			makeSession({ id: "normal", modified: new Date(0), allMessagesText: "normal", firstMessage: "Normal task" }),
+			makeSession({ id: "dream", modified: new Date(0), allMessagesText: "dream", firstMessage: "[BACKGROUND DREAM PHASE TASK]\nConsolidate" }),
+			makeSession({ id: "subagent", modified: new Date(0), allMessagesText: "subagent", firstMessage: '<file name="/work/.metis-subagent-abc123.txt">\n[SUBAGENT TASK]\nInspect' }),
+			makeSession({ id: "legacy-subagent", modified: new Date(0), allMessagesText: "subagent", firstMessage: '<file name="C:\\work\\.metis-subagent-def456.txt">\nInspect' }),
+		];
+
+		expect(filterResumeSessions(sessions).map((session) => session.id)).toEqual(["normal"]);
+	});
+
 	it("filters by quoted phrase with whitespace normalization", () => {
 		const sessions: SessionInfo[] = [
 			makeSession({

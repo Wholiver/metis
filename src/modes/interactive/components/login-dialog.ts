@@ -11,6 +11,7 @@ import { keyHint } from "./keybinding-hints.ts";
 export class LoginDialogComponent extends Container implements Focusable {
 	private contentContainer: Container;
 	private input: Input;
+	private titleComponent: Text;
 	private tui: TUI;
 	private abortController = new AbortController();
 	private inputResolver?: (value: string) => void;
@@ -46,7 +47,8 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.addChild(new DynamicBorder());
 
 		// Title
-		this.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
+		this.titleComponent = new Text(theme.fg("accent", theme.bold(title)), 1, 0);
+		this.addChild(this.titleComponent);
 
 		// Dynamic content area
 		this.contentContainer = new Container();
@@ -73,6 +75,16 @@ export class LoginDialogComponent extends Container implements Focusable {
 
 	get signal(): AbortSignal {
 		return this.abortController.signal;
+	}
+
+	setTitle(title: string): void {
+		const index = this.children.indexOf(this.titleComponent);
+		const newTitleText = new Text(theme.fg("accent", theme.bold(title)), 1, 0);
+		if (index >= 0) {
+			this.children[index] = newTitleText;
+			this.titleComponent = newTitleText;
+		}
+		this.tui.requestRender();
 	}
 
 	private replaceInputWithSubmittedText(value: string): void {

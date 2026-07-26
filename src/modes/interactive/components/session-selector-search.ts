@@ -5,6 +5,10 @@ export type SortMode = "threaded" | "recent" | "relevance";
 
 export type NameFilter = "all" | "named";
 
+const DREAM_TASK_PATTERN = /^\[BACKGROUND DREAM PHASE(?: TASK)?\]/;
+const SUBAGENT_TASK_PATTERN = /(?:^|\n)\[SUBAGENT TASK\](?:\r?\n|$)/;
+const SUBAGENT_FILE_PATTERN = /^<file name="[^"]*[\\/]\.metis-subagent-[^"]+\.txt">/;
+
 export interface ParsedSearchQuery {
 	mode: "tokens" | "regex";
 	tokens: { kind: "fuzzy" | "phrase"; value: string }[];
@@ -29,6 +33,17 @@ function getSessionSearchText(session: SessionInfo): string {
 
 export function hasSessionName(session: SessionInfo): boolean {
 	return Boolean(session.name?.trim());
+}
+
+export function isInternalSession(session: SessionInfo): boolean {
+	const firstMessage = session.firstMessage.trimStart();
+	return DREAM_TASK_PATTERN.test(firstMessage)
+		|| SUBAGENT_TASK_PATTERN.test(firstMessage)
+		|| SUBAGENT_FILE_PATTERN.test(firstMessage);
+}
+
+export function filterResumeSessions(sessions: SessionInfo[]): SessionInfo[] {
+	return sessions.filter((session) => !isInternalSession(session));
 }
 
 function matchesNameFilter(session: SessionInfo, filter: NameFilter): boolean {

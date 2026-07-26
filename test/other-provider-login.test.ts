@@ -1,0 +1,101 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthStorage } from "../src/core/auth-storage.ts";
+import { fetchOtherProviderModels, ModelRegistry, saveOtherProviderConfig } from "../src/core/model-registry.ts";
+
+describe("Other provider setup and login flow", () => {
+	let tempDir: string;
+	let authPath: string;
+	let modelsPath: string;
+	let authStorage: AuthStorage;
+
+	beforeEach(() => {
+		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "metis-other-provider-test-"));
+		authPath = path.join(tempDir, "auth.json");
+		modelsPath = path.join(tempDir, "models.json");
+		authStorage = AuthStorage.create(authPath);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	it("saves 'other' provider config to models.json and updates display name in ModelRegistry", () => {
+		saveOtherProviderConfig(modelsPath, "other", "My Custom LLM", "https://api.myllm.com/v1");
+
+		expect(fs.existsSync(modelsPath)).toBe(true);
+		const content = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
+		expect(content.providers.other).toBeDefined();
+		expect(content.providers.other.name).toBe("My Custom LLM");
+		expect(content.providers.other.baseUrl).toBe("https://api.myllm.com/v1");
+		expect(content.providers.other.api).toBe("openai-completions");
+		expect(content.providers.other.models).toEqual([{ id: "default" }]);
+
+		const registry = ModelRegistry.create(authStorage, modelsPath);
+		expect(registry.getProviderDisplayName("other")).toBe("My Custom LLM");
+
+		const models = registry.getAll();
+		const otherModel = models.find((m) => m.provider === "other" && m.id === "default");
+		expect(otherModel).toBeDefined();
+		expect(otherModel?.baseUrl).toBe("https://api.myllm.com/v1");
+		expect(otherModel?.api).toBe("openai-completions");
+	});
+
+	it("saves fetched model list into models.json when modelIds are provided", () => {
+		const fetchedModels = ["gpt-4o", "gpt-4o-mini", "qwen-2.5-coder"];
+		saveOtherProviderConfig(modelsPath, "other", "My Custom LLM", "https://api.myllm.com/v1", fetchedModels);
+
+		const content = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
+		expect(content.providers.other.models).toEqual([
+			{ id: "gpt-4o" },
+			{ id: "gpt-4o-mini" },
+			{ id: "qwen-2.5-coder" },
+		]);
+
+		authStorage.set("other", { type: "api_key", key: "sk-test" });
+		const registry = ModelRegistry.create(authStorage, modelsPath);
+		const availableModels = registry.getAvailable().filter((m) => m.provider === "other");
+		expect(availableModels.map((m) => m.id)).toEqual(["gpt-4o", "gpt-4o-mini", "qwen-2.5-coder"]);
+	});
+
+	it("fetches available models from OpenAI-compatible /models endpoint", async () => {
+		const mockResponse = {
+			object: "list",
+			data: [{ id: "llama-3.3-70b" }, { id: "qwen-2.5-72b" }],
+		};
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => mockResponse,
+			}),
+		);
+
+		const models = await fetchOtherProviderModels("https://api.example.com/v1", "sk-secret");
+		expect(models).toEqual(["llama-3.3-70b", "qwen-2.5-72b"]);
+	});
+
+	it("preserves existing providers when updating 'other' provider in models.json", () => {
+		const initial = {
+			providers: {
+				existing: {
+					name: "Existing Provider",
+					baseUrl: "https://existing.com/v1",
+					api: "openai-completions",
+				},
+			},
+		};
+		fs.writeFileSync(modelsPath, JSON.stringify(initial, null, 2), "utf-8");
+
+		saveOtherProviderConfig(modelsPath, "other", "Another LLM", "https://another.com/v1");
+
+		const content = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
+		expect(content.providers.existing).toBeDefined();
+		expect(content.providers.other).toBeDefined();
+		expect(content.providers.other.name).toBe("Another LLM");
+	});
+});

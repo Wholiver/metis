@@ -283,7 +283,14 @@ export class FooterComponent implements Component {
       width,
       theme.fg("dim", "..."),
     );
-    const lines = [pwdLine, dimStatsLeft + dimRemainder];
+    const lines = [pwdLine];
+    const runningSubagentCount = this.session.getRunningSubagentCount();
+    if (runningSubagentCount > 0) {
+      const label = `${runningSubagentCount} running ${runningSubagentCount === 1 ? "subagent" : "subagents"}`;
+      const runningLine = `${" ".repeat(Math.max(0, width - visibleWidth(label)))}${label}`;
+      lines.push(theme.fg("dim", runningLine));
+    }
+    lines.push(dimStatsLeft + dimRemainder);
 
     if (otherStatuses.length > 0) {
       const statusLine = otherStatuses.map((status) => status.text).join(" ");
