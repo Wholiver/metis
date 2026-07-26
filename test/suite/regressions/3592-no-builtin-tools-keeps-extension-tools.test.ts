@@ -90,6 +90,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 		"remember_user_intent",
 		"subagent",
 		"user_intent",
+		"video",
 		"webfetch",
 		"websearch",
 		"write",
