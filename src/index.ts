@@ -356,8 +356,10 @@ export {
 	type RpcExtensionUIResponse,
 	type RpcResponse,
 	type RpcSessionState,
+	type ServerModeOptions,
 	runPrintMode,
 	runRpcMode,
+	runServerMode,
 } from "./modes/index.ts";
 // UI components for extensions
 export {

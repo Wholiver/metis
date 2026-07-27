@@ -1,0 +1,258 @@
+import { createRequire } from "node:module";
+import { describe, expect, it } from "vitest";
+
+const require = createRequire(import.meta.url);
+const { analyzeAssistantTurn, getSubagentProgress, getRunningSubagentCount, getSubagentToolCalls, shouldQueueDesktopMessage, getAssistantContentLayout, getAssistantWorkLayout, shouldHideAssistantWorkHeader, getAssistantTurnDuration, isSubagentLaunchNotice } = require("../desktop/renderer/message-turns.js") as {
+	analyzeAssistantTurn: (message: unknown, messages: unknown[], isStreaming: boolean) => {
+		hasCoT: boolean;
+		hasRunningSubagent: boolean;
+		isFinalAssistant: boolean;
+		isIntermediate: boolean;
+		shouldCollapse: boolean;
+	};
+	getSubagentProgress: (part: unknown, messages: unknown[]) => { jobId: string; state: "running" | "completed" | "failed" };
+	getRunningSubagentCount: (messages: unknown[]) => number;
+	getSubagentToolCalls: (messages: unknown[]) => Array<{ jobId: string; part: unknown }>;
+	shouldQueueDesktopMessage: (messages: unknown[], isStreaming: boolean) => boolean;
+	getAssistantContentLayout: (message: unknown, isFinalAssistant: boolean) => {
+		cotParts: unknown[];
+		finalResponsePart?: unknown;
+	};
+	getAssistantWorkLayout: (message: unknown, messages: unknown[], isFinalAssistant: boolean) => {
+		workItems: unknown[];
+		finalResponsePart?: unknown;
+	};
+	isSubagentLaunchNotice: (text: unknown) => boolean;
+	shouldHideAssistantWorkHeader: (message: unknown, messages: unknown[]) => boolean;
+	getAssistantTurnDuration: (message: unknown, messages: unknown[], timings: Record<string, unknown>, options?: { active?: boolean; now?: number }) => number | undefined;
+};
+
+describe("desktop assistant turn grouping", () => {
+	it("keeps empty parts from shifting CoT DOM layout", () => {
+		const waiting = { type: "text", text: "Waiting for subagent result." };
+		const toolCall = { type: "toolCall", id: "tool-call-kqpvqh", name: "subagent" };
+		const message = { role: "assistant", content: [
+			{ type: "thinking", thinking: "" },
+			waiting,
+			toolCall,
+			{ type: "text", text: "" },
+		] };
+
+		expect(getAssistantContentLayout(message, true)).toEqual({
+			cotParts: [waiting],
+			finalResponsePart: undefined,
+		});
+	});
+
+	it("selects only non-empty text after tool calls as the final response", () => {
+		const toolCall = { type: "toolCall", id: "tool-call-log001", name: "log" };
+		const answer = { type: "text", text: "Final answer" };
+		const message = { role: "assistant", content: [
+			{ type: "thinking", thinking: "Working" },
+			toolCall,
+			answer,
+			{ type: "text", text: "" },
+		] };
+
+		expect(getAssistantContentLayout(message, true)).toEqual({
+			cotParts: [message.content[0], toolCall],
+			finalResponsePart: answer,
+		});
+	});
+
+	it("omits Subagent tool calls from Thinking and collects them for the composer dock", () => {
+		const thinking = { type: "thinking", thinking: "Delegating" };
+		const toolCall = { type: "toolCall", id: "tool-call-kqpvqh", name: "subagent", arguments: { title: "Research" } };
+		const message = { role: "assistant", content: [thinking, toolCall] };
+
+		expect(getAssistantContentLayout(message, false)).toEqual({
+			cotParts: [thinking],
+			finalResponsePart: undefined,
+		});
+		expect(getSubagentToolCalls([message])).toEqual([{ jobId: "kqpvqh", part: toolCall }]);
+	});
+
+	it("adds a Subagent card at launch and updates its state at the original call position", () => {
+		const thinking = { type: "thinking", thinking: "Delegating" };
+		const toolCall = { type: "toolCall", id: "tool-call-kqpvqh", name: "subagent", arguments: { title: "Research" } };
+		const message = { role: "assistant", content: [thinking, toolCall] };
+		expect(getAssistantWorkLayout(message, [message], false)).toEqual({
+			workItems: [thinking, {
+				type: "subagentCard",
+				part: toolCall,
+				progress: { jobId: "kqpvqh", state: "running" },
+			}],
+			finalResponsePart: undefined,
+		});
+
+		const messages = [message, { role: "custom", customType: "subagent_result", content: "[Subagent Job kqpvqh finished]\n\nDone" }];
+		expect(getAssistantWorkLayout(message, messages, false)).toEqual({
+			workItems: [thinking, {
+				type: "subagentCard",
+				part: toolCall,
+				progress: { jobId: "kqpvqh", state: "completed" },
+			}],
+			finalResponsePart: undefined,
+		});
+	});
+
+	it("filters redundant Subagent launch notices now represented by the UI", () => {
+		expect(isSubagentLaunchNotice("已启动 2 个 Subagent，正在等待它们返回结果。")).toBe(true);
+		expect(isSubagentLaunchNotice("Started 2 Subagents; waiting for their results.")).toBe(true);
+		expect(isSubagentLaunchNotice("Subagent results are ready.")).toBe(false);
+	});
+
+	it("shows one Worked header across Subagent-separated reasoning chunks", () => {
+		const firstReasoning = { role: "assistant", content: [{ type: "thinking", thinking: "Delegating" }] };
+		const subagentLaunch = { role: "assistant", content: [{ type: "toolCall", id: "tool-call-kqpvqh", name: "subagent" }] };
+		const acknowledgement = { role: "assistant", content: [{ type: "text", text: "Waiting" }] };
+		const resumedReasoning = { role: "assistant", content: [{ type: "thinking", thinking: "Synthesizing" }] };
+		const messages = [{ role: "user", content: "news" }, firstReasoning, subagentLaunch, acknowledgement, resumedReasoning];
+
+		expect(shouldHideAssistantWorkHeader(firstReasoning, messages)).toBe(false);
+		expect(shouldHideAssistantWorkHeader(resumedReasoning, messages)).toBe(true);
+		expect(shouldHideAssistantWorkHeader(subagentLaunch, messages)).toBe(true);
+	});
+
+	it("restores full turn duration from persisted assistant completion time", () => {
+		const user = { role: "user", content: "news", timestamp: 1_000 };
+		const delegated = { role: "assistant", content: [{ type: "thinking", thinking: "Delegating" }], timestamp: 2_000 };
+		const resumed = { role: "assistant", content: [{ type: "text", text: "Final" }], timestamp: 7_000 };
+		const messages = [user, delegated, { role: "custom", customType: "subagent_result", timestamp: 6_000 }, resumed];
+
+		expect(getAssistantTurnDuration(delegated, messages, {
+			"7000": { completedAt: 9_500 },
+		})).toBe(8.5);
+	});
+
+	it("keeps the full turn timer running while a Subagent is active", () => {
+		const user = { role: "user", content: "news", timestamp: 1_000 };
+		const delegated = { role: "assistant", content: [{ type: "thinking", thinking: "Delegating" }], timestamp: 2_000 };
+		const messages = [user, delegated];
+
+		expect(getAssistantTurnDuration(delegated, messages, {}, { active: true, now: 11_200 })).toBe(10.2);
+	});
+
+	it("keeps completed subagent work expanded while keeping final response separate", () => {
+		const reasoning = { role: "assistant", content: [{ type: "thinking", thinking: "spawn agent" }, { type: "toolCall", id: "tool-call-kqpvqh", name: "subagent" }] };
+		const waiting = { role: "assistant", content: [{ type: "text", text: "Waiting for subagent." }] };
+		const resumed = { role: "assistant", content: [{ type: "thinking", thinking: "subagent returned" }] };
+		const final = { role: "assistant", content: [{ type: "text", text: "Final news summary" }] };
+		const messages = [
+			{ role: "user", content: "news" },
+			reasoning,
+			{ role: "toolResult", toolCallId: "tool-call-kqpvqh" },
+			waiting,
+			{ role: "custom", customType: "subagent_result", content: "[Subagent Job kqpvqh finished]\n\nDone" },
+			resumed,
+			final,
+		];
+
+		expect(analyzeAssistantTurn(reasoning, messages, false)).toMatchObject({ hasCoT: true, isIntermediate: true, shouldCollapse: false });
+		expect(analyzeAssistantTurn(waiting, messages, false)).toMatchObject({ hasCoT: true, isIntermediate: true, shouldCollapse: false });
+		expect(analyzeAssistantTurn(final, messages, false)).toMatchObject({ hasCoT: true, isFinalAssistant: true, shouldCollapse: false });
+	});
+
+	it.each(["openai", "anthropic", "google"])("keeps %s thinking content expanded after completion", (provider) => {
+		const reasoning = {
+			role: "assistant",
+			provider,
+			content: [{ type: "thinking", thinking: `${provider} reasoning` }],
+		};
+		const final = { role: "assistant", provider, content: [{ type: "text", text: "Final answer" }] };
+		const messages = [{ role: "user", content: "question" }, reasoning, final];
+
+		expect(analyzeAssistantTurn(reasoning, messages, false)).toMatchObject({
+			hasCoT: true,
+			shouldCollapse: false,
+		});
+	});
+
+	it("keeps current work expanded while streaming", () => {
+		const working = { role: "assistant", content: [{ type: "thinking", thinking: "working" }, { type: "text", text: "status" }] };
+		const messages = [{ role: "user", content: "task" }, working];
+
+		expect(analyzeAssistantTurn(working, messages, true).shouldCollapse).toBe(false);
+	});
+
+	it("keeps background Subagent work active between agent turns", () => {
+		const launch = { role: "assistant", content: [{ type: "toolCall", id: "tool-call-kqpvqh", name: "subagent" }] };
+		const waiting = { role: "assistant", content: [{ type: "text", text: "Waiting for subagent." }] };
+		const messages = [
+			{ role: "user", content: "task" },
+			launch,
+			{ role: "toolResult", toolCallId: "tool-call-kqpvqh", content: "started" },
+			waiting,
+		];
+
+		expect(analyzeAssistantTurn(launch, messages, false)).toMatchObject({ hasRunningSubagent: true, shouldCollapse: false });
+	});
+
+	it("does not collapse turns without reasoning or tools", () => {
+		const final = { role: "assistant", content: [{ type: "text", text: "answer" }] };
+		const messages = [{ role: "user", content: "question" }, final];
+
+		expect(analyzeAssistantTurn(final, messages, false)).toMatchObject({ hasCoT: false, shouldCollapse: false });
+	});
+
+	it("keeps the last substantive assistant as final when a trailing placeholder is empty", () => {
+		const reasoning = { role: "assistant", content: [{ type: "thinking", thinking: "Summarizing" }] };
+		const final = { role: "assistant", content: [{ type: "text", text: "Final answer" }] };
+		const placeholder = { role: "assistant", content: [] };
+		const messages = [{ role: "user", content: "question" }, reasoning, final, placeholder];
+
+		expect(analyzeAssistantTurn(final, messages, false)).toMatchObject({
+			hasFinalResponse: true,
+			isFinalAssistant: true,
+			shouldCollapse: false,
+		});
+		expect(analyzeAssistantTurn(placeholder, messages, false).isFinalAssistant).toBe(false);
+	});
+});
+
+describe("desktop subagent progress", () => {
+	it("stays running after the background launch tool result", () => {
+		const part = { id: "tool-call-kqpvqh", name: "subagent" };
+		const messages = [{ role: "toolResult", toolCallId: part.id, content: "Subagent Job kqpvqh started" }];
+
+		expect(getSubagentProgress(part, messages)).toEqual({ jobId: "kqpvqh", state: "running" });
+	});
+
+	it("completes only when the matching subagent result arrives", () => {
+		const part = { id: "tool-call-kqpvqh", name: "subagent" };
+		const messages = [
+			{ role: "toolResult", toolCallId: part.id, content: "Subagent Job kqpvqh started" },
+			{ role: "custom", customType: "subagent_result", content: [{ type: "text", text: "[Subagent Job kqpvqh finished]\n\nDone" }] },
+		];
+
+		expect(getSubagentProgress(part, messages)).toEqual({ jobId: "kqpvqh", state: "completed" });
+	});
+
+	it("reports launch failures", () => {
+		const part = { id: "tool-call-kqpvqh", name: "subagent" };
+		const messages = [{ role: "toolResult", toolCallId: part.id, isError: true, content: "spawn failed" }];
+
+		expect(getSubagentProgress(part, messages)).toEqual({ jobId: "kqpvqh", state: "failed" });
+	});
+
+	it("counts distinct running subagents", () => {
+		const messages = [
+			{ role: "assistant", content: [
+				{ type: "toolCall", id: "tool-call-first1", name: "subagent" },
+				{ type: "toolCall", id: "tool-call-second", name: "subagent" },
+			] },
+			{ role: "custom", customType: "subagent_result", content: "[Subagent Job first1 finished]\n\nDone" },
+		];
+
+		expect(getRunningSubagentCount(messages)).toBe(1);
+	});
+
+	it("queues desktop messages while streaming or while a subagent is running", () => {
+		const running = [{ role: "assistant", content: [{ type: "toolCall", id: "tool-call-kqpvqh", name: "subagent" }] }];
+		const completed = [...running, { role: "custom", customType: "subagent_result", content: "[Subagent Job kqpvqh finished]\n\nDone" }];
+
+		expect(shouldQueueDesktopMessage(running, false)).toBe(true);
+		expect(shouldQueueDesktopMessage(completed, false)).toBe(false);
+		expect(shouldQueueDesktopMessage([], true)).toBe(true);
+	});
+});

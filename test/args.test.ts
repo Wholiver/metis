@@ -125,6 +125,13 @@ describe("parseArgs", () => {
 			expect(result.mode).toBe("rpc");
 		});
 
+		test("parses positional server command and --hostname --port", () => {
+			const result = parseArgs(["server", "--hostname", "127.0.0.1", "--port", "4096"]);
+			expect(result.mode).toBe("server");
+			expect(result.hostname).toBe("127.0.0.1");
+			expect(result.port).toBe(4096);
+		});
+
 		test("parses --session", () => {
 			const result = parseArgs(["--session", "/path/to/session.jsonl"]);
 			expect(result.session).toBe("/path/to/session.jsonl");

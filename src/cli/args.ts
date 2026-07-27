@@ -7,7 +7,7 @@ import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
 
-export type Mode = "text" | "json" | "rpc";
+export type Mode = "text" | "json" | "rpc" | "server";
 
 export interface Args {
 	provider?: string;
@@ -21,6 +21,9 @@ export interface Args {
 	help?: boolean;
 	version?: boolean;
 	mode?: Mode;
+	hostname?: string;
+	port?: number;
+	cors?: string[];
 	name?: string;
 	noSession?: boolean;
 	session?: string;
@@ -75,11 +78,26 @@ export function parseArgs(args: string[]): Args {
 			result.help = true;
 		} else if (arg === "--version" || arg === "-v") {
 			result.version = true;
+		} else if (arg === "server") {
+			result.mode = "server";
 		} else if (arg === "--mode" && i + 1 < args.length) {
 			const mode = args[++i];
-			if (mode === "text" || mode === "json" || mode === "rpc") {
+			if (mode === "text" || mode === "json" || mode === "rpc" || mode === "server") {
 				result.mode = mode;
 			}
+		} else if (arg === "--hostname" && i + 1 < args.length) {
+			result.hostname = args[++i];
+		} else if (arg === "--port" && i + 1 < args.length) {
+			const rawPort = args[++i];
+			const parsedPort = parseInt(rawPort, 10);
+			if (Number.isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+				result.diagnostics.push({ type: "error", message: `Invalid port: ${rawPort}` });
+			} else {
+				result.port = parsedPort;
+			}
+		} else if (arg === "--cors" && i + 1 < args.length) {
+			result.cors = result.cors ?? [];
+			result.cors.push(args[++i]);
 		} else if (arg === "--continue" || arg === "-c") {
 			result.continue = true;
 		} else if (arg === "--resume" || arg === "-r") {

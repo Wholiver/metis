@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { resolvePath } from "../utils/paths.ts";
 import type { AgentSession } from "./agent-session.ts";
@@ -221,6 +221,7 @@ export class AgentSessionRuntime {
 	}
 
 	async newSession(options?: {
+		cwd?: string;
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
@@ -231,10 +232,16 @@ export class AgentSessionRuntime {
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		const sessionDir = this.session.sessionManager.getSessionDir();
+		const targetCwd = resolve(options?.cwd ?? this.cwd);
+		if (!existsSync(targetCwd) || !statSync(targetCwd).isDirectory()) {
+			throw new Error(`Working directory does not exist: ${targetCwd}`);
+		}
+		const sessionDir = this.session.sessionManager.usesDefaultSessionDir()
+			? undefined
+			: this.session.sessionManager.getSessionDir();
 		const sessionManager = this.session.sessionManager.isPersisted()
-			? SessionManager.create(this.cwd, sessionDir)
-			: SessionManager.inMemory(this.cwd);
+			? SessionManager.create(targetCwd, sessionDir)
+			: SessionManager.inMemory(targetCwd);
 		if (options?.parentSession) {
 			sessionManager.newSession({ parentSession: options.parentSession });
 		}
@@ -242,7 +249,7 @@ export class AgentSessionRuntime {
 		await this.teardownCurrent("new", sessionManager.getSessionFile());
 		this.apply(
 			await this.createRuntime({
-				cwd: this.cwd,
+				cwd: targetCwd,
 				agentDir: this.services.agentDir,
 				sessionManager,
 				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },

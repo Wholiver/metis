@@ -6,6 +6,8 @@ export { InteractiveMode, type InteractiveModeOptions } from "./interactive/inte
 export { type PrintModeOptions, runPrintMode } from "./print-mode.ts";
 export { type ModelInfo, RpcClient, type RpcClientOptions, type RpcEventListener } from "./rpc/rpc-client.ts";
 export { runRpcMode } from "./rpc/rpc-mode.ts";
+export { runServerMode } from "./server/server-mode.ts";
+export type { ServerModeOptions } from "./server/server-types.ts";
 export type {
 	RpcCommand,
 	RpcExtensionUIRequest,

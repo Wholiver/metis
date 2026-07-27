@@ -519,6 +519,17 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(realpathSync(runtime.cwd)).toBe(realpathSync(secondDir));
 	});
 
+	it("creates a fresh session in a requested workspace cwd", async () => {
+		const { runtime, tempDir } = await createRuntimeForTest(() => {});
+		const secondDir = join(tempDir, "second-workspace");
+		mkdirSync(secondDir, { recursive: true });
+
+		await runtime.newSession({ cwd: secondDir });
+
+		expect(realpathSync(runtime.cwd)).toBe(realpathSync(secondDir));
+		expect(realpathSync(runtime.session.sessionManager.getCwd())).toBe(realpathSync(secondDir));
+	});
+
 	it("restores model and thinking state from the destination session", async () => {
 		const { runtime, faux, tempDir } = await createRuntimeForTest(() => {}, {
 			bootstrapModel: false,
