@@ -147,7 +147,8 @@ try {
 	const dmgPath = path.join(releaseDir, `Metis-${rootPackage.version}-macos-${architecture}.dmg`);
 	await run("/usr/bin/hdiutil", ["create", "-volname", "Metis", "-srcfolder", dmgRootDir, "-ov", "-format", "UDZO", dmgPath]);
 	const checksum = await run("/usr/bin/shasum", ["-a", "256", dmgPath]);
-	await writeFile(`${dmgPath}.sha256`, checksum, "utf8");
+	const checksumHash = checksum.trim().split(/\s+/)[0];
+	await writeFile(`${dmgPath}.sha256`, `${checksumHash}  ${path.basename(dmgPath)}\n`, "utf8");
 	console.log(`完成：${dmgPath}`);
 } finally {
 	await rm(temporaryDir, { recursive: true, force: true });
