@@ -11,7 +11,7 @@ const THINKING_LEVEL_KEYS = {
 };
 const THINKING_TAIL_CELL_COUNT = 90;
 const UI_LANGUAGES = desktopI18n.languages;
-const PROJECT_STATE_KEY = "metis.desktopProjects.v1";
+const PROJECT_STATE_KEY = "metis.desktopProjects.v2";
 const DEFAULT_VISIBLE_CONVERSATIONS = 5;
 const OAUTH_PROVIDER_IDS = new Set(["anthropic", "openai-codex", "github-copilot"]);
 
@@ -529,6 +529,16 @@ function projectForPath(projectPath) {
 	return state.projects.find((project) => project.path === normalized);
 }
 
+async function setWorkspaceChecked(workspacePath) {
+	const requested = window.metisDesktopConversations.normalizeProjectPath(workspacePath);
+	const workspace = await desktop.workspace.set(workspacePath);
+	const actual = window.metisDesktopConversations.normalizeProjectPath(workspace?.path);
+	if (requested && actual !== requested) {
+		throw new Error(`Workspace directory does not exist: ${requested}`);
+	}
+	return workspace;
+}
+
 function saveProjectState() {
 	try {
 		localStorage.setItem(
@@ -829,7 +839,7 @@ async function activateProject(project, { targetSessionPath, record = true, load
 	applyProjectDetails(project);
 
 	try {
-		await desktop.workspace.set(project.path);
+		await setWorkspaceChecked(project.path);
 		await refreshFileTree();
 		if (!state.serverConnected) return;
 
@@ -874,8 +884,19 @@ async function loadWorkspace(select = false) {
 		}
 		const selectedProject = activeProject() || project;
 		state.activeProjectId = selectedProject.id;
-		await desktop.workspace.set(selectedProject.path);
-		applyProjectDetails(selectedProject);
+		try {
+			await setWorkspaceChecked(selectedProject.path);
+		} catch (error) {
+			// Project paths restored from local state may point to removed folders.
+			// Drop the stale project and fall back to the current workspace.
+			if (!String(error?.message || "").includes("Workspace directory does not exist")) throw error;
+			state.projects = state.projects.filter((item) => item.path !== selectedProject.path);
+			const fallbackProject = ensureProject(workspace) || project;
+			state.activeProjectId = fallbackProject.id;
+			saveProjectState();
+			await desktop.workspace.set(fallbackProject.path);
+		}
+		applyProjectDetails(activeProject() || project);
 		await refreshFileTree();
 	} catch (error) {
 		elements.fileTree.textContent = `无法读取工作区：${error.message}`;

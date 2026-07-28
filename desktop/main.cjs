@@ -18,6 +18,12 @@ let metisEventController;
 let autoServerProcess;
 let appIsQuitting = false;
 
+if (process.platform === "win32") {
+	const localAppData = process.env.LOCALAPPDATA || path.join(app.getPath("home"), "AppData", "Local");
+	const sessionDataDir = path.join(localAppData, "metis-desktop", "session-data");
+	app.setPath("sessionData", sessionDataDir);
+}
+
 function createAppIcon() {
 	const svgPath = path.join(__dirname, "renderer", "assets", "metis-pixel-mark.svg");
 	const svg = fs.readFileSync(svgPath, "utf8");
@@ -278,7 +284,18 @@ function registerIpc() {
 	});
 
 	ipcMain.handle("workspace:get", () => workspaceSummary());
-	ipcMain.handle("workspace:set", (_event, workspacePath) => setWorkspaceRoot(workspacePath));
+	ipcMain.handle("workspace:set", (_event, workspacePath) => {
+		try {
+			return setWorkspaceRoot(workspacePath);
+		} catch (error) {
+			const message = String(error?.message || "");
+			if (!message.includes("Workspace directory does not exist")) throw error;
+			// Stale workspace paths can be restored from renderer local state.
+			// Keep current workspace instead of surfacing a hard IPC failure.
+			console.warn("[desktop] Ignored stale workspace path:", workspacePath);
+			return workspaceSummary();
+		}
+	});
 	ipcMain.handle("workspace:select", async () => {
 		const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
 		if (result.canceled || result.filePaths.length === 0) return undefined;
