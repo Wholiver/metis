@@ -39,9 +39,19 @@ Use the desktop app for a graphical workspace with an embedded Metis CLI and ser
 
 > **Current installer:** macOS on Apple silicon (`arm64`). No separate Node.js installation is required.
 
-1. Download the latest `.dmg` from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest).
+1. Download the latest `Metis-*-macos-arm64.dmg` from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest).
 2. Open the installer and drag **Metis.app** into **Applications**.
 3. Launch **Metis** from the Applications folder.
+
+### Desktop app for Windows
+
+The Windows build also bundles the full Metis CLI and server runtime. Extract the ZIP and run it directly.
+
+> **Current installer:** Windows `x64` or `arm64`. No separate Node.js installation is required.
+
+1. Download the latest `Metis-*-win-x64.zip` or `Metis-*-win-arm64.zip` from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest), matching your system architecture.
+2. Extract the ZIP, open the **Metis** folder, and launch **Metis.exe**.
+3. If Windows SmartScreen warns about an unknown publisher, see **打不开？/Windows打不开时请看.txt** inside the archive.
 
 ### CLI and terminal
 
