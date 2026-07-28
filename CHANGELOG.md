@@ -2,6 +2,20 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.3.0-rc.1] - 2026-07-28
+
+### Desktop connectivity and server mode
+
+- Added an HTTP server mode with session, prompt, model, command, and extension UI endpoints for desktop and remote clients.
+- Added raw reasoning stream handling and automatic desktop connection behavior when no project is active.
+- Added standalone macOS desktop app installation guidance to the CLI documentation.
+
+### Web research behavior
+
+- Changed web research from mandatory for every task to a search-leaning, evidence-based policy.
+- Preferred one focused search for current, external, unfamiliar, or high-risk claims, with broader searches only for evidence gaps or conflicts.
+- Avoided unnecessary searches for tasks fully answerable from local or supplied content and for deterministic transformations.
+
 ## [1.2.0-rc.3] - 2026-07-27
 
 ### CLI sessions and Subagents

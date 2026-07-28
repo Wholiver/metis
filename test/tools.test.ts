@@ -369,22 +369,28 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("web research tool prompting", () => {
-		it("requires deep investigation instead of one-shot web lookups", () => {
+		it("prefers focused research when useful without requiring it for every task", () => {
 			const websearch = createWebSearchToolDefinition();
 			const webfetch = createWebFetchToolDefinition();
+			const searchGuidelines = websearch.promptGuidelines?.join(" ") ?? "";
+			const fetchGuidelines = webfetch.promptGuidelines?.join(" ") ?? "";
 
-			expect(websearch.promptSnippet).toContain("complementary web searches");
-			expect(websearch.promptGuidelines).toContain(
-				"For every task, use websearch before substantive work; a single shallow query or search-result snippet is never sufficient.",
-			);
-			expect(websearch.promptGuidelines?.join(" ")).toContain("authoritative source pages");
-			expect(websearch.promptGuidelines?.join(" ")).toContain("official documentation");
-			expect(websearch.promptGuidelines?.join(" ")).toContain("Do not cite or mention research sources");
-			expect(webfetch.promptSnippet).toContain("authoritative web sources");
-			expect(webfetch.promptGuidelines?.join(" ")).toContain("primary or authoritative pages");
-			expect(webfetch.promptGuidelines?.join(" ")).toContain("resolve material conflicts");
-			expect(webfetch.promptGuidelines?.join(" ")).toContain("license permits it");
-			expect(webfetch.promptGuidelines?.join(" ")).toContain("Do not cite or mention fetched sources");
+			expect(websearch.promptSnippet).toContain("Prefer web search");
+			expect(searchGuidelines).toContain("lean toward one focused search");
+			expect(searchGuidelines).toContain("current or time-sensitive");
+			expect(searchGuidelines).toContain("high-stakes claims");
+			expect(searchGuidelines).toContain("fully answerable from supplied or local repository content");
+			expect(searchGuidelines).toContain("deterministic calculation");
+			expect(searchGuidelines).toContain("Start with one focused query");
+			expect(searchGuidelines).toContain("Add complementary queries only when");
+			expect(searchGuidelines).not.toContain("For every task");
+			expect(searchGuidelines).toContain("official documentation");
+			expect(searchGuidelines).toContain("Do not cite or mention research sources");
+			expect(webfetch.promptSnippet).toContain("when search results need verification");
+			expect(fetchGuidelines).toContain("primary or authoritative page");
+			expect(fetchGuidelines).toContain("only when a material conflict");
+			expect(fetchGuidelines).toContain("license permits it");
+			expect(fetchGuidelines).toContain("Do not cite or mention fetched sources");
 		});
 	});
 

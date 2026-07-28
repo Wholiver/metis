@@ -83,10 +83,10 @@ export function createWebFetchToolDefinition(
 		name: "webfetch",
 		label: "web fetch",
 		description: "Fetches and inspects web sources, converting a specified URL to markdown, text, or html.",
-		promptSnippet: "Fetch and inspect authoritative web sources.",
+		promptSnippet: "Fetch authoritative source pages when search results need verification.",
 		promptGuidelines: [
-			"Use webfetch to inspect primary or authoritative pages behind websearch results; never treat search snippets as sufficient evidence.",
-			"Fetch enough current, independent sources to resolve material conflicts, compatibility questions, and risks before acting.",
+			"Use webfetch after websearch when a primary or authoritative page is needed to verify a material detail that search results do not establish reliably.",
+			"Fetch additional independent sources only when a material conflict, compatibility question, freshness concern, or task risk warrants cross-checking.",
 			"You may reuse a credible source's architecture or code only when its license permits it; preserve required notices or attribution and verify project compatibility, security, and tests.",
 			"Do not cite or mention fetched sources in user-facing output unless the user explicitly asks.",
 			"Prefer markdown format for documentation and articles.",
