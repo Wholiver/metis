@@ -24,6 +24,12 @@
 
 ## 快速开始
 
+### 桌面应用 (macOS)
+
+从 [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) 下载最新的 `.dmg` 安装包，并将 Metis 拖入“应用程序”文件夹即可。
+
+### CLI / 命令行
+
 需要 Node.js `>=22.19.0` 和 npm。
 
 ```bash

@@ -24,6 +24,12 @@
 
 ## Quick start
 
+### Desktop App (macOS)
+
+Download the latest `.dmg` installer from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) and drag Metis into your Applications folder.
+
+### CLI & Terminal
+
 Requires Node.js `>=22.19.0` and npm.
 
 ```bash
