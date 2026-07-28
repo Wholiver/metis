@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { access, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { AgentTool } from "@earendil-works/metis-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/metis-ai";
 import { Text } from "@earendil-works/metis-tui";
@@ -37,6 +39,7 @@ type TranscriptionDevice = (typeof TRANSCRIPTION_DEVICES)[number];
 const ffmpegPath = (ffmpegStatic as unknown as { default?: string }).default ?? (ffmpegStatic as unknown as string);
 const ffprobePath = (ffprobeStatic as unknown as { path?: string; default?: string }).path ?? (ffprobeStatic as unknown as { default?: string }).default ?? (ffprobeStatic as unknown as string);
 const MODEL_PREPARED_MARKER = "prepared.json";
+let modelPreparationPromise: Promise<TranscriptionDevice> | undefined;
 
 const videoSchema = Type.Object({
 	action: Type.Optional(
@@ -89,6 +92,7 @@ export interface VideoOperations {
 	readEmbeddedSubtitles: (path: string, signal?: AbortSignal) => Promise<TranscriptSegment[] | undefined>;
 	transcribe: (path: string, range: { start: number; end: number }, language: string, signal?: AbortSignal) => Promise<TranscriptSegment[]>;
 	isModelInstalled: () => Promise<boolean>;
+	prepareModel?: (onProgress?: (message: string) => void) => Promise<void>;
 }
 
 export interface VideoToolOptions {
@@ -143,8 +147,8 @@ function frameTimesForRange(range: { start: number; end: number }): number[] {
 }
 
 function parseSrtTimestamp(value: string): number {
-	const [hours, minutes, rest] = value.trim().replace(",", ".").split(":");
-	return Number(hours) * 3600 + Number(minutes) * 60 + Number(rest);
+	const parts = value.trim().replace(",", ".").split(":").map(Number);
+	return parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
 }
 
 export function parseSubtitleText(content: string): TranscriptSegment[] {
@@ -190,16 +194,22 @@ function renderTranscript(segments: TranscriptSegment[]): { text: string; trunca
 }
 
 function getModelCacheDir(): string {
-	return join(getPackageDir(), ".metis-assets", "video-transcription", "whisper-base", VIDEO_TRANSCRIPTION_MODEL_REVISION);
+	return join(getAgentDir(), ".metis-assets", "video-transcription", "whisper-base", VIDEO_TRANSCRIPTION_MODEL_REVISION);
 }
 
 function getModelInstallMarker(): string {
 	return join(getModelCacheDir(), MODEL_PREPARED_MARKER);
 }
 
-function getMediaBinary(staticPath: string | null, name: "ffmpeg" | "ffprobe"): string {
-	if (!isBunBinary) return requireBinary(staticPath, name);
-	return join(dirname(process.execPath), "video-bin", process.platform === "win32" ? `${name}.exe` : name);
+export function resolveMediaBinaryPath(
+	staticPath: string | null,
+	name: "ffmpeg" | "ffprobe",
+	bundledRoot = isBunBinary ? dirname(process.execPath) : join(getPackageDir(), "dist"),
+): string {
+	const executable = process.platform === "win32" ? `${name}.exe` : name;
+	const bundledPath = join(bundledRoot, "video-bin", executable);
+	if (existsSync(bundledPath)) return bundledPath;
+	return requireBinary(staticPath, name);
 }
 
 function isTranscriptionDevice(value: unknown): value is TranscriptionDevice {
@@ -226,6 +236,38 @@ async function getInstalledTranscriptionDevice(): Promise<TranscriptionDevice | 
 	} catch {
 		return undefined;
 	}
+}
+
+async function prepareTranscriptionModel(onProgress?: (message: string) => void): Promise<TranscriptionDevice> {
+	const installed = await getInstalledTranscriptionDevice();
+	if (installed) return installed;
+	if (process.env.METIS_SKIP_VIDEO_TRANSCRIPTION_PREPARE === "1") {
+		throw new Error("Video transcription preparation is disabled by METIS_SKIP_VIDEO_TRANSCRIPTION_PREPARE=1");
+	}
+	if (!modelPreparationPromise) {
+		modelPreparationPromise = (async () => {
+			const scriptPath = join(getPackageDir(), "scripts", "prepare-video-transcription.mjs");
+			const preparation = await import(pathToFileURL(scriptPath).href) as {
+				prepareVideoTranscription: (options: {
+					root: string;
+					device?: string;
+					log: (message: string) => void;
+					loadTransformers: () => Promise<any>;
+				}) => Promise<{ device?: unknown }>;
+			};
+			const marker = await preparation.prepareVideoTranscription({
+				root: getAgentDir(),
+				device: process.env.METIS_VIDEO_TRANSCRIPTION_DEVICE,
+				log: (message) => onProgress?.(message),
+				loadTransformers: () => import("@huggingface/transformers"),
+			});
+			if (!isTranscriptionDevice(marker.device)) throw new Error("Prepared transcription marker has an invalid device");
+			return marker.device;
+		})().finally(() => {
+			modelPreparationPromise = undefined;
+		});
+	}
+	return modelPreparationPromise;
 }
 
 async function run(command: string, args: string[], signal?: AbortSignal): Promise<{ stdout: Buffer; stderr: string }> {
@@ -264,7 +306,7 @@ function requireBinary(path: string | null, name: string): string {
 
 const defaultVideoOperations: VideoOperations = {
 	async probe(path, signal) {
-		const result = await run(getMediaBinary(ffprobePath, "ffprobe"), ["-v", "error", "-show_streams", "-show_format", "-of", "json", path], signal);
+		const result = await run(resolveMediaBinaryPath(ffprobePath, "ffprobe"), ["-v", "error", "-show_streams", "-show_format", "-of", "json", path], signal);
 		const data = JSON.parse(result.stdout.toString("utf8")) as { format?: { duration?: string }; streams?: Array<{ codec_type?: string; width?: number; height?: number }> };
 		const streams = data.streams ?? [];
 		const video = streams.find((stream) => stream.codec_type === "video");
@@ -283,11 +325,11 @@ const defaultVideoOperations: VideoOperations = {
 				const drawText = `drawtext=text='${formatTimestamp(frameTimes[index]).replace(/:/g, "\\:")}':x=18:y=h-42:fontcolor=white:fontsize=30:box=1:boxcolor=black@0.65:boxborderw=8`;
 				const outputArgs = ["-frames:v", "1", "-vf", `scale=${CELL_SIZE}:${CELL_SIZE}:force_original_aspect_ratio=decrease,pad=${CELL_SIZE}:${CELL_SIZE}:(ow-iw)/2:(oh-ih)/2:black,${drawText}`, "-q:v", "3", "-y", cell];
 				try {
-					await run(getMediaBinary(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", path, "-ss", String(frameTimes[index]), ...outputArgs], signal);
+					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", path, "-ss", String(frameTimes[index]), ...outputArgs], signal);
 					await access(cell);
 				} catch (error) {
 					if (index !== frameTimes.length - 1) throw error;
-					await run(getMediaBinary(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-sseof", "-0.1", "-i", path, ...outputArgs], signal);
+					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-sseof", "-0.1", "-i", path, ...outputArgs], signal);
 					await access(cell);
 				}
 				cells.push(cell);
@@ -295,7 +337,7 @@ const defaultVideoOperations: VideoOperations = {
 			const output = join(workDir, "storyboard.jpg");
 			const args = cells.flatMap((cell) => ["-i", cell]);
 			args.push("-filter_complex", "xstack=inputs=9:layout=0_0|512_0|1024_0|0_512|512_512|1024_512|0_1024|512_1024|1024_1024", "-frames:v", "1", "-q:v", "3", "-y", output);
-			await run(getMediaBinary(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", ...args], signal);
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", ...args], signal);
 			return await readFile(output);
 		} finally {
 			await rm(workDir, { recursive: true, force: true });
@@ -314,7 +356,7 @@ const defaultVideoOperations: VideoOperations = {
 	},
 	async readEmbeddedSubtitles(path, signal) {
 		try {
-			const result = await run(getMediaBinary(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", path, "-map", "0:s:0", "-f", "webvtt", "-"], signal);
+			const result = await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", path, "-map", "0:s:0", "-f", "webvtt", "-"], signal);
 			const segments = parseSubtitleText(result.stdout.toString("utf8"));
 			return segments.length ? segments : undefined;
 		} catch {
@@ -326,7 +368,7 @@ const defaultVideoOperations: VideoOperations = {
 		const wavPath = join(workDir, "audio.wav");
 		await mkdir(workDir, { recursive: true });
 		try {
-			await run(getMediaBinary(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(range.start), "-to", String(range.end), "-i", path, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-y", wavPath], signal);
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(range.start), "-to", String(range.end), "-i", path, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-y", wavPath], signal);
 			const waveform = readPcm16Wav(await readFile(wavPath));
 			if (!hasAudibleSignal(waveform)) return [];
 			const transformers: any = await import("@huggingface/transformers");
@@ -349,6 +391,9 @@ const defaultVideoOperations: VideoOperations = {
 	},
 	async isModelInstalled() {
 		return !!(await getInstalledTranscriptionDevice());
+	},
+	async prepareModel(onProgress) {
+		await prepareTranscriptionModel(onProgress);
 	},
 };
 
@@ -416,9 +461,9 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 	return {
 		name: "video",
 		label: "video",
-		description: "Initialize inspection of a local video. inspect returns metadata and explicit next-call instructions without generating frames or a transcript. Then call storyboard and/or transcript for a chosen time range. Local transcription assets are prepared during npm installation; there is no runtime installation action.",
+		description: "Initialize inspection of a local video. inspect returns metadata and explicit next-call instructions without generating frames or a transcript. Then call storyboard and/or transcript for a chosen time range. The first local transcript request automatically downloads and verifies transcription assets.",
 		promptSnippet: "Initialize local video inspection, then explicitly request a storyboard or transcript",
-		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Read its returned instructions and choose the minimum follow-up action needed; do not assume storyboard and transcript are both necessary.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en.", "Transcription is expected to be ready after npm installation. If it reports unavailable, explain that Metis must be reinstalled with npm lifecycle scripts enabled; do not invent or call an installation action.", "Never use this tool for remote URLs."],
+		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Read its returned instructions and choose the minimum follow-up action needed; do not assume storyboard and transcript are both necessary.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en.", "The first local transcript request may take longer while Metis downloads and verifies the pinned transcription model. Retry normally if initialization reports a network or filesystem error.", "Never use this tool for remote URLs."],
 		parameters: videoSchema,
 		async execute(_toolCallId, input, signal, onUpdate) {
 			const action: VideoAction = input.action ?? "inspect";
@@ -432,7 +477,7 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 				details.transcriptionReady = await operations.isModelInstalled();
 				content.push({
 					type: "text",
-					text: `Video inspector initialized. No storyboard or transcript has been generated.\nTranscription runtime prepared: ${details.transcriptionReady ? "yes" : "no"}.\n\nChoose next action based on user need:\n- For visual events: call video with action=storyboard, path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns exactly one timestamped 3×3 image.\n- For spoken or subtitle text: call video with action=transcript, path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n- For both: make the two explicit calls above.\n\nUse start/end to narrow the range; omit them only when the whole video is required. If transcription runtime is not prepared, Metis must be reinstalled with npm lifecycle scripts enabled; there is no runtime installation action.`,
+					text: `Video inspector initialized. No storyboard or transcript has been generated.\nTranscription runtime prepared: ${details.transcriptionReady ? "yes" : "no"}.\n\nChoose next action based on user need:\n- For visual events: call video with action=storyboard, path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns exactly one timestamped 3×3 image.\n- For spoken or subtitle text: call video with action=transcript, path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n- For both: make the two explicit calls above.\n\nUse start/end to narrow the range; omit them only when the whole video is required. If transcription runtime is not prepared, the first transcript call downloads and verifies it automatically.`,
 				});
 				return { content, details };
 			}
@@ -461,11 +506,22 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 				}
 				if (!transcript?.length && !metadata.hasAudio) {
 					content.push({ type: "text", text: "[No audio stream; transcript is unavailable.]" });
-				} else if (!transcript?.length && !(await operations.isModelInstalled())) {
-					details.transcriptionReady = false;
-					details.transcriptionError = "Bundled transcription assets are missing or were not verified during npm installation.";
-					content.push({ type: "text", text: `[Bundled transcription runtime is unavailable. Reinstall Metis with npm lifecycle scripts enabled (do not use --ignore-scripts), then retry transcript. Expected model: ${VIDEO_TRANSCRIPTION_MODEL_ID}@${VIDEO_TRANSCRIPTION_MODEL_REVISION}. Storyboard remains available.]` });
 				} else {
+					if (!transcript?.length && !(await operations.isModelInstalled())) {
+						details.transcriptionReady = false;
+						onUpdate?.({ content: [{ type: "text", text: "Preparing local video transcription model…" }], details: {} });
+						try {
+							if (!operations.prepareModel) throw new Error("Automatic transcription preparation is unavailable for custom video operations");
+							await operations.prepareModel((message) => onUpdate?.({ content: [{ type: "text", text: message }], details: {} }));
+							details.transcriptionReady = true;
+						} catch (error) {
+							if (signal?.aborted) throw error;
+							const message = error instanceof Error ? error.message : String(error);
+							details.transcriptionError = message;
+							content.push({ type: "text", text: `[Local transcription initialization failed: ${message}. Check network access and write permission for ${getAgentDir()}, then retry. Storyboard remains available.]` });
+							return { content, details };
+						}
+					}
 					if (!transcript?.length) {
 						onUpdate?.({ content: [{ type: "text", text: "Transcribing audio locally…" }], details: {} });
 						try {
@@ -478,7 +534,7 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 							const message = error instanceof Error ? error.message : String(error);
 							details.transcriptionReady = false;
 							details.transcriptionError = message;
-							content.push({ type: "text", text: `[Local transcription failed: ${message}. Reinstall Metis with npm lifecycle scripts enabled to rebuild and verify the bundled transcription cache. Storyboard remains available.]` });
+							content.push({ type: "text", text: `[Local transcription failed: ${message}. Remove the local transcription cache and retry initialization if this persists. Storyboard remains available.]` });
 							return { content, details };
 						}
 					}

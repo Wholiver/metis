@@ -9,6 +9,20 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 - Added Windows desktop packaging (`npm run package:win`) that produces a portable ZIP with a bundled CLI/Server runtime.
 - Improved Windows window chrome with native title-bar overlay controls and File Explorer wording.
 
+## [1.3.1-rc.1] - 2026-07-28
+
+### Video runtime initialization
+
+- Made npm CLI and Desktop releases prefer bundled FFmpeg and FFprobe executables, including installs made with `--ignore-scripts`.
+- Added automatic first-use Whisper model preparation in the shared user agent directory with offline verification and cache reuse.
+- Fixed embedded WebVTT subtitle timestamps emitted in `MM:SS.mmm` form.
+- Added release-artifact smoke coverage for inspection, storyboards, sidecar and embedded subtitles, local Whisper transcription, and transcript caching.
+
+### Desktop and installation
+
+- Restored native macOS window corners in the Desktop app.
+- Improved English and Chinese quick-start documentation and standardized the npm installation command with `--ignore-scripts`.
+
 ## [1.3.0-rc.1] - 2026-07-28
 
 ### Desktop connectivity and server mode

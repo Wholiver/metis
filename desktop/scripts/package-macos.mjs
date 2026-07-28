@@ -72,6 +72,9 @@ async function buildBundledRuntime() {
 		cwd: runtimeDir,
 		env: { ...process.env, METIS_SKIP_VIDEO_TRANSCRIPTION_PREPARE: "1" },
 	});
+	for (const name of ["ffmpeg", "ffprobe"]) {
+		await run(path.join(runtimeDir, "dist", "video-bin", name), ["-version"], { logOutput: false });
+	}
 	await run(process.execPath, [path.join(runtimeDir, "dist", "cli.js"), "--version"], {
 		env: { ...process.env, METIS_SKIP_VIDEO_TRANSCRIPTION_PREPARE: "1" },
 	});
