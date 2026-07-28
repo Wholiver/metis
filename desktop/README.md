@@ -1,6 +1,6 @@
 # Metis Desktop
 
-Electron 框架，连接 Metis Server。开发模式使用仓库中的 CLI；macOS 安装包内置完整 CLI/Server，无需用户预装 Node.js 或 Metis CLI。
+Electron 框架，连接 Metis Server。开发模式使用仓库中的 CLI；安装包内置完整 CLI/Server，无需用户预装 Node.js 或 Metis CLI。
 
 ```bash
 cd desktop
@@ -16,11 +16,11 @@ npm run build
 
 Desktop 启动时会检查 `http://127.0.0.1:4096`：已有 Metis Server 时直接复用，否则自动启动仓库中已构建的 CLI Server，并在应用退出时关闭自己启动的进程。设置 `METIS_DESKTOP_NO_AUTO_SERVER=1` 可关闭自动启动。项目信任检查保持启用。
 
-Desktop 与 CLI 共用 `~/.metis/agent` 下的模型、Provider、会话及其他配置。DMG 版本优先启动 App Resources 内置 CLI，因此可开箱即用。
+Desktop 与 CLI 共用 `~/.metis/agent` 下的模型、Provider、会话及其他配置。安装包版本优先启动 App Resources 内置 CLI，因此可开箱即用。
 
 ## macOS DMG
 
-在 Apple Silicon Mac 上执行：
+在 Apple Silicon 或 Intel Mac 上执行：
 
 ```bash
 cd desktop
@@ -29,6 +29,18 @@ npm run package:mac
 ```
 
 产物写入 `desktop/release/`。DMG 包含 `Metis.app`、`Applications` 快捷方式，以及 `打不开？/Mac打不开时请看.txt`。当前流程只做 ad-hoc 本地签名，不做 Apple Developer ID 签名或公证。
+
+## Windows ZIP
+
+在 Windows（x64 或 arm64）上执行：
+
+```bash
+cd desktop
+npm install
+npm run package:win
+```
+
+产物写入 `desktop/release/`。ZIP 包含 `Metis/`（含 `Metis.exe` 与内置 CLI）以及 `打不开？/Windows打不开时请看.txt`。当前流程不做 Windows 代码签名；SmartScreen 可能提示未知发布者。
 
 接口协议见 [`../src/modes/server/README.md`](../src/modes/server/README.md)。
 
@@ -40,7 +52,7 @@ npm run package:mac
 - 会话：读取当前会话和历史消息、新建、切换
 - Agent：发送 Prompt、生成中追加消息、停止生成
 - 模型：读取 Server 可用模型、切换当前模型、按模型能力选择思考等级
-- 工作区：添加并持久化多个独立项目、按项目隔离会话、切换 Agent 工作目录、文件树、筛选、Git Diff、Finder 定位
+- 工作区：添加并持久化多个独立项目、按项目隔离会话、切换 Agent 工作目录、文件树、筛选、Git Diff、在文件管理器中定位
 - Browser：地址导航、前进、后退、刷新、系统浏览器打开
 
 界面只展示以上已实现入口。附件、权限模式、PR、站点、定时任务、插件等未接入能力不放置占位按钮。

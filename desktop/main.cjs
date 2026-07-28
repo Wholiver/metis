@@ -52,8 +52,11 @@ async function ensureLocalMetisServer() {
 		return;
 	}
 	let lastStderr = "";
-	const defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
-	const envPath = process.env.PATH ? `${process.env.PATH}:${defaultPath}` : defaultPath;
+	let envPath = process.env.PATH || "";
+	if (process.platform !== "win32") {
+		const defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+		envPath = envPath ? `${envPath}:${defaultPath}` : defaultPath;
+	}
 	autoServerProcess = utilityProcess.fork(cliPath, ["server", "--hostname", "127.0.0.1", "--port", "4096"], {
 		cwd: workspaceRoot,
 		env: { ...process.env, PATH: envPath },
@@ -100,6 +103,7 @@ function stopAutoServer() {
 function createWindow() {
 	const icon = createAppIcon();
 	const isMac = process.platform === "darwin";
+	const isWin = process.platform === "win32";
 	mainWindow = new BrowserWindow({
 		width: 1540,
 		height: 960,
@@ -113,8 +117,16 @@ function createWindow() {
 		visualEffectState: isMac ? "active" : undefined,
 		title: "Metis",
 		icon,
+		autoHideMenuBar: true,
 		titleBarStyle: isMac ? "hiddenInset" : "hidden",
-		trafficLightPosition: { x: 18, y: 18 },
+		trafficLightPosition: isMac ? { x: 18, y: 18 } : undefined,
+		titleBarOverlay: isWin
+			? {
+					color: "#fbfbfa",
+					symbolColor: "#202324",
+					height: 52,
+				}
+			: undefined,
 		webPreferences: {
 			preload: path.join(__dirname, "preload.cjs"),
 			contextIsolation: true,
@@ -125,6 +137,11 @@ function createWindow() {
 	});
 
 	mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+	mainWindow.webContents.on("dom-ready", () => {
+		void mainWindow.webContents.executeJavaScript(
+			`document.body.classList.add(${JSON.stringify(`platform-${process.platform}`)})`,
+		);
+	});
 	mainWindow.once("ready-to-show", () => {
 		mainWindow.show();
 		if (process.env.METIS_DESKTOP_CAPTURE) {

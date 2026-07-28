@@ -86,6 +86,7 @@
 		["noFileSelected", "未选择文件", "No file selected"],
 		["waitingForFile", "等待选择文件", "Waiting for file selection"],
 		["revealInFinder", "在 Finder 中显示", "Show in Finder"],
+		["revealInExplorer", "在资源管理器中显示", "Show in File Explorer"],
 		["chooseFileForDiff", "选择一个文件查看变更", "Select a file to review changes"],
 		["openFromFileTree", "从文件树中点击文件打开", "Open a file from the file tree"],
 		["workspace", "工作区", "Workspace"],

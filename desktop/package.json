@@ -10,6 +10,7 @@
 		"start": "npm run prepare:renderer && electron .",
 		"build": "npm run prepare:renderer && node scripts/build.mjs",
 		"package:mac": "node scripts/package-macos.mjs",
+		"package:win": "node scripts/package-windows.mjs",
 		"start:dist": "electron dist/main.cjs"
 	},
 	"devDependencies": {

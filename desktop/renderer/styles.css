@@ -105,6 +105,22 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
   height: var(--topbar-control-size);
   -webkit-app-region: no-drag !important;
 }
+body.platform-win32 {
+  --titlebar-overlay-width: 138px;
+}
+body.platform-win32 .window-nav {
+  left: 12px;
+}
+body.platform-win32 .topbar,
+body.platform-win32 .inspector-topbar {
+  padding-right: calc(10px + var(--titlebar-overlay-width));
+}
+body.platform-win32 .settings-main-drag {
+  right: var(--titlebar-overlay-width);
+}
+body.platform-win32 .settings-main {
+  padding-right: var(--titlebar-overlay-width);
+}
 .window-nav *,
 .window-nav .icon-button,
 #sidebarToggle,

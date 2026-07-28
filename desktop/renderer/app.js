@@ -23,12 +23,24 @@ function uiText(key, variables) {
 	return desktopI18n.t(key, state?.uiLanguage || "auto", variables);
 }
 
+function platformDisplayName(platform) {
+	if (platform === "darwin") return "macOS";
+	if (platform === "win32") return "Windows";
+	if (platform === "linux") return "Linux";
+	return platform || "—";
+}
+
+function revealInFolderLabel() {
+	return uiText(state.platform === "win32" ? "revealInExplorer" : "revealInFinder");
+}
+
 const state = {
 	activeConversationId: undefined,
 	activeProjectId: undefined,
 	activeInspectorTab: "browser",
 	activeFile: undefined,
 	fileTree: [],
+	platform: undefined,
 	serverConnected: false,
 	uiLanguage: UI_LANGUAGES.includes(localStorage.getItem("metis.desktopUiLanguage.v2")) ? localStorage.getItem("metis.desktopUiLanguage.v2") : "auto",
 	dreamStatusText: undefined,
@@ -125,6 +137,7 @@ const elements = {
 	settingsWorkspacePath: document.querySelector("#settingsWorkspacePath"),
 	settingsAppVersion: document.querySelector("#settingsAppVersion"),
 	settingsPlatform: document.querySelector("#settingsPlatform"),
+	revealFileButton: document.querySelector("#revealFileButton"),
 	settingsAgentFeedback: document.querySelector("#settingsAgentFeedback"),
 	settingsBehaviorFeedback: document.querySelector("#settingsBehaviorFeedback"),
 	settingsModelSelect: document.querySelector("#settingsModelSelect"),
@@ -441,10 +454,13 @@ async function updateSettingsDetails() {
 	void loadVisualSettings();
 	try {
 		const [appInfo, workspace] = await Promise.all([desktop.appInfo(), desktop.workspace.get()]);
+		state.platform = appInfo.platform;
+		document.body.classList.add(`platform-${appInfo.platform}`);
 		elements.settingsAppVersion.textContent = uiText("version", { version: appInfo.version });
-		elements.settingsPlatform.textContent = appInfo.platform === "darwin" ? "macOS" : appInfo.platform;
+		elements.settingsPlatform.textContent = platformDisplayName(appInfo.platform);
 		elements.settingsWorkspaceName.textContent = workspace.name || uiText("currentWorkspace");
 		elements.settingsWorkspacePath.textContent = workspace.path || uiText("noWorkspace");
+		if (elements.revealFileButton) elements.revealFileButton.textContent = revealInFolderLabel();
 	} catch {
 		elements.settingsWorkspacePath.textContent = uiText("workspaceReadFailed");
 	}
@@ -2327,6 +2343,7 @@ function applyUiLanguage(language) {
 	document.documentElement.lang = resolveUiLanguage(state.uiLanguage);
 	desktopI18n.translateDocument(state.uiLanguage);
 	if (elements.settingsLanguageSelect) elements.settingsLanguageSelect.value = state.uiLanguage;
+	if (elements.revealFileButton) elements.revealFileButton.textContent = revealInFolderLabel();
 	setDreamStatus(state.dreamStatusText);
 	renderSettingsAgentControls();
 	updateSettingsConnectionDetails();
@@ -3430,6 +3447,12 @@ applyUiLanguage(state.uiLanguage);
 renderConversations();
 window.setInterval(refreshWorkTimerTitles, 100);
 void (async () => {
+	try {
+		const appInfo = await desktop.appInfo();
+		state.platform = appInfo.platform;
+		document.body.classList.add(`platform-${appInfo.platform}`);
+		if (elements.revealFileButton) elements.revealFileButton.textContent = revealInFolderLabel();
+	} catch {}
 	await loadWorkspace();
 	const connected = await autoConnectServer();
 	if (!connected) showServerLoadingFailure();
