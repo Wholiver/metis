@@ -11,6 +11,7 @@ const MAX_DIFF_BYTES = 300_000;
 const IGNORED_DIRECTORIES = new Set([".git", ".codegraph", ".sessions", "node_modules", "dist", "coverage"]);
 
 let mainWindow;
+let isDefaultWorkspaceProjectRepo = false;
 let workspaceRoot = findDefaultWorkspace();
 let metisServer = { baseUrl: "http://127.0.0.1:4096", username: "metis", password: "" };
 let metisEventController;
@@ -50,19 +51,27 @@ async function ensureLocalMetisServer() {
 		console.error("[desktop] Metis CLI not found in app resources or repository build output.");
 		return;
 	}
+	let lastStderr = "";
+	const defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+	const envPath = process.env.PATH ? `${process.env.PATH}:${defaultPath}` : defaultPath;
 	autoServerProcess = utilityProcess.fork(cliPath, ["server", "--hostname", "127.0.0.1", "--port", "4096"], {
 		cwd: workspaceRoot,
-		env: { ...process.env },
+		env: { ...process.env, PATH: envPath },
 		stdio: ["ignore", "pipe", "pipe"],
 		serviceName: "Metis Server",
 	});
 	autoServerProcess.stdout?.on("data", (chunk) => process.stdout.write("[server] " + chunk));
-	autoServerProcess.stderr?.on("data", (chunk) => process.stderr.write("[server] " + chunk));
+	autoServerProcess.stderr?.on("data", (chunk) => {
+		const str = chunk.toString();
+		if (str.trim()) lastStderr = str.trim();
+		process.stderr.write("[server] " + str);
+	});
 	autoServerProcess.once("exit", (code) => {
 		autoServerProcess = undefined;
 		if (!appIsQuitting) {
-			console.error("[desktop] Auto-started Server exited (" + code + ").");
-			mainWindow?.webContents.send("metis:disconnected", "本地 Server 已停止");
+			const detail = lastStderr ? `: ${lastStderr}` : "";
+			console.error("[desktop] Auto-started Server exited (" + code + ")" + detail);
+			mainWindow?.webContents.send("metis:disconnected", `本地 Server 已停止 (${code})${detail}`);
 		}
 	});
 	for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -363,7 +372,11 @@ function stripJsonComments(input) {
 }
 
 function workspaceSummary() {
-	return { name: path.basename(workspaceRoot), path: workspaceRoot };
+	return {
+		name: path.basename(workspaceRoot),
+		path: workspaceRoot,
+		isProjectRepo: isDefaultWorkspaceProjectRepo,
+	};
 }
 
 function setWorkspaceRoot(workspacePath) {
@@ -373,16 +386,31 @@ function setWorkspaceRoot(workspacePath) {
 		throw new Error(`Workspace directory does not exist: ${resolved}`);
 	}
 	workspaceRoot = resolved;
+	isDefaultWorkspaceProjectRepo = true;
 	return workspaceSummary();
 }
 
 function findDefaultWorkspace() {
 	for (const candidate of [path.resolve(__dirname, ".."), path.resolve(__dirname, "../.."), process.cwd()]) {
 		if (fs.existsSync(path.join(candidate, "src", "modes")) && fs.existsSync(path.join(candidate, "package.json"))) {
+			isDefaultWorkspaceProjectRepo = true;
 			return candidate;
 		}
 	}
-	return process.cwd();
+	isDefaultWorkspaceProjectRepo = false;
+	const cwd = process.cwd();
+	if (cwd && cwd !== "/" && fs.existsSync(cwd)) {
+		return cwd;
+	}
+	try {
+		return app.getPath("documents");
+	} catch {
+		try {
+			return app.getPath("home");
+		} catch {
+			return require("node:os").homedir();
+		}
+	}
 }
 
 async function readWorkspaceTree() {

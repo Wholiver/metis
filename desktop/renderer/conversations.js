@@ -19,9 +19,21 @@
 		return `workspace:${encodeURIComponent(normalizeProjectPath(projectPath))}`;
 	}
 
+	function isInvalidProjectPath(path) {
+		const norm = normalizeProjectPath(path);
+		if (!norm) return true;
+		if (norm === "/" || norm === "\\" || norm === "." || norm === ".." || /^[A-Za-z]:[\\/]?$/.test(norm)) return true;
+		const parts = norm.split(/[\\/]/).filter(Boolean);
+		const basename = parts.at(-1)?.toLowerCase() || "";
+		if (parts.length <= 3 && ["documents", "document", "desktop", "downloads"].includes(basename)) {
+			return true;
+		}
+		return false;
+	}
+
 	function createProject(workspace) {
 		const projectPath = normalizeProjectPath(workspace?.path);
-		if (!projectPath) return undefined;
+		if (isInvalidProjectPath(projectPath)) return undefined;
 		return {
 			id: projectIdFromPath(projectPath),
 			name: String(workspace?.name || projectNameFromPath(projectPath)),
@@ -55,9 +67,10 @@
 			projects.push(project);
 		}
 
-		const fallback = createProject(fallbackWorkspace);
-		if (fallback && !seenPaths.has(fallback.path)) projects.unshift(fallback);
-		if (!projects.length && fallback) projects.push(fallback);
+		if (value === undefined && fallbackWorkspace?.isProjectRepo) {
+			const fallback = createProject(fallbackWorkspace);
+			if (fallback && !seenPaths.has(fallback.path)) projects.push(fallback);
+		}
 
 		const requestedActiveId = typeof value?.activeProjectId === "string" ? value.activeProjectId : undefined;
 		const activeProjectId = projects.some((project) => project.id === requestedActiveId)

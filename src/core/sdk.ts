@@ -13,6 +13,7 @@ import { convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import { findInitialModel } from "./model-resolver.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
+import { withRawReasoningPreference } from "./raw-reasoning-stream.ts";
 import { withBuiltinDreamModeFactories } from "./builtins/dream-mode.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
@@ -336,7 +337,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const timeoutMs = options?.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs;
 			const websocketConnectTimeoutMs =
 				options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
-			return streamSimple(model, context, {
+			const providerStream = streamSimple(model, context, {
 				...options,
 				apiKey: auth.apiKey,
 				env,
@@ -352,6 +353,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					options?.headers,
 				),
 			});
+			return withRawReasoningPreference(providerStream, model);
 		},
 		onPayload: async (payload, _model) => {
 			const runner = extensionRunnerRef.current;

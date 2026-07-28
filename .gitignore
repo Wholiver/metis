@@ -11,3 +11,5 @@ test-subagent.log
 
 
 *.bun-build
+.temp
+desktop/release/

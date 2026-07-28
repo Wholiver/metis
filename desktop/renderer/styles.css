@@ -296,10 +296,10 @@ body:has(.app-shell.sidebar-collapsed) .window-nav::after {
 .project-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   width: 100%;
   height: 31px;
-  padding: 0 9px;
+  padding: 0 4px 0 9px;
   border-radius: 6px;
   background: transparent;
   color: #454a4b;
@@ -309,16 +309,96 @@ body:has(.app-shell.sidebar-collapsed) .window-nav::after {
 }
 .project-header:hover { background: var(--surface-hover); }
 .project-header.active { color: #202425; }
-.project-header.active::after {
+.project-header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.project-header-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-header.active .project-header-main::after {
   content: "";
   width: 5px;
   height: 5px;
-  margin-left: auto;
+  margin-left: 4px;
+  flex-shrink: 0;
   border-radius: 999px;
   background: currentColor;
   opacity: .42;
 }
-.project-header svg { width: 15px; height: 15px; }
+.project-header-main svg { width: 15px; height: 15px; flex-shrink: 0; }
+.project-remove-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #7d8487;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.project-header:hover .project-remove-button {
+  opacity: 1;
+}
+.project-remove-button:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #202425;
+}
+.project-remove-button svg {
+  width: 13px;
+  height: 13px;
+}
+.projects-empty-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 31px;
+  padding: 0 9px 0 10px;
+  margin-top: 1px;
+  border-radius: 6px;
+  color: #8a8f90;
+  font-size: 13.5px;
+  font-weight: 450;
+  cursor: pointer;
+  user-select: none;
+  transition: background 150ms ease, color 150ms ease;
+}
+.projects-empty-state:hover {
+  background: var(--surface-hover);
+  color: #454a4b;
+}
+.projects-empty-state svg {
+  width: 15px;
+  height: 15px;
+  color: #9ba0a1;
+  opacity: 0.65;
+  flex-shrink: 0;
+  transition: opacity 150ms ease, color 150ms ease;
+}
+.projects-empty-state:hover svg {
+  opacity: 0.9;
+  color: #555b5c;
+}
 .project-conversations { display: grid; gap: 1px; margin-top: 1px; }
 .project-group.collapsed .project-conversations { display: none; }
 .conversation-item {
@@ -2569,11 +2649,19 @@ body.settings-open .window-nav { display: none; }
   transform: translate(-50%, -50%) scaleX(1);
   opacity: 1;
 }
+.cot-container.has-final-response > .cot-divider {
+  display: block;
+}
 .turn-final-divider {
-  display: none;
+  display: block;
   height: 1px;
   margin: 16px 0;
   background: var(--line);
+}
+.assistant-message.assistant-turn-collapsed .cot-divider,
+.assistant-message.assistant-turn-collapsed .turn-final-divider,
+.cot-container.collapsed > .cot-divider {
+  display: none !important;
 }
 .assistant-body:has(> .turn-final-divider) {
   display: flow-root;

@@ -584,21 +584,57 @@ async function refreshAllProjectConversations() {
 	renderConversations();
 }
 
+function removeProject(projectToRemove) {
+	if (!projectToRemove) return;
+	state.projects = state.projects.filter((p) => p.id !== projectToRemove.id);
+	if (state.activeProjectId === projectToRemove.id) {
+		const nextProject = state.projects[0];
+		state.activeProjectId = nextProject?.id;
+		if (nextProject) {
+			void activateProject(nextProject);
+		} else {
+			elements.fileRootName.textContent = uiText("noWorkspace");
+			elements.fileRootPath.textContent = "";
+		}
+	}
+	saveProjectState();
+	renderConversations();
+}
+
 function renderConversations() {
 	elements.conversationList.replaceChildren();
+	if (!state.projects.length) {
+		const empty = document.createElement("div");
+		empty.className = "projects-empty-state";
+		empty.title = uiText("addProject");
+		empty.append(icon("folder"));
+		const text = document.createElement("span");
+		text.textContent = uiText("noProjects");
+		empty.append(text);
+		empty.addEventListener("click", () => {
+			document.querySelector("#chooseWorkspaceButton")?.click();
+		});
+		elements.conversationList.append(empty);
+		return;
+	}
 	for (const project of state.projects) {
 		const group = document.createElement("section");
 		group.className = `project-group${project.collapsed ? " collapsed" : ""}`;
 
-		const header = document.createElement("button");
+		const header = document.createElement("div");
 		const isActiveProject = project.id === state.activeProjectId;
 		header.className = `project-header${isActiveProject ? " active" : ""}`;
-		header.setAttribute("aria-expanded", String(!project.collapsed));
-		header.append(icon(project.collapsed ? "folder" : "folder-open"));
+
+		const headerMain = document.createElement("button");
+		headerMain.type = "button";
+		headerMain.className = "project-header-main";
+		headerMain.setAttribute("aria-expanded", String(!project.collapsed));
+		headerMain.append(icon(project.collapsed ? "folder" : "folder-open"));
 		const title = document.createElement("span");
+		title.className = "project-header-title";
 		title.textContent = project.name;
-		header.append(title);
-		header.addEventListener("click", () => {
+		headerMain.append(title);
+		headerMain.addEventListener("click", () => {
 			if (!isActiveProject) {
 				void activateProject(project);
 				return;
@@ -607,6 +643,20 @@ function renderConversations() {
 			saveProjectState();
 			renderConversations();
 		});
+		header.append(headerMain);
+
+		const removeBtn = document.createElement("button");
+		removeBtn.type = "button";
+		removeBtn.className = "project-remove-button";
+		removeBtn.title = uiText("removeProject");
+		removeBtn.setAttribute("aria-label", uiText("removeProject"));
+		removeBtn.append(icon("x"));
+		removeBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			removeProject(project);
+		});
+		header.append(removeBtn);
+
 		group.append(header);
 
 		const list = document.createElement("div");
@@ -894,14 +944,14 @@ function cleanMessageTextOfFiles(messageText) {
 function renderAttachmentPreviews() {
 	if (!elements.composerAttachments) return;
 	elements.composerAttachments.replaceChildren();
-
+	
 	state.attachedImages.forEach((img) => {
 		const preview = document.createElement("div");
 		preview.className = "attachment-preview";
-
+		
 		const thumb = document.createElement("img");
 		thumb.src = img.src;
-
+		
 		const removeBtn = document.createElement("button");
 		removeBtn.type = "button";
 		removeBtn.className = "remove-btn";
@@ -910,7 +960,7 @@ function renderAttachmentPreviews() {
 			state.attachedImages = state.attachedImages.filter((x) => x.id !== img.id);
 			renderAttachmentPreviews();
 		});
-
+		
 		preview.append(thumb, removeBtn);
 		elements.composerAttachments.append(preview);
 	});
@@ -918,22 +968,22 @@ function renderAttachmentPreviews() {
 	state.attachedFiles.forEach((file) => {
 		const preview = document.createElement("div");
 		preview.className = "file-preview";
-
+		
 		const fileIcon = icon("file");
-
+		
 		const info = document.createElement("div");
 		info.className = "file-preview-info";
-
+		
 		const name = document.createElement("span");
 		name.className = "file-preview-name";
 		name.textContent = file.name;
-
+		
 		const size = document.createElement("span");
 		size.className = "file-preview-size";
 		size.textContent = file.sizeStr || "";
-
+		
 		info.append(name, size);
-
+		
 		const removeBtn = document.createElement("button");
 		removeBtn.type = "button";
 		removeBtn.className = "remove-btn";
@@ -942,7 +992,7 @@ function renderAttachmentPreviews() {
 			state.attachedFiles = state.attachedFiles.filter((x) => x.id !== file.id);
 			renderAttachmentPreviews();
 		});
-
+		
 		preview.append(fileIcon, info, removeBtn);
 		elements.composerAttachments.append(preview);
 	});
@@ -955,7 +1005,7 @@ async function handleAttachments(files) {
 			reader.onload = (e) => {
 				const base64Data = e.target.result.split(",")[1];
 				const mimeType = file.type;
-
+				
 				const attachment = {
 					id: Math.random().toString(36).substring(7),
 					mimeType,
@@ -970,14 +1020,14 @@ async function handleAttachments(files) {
 			const reader = new FileReader();
 			reader.onload = (e) => {
 				const text = e.target.result;
-
+				
 				let sizeStr = `${file.size} B`;
 				if (file.size > 1024 * 1024) {
 					sizeStr = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
 				} else if (file.size > 1024) {
 					sizeStr = `${(file.size / 1024).toFixed(1)} KB`;
 				}
-
+				
 				const attachment = {
 					id: Math.random().toString(36).substring(7),
 					name: file.name,
@@ -1014,9 +1064,9 @@ function renderEmptyState(connected = state.serverConnected) {
 }
 
 function isAssistantTurnActive(turnContext) {
-	const hasRunningSubagent = Array.isArray(state.session?.runningSubagentIds)
-		&& state.session.runningSubagentIds.length > 0;
-	return turnContext.isCurrentTurn && (state.isStreaming || hasRunningSubagent);
+	const hasRunningSubagent = (Array.isArray(state.session?.runningSubagentIds)
+		&& state.session.runningSubagentIds.length > 0) || Boolean(turnContext?.hasRunningSubagent);
+	return Boolean(turnContext?.isCurrentTurn) && (state.isStreaming || hasRunningSubagent);
 }
 
 function getThinkingDuration(message, messages = state.messages) {
@@ -1121,7 +1171,7 @@ function formatToolDisplayName(toolName, status) {
 
 function getToolStatus(toolCall, message, messages) {
 	const resultMsg = messages.find((m) => m.role === "toolResult" && m.toolCallId === toolCall.id);
-
+	
 	if (resultMsg) {
 		if (resultMsg.isError) {
 			let outputText = "";
@@ -1141,14 +1191,14 @@ function getToolStatus(toolCall, message, messages) {
 		}
 		return "Completed";
 	}
-
+	
 	if (message.stopReason === "aborted") {
 		return "Denied";
 	}
 	if (message.stopReason === "error") {
 		return "Error";
 	}
-
+	
 	if (state.isStreaming) {
 		const isLastMessage = messages[messages.length - 1] === message;
 		if (isLastMessage) {
@@ -1159,7 +1209,7 @@ function getToolStatus(toolCall, message, messages) {
 			return "Running";
 		}
 	}
-
+	
 	return "Pending";
 }
 
@@ -1191,10 +1241,19 @@ function setAssistantTurnCollapsed(article, isCollapsed, isActive = false) {
 	});
 }
 
+function refreshAllTurnDividers() {
+	elements.messageColumn.querySelectorAll(".assistant-message").forEach((article) => {
+		const turnDividers = [...article.querySelectorAll(".cot-container.has-final-response > .cot-divider, .turn-final-divider")];
+		turnDividers.forEach((divider, index) => {
+			divider.classList.toggle("turn-terminal-divider", index === turnDividers.length - 1);
+		});
+	});
+}
+
 function updateOrCreateAssistantMessage(existingArticle, message, messages, index) {
 	let article;
 	let body;
-
+	
 	if (existingArticle && existingArticle.classList.contains("assistant-message")) {
 		article = existingArticle;
 		body = article.querySelector(".assistant-body");
@@ -1204,7 +1263,7 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 		body = document.createElement("div");
 		body.className = "assistant-body";
 		article.append(body);
-
+		
 		if (existingArticle) {
 			elements.messageColumn.replaceChild(article, existingArticle);
 		} else {
@@ -1216,7 +1275,7 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 	const turnIsActive = isAssistantTurnActive(turnContext);
 	let turnShouldCollapse = turnContext.shouldCollapse;
 	article.classList.toggle("turn-intermediate-assistant", turnContext.hasCoT && turnContext.isIntermediate);
-
+	
 	if (typeof message.content === "string") {
 		const newHtml = renderMarkdown(message.content);
 		if (body.innerHTML !== newHtml) {
@@ -1225,9 +1284,9 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 		if (turnContext.hasCoT) setAssistantTurnCollapsed(article, turnShouldCollapse, turnIsActive);
 		return;
 	}
-
+	
 	if (!Array.isArray(message.content)) return;
-
+	
 	const { workItems, finalResponsePart } = getAssistantWorkLayout(message, messages, turnContext.isFinalAssistant);
 	const hasCoT = workItems.length > 0;
 
@@ -1271,7 +1330,7 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 			isNewCot = true;
 			cotContainer = document.createElement("div");
 			cotContainer.className = "cot-container animate-entrance";
-
+			
 			const cotHeader = document.createElement("div");
 			cotHeader.className = "cot-header-bar";
 
@@ -1305,7 +1364,7 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 			});
 
 			cotContainer.append(cotHeader, cotBody, cotDivider);
-
+			
 			if (body.firstChild) {
 				body.insertBefore(cotContainer, body.firstChild);
 			} else {
@@ -1326,19 +1385,39 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 			cotHeader.style.display = hideCotHeader ? "none" : "";
 		}
 
+function getWorkItemKey(part, index) {
+	if (part.type === "subagentCard") {
+		return part.part?.id || `subagent_${part.progress?.jobId || index}`;
+	}
+	if (part.type === "toolCall") {
+		return part.id || `tool_${part.name}_${index}`;
+	}
+	if (part.type === "thinking") {
+		return part.id || `thinking_${index}`;
+	}
+	if (part.type === "text") {
+		return part.id || `text_${index}`;
+	}
+	return `work_${part.type}_${index}`;
+}
+
 		const cotTitle = cotContainer.querySelector(".cot-title");
 		if (cotTitle) {
 			const isWorking = isAssistantTurnActive(turnContext);
 			const duration = getThinkingDuration(message, messages);
+			const newTitleText = isWorking
+				? (duration !== undefined ? `Working for ${duration}s` : "Working...")
+				: (duration !== undefined && duration !== null ? `Worked for ${duration}s` : "Thinking");
+			if (cotTitle.textContent !== newTitleText) {
+				cotTitle.textContent = newTitleText;
+			}
 			if (isWorking) {
-				cotTitle.textContent = duration !== undefined ? `Working for ${duration}s` : "Working...";
-				cotTitle.classList.add("working-shimmer");
+				if (!cotTitle.classList.contains("working-shimmer")) {
+					cotTitle.classList.add("working-shimmer");
+				}
 			} else {
-				cotTitle.classList.remove("working-shimmer");
-				if (duration !== undefined && duration !== null) {
-					cotTitle.textContent = `Worked for ${duration}s`;
-				} else {
-					cotTitle.textContent = "Thinking";
+				if (cotTitle.classList.contains("working-shimmer")) {
+					cotTitle.classList.remove("working-shimmer");
 				}
 			}
 		}
@@ -1347,40 +1426,60 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 		const cotBody = cotContainer.querySelector(".cot-content-inner");
 		cotContainer.classList.toggle("cot-continuation", hideCotHeader);
 
+		const existingKeyMap = new Map();
+		for (const child of cotBody.children) {
+			const key = child.dataset.partKey;
+			if (key) existingKeyMap.set(key, child);
+		}
+
+		const currentKeys = new Set();
+
 		for (let index = 0; index < workItems.length; index += 1) {
 			const part = workItems[index];
-			const existingPartEl = cotBody.children[index];
+			const key = getWorkItemKey(part, index);
+			currentKeys.add(key);
+
+			let itemEl = existingKeyMap.get(key);
 
 			if (part.type === "thinking" && part.thinking) {
 				const newHtml = renderMarkdown(part.thinking);
-				if (existingPartEl && existingPartEl.classList.contains("cot-thinking")) {
-					if (existingPartEl.innerHTML !== newHtml) {
-						existingPartEl.innerHTML = newHtml;
-					}
+				if (!itemEl) {
+					itemEl = document.createElement("div");
+					itemEl.className = "cot-thinking animate-entrance";
+					itemEl.dataset.partKey = key;
+					itemEl.innerHTML = newHtml;
 				} else {
-					const thinkDiv = document.createElement("div");
-					thinkDiv.className = "cot-thinking animate-entrance";
-					thinkDiv.innerHTML = newHtml;
-					replaceOrAppendPart(cotBody, thinkDiv, existingPartEl);
+					if (itemEl.innerHTML !== newHtml) {
+						itemEl.innerHTML = newHtml;
+					}
+					itemEl.classList.remove("animate-entrance");
 				}
 			} else if (part.type === "text" && part.text) {
 				const newHtml = renderMarkdown(part.text);
-				if (existingPartEl && existingPartEl.classList.contains("cot-text")) {
-					if (existingPartEl.innerHTML !== newHtml) {
-						existingPartEl.innerHTML = newHtml;
-					}
+				if (!itemEl) {
+					itemEl = document.createElement("div");
+					itemEl.className = "cot-text animate-entrance";
+					itemEl.dataset.partKey = key;
+					itemEl.innerHTML = newHtml;
 				} else {
-					const textDiv = document.createElement("div");
-					textDiv.className = "cot-text animate-entrance";
-					textDiv.innerHTML = newHtml;
-					replaceOrAppendPart(cotBody, textDiv, existingPartEl);
+					if (itemEl.innerHTML !== newHtml) {
+						itemEl.innerHTML = newHtml;
+					}
+					itemEl.classList.remove("animate-entrance");
 				}
 			} else if (part.type === "subagentCard") {
-				let completionCard = existingPartEl;
-				if (!completionCard?.classList.contains("subagent-completion-card")
-					|| completionCard.dataset.state !== part.progress.state) {
-					completionCard = renderSubagentCompletionCard(part);
-					replaceOrAppendPart(cotBody, completionCard, existingPartEl);
+				if (!itemEl || itemEl.dataset.state !== part.progress.state) {
+					const newCard = renderSubagentCompletionCard(part);
+					newCard.dataset.partKey = key;
+					if (itemEl) {
+						itemEl.replaceWith(newCard);
+						itemEl = newCard;
+					} else {
+						itemEl = newCard;
+						itemEl.classList.add("animate-entrance");
+					}
+				} else {
+					itemEl.classList.remove("animate-entrance");
 				}
 			} else if (part.type === "toolCall") {
 				const status = getToolStatus(part, message, messages);
@@ -1388,23 +1487,24 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 
 				if (!state.toolCallTimes) state.toolCallTimes = {};
 
-				if (existingPartEl && existingPartEl.classList.contains("tool-card")) {
-					existingPartEl.classList.toggle("running", isRunning);
+				if (itemEl && itemEl.classList.contains("tool-card")) {
+					itemEl.classList.toggle("running", isRunning);
+					itemEl.classList.remove("animate-entrance");
 
-					const nameEl = existingPartEl.querySelector(".tool-name");
+					const nameEl = itemEl.querySelector(".tool-name");
 					if (nameEl) {
-						nameEl.className = `tool-name ${isRunning ? "shimmering" : ""}`;
-						nameEl.textContent = formatToolDisplayName(part.name, status);
+						const nameClass = `tool-name ${isRunning ? "shimmering" : ""}`;
+						if (nameEl.className !== nameClass) nameEl.className = nameClass;
+						const displayName = formatToolDisplayName(part.name, status);
+						if (nameEl.textContent !== displayName) nameEl.textContent = displayName;
 					}
 
-					// Remove old status badge if present
-					const oldBadge = existingPartEl.querySelector(".tool-badge");
+					const oldBadge = itemEl.querySelector(".tool-badge");
 					if (oldBadge) oldBadge.remove();
 
-					// Update or create duration element
-					let durationEl = existingPartEl.querySelector(".tool-duration");
-					const headerBar = existingPartEl.querySelector(".tool-header-bar");
-					const chevron = existingPartEl.querySelector(".tool-chevron");
+					let durationEl = itemEl.querySelector(".tool-duration");
+					const headerBar = itemEl.querySelector(".tool-header-bar");
+					const chevron = itemEl.querySelector(".tool-chevron");
 
 					if (!durationEl && headerBar) {
 						durationEl = document.createElement("span");
@@ -1420,7 +1520,7 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 						if (!state.toolCallTimes[part.id]) {
 							state.toolCallTimes[part.id] = { startTime: Date.now() };
 						}
-						if (durationEl) durationEl.textContent = "";
+						if (durationEl && durationEl.textContent !== "") durationEl.textContent = "";
 					} else {
 						if (!state.toolCallTimes[part.id]) {
 							state.toolCallTimes[part.id] = { startTime: Date.now() - 350, duration: "350ms" };
@@ -1428,14 +1528,15 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 							const elapsed = Date.now() - state.toolCallTimes[part.id].startTime;
 							state.toolCallTimes[part.id].duration = elapsed < 1000 ? `${elapsed}ms` : `${(elapsed / 1000).toFixed(1)}s`;
 						}
-						if (durationEl) durationEl.textContent = state.toolCallTimes[part.id].duration || "";
+						const durText = state.toolCallTimes[part.id].duration || "";
+						if (durationEl && durationEl.textContent !== durText) durationEl.textContent = durText;
 					}
 
-					const detailsBody = existingPartEl.querySelector(".tool-details-body");
+					const detailsBody = itemEl.querySelector(".tool-details-body");
 					if (detailsBody) {
 						const resultMsg = messages.find((m) => m.role === "toolResult" && m.toolCallId === part.id);
 						const outPre = detailsBody.querySelector(".tool-section-title:nth-of-type(2) + pre code");
-
+						
 						if (resultMsg) {
 							let textOutput = "";
 							if (typeof resultMsg.content === "string") {
@@ -1446,45 +1547,58 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 									.map((p) => p.text)
 									.join("\n");
 							}
-
+							
 							if (outPre) {
 								if (outPre.textContent !== textOutput) {
 									outPre.textContent = textOutput;
 								}
 							} else {
 								const outTitle = document.createElement("div");
-								outTitle.className = "tool-section-title animate-entrance";
+								outTitle.className = "tool-section-title";
 								outTitle.textContent = "Output:";
-
+								
 								const newOutPre = document.createElement("pre");
-								newOutPre.className = "animate-entrance";
 								const outCode = document.createElement("code");
 								outCode.textContent = textOutput;
 								newOutPre.append(outCode);
-
+								
 								detailsBody.append(outTitle, newOutPre);
 							}
 						}
 					}
 				} else {
-					const toolCallDiv = renderToolCallBlock(part, message, messages);
-					toolCallDiv.classList.add("animate-entrance");
-					replaceOrAppendPart(cotBody, toolCallDiv, existingPartEl);
+					itemEl = renderToolCallBlock(part, message, messages);
+					itemEl.dataset.partKey = key;
+					itemEl.classList.add("animate-entrance");
+				}
+			}
+
+			if (itemEl) {
+				const expectedPos = cotBody.children[index];
+				if (expectedPos !== itemEl) {
+					if (expectedPos) {
+						cotBody.insertBefore(itemEl, expectedPos);
+					} else {
+						cotBody.append(itemEl);
+					}
 				}
 			}
 		}
-		while (cotBody.children.length > workItems.length) {
-			cotBody.lastElementChild.remove();
+
+		for (const child of [...cotBody.children]) {
+			if (child.dataset.partKey && !currentKeys.has(child.dataset.partKey)) {
+				child.remove();
+			}
 		}
 
 		let cotDivider = cotContainer.querySelector(".cot-divider");
 		if (cotDivider) {
-			cotDivider.style.display = finalResponsePart ? "" : "none";
+			cotDivider.style.display = "";
 		}
 		cotContainer.classList.toggle("has-final-response", Boolean(finalResponsePart));
 
 		let finalResponseEl = body.querySelector(":scope > .assistant-text-part");
-
+		
 		if (finalResponsePart) {
 			if (finalResponsePart.text) {
 				const cleanText = (finalResponsePart.text || "").trimStart();
@@ -1683,12 +1797,12 @@ function renderToolCallBlock(part, message, messages) {
 	const argsTitle = document.createElement("div");
 	argsTitle.className = "tool-section-title";
 	argsTitle.textContent = "Arguments:";
-
+	
 	const argsPre = document.createElement("pre");
 	const argsCode = document.createElement("code");
 	argsCode.textContent = typeof part.arguments === "object" ? JSON.stringify(part.arguments, null, 2) : String(part.arguments);
 	argsPre.append(argsCode);
-
+	
 	details.append(argsTitle, argsPre);
 
 	const resultMsg = messages.find((m) => m.role === "toolResult" && m.toolCallId === part.id);
@@ -1696,10 +1810,10 @@ function renderToolCallBlock(part, message, messages) {
 		const outTitle = document.createElement("div");
 		outTitle.className = "tool-section-title";
 		outTitle.textContent = "Output:";
-
+		
 		const outPre = document.createElement("pre");
 		const outCode = document.createElement("code");
-
+		
 		let textOutput = "";
 		if (typeof resultMsg.content === "string") {
 			textOutput = resultMsg.content;
@@ -1709,10 +1823,10 @@ function renderToolCallBlock(part, message, messages) {
 				.map((p) => p.text)
 				.join("\n");
 		}
-
+		
 		outCode.textContent = textOutput;
 		outPre.append(outCode);
-
+		
 		details.append(outTitle, outPre);
 	}
 
@@ -1735,14 +1849,14 @@ function renderServerMessages(messages = []) {
 	renderSubagentDock(messages);
 	let visible = 0;
 	const activeMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
-
+	
 	while (elements.messageColumn.children.length > activeMessages.length) {
 		elements.messageColumn.lastElementChild.remove();
 	}
-
+	
 	activeMessages.forEach((message, index) => {
 		const existingArticle = elements.messageColumn.children[index];
-
+		
 		if (message.role === "user") {
 			const rawText = extractMessageText(message);
 			const images = extractMessageImages(message);
@@ -1781,14 +1895,14 @@ function renderServerMessages(messages = []) {
 					article.className = "message user-message animate-entrance";
 					const bubble = document.createElement("div");
 					bubble.className = "user-bubble";
-
+					
 					if (text) {
 						const textEl = document.createElement("div");
 						textEl.className = "user-bubble-text";
 						textEl.textContent = text;
 						bubble.append(textEl);
 					}
-
+					
 					if (images.length > 0) {
 						const imgsContainer = document.createElement("div");
 						imgsContainer.className = "user-bubble-images";
@@ -1799,7 +1913,7 @@ function renderServerMessages(messages = []) {
 						});
 						bubble.append(imgsContainer);
 					}
-
+					
 					if (files.length > 0) {
 						const filesContainer = document.createElement("div");
 						filesContainer.className = "user-bubble-files";
@@ -1812,7 +1926,7 @@ function renderServerMessages(messages = []) {
 						});
 						bubble.append(filesContainer);
 					}
-
+					
 					article.append(bubble);
 					if (existingArticle) {
 						elements.messageColumn.replaceChild(article, existingArticle);
@@ -1827,6 +1941,8 @@ function renderServerMessages(messages = []) {
 		}
 	});
 
+	refreshAllTurnDividers();
+	
 	if (!visible) renderEmptyState(true);
 	else scrollMessagesToBottom(false);
 }
@@ -2064,17 +2180,17 @@ function updateModelSelect() {
 	const contextUsage = state.session?.contextUsage;
 	if (contextUsage && typeof contextUsage.percent === "number") {
 		const percent = contextUsage.percent;
-
+		
 		const dashOffset = 38.33 * (1 - Math.min(100, percent) / 100);
 		elements.contextPercentRing.style.strokeDashoffset = String(dashOffset);
-
+		
 		elements.contextIndicator.classList.remove("warning", "critical");
 		if (percent >= 95) {
 			elements.contextIndicator.classList.add("critical");
 		} else if (percent >= 80) {
 			elements.contextIndicator.classList.add("warning");
 		}
-
+		
 		const tokensStr = contextUsage.tokens !== null ? contextUsage.tokens.toLocaleString() : "?";
 		const limitStr = contextUsage.contextWindow.toLocaleString();
 		const tooltipText = uiText("contextUsage", { tokens: tokensStr, limit: limitStr, percent: percent.toFixed(1) });
@@ -2521,14 +2637,14 @@ function appendUserMessage(text, images = [], files = [], shouldScroll = true) {
 	article.className = "message user-message animate-entrance";
 	const bubble = document.createElement("div");
 	bubble.className = "user-bubble";
-
+	
 	if (text) {
 		const textEl = document.createElement("div");
 		textEl.className = "user-bubble-text";
 		textEl.textContent = text;
 		bubble.append(textEl);
 	}
-
+	
 	if (images.length > 0) {
 		const imgsContainer = document.createElement("div");
 		imgsContainer.className = "user-bubble-images";
@@ -2539,7 +2655,7 @@ function appendUserMessage(text, images = [], files = [], shouldScroll = true) {
 		});
 		bubble.append(imgsContainer);
 	}
-
+	
 	if (files && files.length > 0) {
 		const filesContainer = document.createElement("div");
 		filesContainer.className = "user-bubble-files";
@@ -2552,7 +2668,7 @@ function appendUserMessage(text, images = [], files = [], shouldScroll = true) {
 		});
 		bubble.append(filesContainer);
 	}
-
+	
 	article.append(bubble);
 	elements.messageColumn.append(article);
 	if (shouldScroll) scrollMessagesToBottom();
@@ -2567,10 +2683,10 @@ function appendAssistantNotice(text, label = "Metis", shouldScroll = true) {
 	article.className = "message assistant-message animate-entrance";
 	const body = document.createElement("div");
 	body.className = "assistant-body";
-
+	
 	const contentText = (label === "Metis" ? text : `**${label}**：\n\n${text}`) || "";
 	body.innerHTML = renderMarkdown(contentText);
-
+	
 	article.append(body);
 	elements.messageColumn.append(article);
 	if (shouldScroll) scrollMessagesToBottom();
@@ -2693,7 +2809,12 @@ async function connectServer() {
 		state.serverConnected = true;
 		updateSettingsConnectionDetails();
 		try {
-			await activateProject(activeProject(), { record: false, loadModels: true });
+			const project = activeProject();
+			if (project) {
+				await activateProject(project, { record: false, loadModels: true });
+			} else {
+				await syncServerSession({ loadModels: true });
+			}
 			await refreshAllProjectConversations();
 			await loadVisualSettings();
 			elements.serverDialog.close();
@@ -2719,12 +2840,18 @@ async function autoConnectServer() {
 			state.serverConnected = true;
 			updateSettingsConnectionDetails();
 			try {
-				await activateProject(activeProject(), { record: false, loadModels: true });
+				const project = activeProject();
+				if (project) {
+					await activateProject(project, { record: false, loadModels: true });
+				} else {
+					await syncServerSession({ loadModels: true });
+				}
 				await refreshAllProjectConversations();
 				await loadVisualSettings();
 				finishServerLoading();
 				return true;
-			} catch {
+			} catch (err) {
+				console.error("[desktop] autoConnectServer sync error:", err);
 				return false;
 			}
 		}
@@ -2838,7 +2965,7 @@ function handleMetisEvent(event) {
 		void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, "同步失败"));
 	} else if (active) {
 		setStreamingState(true, humanizeEvent(event.type));
-
+		
 		if (event.type === "message_start") {
 			if (event.message) {
 				const key = event.message.id || event.message.timestamp;
@@ -2859,8 +2986,8 @@ function handleMetisEvent(event) {
 					state.messageStartTimes[key] = Date.now();
 				}
 
-				const index = state.messages.findIndex((m) =>
-					(m.id && event.message.id && m.id === event.message.id) ||
+				const index = state.messages.findIndex((m) => 
+					(m.id && event.message.id && m.id === event.message.id) || 
 					(m.role === event.message.role && m.timestamp === event.message.timestamp)
 				);
 				if (index !== -1) {

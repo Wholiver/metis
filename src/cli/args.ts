@@ -83,7 +83,7 @@ export function parseArgs(args: string[]): Args {
 		} else if (arg === "--mode" && i + 1 < args.length) {
 			const mode = args[++i];
 			if (mode === "text" || mode === "json" || mode === "rpc" || mode === "server") {
-				result.mode = mode;
+				result.mode = mode as Mode;
 			}
 		} else if (arg === "--hostname" && i + 1 < args.length) {
 			result.hostname = args[++i];

@@ -132,6 +132,14 @@ describe("parseArgs", () => {
 			expect(result.port).toBe(4096);
 		});
 
+		test("preserves explicit print flag when mode rpc is not set", () => {
+			const result = parseArgs(["--print", "hello", "@file.txt"]);
+			expect(result.print).toBe(true);
+			expect(result.mode).toBeUndefined();
+			expect(result.fileArgs).toEqual(["file.txt"]);
+		});
+
+
 		test("parses --session", () => {
 			const result = parseArgs(["--session", "/path/to/session.jsonl"]);
 			expect(result.session).toBe("/path/to/session.jsonl");
