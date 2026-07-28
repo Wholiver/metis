@@ -57,7 +57,22 @@ async function run(command, args, { logOutput = true, ...options } = {}) {
 	return stdout;
 }
 
-async function copyTree(source, destination) {
+async function copyTree(source, destination, { materialize = process.platform === "win32" } = {}) {
+	if (materialize) {
+		await mkdir(destination, { recursive: true });
+		try {
+			await execFileAsync("robocopy", [source, destination, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/nc", "/ns", "/np"], {
+				cwd: rootDir,
+				maxBuffer: 20 * 1024 * 1024,
+				windowsHide: true,
+			});
+		} catch (error) {
+			const code = Number(error.code);
+			if (Number.isFinite(code) && code >= 0 && code <= 7) return;
+			throw error;
+		}
+		return;
+	}
 	await cp(source, destination, { recursive: true, force: true });
 }
 
@@ -119,7 +134,7 @@ try {
 	await run("npm", ["run", "build"]);
 
 	console.log("[2/6] 构建 Desktop renderer");
-	await run("npm", ["--prefix", desktopDir, "run", "build"]);
+	await run("npm", ["run", "build"], { cwd: desktopDir });
 
 	console.log("[3/6] 生成应用图标");
 	await buildIcon();
