@@ -52,7 +52,7 @@ Use the CLI for terminal workflows, scripts, print/JSON output, RPC, and SDK int
 1. Install the latest release globally:
 
    ```bash
-   npm install -g @wholiver_hu/metis@latest
+   npm install -g --ignore-scripts @wholiver_hu/metis@latest
    ```
 
 2. Start an interactive session:

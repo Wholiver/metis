@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAllTools } from "../src/core/tools/index.ts";
-import { createVideoTool, parseSubtitleText, type VideoOperations } from "../src/core/tools/video.ts";
+import { createVideoTool, parseSubtitleText, resolveMediaBinaryPath, type VideoOperations } from "../src/core/tools/video.ts";
 
 const runFile = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -36,15 +36,31 @@ describe("video tool", () => {
 			readEmbeddedSubtitles: vi.fn(async () => undefined),
 			transcribe: vi.fn(async () => [{ start: 10, end: 12, text: "hello video" }]),
 			isModelInstalled: vi.fn(async () => false),
+			prepareModel: vi.fn(async () => undefined),
 			...overrides,
 		};
 	}
 
 	it("parses SRT and WebVTT timestamped segments", () => {
-		expect(parseSubtitleText("WEBVTT\n\n00:00:01.000 --> 00:00:02.500\nHi <b>there</b>\n\n2\n00:00:03,000 --> 00:00:04,000\nAgain")).toEqual([
-			{ start: 1, end: 2.5, text: "Hi there" },
-			{ start: 3, end: 4, text: "Again" },
+		expect(parseSubtitleText("WEBVTT\n\n00:01.000 --> 00:02.500\nShort timestamp\n\n00:00:03.000 --> 00:00:04.500\nHi <b>there</b>\n\n2\n00:00:05,000 --> 00:00:06,000\nAgain")).toEqual([
+			{ start: 1, end: 2.5, text: "Short timestamp" },
+			{ start: 3, end: 4.5, text: "Hi there" },
+			{ start: 5, end: 6, text: "Again" },
 		]);
+	});
+
+	it("prefers Metis bundled media binaries over dependency install paths", () => {
+		const bundledRoot = join(testDir, "dist");
+		const executable = process.platform === "win32" ? "ffprobe.exe" : "ffprobe";
+		const bundledPath = join(bundledRoot, "video-bin", executable);
+		mkdirSync(join(bundledRoot, "video-bin"), { recursive: true });
+		writeFileSync(bundledPath, "fixture");
+		expect(resolveMediaBinaryPath(join(testDir, "missing-dependency-ffprobe"), "ffprobe", bundledRoot)).toBe(bundledPath);
+	});
+
+	it("falls back to the dependency media binary during source development", () => {
+		const dependencyPath = join(testDir, "dependency-ffmpeg");
+		expect(resolveMediaBinaryPath(dependencyPath, "ffmpeg", join(testDir, "missing-dist"))).toBe(dependencyPath);
 	});
 
 	it("initializes inspection with explicit next-call instructions", async () => {
@@ -77,13 +93,23 @@ describe("video tool", () => {
 		expect(ops.createStoryboard).toHaveBeenCalledTimes(1);
 	});
 
-	it("explains how to repair an npm installation when bundled transcription is unavailable", async () => {
-		const tool = createVideoTool(testDir, { operations: operations() });
+	it("automatically prepares a missing transcription model", async () => {
+		const ops = operations();
+		const tool = createVideoTool(testDir, { operations: ops });
 		const result = await tool.execute("video-2", { action: "transcript", path: "clip.mp4" });
-		const output = result.content.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+		expect(ops.prepareModel).toHaveBeenCalledTimes(1);
+		expect(ops.transcribe).toHaveBeenCalledTimes(1);
+		expect(result.details.transcriptionReady).toBe(true);
+		expect(result.details.transcript?.source).toBe("whisper");
+	});
+
+	it("returns a recoverable result when transcription initialization fails", async () => {
+		const ops = operations({ prepareModel: vi.fn(async () => { throw new Error("download unavailable"); }) });
+		const result = await createVideoTool(testDir, { operations: ops }).execute("video-prepare-failure", { action: "transcript", path: "clip.mp4" });
+		expect(ops.transcribe).not.toHaveBeenCalled();
 		expect(result.details.transcriptionReady).toBe(false);
-		expect(output).toContain("npm lifecycle scripts enabled");
-		expect(output).not.toContain("install_transcription_model");
+		expect(result.details.transcriptionError).toContain("download unavailable");
+		expect(result.content.map((block) => block.type === "text" ? block.text : "").join("\n")).toContain("Local transcription initialization failed");
 	});
 
 	it("uses an already configured local transcription implementation", async () => {

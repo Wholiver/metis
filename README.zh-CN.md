@@ -52,7 +52,7 @@ CLI 适合终端工作流、脚本、Print/JSON 输出、RPC 与 SDK 集成。
 1. 全局安装最新版本：
 
    ```bash
-   npm install -g @wholiver_hu/metis@latest
+   npm install -g --ignore-scripts @wholiver_hu/metis@latest
    ```
 
 2. 启动交互式会话：

@@ -40,7 +40,7 @@ const videoBinaries = [
 	["ffprobe", join(root, "node_modules/@derhuerst/ffprobe-static", `ffprobe${executableExtension}`)],
 ];
 for (const [name, source] of videoBinaries) {
-	if (!existsSync(source)) continue;
+	if (!existsSync(source)) throw new Error(`Required ${name} binary is missing: ${source}`);
 	const target = join(root, "dist/video-bin", `${name}${executableExtension}`);
 	mkdirSync(dirname(target), { recursive: true });
 	cpSync(source, target);
