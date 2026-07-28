@@ -10,6 +10,13 @@
 </p>
 
 <p align="center">
+  <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&amp;logoColor=white" /></a>
+  <a href="https://www.npmjs.com/package/@wholiver_hu/metis"><img alt="npm 版本" src="https://img.shields.io/npm/v/%40wholiver_hu%2Fmetis?label=npm&amp;color=CB3837" /></a>
+  <a href="https://nodejs.org/"><img alt="Node.js 22.19.0 或更高版本" src="https://img.shields.io/badge/Node.js-%3E%3D22.19.0-339933?logo=nodedotjs&amp;logoColor=white" /></a>
+  <a href="#许可证"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4C1" /></a>
+</p>
+
+<p align="center">
   <strong>通过更完整的上下文、可复用经验和结果验证，让编程模型写得更好、完成得更快。</strong>
 </p>
 
@@ -24,29 +31,41 @@
 
 ## 快速开始
 
-选择适合您的 Metis 运行方式：
+选择适合当前工作方式的界面。两种方式共用同一套 Metis 配置、模型和会话。
 
-#### 🖥️ 桌面应用 (macOS)
+### macOS 桌面应用
 
-1. 从 [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) 下载最新的 `.dmg` 安装包。
-2. 将 **Metis.app** 拖入 **应用程序 (Applications)** 文件夹并启动。
+桌面应用提供图形化工作区，并内置完整的 Metis CLI 与 Server 运行环境。
 
-#### 💻 CLI / 命令行
+> **当前安装包：** 适用于 Apple 芯片（`arm64`）Mac，无需另行安装 Node.js。
 
-> **前置要求：** Node.js `>=22.19.0` 和 `npm`。
+1. 从 [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) 下载最新的 `.dmg`。
+2. 打开安装包，将 **Metis.app** 拖入 **应用程序 (Applications)** 文件夹。
+3. 从“应用程序”文件夹启动 **Metis**。
 
-全局安装并运行：
+### CLI 与命令行
 
-```bash
-npm i -g @wholiver_hu/metis@rc
-metis
-```
+CLI 适合终端工作流、脚本、Print/JSON 输出、RPC 与 SDK 集成。
 
-查看所有命令行指令与帮助选项：
+> **运行要求：** Node.js `>=22.19.0` 和 `npm`。
 
-```bash
-metis --help
-```
+1. 全局安装最新版本：
+
+   ```bash
+   npm install -g @wholiver_hu/metis@latest
+   ```
+
+2. 启动交互式会话：
+
+   ```bash
+   metis
+   ```
+
+3. 查看全部命令行选项：
+
+   ```bash
+   metis --help
+   ```
 
 ## 为什么选择 Metis
 

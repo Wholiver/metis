@@ -10,6 +10,13 @@
 </p>
 
 <p align="center">
+  <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&amp;logoColor=white" /></a>
+  <a href="https://www.npmjs.com/package/@wholiver_hu/metis"><img alt="npm version" src="https://img.shields.io/npm/v/%40wholiver_hu%2Fmetis?label=npm&amp;color=CB3837" /></a>
+  <a href="https://nodejs.org/"><img alt="Node.js 22.19.0 or newer" src="https://img.shields.io/badge/Node.js-%3E%3D22.19.0-339933?logo=nodedotjs&amp;logoColor=white" /></a>
+  <a href="#license"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4C1" /></a>
+</p>
+
+<p align="center">
   <strong>Help coding models write better code and finish faster with better context, reusable experience, and verified results.</strong>
 </p>
 
@@ -24,29 +31,41 @@
 
 ## Quick start
 
-Choose how you want to run Metis:
+Choose the interface that fits your workflow. Both options use the same Metis configuration, models, and sessions.
 
-#### 🖥️ Desktop App (macOS)
+### Desktop app for macOS
 
-1. Download the latest `.dmg` installer from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest).
-2. Drag **Metis.app** into your **Applications** folder and launch.
+Use the desktop app for a graphical workspace with an embedded Metis CLI and server runtime.
 
-#### 💻 CLI & Terminal
+> **Current installer:** macOS on Apple silicon (`arm64`). No separate Node.js installation is required.
 
-> **Prerequisites:** Node.js `>=22.19.0` and `npm`.
+1. Download the latest `.dmg` from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest).
+2. Open the installer and drag **Metis.app** into **Applications**.
+3. Launch **Metis** from the Applications folder.
 
-Install globally and launch:
+### CLI and terminal
 
-```bash
-npm i -g @wholiver_hu/metis@rc
-metis
-```
+Use the CLI for terminal workflows, scripts, print/JSON output, RPC, and SDK integrations.
 
-To view all available CLI options:
+> **Requirements:** Node.js `>=22.19.0` and `npm`.
 
-```bash
-metis --help
-```
+1. Install the latest release globally:
+
+   ```bash
+   npm install -g @wholiver_hu/metis@latest
+   ```
+
+2. Start an interactive session:
+
+   ```bash
+   metis
+   ```
+
+3. View every CLI option:
+
+   ```bash
+   metis --help
+   ```
 
 ## Why Metis
 
