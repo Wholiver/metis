@@ -32,7 +32,7 @@ describe("Other provider setup and login flow", () => {
 		expect(content.providers.other.name).toBe("My Custom LLM");
 		expect(content.providers.other.baseUrl).toBe("https://api.myllm.com/v1");
 		expect(content.providers.other.api).toBe("openai-completions");
-		expect(content.providers.other.models).toEqual([{ id: "default" }]);
+		expect(content.providers.other.models).toEqual([{ id: "default", input: ["text", "image"] }]);
 
 		const registry = ModelRegistry.create(authStorage, modelsPath);
 		expect(registry.getProviderDisplayName("other")).toBe("My Custom LLM");
@@ -42,6 +42,7 @@ describe("Other provider setup and login flow", () => {
 		expect(otherModel).toBeDefined();
 		expect(otherModel?.baseUrl).toBe("https://api.myllm.com/v1");
 		expect(otherModel?.api).toBe("openai-completions");
+		expect(otherModel?.input).toEqual(["text", "image"]);
 	});
 
 	it("saves fetched model list into models.json when modelIds are provided", () => {
@@ -50,9 +51,9 @@ describe("Other provider setup and login flow", () => {
 
 		const content = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
 		expect(content.providers.other.models).toEqual([
-			{ id: "gpt-4o" },
-			{ id: "gpt-4o-mini" },
-			{ id: "qwen-2.5-coder" },
+			{ id: "gpt-4o", input: ["text", "image"] },
+			{ id: "gpt-4o-mini", input: ["text", "image"] },
+			{ id: "qwen-2.5-coder", input: ["text", "image"] },
 		]);
 
 		authStorage.set("other", { type: "api_key", key: "sk-test" });

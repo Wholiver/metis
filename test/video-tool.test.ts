@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAllTools } from "../src/core/tools/index.ts";
-import { createVideoTool, parseSubtitleText, resolveMediaBinaryPath, type VideoOperations } from "../src/core/tools/video.ts";
+import { createVideoTool, createVideoToolDefinition, parseSubtitleText, resolveMediaBinaryPath, type VideoOperations } from "../src/core/tools/video.ts";
 
 const runFile = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -73,10 +73,21 @@ describe("video tool", () => {
 		expect(output).toContain("Video inspector initialized");
 		expect(output).toContain("action=storyboard");
 		expect(output).toContain("action=transcript");
+		expect(output).toContain("Audio stream: yes");
 		expect(output).toContain("Transcription runtime prepared: no");
 		expect(result.details.transcriptionReady).toBe(false);
 		expect(ops.createStoryboard).not.toHaveBeenCalled();
 		expect(ops.transcribe).not.toHaveBeenCalled();
+	});
+
+	it("does not recommend transcription for a video without audio or subtitles", async () => {
+		const ops = operations({ probe: vi.fn(async () => ({ duration: 80, width: 1280, height: 720, hasAudio: false, hasSubtitles: false })) });
+		const result = await createVideoTool(testDir, { operations: ops }).execute("video-silent", { action: "inspect", path: "clip.mp4" });
+		const output = result.content.map((block) => block.type === "text" ? block.text : "").join("\n");
+		expect(output).toContain("Audio stream: no");
+		expect(output).toContain("Transcription runtime prepared: not needed");
+		expect(output).toContain("Do not call action=transcript");
+		expect(ops.prepareModel).not.toHaveBeenCalled();
 	});
 
 	it("returns one timestamped 3×3 storyboard for a requested range", async () => {
@@ -91,6 +102,17 @@ describe("video tool", () => {
 		expect(result.content.find((block) => block.type === "image")?.mimeType).toBe("image/jpeg");
 		expect(output).not.toContain("focused text");
 		expect(ops.createStoryboard).toHaveBeenCalledTimes(1);
+	});
+
+	it("warns explicit text-only models and instructs visual batching", async () => {
+		const definition = createVideoToolDefinition(testDir, { operations: operations() });
+		const result = await definition.execute("video-text-only", { action: "storyboard", path: "clip.mp4" }, undefined, undefined, {
+			model: { input: ["text"] },
+		} as any);
+		const output = result.content.map((block) => block.type === "text" ? block.text : "").join("\n");
+		expect(output).toContain("explicitly configured as text-only");
+		expect(definition.promptGuidelines?.join("\n")).toContain("batches");
+		expect(definition.promptGuidelines?.join("\n")).toContain("never exceed 4 source frames");
 	});
 
 	it("automatically prepares a missing transcription model", async () => {

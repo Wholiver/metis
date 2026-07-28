@@ -626,7 +626,10 @@ export class ModelRegistry {
 					baseUrl,
 					reasoning: modelDef.reasoning ?? false,
 					thinkingLevelMap: modelDef.thinkingLevelMap,
-					input: (modelDef.input ?? ["text"]) as ("text" | "image")[],
+					// OpenAI-compatible custom endpoints generally do not publish input
+					// capabilities. Default to multimodal so image tool results are not
+					// silently discarded; explicitly set ["text"] for text-only models.
+					input: (modelDef.input ?? ["text", "image"]) as ("text" | "image")[],
 					cost: modelDef.cost ?? defaultCost,
 					contextWindow: modelDef.contextWindow ?? 128000,
 					maxTokens: modelDef.maxTokens ?? 16384,
@@ -1091,7 +1094,7 @@ export function saveOtherProviderConfig(
 	const existingProvider = config.providers[providerId] || {};
 
 	const finalModelIds = modelIds.length > 0 ? modelIds : ["default"];
-	const modelEntries = finalModelIds.map((id) => ({ id }));
+	const modelEntries = finalModelIds.map((id) => ({ id, input: ["text", "image"] }));
 
 	config.providers[providerId] = {
 		...existingProvider,
