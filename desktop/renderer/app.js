@@ -161,6 +161,7 @@ const elements = {
 	settingsCustomProviderName: document.querySelector("#settingsCustomProviderName"),
 	settingsCustomBaseUrl: document.querySelector("#settingsCustomBaseUrl"),
 	settingsCustomApiKey: document.querySelector("#settingsCustomApiKey"),
+	settingsCustomProviderReasoning: document.querySelector("#settingsCustomProviderReasoning"),
 	settingsLogoutProvider: document.querySelector("#settingsLogoutProvider"),
 };
 
@@ -421,12 +422,32 @@ async function loadVisualSettings() {
 		replaceSelectOptions(elements.settingsOauthProvider, loginProviders.filter((provider) => OAUTH_PROVIDER_IDS.has(provider)), (item) => item, (item) => item, "没有可用 OAuth Provider");
 		replaceSelectOptions(elements.settingsApiKeyProvider, loginProviders.filter((provider) => provider !== "other"), (item) => item, (item) => item, "没有可用 Provider");
 		replaceSelectOptions(elements.settingsLogoutProvider, logout.providers || [], (item) => item, (item) => item, "没有已保存凭据");
+		await fillCustomProviderForm();
 		setSettingsFeedback(elements.settingsSessionFeedback, "会话信息已同步。会话切换类操作会先保留当前会话，再载入目标状态。");
 		setSettingsFeedback(elements.settingsSecurityFeedback, "账户与项目权限状态已同步；项目可信状态需重启 Server 后生效。");
 		applySettingsBusyState();
 	} catch (error) {
 		setSettingsFeedback(elements.settingsSessionFeedback, `载入失败：${error.message}。请完全重启 Desktop 和 Server。`, true);
 		setSettingsFeedback(elements.settingsSecurityFeedback, `载入失败：${error.message}。请完全重启 Desktop 和 Server。`, true);
+	}
+}
+
+async function fillCustomProviderForm() {
+	if (!desktop.providerConfig?.getCustom) return;
+	try {
+		const custom = await desktop.providerConfig.getCustom();
+		if (!custom) return;
+		if (elements.settingsCustomProviderName && !elements.settingsCustomProviderName.value.trim() && custom.name) {
+			elements.settingsCustomProviderName.value = custom.name;
+		}
+		if (elements.settingsCustomBaseUrl && !elements.settingsCustomBaseUrl.value.trim() && custom.baseUrl) {
+			elements.settingsCustomBaseUrl.value = custom.baseUrl;
+		}
+		if (elements.settingsCustomProviderReasoning) {
+			elements.settingsCustomProviderReasoning.checked = custom.reasoning !== false;
+		}
+	} catch {
+		if (elements.settingsCustomProviderReasoning) elements.settingsCustomProviderReasoning.checked = true;
 	}
 }
 
@@ -3197,13 +3218,34 @@ document.querySelector("#settingsCustomProviderSaveButton")?.addEventListener("c
 	const providerName = elements.settingsCustomProviderName.value.trim();
 	const baseUrl = elements.settingsCustomBaseUrl.value.trim();
 	const apiKey = elements.settingsCustomApiKey.value.trim();
+	const reasoning = Boolean(elements.settingsCustomProviderReasoning?.checked);
 	if (!providerName) throw new Error("请输入 Provider 名称");
 	if (!baseUrl) throw new Error("请输入 Base URL");
 	if (!apiKey) throw new Error("请输入 API Key");
-	await desktop.providerConfig.saveCustom({ name: providerName, baseUrl, apiKey });
-	await runVisualCommand("/reload", elements.settingsSecurityFeedback);
+	const previousModel = state.session?.model;
+	await desktop.providerConfig.saveCustom({ name: providerName, baseUrl, apiKey, reasoning });
+	await runVisualCommand("/reload", elements.settingsSecurityFeedback, { refresh: true });
 	await runVisualCommand(`/login other ${apiKey}`, elements.settingsSecurityFeedback, { refresh: true });
+	// Re-apply the active model so thinking capability updates without a manual switch.
+	const provider = previousModel?.provider || "other";
+	const modelId = previousModel?.id
+		|| state.models.find((model) => model.provider === provider)?.id
+		|| state.models.find((model) => model.provider === "other")?.id;
+	if (modelId) {
+		await requestServer("/session/model", "PUT", { provider, modelId });
+	}
+	await syncServerSession({ loadModels: true });
+	await loadVisualSettings();
+	if (reasoning && !state.session?.supportsThinking) {
+		throw new Error("已写入 reasoning，但当前会话仍不支持思考。请完全退出并重启 Desktop（会自动带上新 Server）。");
+	}
 	elements.settingsCustomApiKey.value = "";
+	setSettingsFeedback(
+		elements.settingsSecurityFeedback,
+		reasoning
+			? `自定义 Provider 已保存；思考已启用（${state.session?.thinkingLevels?.join(" / ") || "可用"}）。`
+			: "自定义 Provider 已保存；未开启思考。",
+	);
 	window.MetisOnboarding?.notifyEvent("provider_saved");
 }));
 document.querySelector("#settingsLogoutButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {

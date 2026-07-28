@@ -290,6 +290,7 @@ function registerIpc() {
 		const absolutePath = resolveWorkspacePath(relativePath);
 		shell.showItemInFolder(absolutePath);
 	});
+	ipcMain.handle("provider-config:get-custom", () => getCustomProviderConfig());
 	ipcMain.handle("provider-config:save-custom", (_event, config) => saveCustomProviderConfig(config));
 
 	ipcMain.handle("external:open", (_event, url) => {
@@ -317,10 +318,54 @@ function registerIpc() {
 	);
 }
 
+function resolveAgentDir() {
+	const configuredAgentDir = process.env.METIS_CODING_AGENT_DIR;
+	return configuredAgentDir?.startsWith("~/")
+		? path.join(app.getPath("home"), configuredAgentDir.slice(2))
+		: configuredAgentDir || path.join(app.getPath("home"), ".metis", "agent");
+}
+
+async function readModelsConfig(modelsPath) {
+	let modelsConfig = { providers: {} };
+	if (!fs.existsSync(modelsPath)) return modelsConfig;
+	const source = await fsp.readFile(modelsPath, "utf8");
+	try {
+		modelsConfig = JSON.parse(stripJsonComments(source));
+	} catch (error) {
+		throw new Error(`Unable to parse existing models.json: ${error.message}`);
+	}
+	if (!modelsConfig || typeof modelsConfig !== "object" || Array.isArray(modelsConfig)) modelsConfig = { providers: {} };
+	if (!modelsConfig.providers || typeof modelsConfig.providers !== "object" || Array.isArray(modelsConfig.providers)) {
+		modelsConfig.providers = {};
+	}
+	return modelsConfig;
+}
+
+async function getCustomProviderConfig() {
+	const modelsPath = path.join(resolveAgentDir(), "models.json");
+	const modelsConfig = await readModelsConfig(modelsPath);
+	const other = modelsConfig.providers?.other;
+	if (!other || typeof other !== "object" || Array.isArray(other)) {
+		return { exists: false, provider: "other", name: "", baseUrl: "", reasoning: true };
+	}
+	const models = Array.isArray(other.models) ? other.models : [];
+	const reasoning = models.some((model) => model && typeof model === "object" && model.reasoning === true);
+	return {
+		exists: true,
+		provider: "other",
+		name: String(other.name || "").trim(),
+		baseUrl: String(other.baseUrl || "").trim(),
+		reasoning: models.length ? reasoning : true,
+		modelCount: models.length,
+		modelsPath,
+	};
+}
+
 async function saveCustomProviderConfig(config = {}) {
 	const name = String(config.name || "").trim();
 	const baseUrl = String(config.baseUrl || "").trim().replace(/\/+$/, "");
 	const apiKey = String(config.apiKey || "").trim();
+	const reasoning = Boolean(config.reasoning);
 	if (!name) throw new Error("Provider name is required");
 	if (!apiKey) throw new Error("API Key is required");
 	let parsedUrl;
@@ -332,22 +377,9 @@ async function saveCustomProviderConfig(config = {}) {
 	if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error("Base URL must use http or https");
 
 	const modelIds = await fetchCustomProviderModels(baseUrl, apiKey);
-	const configuredAgentDir = process.env.METIS_CODING_AGENT_DIR;
-	const agentDir = configuredAgentDir?.startsWith("~/")
-		? path.join(app.getPath("home"), configuredAgentDir.slice(2))
-		: configuredAgentDir || path.join(app.getPath("home"), ".metis", "agent");
+	const agentDir = resolveAgentDir();
 	const modelsPath = path.join(agentDir, "models.json");
-	let modelsConfig = { providers: {} };
-	if (fs.existsSync(modelsPath)) {
-		const source = await fsp.readFile(modelsPath, "utf8");
-		try {
-			modelsConfig = JSON.parse(stripJsonComments(source));
-		} catch (error) {
-			throw new Error(`Unable to parse existing models.json: ${error.message}`);
-		}
-	}
-	if (!modelsConfig || typeof modelsConfig !== "object" || Array.isArray(modelsConfig)) modelsConfig = { providers: {} };
-	if (!modelsConfig.providers || typeof modelsConfig.providers !== "object" || Array.isArray(modelsConfig.providers)) modelsConfig.providers = {};
+	const modelsConfig = await readModelsConfig(modelsPath);
 	const existing = modelsConfig.providers.other && typeof modelsConfig.providers.other === "object"
 		? modelsConfig.providers.other
 		: {};
@@ -356,14 +388,17 @@ async function saveCustomProviderConfig(config = {}) {
 		name,
 		baseUrl,
 		api: existing.api || "openai-completions",
-		models: (modelIds.length ? modelIds : ["default"]).map((id) => ({ id })),
+		models: (modelIds.length ? modelIds : ["default"]).map((id) => ({
+			id,
+			...(reasoning ? { reasoning: true } : {}),
+		})),
 	};
 
 	await fsp.mkdir(agentDir, { recursive: true });
 	const temporaryPath = `${modelsPath}.${process.pid}.tmp`;
 	await fsp.writeFile(temporaryPath, `${JSON.stringify(modelsConfig, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 	await fsp.rename(temporaryPath, modelsPath);
-	return { provider: "other", name, baseUrl, modelCount: modelIds.length, modelsPath };
+	return { provider: "other", name, baseUrl, reasoning, modelCount: modelIds.length, modelsPath };
 }
 
 async function fetchCustomProviderModels(baseUrl, apiKey) {

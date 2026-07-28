@@ -682,6 +682,7 @@ export async function startServerMode(
 					});
 				}
 				session.modelRegistry.refresh();
+				session.syncModelFromRegistry();
 				return { command: name, provider: providerId, message: `${providerId} 登录信息已保存` };
 			}
 			case "logout": {
@@ -689,6 +690,7 @@ export async function startServerMode(
 				if (!argument) return { command: name, providers: authStorage.list(), usage: "/logout <provider>" };
 				authStorage.logout(argument);
 				session.modelRegistry.refresh();
+				session.syncModelFromRegistry();
 				return { command: name, provider: argument, message: `${argument} 的已保存凭据已移除` };
 			}
 			case "new": {
