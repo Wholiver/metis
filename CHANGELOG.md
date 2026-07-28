@@ -2,6 +2,16 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.3.2-rc.1] - 2026-07-29
+
+### Video model compatibility
+
+- Defaulted custom OpenAI-compatible models with unspecified input capabilities to multimodal input so storyboard images reach vision models.
+- Added an explicit warning for text-only models instead of silently omitting storyboard images.
+- Exposed video dimensions, audio, and subtitle availability during inspection and avoided recommending transcription for silent videos.
+- Guided agents to analyze frames in batches with sampling gaps of no more than four source frames.
+- Improved storyboard extraction speed with fast input seeking.
+
 ## [1.3.1-rc.1] - 2026-07-28
 
 ### Video runtime initialization
