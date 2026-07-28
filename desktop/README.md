@@ -40,7 +40,19 @@ npm install
 npm run package:win
 ```
 
-产物写入 `desktop/release/`。ZIP 包含 `Metis/`（含 `Metis.exe` 与内置 CLI）以及 `打不开？/Windows打不开时请看.txt`。当前流程不做 Windows 代码签名；SmartScreen 可能提示未知发布者。
+产物写入 `desktop/release/`。ZIP 包含 `Metis/`（含 `Metis.exe` 与内置 CLI）以及 `Help/Windows-Open-Issue.txt`。当前流程不做 Windows 代码签名；SmartScreen 可能提示未知发布者。
+
+## Windows NSIS 安装程序（.exe）
+
+在 Windows（x64 或 arm64）上执行：
+
+```bash
+cd desktop
+npm install
+npm run package:win:installer
+```
+
+产物写入 `desktop/release/`，文件名类似 `Metis-<version>-win-<arch>-setup.exe`。安装目录默认为 `%LOCALAPPDATA%\\Metis`，并创建开始菜单、桌面快捷方式与卸载入口。若系统未安装 NSIS，请先安装并确保 `makensis` 可用（或安装 npm 包 `nsis`）。
 
 接口协议见 [`../src/modes/server/README.md`](../src/modes/server/README.md)。
 

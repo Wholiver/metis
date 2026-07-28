@@ -51,7 +51,7 @@ Windows 版同样内置完整的 Metis CLI 与 Server 运行环境，解压即�
 
 1. 从 [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) 下载最新的 `Metis-*-win-x64.zip` 或 `Metis-*-win-arm64.zip`（按你的系统架构选择）。
 2. 解压 ZIP，进入 **Metis** 文件夹，双击 **Metis.exe** 启动。
-3. 若 Windows SmartScreen 提示“未知发布者”，请查看压缩包内 **打不开？/Windows打不开时请看.txt**。
+3. 若 Windows SmartScreen 提示“未知发布者”，请查看压缩包内 **Help/Windows-Open-Issue.txt**。
 
 ### CLI 与命令行
 

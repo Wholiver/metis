@@ -51,7 +51,7 @@ The Windows build also bundles the full Metis CLI and server runtime. Extract th
 
 1. Download the latest `Metis-*-win-x64.zip` or `Metis-*-win-arm64.zip` from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest), matching your system architecture.
 2. Extract the ZIP, open the **Metis** folder, and launch **Metis.exe**.
-3. If Windows SmartScreen warns about an unknown publisher, see **打不开？/Windows打不开时请看.txt** inside the archive.
+3. If Windows SmartScreen warns about an unknown publisher, see **Help/Windows-Open-Issue.txt** inside the archive.
 
 ### CLI and terminal
 
