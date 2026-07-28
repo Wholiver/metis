@@ -24,20 +24,25 @@
 
 ## 快速开始
 
-### 桌面应用 (macOS)
+选择适合您的 Metis 运行方式：
 
-从 [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) 下载最新的 `.dmg` 安装包，并将 Metis 拖入“应用程序”文件夹即可。
+#### 🖥️ 桌面应用 (macOS)
 
-### CLI / 命令行
+1. 从 [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) 下载最新的 `.dmg` 安装包。
+2. 将 **Metis.app** 拖入 **应用程序 (Applications)** 文件夹并启动。
 
-需要 Node.js `>=22.19.0` 和 npm。
+#### 💻 CLI / 命令行
+
+> **前置要求：** Node.js `>=22.19.0` 和 `npm`。
+
+全局安装并运行：
 
 ```bash
 npm i -g @wholiver_hu/metis@rc
 metis
 ```
 
-查看可用的命令行选项：
+查看所有命令行指令与帮助选项：
 
 ```bash
 metis --help

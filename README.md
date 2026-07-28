@@ -24,20 +24,25 @@
 
 ## Quick start
 
-### Desktop App (macOS)
+Choose how you want to run Metis:
 
-Download the latest `.dmg` installer from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) and drag Metis into your Applications folder.
+#### 🖥️ Desktop App (macOS)
 
-### CLI & Terminal
+1. Download the latest `.dmg` installer from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest).
+2. Drag **Metis.app** into your **Applications** folder and launch.
 
-Requires Node.js `>=22.19.0` and npm.
+#### 💻 CLI & Terminal
+
+> **Prerequisites:** Node.js `>=22.19.0` and `npm`.
+
+Install globally and launch:
 
 ```bash
 npm i -g @wholiver_hu/metis@rc
 metis
 ```
 
-To see available options:
+To view all available CLI options:
 
 ```bash
 metis --help
