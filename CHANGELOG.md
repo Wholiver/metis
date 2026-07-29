@@ -2,6 +2,14 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.3.2-rc.3] - 2026-07-29
+
+### Provider-independent session titles
+
+- Guaranteed a persisted session title after the first exchange regardless of provider behavior.
+- Added local title fallbacks for empty text, reasoning-only responses, provider and authentication failures, timeouts, missing models, and image-only messages.
+- Removed leading file paths from fallback titles while preserving explicit cancellation behavior.
+
 ## [1.3.2-rc.2] - 2026-07-29
 
 ### Desktop session titles
