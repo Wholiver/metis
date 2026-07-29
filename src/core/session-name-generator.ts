@@ -61,12 +61,21 @@ export function sanitizeGeneratedSessionName(value: string): string | undefined 
 	return firstLine || undefined;
 }
 
+export function generateFallbackSessionName(messages: readonly AgentMessage[]): string {
+	const firstUserMessage = messages.find((message) => message.role === "user");
+	const firstAssistantMessage = messages.find((message) => message.role === "assistant");
+	const originalText =
+		(firstUserMessage ? getMessageText(firstUserMessage).trim() : "") ||
+		(firstAssistantMessage ? getMessageText(firstAssistantMessage).trim() : "");
+	if (!originalText) return "New task";
+
+	const withoutLeadingFile = originalText.replace(/^(['"“‘])(?:\/|[A-Za-z]:\\).+?['"”’]\s*/, "");
+	return sanitizeGeneratedSessionName(withoutLeadingFile || originalText) ?? "New task";
+}
+
 export async function generateSessionName(options: GenerateSessionNameOptions): Promise<string | undefined> {
 	const conversationText = buildConversationText(options.messages);
 	if (!conversationText) return undefined;
-
-	const auth = await options.modelRegistry.getApiKeyAndHeaders(options.model);
-	if (!auth.ok) throw new Error(auth.error);
 	if (options.signal?.aborted) throw abortError(options.signal);
 
 	const timeoutMs = options.timeoutMs ?? DEFAULT_SESSION_NAME_TIMEOUT_MS;
@@ -93,6 +102,9 @@ export async function generateSessionName(options: GenerateSessionNameOptions): 
 
 	let response: Awaited<ReturnType<typeof completeSimple>>;
 	try {
+		const auth = await Promise.race([options.modelRegistry.getApiKeyAndHeaders(options.model), guard]);
+		if (!auth.ok) throw new Error(auth.error);
+
 		response = await Promise.race([
 			completeSimple(
 				options.model,
