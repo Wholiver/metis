@@ -1,6 +1,7 @@
 const desktop = window.metisDesktop;
 const desktopI18n = window.metisDesktopI18n;
 const { analyzeAssistantTurn, shouldQueueDesktopMessage, getAssistantWorkLayout, getSubagentToolCalls, shouldHideAssistantWorkHeader, getAssistantTurnDuration, reconcileAssistantFinalDivider, isSubagentLaunchNotice } = window.metisMessageTurns;
+const { resolveCustomProviderModel } = window.metisModelSelection;
 const THINKING_LEVEL_KEYS = {
 	off: "thinkingOff",
 	minimal: "thinkingMinimal",
@@ -3274,12 +3275,9 @@ document.querySelector("#settingsCustomProviderSaveButton")?.addEventListener("c
 	await runVisualCommand("/reload", elements.settingsSecurityFeedback, { refresh: true });
 	await runVisualCommand(`/login other ${apiKey}`, elements.settingsSecurityFeedback, { refresh: true });
 	// Re-apply the active model so thinking capability updates without a manual switch.
-	const provider = previousModel?.provider || "other";
-	const modelId = previousModel?.id
-		|| state.models.find((model) => model.provider === provider)?.id
-		|| state.models.find((model) => model.provider === "other")?.id;
-	if (modelId) {
-		await requestServer("/session/model", "PUT", { provider, modelId });
+	const model = resolveCustomProviderModel(previousModel, state.models);
+	if (model) {
+		await requestServer("/session/model", "PUT", { provider: model.provider, modelId: model.id });
 	}
 	await syncServerSession({ loadModels: true });
 	await loadVisualSettings();
