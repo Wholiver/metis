@@ -35,24 +35,24 @@
 
 | 界面 | 适合场景 | 运行要求 |
 | --- | --- | --- |
-| **桌面应用** | 图形化工作区，内置 CLI 与 Server | Apple 芯片（`arm64`）Mac 或 Windows（`x64`/`arm64`） |
+| **桌面应用** | 图形化工作区，内置 CLI 与 Server | Apple 芯片（`arm64`）Mac 或 Windows（`x64`） |
 | **CLI** | 终端、脚本、Print/JSON、RPC 与 SDK 集成 | Node.js `>=22.19.0` 和 `npm` |
 
 ### macOS 桌面应用
 
-1. [下载最新的 `.dmg`](https://github.com/Wholiver/metis/releases/latest)。
+1. [下载最新版 Apple 芯片 `.dmg`](https://github.com/Wholiver/metis/releases/latest)（`Metis-*-macos-arm64.dmg`）。
 2. 打开安装包，将 **Metis.app** 拖入 **应用程序 (Applications)** 文件夹。
 3. 启动 **Metis**。Node.js 已包含在应用中。
 
 ### Windows 桌面应用
 
-Windows 版同样内置完整的 Metis CLI 与 Server 运行环境，解压即可使用。
+Windows 版同样内置完整的 Metis CLI 与 Server 运行环境。可选择安装版 EXE，也可选择免安装 ZIP。
 
-> **当前安装包：** 适用于 Windows `x64` 或 `arm64`，无需另行安装 Node.js。
+> **当前版本：** 支持 Windows `x64`，无需另行安装 Node.js。
 
-1. 从 [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) 下载最新的 `Metis-*-win-x64.zip` 或 `Metis-*-win-arm64.zip`（按你的系统架构选择）。
-2. 解压 ZIP，进入 **Metis** 文件夹，双击 **Metis.exe** 启动。
-3. 若 Windows SmartScreen 提示“未知发布者”，请查看压缩包内 **Help/Windows-Open-Issue.txt**。
+1. 打开[最新 GitHub Release](https://github.com/Wholiver/metis/releases/latest)。
+2. 下载并运行 `Metis-*-win-x64-setup.exe`；或下载 `Metis-*-win-x64.zip`，解压后进入 **Metis** 文件夹，双击 **Metis.exe**。
+3. 使用附带的 `.sha256` 文件校验下载内容。若 Windows SmartScreen 提示“未知发布者”，仅在文件来自官方 Release 页面时继续运行。
 
 ### CLI 与命令行
 

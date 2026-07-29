@@ -35,24 +35,24 @@ Choose one interface. Both use the same Metis configuration, models, and session
 
 | Interface | Best for | Requirement |
 | --- | --- | --- |
-| **Desktop app** | Graphical workspace with CLI and server included | Apple silicon Mac (`arm64`) or Windows (`x64`/`arm64`) |
+| **Desktop app** | Graphical workspace with CLI and server included | Apple silicon Mac (`arm64`) or Windows (`x64`) |
 | **CLI** | Terminal, scripts, print/JSON, RPC, and SDK integrations | Node.js `>=22.19.0` and `npm` |
 
 ### Desktop app for macOS
 
-1. [Download the latest `.dmg`](https://github.com/Wholiver/metis/releases/latest).
+1. [Download the latest Apple silicon `.dmg`](https://github.com/Wholiver/metis/releases/latest) (`Metis-*-macos-arm64.dmg`).
 2. Open it and drag **Metis.app** into **Applications**.
 3. Launch **Metis**. Node.js is already included.
 
 ### Desktop app for Windows
 
-The Windows build also bundles the full Metis CLI and server runtime. Extract the ZIP and run it directly.
+The Windows build bundles the full Metis CLI and server runtime. Choose the setup EXE for a normal installation or the ZIP for a portable copy.
 
-> **Current installer:** Windows `x64` or `arm64`. No separate Node.js installation is required.
+> **Current build:** Windows `x64`. No separate Node.js installation is required.
 
-1. Download the latest `Metis-*-win-x64.zip` or `Metis-*-win-arm64.zip` from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest), matching your system architecture.
-2. Extract the ZIP, open the **Metis** folder, and launch **Metis.exe**.
-3. If Windows SmartScreen warns about an unknown publisher, see **Help/Windows-Open-Issue.txt** inside the archive.
+1. Open the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest).
+2. Download and run `Metis-*-win-x64-setup.exe`, or download `Metis-*-win-x64.zip`, extract it, and launch **Metis.exe** from the **Metis** folder.
+3. Use the attached `.sha256` file to verify your download. If Windows SmartScreen warns about an unknown publisher, continue only when the file came from the official release page.
 
 ### CLI and terminal
 
