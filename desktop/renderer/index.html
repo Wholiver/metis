@@ -484,8 +484,17 @@
 								<div class="settings-stack-form settings-credential-form"><select id="settingsApiKeyProvider"><option>正在载入…</option></select><input id="settingsApiKeyInput" type="password" placeholder="API Key" autocomplete="off" /><button class="settings-action primary" id="settingsApiKeySaveButton" type="button">保存 API Key</button></div>
 							</div>
 							<div class="settings-form-row">
-								<div><strong>自定义 Base URL</strong><span>添加一个 OpenAI-compatible Provider。名称、Base URL 与 API Key 作为一组独立配置保存。</span></div>
-								<div class="settings-stack-form settings-custom-provider-form"><input id="settingsCustomProviderName" type="text" placeholder="Provider 名称" /><input id="settingsCustomBaseUrl" type="url" placeholder="https://api.example.com/v1" /><input id="settingsCustomApiKey" type="password" placeholder="API Key" autocomplete="off" /><button class="settings-action primary" id="settingsCustomProviderSaveButton" type="button">保存自定义 Provider</button></div>
+								<div><strong>自定义 Base URL</strong><span>添加一个 OpenAI-compatible Provider。名称、Base URL 与 API Key 作为一组独立配置保存。若代理模型支持推理但未自动识别，可手动开启思考。</span></div>
+								<div class="settings-stack-form settings-custom-provider-form">
+									<input id="settingsCustomProviderName" type="text" placeholder="Provider 名称" />
+									<input id="settingsCustomBaseUrl" type="url" placeholder="https://api.example.com/v1" />
+									<input id="settingsCustomApiKey" type="password" placeholder="API Key" autocomplete="off" />
+									<label class="settings-checkbox" for="settingsCustomProviderReasoning">
+										<input id="settingsCustomProviderReasoning" type="checkbox" checked />
+										<span>支持思考（为该 Provider 下模型启用思考等级）</span>
+									</label>
+									<button class="settings-action primary" id="settingsCustomProviderSaveButton" type="button">保存自定义 Provider</button>
+								</div>
 							</div>
 							<div class="settings-form-row">
 								<div><strong>移除已保存凭据</strong><span>只删除 Metis 本地凭据；环境变量、云端登录状态和 models.json 不会改变，因此 Provider 仍可能继续可用。</span></div>

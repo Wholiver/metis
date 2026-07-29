@@ -2,6 +2,13 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## Unreleased
+
+### Desktop
+
+- Added Windows desktop packaging (`npm run package:win`) that produces a portable ZIP with a bundled CLI/Server runtime.
+- Improved Windows window chrome with native title-bar overlay controls and File Explorer wording.
+
 ## [1.3.3-rc.1] - 2026-07-29
 
 ### Desktop final-response divider

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		reveal: (relativePath) => ipcRenderer.invoke("workspace:reveal", relativePath),
 	},
 	providerConfig: {
+		getCustom: () => ipcRenderer.invoke("provider-config:get-custom"),
 		saveCustom: (config) => ipcRenderer.invoke("provider-config:save-custom", config),
 	},
 	metis: {

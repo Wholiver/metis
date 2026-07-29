@@ -651,8 +651,16 @@ export async function startServerMode(
 				const authStorage: any = session.modelRegistry.authStorage;
 				const oauthProviders = authStorage.getOAuthProviders?.() ?? [];
 				const [providerId, ...keyParts] = argument.split(/\s+/).filter(Boolean);
-				const providerIds = [...new Set([...oauthProviders.map((provider: any) => provider.id), ...session.modelRegistry.getAll().map((model: any) => model.provider)])];
+				const listProviders = () =>
+					[...new Set([...oauthProviders.map((provider: any) => provider.id), ...session.modelRegistry.getAll().map((model: any) => model.provider)])];
+				let providerIds = listProviders();
 				if (!providerId) return { command: name, providers: providerIds, usage: "/login <provider> [api-key]" };
+				if (!providerIds.includes(providerId)) {
+					// Desktop writes custom providers to models.json then /reload + /login.
+					// Refresh once so newly saved providers (e.g. "other") are visible.
+					session.modelRegistry.refresh();
+					providerIds = listProviders();
+				}
 				if (!providerIds.includes(providerId)) throw new HttpError(404, "provider_not_found", `Unknown provider: ${providerId}`);
 				const apiKey = keyParts.join(" ");
 				if (apiKey) {
@@ -674,6 +682,7 @@ export async function startServerMode(
 					});
 				}
 				session.modelRegistry.refresh();
+				session.syncModelFromRegistry();
 				return { command: name, provider: providerId, message: `${providerId} 登录信息已保存` };
 			}
 			case "logout": {
@@ -681,6 +690,7 @@ export async function startServerMode(
 				if (!argument) return { command: name, providers: authStorage.list(), usage: "/logout <provider>" };
 				authStorage.logout(argument);
 				session.modelRegistry.refresh();
+				session.syncModelFromRegistry();
 				return { command: name, provider: argument, message: `${argument} 的已保存凭据已移除` };
 			}
 			case "new": {

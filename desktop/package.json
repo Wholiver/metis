@@ -10,11 +10,15 @@
 		"start": "npm run prepare:renderer && electron .",
 		"build": "npm run prepare:renderer && node scripts/build.mjs",
 		"package:mac": "node scripts/package-macos.mjs",
+		"package:win": "node scripts/package-windows.mjs",
+		"package:win:installer": "node scripts/package-windows-installer.mjs",
 		"start:dist": "electron dist/main.cjs"
 	},
 	"devDependencies": {
 		"@electron/packager": "20.0.4",
-		"electron": "43.1.1"
+		"electron": "43.1.1",
+		"makensis": "^3.0.5",
+		"nsis": "^0.0.0"
 	},
 	"dependencies": {
 		"dompurify": "^3.4.12",

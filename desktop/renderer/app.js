@@ -11,7 +11,7 @@ const THINKING_LEVEL_KEYS = {
 };
 const THINKING_TAIL_CELL_COUNT = 90;
 const UI_LANGUAGES = desktopI18n.languages;
-const PROJECT_STATE_KEY = "metis.desktopProjects.v1";
+const PROJECT_STATE_KEY = "metis.desktopProjects.v2";
 const DEFAULT_VISIBLE_CONVERSATIONS = 5;
 const OAUTH_PROVIDER_IDS = new Set(["anthropic", "openai-codex", "github-copilot"]);
 
@@ -23,12 +23,24 @@ function uiText(key, variables) {
 	return desktopI18n.t(key, state?.uiLanguage || "auto", variables);
 }
 
+function platformDisplayName(platform) {
+	if (platform === "darwin") return "macOS";
+	if (platform === "win32") return "Windows";
+	if (platform === "linux") return "Linux";
+	return platform || "—";
+}
+
+function revealInFolderLabel() {
+	return uiText(state.platform === "win32" ? "revealInExplorer" : "revealInFinder");
+}
+
 const state = {
 	activeConversationId: undefined,
 	activeProjectId: undefined,
 	activeInspectorTab: "browser",
 	activeFile: undefined,
 	fileTree: [],
+	platform: undefined,
 	serverConnected: false,
 	uiLanguage: UI_LANGUAGES.includes(localStorage.getItem("metis.desktopUiLanguage.v2")) ? localStorage.getItem("metis.desktopUiLanguage.v2") : "auto",
 	dreamStatusText: undefined,
@@ -125,6 +137,7 @@ const elements = {
 	settingsWorkspacePath: document.querySelector("#settingsWorkspacePath"),
 	settingsAppVersion: document.querySelector("#settingsAppVersion"),
 	settingsPlatform: document.querySelector("#settingsPlatform"),
+	revealFileButton: document.querySelector("#revealFileButton"),
 	settingsAgentFeedback: document.querySelector("#settingsAgentFeedback"),
 	settingsBehaviorFeedback: document.querySelector("#settingsBehaviorFeedback"),
 	settingsModelSelect: document.querySelector("#settingsModelSelect"),
@@ -148,6 +161,7 @@ const elements = {
 	settingsCustomProviderName: document.querySelector("#settingsCustomProviderName"),
 	settingsCustomBaseUrl: document.querySelector("#settingsCustomBaseUrl"),
 	settingsCustomApiKey: document.querySelector("#settingsCustomApiKey"),
+	settingsCustomProviderReasoning: document.querySelector("#settingsCustomProviderReasoning"),
 	settingsLogoutProvider: document.querySelector("#settingsLogoutProvider"),
 };
 
@@ -408,12 +422,32 @@ async function loadVisualSettings() {
 		replaceSelectOptions(elements.settingsOauthProvider, loginProviders.filter((provider) => OAUTH_PROVIDER_IDS.has(provider)), (item) => item, (item) => item, "没有可用 OAuth Provider");
 		replaceSelectOptions(elements.settingsApiKeyProvider, loginProviders.filter((provider) => provider !== "other"), (item) => item, (item) => item, "没有可用 Provider");
 		replaceSelectOptions(elements.settingsLogoutProvider, logout.providers || [], (item) => item, (item) => item, "没有已保存凭据");
+		await fillCustomProviderForm();
 		setSettingsFeedback(elements.settingsSessionFeedback, "会话信息已同步。会话切换类操作会先保留当前会话，再载入目标状态。");
 		setSettingsFeedback(elements.settingsSecurityFeedback, "账户与项目权限状态已同步；项目可信状态需重启 Server 后生效。");
 		applySettingsBusyState();
 	} catch (error) {
 		setSettingsFeedback(elements.settingsSessionFeedback, `载入失败：${error.message}。请完全重启 Desktop 和 Server。`, true);
 		setSettingsFeedback(elements.settingsSecurityFeedback, `载入失败：${error.message}。请完全重启 Desktop 和 Server。`, true);
+	}
+}
+
+async function fillCustomProviderForm() {
+	if (!desktop.providerConfig?.getCustom) return;
+	try {
+		const custom = await desktop.providerConfig.getCustom();
+		if (!custom) return;
+		if (elements.settingsCustomProviderName && !elements.settingsCustomProviderName.value.trim() && custom.name) {
+			elements.settingsCustomProviderName.value = custom.name;
+		}
+		if (elements.settingsCustomBaseUrl && !elements.settingsCustomBaseUrl.value.trim() && custom.baseUrl) {
+			elements.settingsCustomBaseUrl.value = custom.baseUrl;
+		}
+		if (elements.settingsCustomProviderReasoning) {
+			elements.settingsCustomProviderReasoning.checked = custom.reasoning !== false;
+		}
+	} catch {
+		if (elements.settingsCustomProviderReasoning) elements.settingsCustomProviderReasoning.checked = true;
 	}
 }
 
@@ -441,10 +475,13 @@ async function updateSettingsDetails() {
 	void loadVisualSettings();
 	try {
 		const [appInfo, workspace] = await Promise.all([desktop.appInfo(), desktop.workspace.get()]);
+		state.platform = appInfo.platform;
+		document.body.classList.add(`platform-${appInfo.platform}`);
 		elements.settingsAppVersion.textContent = uiText("version", { version: appInfo.version });
-		elements.settingsPlatform.textContent = appInfo.platform === "darwin" ? "macOS" : appInfo.platform;
+		elements.settingsPlatform.textContent = platformDisplayName(appInfo.platform);
 		elements.settingsWorkspaceName.textContent = workspace.name || uiText("currentWorkspace");
 		elements.settingsWorkspacePath.textContent = workspace.path || uiText("noWorkspace");
+		if (elements.revealFileButton) elements.revealFileButton.textContent = revealInFolderLabel();
 	} catch {
 		elements.settingsWorkspacePath.textContent = uiText("workspaceReadFailed");
 	}
@@ -490,6 +527,16 @@ function activeProject() {
 function projectForPath(projectPath) {
 	const normalized = window.metisDesktopConversations.normalizeProjectPath(projectPath);
 	return state.projects.find((project) => project.path === normalized);
+}
+
+async function setWorkspaceChecked(workspacePath) {
+	const requested = window.metisDesktopConversations.normalizeProjectPath(workspacePath);
+	const workspace = await desktop.workspace.set(workspacePath);
+	const actual = window.metisDesktopConversations.normalizeProjectPath(workspace?.path);
+	if (requested && actual !== requested) {
+		throw new Error(`Workspace directory does not exist: ${requested}`);
+	}
+	return workspace;
 }
 
 function saveProjectState() {
@@ -792,7 +839,7 @@ async function activateProject(project, { targetSessionPath, record = true, load
 	applyProjectDetails(project);
 
 	try {
-		await desktop.workspace.set(project.path);
+		await setWorkspaceChecked(project.path);
 		await refreshFileTree();
 		if (!state.serverConnected) return;
 
@@ -837,8 +884,19 @@ async function loadWorkspace(select = false) {
 		}
 		const selectedProject = activeProject() || project;
 		state.activeProjectId = selectedProject.id;
-		await desktop.workspace.set(selectedProject.path);
-		applyProjectDetails(selectedProject);
+		try {
+			await setWorkspaceChecked(selectedProject.path);
+		} catch (error) {
+			// Project paths restored from local state may point to removed folders.
+			// Drop the stale project and fall back to the current workspace.
+			if (!String(error?.message || "").includes("Workspace directory does not exist")) throw error;
+			state.projects = state.projects.filter((item) => item.path !== selectedProject.path);
+			const fallbackProject = ensureProject(workspace) || project;
+			state.activeProjectId = fallbackProject.id;
+			saveProjectState();
+			await desktop.workspace.set(fallbackProject.path);
+		}
+		applyProjectDetails(activeProject() || project);
 		await refreshFileTree();
 	} catch (error) {
 		elements.fileTree.textContent = `无法读取工作区：${error.message}`;
@@ -2353,6 +2411,7 @@ function applyUiLanguage(language) {
 	document.documentElement.lang = resolveUiLanguage(state.uiLanguage);
 	desktopI18n.translateDocument(state.uiLanguage);
 	if (elements.settingsLanguageSelect) elements.settingsLanguageSelect.value = state.uiLanguage;
+	if (elements.revealFileButton) elements.revealFileButton.textContent = revealInFolderLabel();
 	setDreamStatus(state.dreamStatusText);
 	renderSettingsAgentControls();
 	updateSettingsConnectionDetails();
@@ -3206,13 +3265,34 @@ document.querySelector("#settingsCustomProviderSaveButton")?.addEventListener("c
 	const providerName = elements.settingsCustomProviderName.value.trim();
 	const baseUrl = elements.settingsCustomBaseUrl.value.trim();
 	const apiKey = elements.settingsCustomApiKey.value.trim();
+	const reasoning = Boolean(elements.settingsCustomProviderReasoning?.checked);
 	if (!providerName) throw new Error("请输入 Provider 名称");
 	if (!baseUrl) throw new Error("请输入 Base URL");
 	if (!apiKey) throw new Error("请输入 API Key");
-	await desktop.providerConfig.saveCustom({ name: providerName, baseUrl, apiKey });
-	await runVisualCommand("/reload", elements.settingsSecurityFeedback);
+	const previousModel = state.session?.model;
+	await desktop.providerConfig.saveCustom({ name: providerName, baseUrl, apiKey, reasoning });
+	await runVisualCommand("/reload", elements.settingsSecurityFeedback, { refresh: true });
 	await runVisualCommand(`/login other ${apiKey}`, elements.settingsSecurityFeedback, { refresh: true });
+	// Re-apply the active model so thinking capability updates without a manual switch.
+	const provider = previousModel?.provider || "other";
+	const modelId = previousModel?.id
+		|| state.models.find((model) => model.provider === provider)?.id
+		|| state.models.find((model) => model.provider === "other")?.id;
+	if (modelId) {
+		await requestServer("/session/model", "PUT", { provider, modelId });
+	}
+	await syncServerSession({ loadModels: true });
+	await loadVisualSettings();
+	if (reasoning && !state.session?.supportsThinking) {
+		throw new Error("已写入 reasoning，但当前会话仍不支持思考。请完全退出并重启 Desktop（会自动带上新 Server）。");
+	}
 	elements.settingsCustomApiKey.value = "";
+	setSettingsFeedback(
+		elements.settingsSecurityFeedback,
+		reasoning
+			? `自定义 Provider 已保存；思考已启用（${state.session?.thinkingLevels?.join(" / ") || "可用"}）。`
+			: "自定义 Provider 已保存；未开启思考。",
+	);
 	window.MetisOnboarding?.notifyEvent("provider_saved");
 }));
 document.querySelector("#settingsLogoutButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
@@ -3456,6 +3536,12 @@ applyUiLanguage(state.uiLanguage);
 renderConversations();
 window.setInterval(refreshWorkTimerTitles, 100);
 void (async () => {
+	try {
+		const appInfo = await desktop.appInfo();
+		state.platform = appInfo.platform;
+		document.body.classList.add(`platform-${appInfo.platform}`);
+		if (elements.revealFileButton) elements.revealFileButton.textContent = revealInFolderLabel();
+	} catch {}
 	await loadWorkspace();
 	const connected = await autoConnectServer();
 	if (!connected) showServerLoadingFailure();

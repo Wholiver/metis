@@ -18,6 +18,12 @@ let metisEventController;
 let autoServerProcess;
 let appIsQuitting = false;
 
+if (process.platform === "win32") {
+	const localAppData = process.env.LOCALAPPDATA || path.join(app.getPath("home"), "AppData", "Local");
+	const sessionDataDir = path.join(localAppData, "metis-desktop", "session-data");
+	app.setPath("sessionData", sessionDataDir);
+}
+
 function createAppIcon() {
 	const svgPath = path.join(__dirname, "renderer", "assets", "metis-pixel-mark.svg");
 	const svg = fs.readFileSync(svgPath, "utf8");
@@ -52,8 +58,11 @@ async function ensureLocalMetisServer() {
 		return;
 	}
 	let lastStderr = "";
-	const defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
-	const envPath = process.env.PATH ? `${process.env.PATH}:${defaultPath}` : defaultPath;
+	let envPath = process.env.PATH || "";
+	if (process.platform !== "win32") {
+		const defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+		envPath = envPath ? `${envPath}:${defaultPath}` : defaultPath;
+	}
 	autoServerProcess = utilityProcess.fork(cliPath, ["server", "--hostname", "127.0.0.1", "--port", "4096"], {
 		cwd: workspaceRoot,
 		env: { ...process.env, PATH: envPath },
@@ -100,6 +109,7 @@ function stopAutoServer() {
 function createWindow() {
 	const icon = createAppIcon();
 	const isMac = process.platform === "darwin";
+	const isWin = process.platform === "win32";
 	mainWindow = new BrowserWindow({
 		width: 1540,
 		height: 960,
@@ -113,8 +123,16 @@ function createWindow() {
 		visualEffectState: isMac ? "active" : undefined,
 		title: "Metis",
 		icon,
+		autoHideMenuBar: true,
 		titleBarStyle: isMac ? "hiddenInset" : "hidden",
-		trafficLightPosition: { x: 18, y: 18 },
+		trafficLightPosition: isMac ? { x: 18, y: 18 } : undefined,
+		titleBarOverlay: isWin
+			? {
+					color: "#fbfbfa",
+					symbolColor: "#202324",
+					height: 52,
+				}
+			: undefined,
 		webPreferences: {
 			preload: path.join(__dirname, "preload.cjs"),
 			contextIsolation: true,
@@ -125,6 +143,11 @@ function createWindow() {
 	});
 
 	mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+	mainWindow.webContents.on("dom-ready", () => {
+		void mainWindow.webContents.executeJavaScript(
+			`document.body.classList.add(${JSON.stringify(`platform-${process.platform}`)})`,
+		);
+	});
 	mainWindow.once("ready-to-show", () => {
 		mainWindow.show();
 		if (process.env.METIS_DESKTOP_CAPTURE) {
@@ -261,7 +284,18 @@ function registerIpc() {
 	});
 
 	ipcMain.handle("workspace:get", () => workspaceSummary());
-	ipcMain.handle("workspace:set", (_event, workspacePath) => setWorkspaceRoot(workspacePath));
+	ipcMain.handle("workspace:set", (_event, workspacePath) => {
+		try {
+			return setWorkspaceRoot(workspacePath);
+		} catch (error) {
+			const message = String(error?.message || "");
+			if (!message.includes("Workspace directory does not exist")) throw error;
+			// Stale workspace paths can be restored from renderer local state.
+			// Keep current workspace instead of surfacing a hard IPC failure.
+			console.warn("[desktop] Ignored stale workspace path:", workspacePath);
+			return workspaceSummary();
+		}
+	});
 	ipcMain.handle("workspace:select", async () => {
 		const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
 		if (result.canceled || result.filePaths.length === 0) return undefined;
@@ -273,6 +307,7 @@ function registerIpc() {
 		const absolutePath = resolveWorkspacePath(relativePath);
 		shell.showItemInFolder(absolutePath);
 	});
+	ipcMain.handle("provider-config:get-custom", () => getCustomProviderConfig());
 	ipcMain.handle("provider-config:save-custom", (_event, config) => saveCustomProviderConfig(config));
 
 	ipcMain.handle("external:open", (_event, url) => {
@@ -300,10 +335,54 @@ function registerIpc() {
 	);
 }
 
+function resolveAgentDir() {
+	const configuredAgentDir = process.env.METIS_CODING_AGENT_DIR;
+	return configuredAgentDir?.startsWith("~/")
+		? path.join(app.getPath("home"), configuredAgentDir.slice(2))
+		: configuredAgentDir || path.join(app.getPath("home"), ".metis", "agent");
+}
+
+async function readModelsConfig(modelsPath) {
+	let modelsConfig = { providers: {} };
+	if (!fs.existsSync(modelsPath)) return modelsConfig;
+	const source = await fsp.readFile(modelsPath, "utf8");
+	try {
+		modelsConfig = JSON.parse(stripJsonComments(source));
+	} catch (error) {
+		throw new Error(`Unable to parse existing models.json: ${error.message}`);
+	}
+	if (!modelsConfig || typeof modelsConfig !== "object" || Array.isArray(modelsConfig)) modelsConfig = { providers: {} };
+	if (!modelsConfig.providers || typeof modelsConfig.providers !== "object" || Array.isArray(modelsConfig.providers)) {
+		modelsConfig.providers = {};
+	}
+	return modelsConfig;
+}
+
+async function getCustomProviderConfig() {
+	const modelsPath = path.join(resolveAgentDir(), "models.json");
+	const modelsConfig = await readModelsConfig(modelsPath);
+	const other = modelsConfig.providers?.other;
+	if (!other || typeof other !== "object" || Array.isArray(other)) {
+		return { exists: false, provider: "other", name: "", baseUrl: "", reasoning: true };
+	}
+	const models = Array.isArray(other.models) ? other.models : [];
+	const reasoning = models.some((model) => model && typeof model === "object" && model.reasoning === true);
+	return {
+		exists: true,
+		provider: "other",
+		name: String(other.name || "").trim(),
+		baseUrl: String(other.baseUrl || "").trim(),
+		reasoning: models.length ? reasoning : true,
+		modelCount: models.length,
+		modelsPath,
+	};
+}
+
 async function saveCustomProviderConfig(config = {}) {
 	const name = String(config.name || "").trim();
 	const baseUrl = String(config.baseUrl || "").trim().replace(/\/+$/, "");
 	const apiKey = String(config.apiKey || "").trim();
+	const reasoning = Boolean(config.reasoning);
 	if (!name) throw new Error("Provider name is required");
 	if (!apiKey) throw new Error("API Key is required");
 	let parsedUrl;
@@ -315,22 +394,9 @@ async function saveCustomProviderConfig(config = {}) {
 	if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error("Base URL must use http or https");
 
 	const modelIds = await fetchCustomProviderModels(baseUrl, apiKey);
-	const configuredAgentDir = process.env.METIS_CODING_AGENT_DIR;
-	const agentDir = configuredAgentDir?.startsWith("~/")
-		? path.join(app.getPath("home"), configuredAgentDir.slice(2))
-		: configuredAgentDir || path.join(app.getPath("home"), ".metis", "agent");
+	const agentDir = resolveAgentDir();
 	const modelsPath = path.join(agentDir, "models.json");
-	let modelsConfig = { providers: {} };
-	if (fs.existsSync(modelsPath)) {
-		const source = await fsp.readFile(modelsPath, "utf8");
-		try {
-			modelsConfig = JSON.parse(stripJsonComments(source));
-		} catch (error) {
-			throw new Error(`Unable to parse existing models.json: ${error.message}`);
-		}
-	}
-	if (!modelsConfig || typeof modelsConfig !== "object" || Array.isArray(modelsConfig)) modelsConfig = { providers: {} };
-	if (!modelsConfig.providers || typeof modelsConfig.providers !== "object" || Array.isArray(modelsConfig.providers)) modelsConfig.providers = {};
+	const modelsConfig = await readModelsConfig(modelsPath);
 	const existing = modelsConfig.providers.other && typeof modelsConfig.providers.other === "object"
 		? modelsConfig.providers.other
 		: {};
@@ -339,14 +405,17 @@ async function saveCustomProviderConfig(config = {}) {
 		name,
 		baseUrl,
 		api: existing.api || "openai-completions",
-		models: (modelIds.length ? modelIds : ["default"]).map((id) => ({ id })),
+		models: (modelIds.length ? modelIds : ["default"]).map((id) => ({
+			id,
+			...(reasoning ? { reasoning: true } : {}),
+		})),
 	};
 
 	await fsp.mkdir(agentDir, { recursive: true });
 	const temporaryPath = `${modelsPath}.${process.pid}.tmp`;
 	await fsp.writeFile(temporaryPath, `${JSON.stringify(modelsConfig, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 	await fsp.rename(temporaryPath, modelsPath);
-	return { provider: "other", name, baseUrl, modelCount: modelIds.length, modelsPath };
+	return { provider: "other", name, baseUrl, reasoning, modelCount: modelIds.length, modelsPath };
 }
 
 async function fetchCustomProviderModels(baseUrl, apiKey) {

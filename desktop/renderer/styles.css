@@ -105,6 +105,22 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
   height: var(--topbar-control-size);
   -webkit-app-region: no-drag !important;
 }
+body.platform-win32 {
+  --titlebar-overlay-width: 138px;
+}
+body.platform-win32 .window-nav {
+  left: 12px;
+}
+body.platform-win32 .topbar,
+body.platform-win32 .inspector-topbar {
+  padding-right: calc(10px + var(--titlebar-overlay-width));
+}
+body.platform-win32 .settings-main-drag {
+  right: var(--titlebar-overlay-width);
+}
+body.platform-win32 .settings-main {
+  padding-right: var(--titlebar-overlay-width);
+}
 .window-nav *,
 .window-nav .icon-button,
 #sidebarToggle,
@@ -1901,8 +1917,27 @@ body.settings-open .window-nav { display: none; }
 .settings-credential-form select,
 .settings-credential-form input,
 .settings-credential-form .settings-action,
-.settings-custom-provider-form input,
+.settings-custom-provider-form input:not([type="checkbox"]),
 .settings-custom-provider-form .settings-action { grid-column: 1 / -1; width: 100%; }
+.settings-custom-provider-form .settings-checkbox {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 2px 0 0;
+	color: var(--ink-soft);
+	font-size: 13px;
+	line-height: 1.4;
+	cursor: pointer;
+	user-select: none;
+}
+.settings-custom-provider-form .settings-checkbox input {
+	width: 15px;
+	height: 15px;
+	margin: 2px 0 0;
+	flex: 0 0 auto;
+	accent-color: #3f6f8f;
+}
 .settings-inline-form input, .settings-inline-form select, .settings-stack-form input, .settings-stack-form select {
   min-width: 0;
   height: 31px;

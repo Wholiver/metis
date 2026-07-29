@@ -2731,6 +2731,8 @@ export class AgentSession {
 		await this.settingsManager.reload();
 		this.syncQueueModesFromSettings();
 		resetApiProviders();
+		this.modelRegistry.refresh();
+		this.syncModelFromRegistry();
 		await this._resourceLoader.reload();
 		this._buildRuntime({
 			activeToolNames: this.getActiveToolNames(),
@@ -2748,6 +2750,20 @@ export class AgentSession {
 			await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
 			await this.extendResourcesFromExtensions("reload");
 		}
+	}
+
+	/**
+	 * Replace the session model with the registry copy for the same provider/id.
+	 * Needed after models.json changes (e.g. custom provider reasoning flag) so
+	 * supportsThinking() and thinking levels reflect the refreshed definition.
+	 */
+	syncModelFromRegistry(): void {
+		const current = this.model;
+		if (!current) return;
+		const refreshed = this._modelRegistry.find(current.provider, current.id);
+		if (!refreshed) return;
+		this.agent.state.model = refreshed;
+		this.setThinkingLevel(this._getThinkingLevelForModelSwitch());
 	}
 
 	// =========================================================================
