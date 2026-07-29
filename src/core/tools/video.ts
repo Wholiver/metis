@@ -33,6 +33,9 @@ export const VIDEO_TRANSCRIPTION_REQUIRED_FILES = [
 export const VIDEO_TRANSCRIPTION_DISCOVERY_FILES = ["config.json", "tokenizer_config.json", "preprocessor_config.json"] as const;
 const STORYBOARD_SIZE = 1536;
 const CELL_SIZE = STORYBOARD_SIZE / 3;
+const DETAIL_FRAME_COUNT = 4;
+const MAX_DETAIL_FRAMES = 6;
+const MAX_DETAIL_DIMENSION = 2048;
 const TRANSCRIPT_MAX_BYTES = 50 * 1024;
 const TRANSCRIPTION_DEVICES = ["cpu", "coreml", "webgpu"] as const;
 type TranscriptionDevice = (typeof TRANSCRIPTION_DEVICES)[number];
@@ -46,12 +49,20 @@ const videoSchema = Type.Object({
 		Type.Union([
 			Type.Literal("inspect"),
 			Type.Literal("storyboard"),
+			Type.Literal("frames"),
 			Type.Literal("transcript"),
 		]),
 	),
 	path: Type.String({ description: "Local video path" }),
 	start: Type.Optional(Type.Union([Type.Number(), Type.String()])),
 	end: Type.Optional(Type.Union([Type.Number(), Type.String()])),
+	timestamps: Type.Optional(Type.Array(Type.Union([Type.Number(), Type.String()]), { minItems: 1, maxItems: MAX_DETAIL_FRAMES, description: "Exact timestamps for action=frames; each value accepts seconds, MM:SS, or HH:MM:SS.mmm" })),
+	crop: Type.Optional(Type.Object({
+		x: Type.Number({ minimum: 0, maximum: 1, description: "Left edge as a fraction of frame width" }),
+		y: Type.Number({ minimum: 0, maximum: 1, description: "Top edge as a fraction of frame height" }),
+		width: Type.Number({ minimum: 0, maximum: 1, description: "Crop width as a fraction of frame width" }),
+		height: Type.Number({ minimum: 0, maximum: 1, description: "Crop height as a fraction of frame height" }),
+	}, { description: "Optional normalized crop for action=frames; useful for reading small UI regions" })),
 	language: Type.Optional(Type.String({ description: "Whisper language code (for example zh or en); defaults to en" })),
 });
 
@@ -62,8 +73,16 @@ export interface VideoMetadata {
 	duration: number;
 	width?: number;
 	height?: number;
+	frameRate?: number;
 	hasAudio: boolean;
 	hasSubtitles: boolean;
+}
+
+export interface VideoCrop {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
 }
 
 export interface TranscriptSegment {
@@ -76,6 +95,7 @@ export interface VideoToolDetails {
 	metadata?: VideoMetadata;
 	range?: { start: number; end: number };
 	frameTimes?: number[];
+	crop?: VideoCrop;
 	transcript?: {
 		source: "sidecar" | "embedded" | "whisper";
 		truncated?: boolean;
@@ -88,6 +108,7 @@ export interface VideoToolDetails {
 export interface VideoOperations {
 	probe: (path: string, signal?: AbortSignal) => Promise<VideoMetadata>;
 	createStoryboard: (path: string, frameTimes: number[], signal?: AbortSignal) => Promise<Buffer>;
+	createFrames?: (path: string, frameTimes: number[], crop: VideoCrop | undefined, signal?: AbortSignal) => Promise<Buffer[]>;
 	readSidecarSubtitles: (path: string) => Promise<TranscriptSegment[] | undefined>;
 	readEmbeddedSubtitles: (path: string, signal?: AbortSignal) => Promise<TranscriptSegment[] | undefined>;
 	transcribe: (path: string, range: { start: number; end: number }, language: string, signal?: AbortSignal) => Promise<TranscriptSegment[]>;
@@ -141,9 +162,30 @@ function resolveRange(input: VideoToolInput, duration: number): { start: number;
 	return { start, end: Math.min(end, duration) };
 }
 
-function frameTimesForRange(range: { start: number; end: number }): number[] {
+function frameTimesForRange(range: { start: number; end: number }, count = 9): number[] {
 	const span = range.end - range.start;
-	return Array.from({ length: 9 }, (_, index) => range.start + (span * (index + 0.5)) / 9);
+	return Array.from({ length: count }, (_, index) => range.start + (span * (index + 0.5)) / count);
+}
+
+function resolveFrameTimes(input: VideoToolInput, range: { start: number; end: number }, duration: number): number[] {
+	if (!input.timestamps) return frameTimesForRange(range, DETAIL_FRAME_COUNT);
+	if (input.timestamps.length === 0 || input.timestamps.length > MAX_DETAIL_FRAMES) throw new Error(`timestamps must contain between 1 and ${MAX_DETAIL_FRAMES} values`);
+	const times = input.timestamps.map((value, index) => parseTimestamp(value, `timestamps[${index}]`)!);
+	for (const time of times) {
+		if (time >= duration) throw new Error(`frame timestamp ${formatTimestamp(time)} is at or beyond video duration ${formatTimestamp(duration)}`);
+		if (time < range.start || time > range.end + 0.001) throw new Error(`frame timestamp ${formatTimestamp(time)} is outside requested range ${formatTimestamp(range.start)} - ${formatTimestamp(range.end)}`);
+	}
+	return times;
+}
+
+function resolveCrop(input: VideoToolInput): VideoCrop | undefined {
+	if (!input.crop) return undefined;
+	const { x, y, width, height } = input.crop;
+	if (![x, y, width, height].every(Number.isFinite)) throw new Error("crop values must be finite numbers");
+	if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1.000001 || y + height > 1.000001) {
+		throw new Error("crop must use normalized coordinates within the frame, with positive width and height");
+	}
+	return { x, y, width, height };
 }
 
 function parseSrtTimestamp(value: string): number {
@@ -307,13 +349,15 @@ function requireBinary(path: string | null, name: string): string {
 const defaultVideoOperations: VideoOperations = {
 	async probe(path, signal) {
 		const result = await run(resolveMediaBinaryPath(ffprobePath, "ffprobe"), ["-v", "error", "-show_streams", "-show_format", "-of", "json", path], signal);
-		const data = JSON.parse(result.stdout.toString("utf8")) as { format?: { duration?: string }; streams?: Array<{ codec_type?: string; width?: number; height?: number }> };
+		const data = JSON.parse(result.stdout.toString("utf8")) as { format?: { duration?: string }; streams?: Array<{ codec_type?: string; width?: number; height?: number; avg_frame_rate?: string; r_frame_rate?: string }> };
 		const streams = data.streams ?? [];
 		const video = streams.find((stream) => stream.codec_type === "video");
 		if (!video) throw new Error("File has no video stream");
 		const duration = Number(data.format?.duration);
 		if (!Number.isFinite(duration) || duration <= 0) throw new Error("Video duration is unavailable");
-		return { duration, width: video.width, height: video.height, hasAudio: streams.some((stream) => stream.codec_type === "audio"), hasSubtitles: streams.some((stream) => stream.codec_type === "subtitle") };
+		const [numerator, denominator] = (video.avg_frame_rate ?? video.r_frame_rate ?? "").split("/").map(Number);
+		const frameRate = Number.isFinite(numerator) && Number.isFinite(denominator) && denominator > 0 ? numerator / denominator : undefined;
+		return { duration, width: video.width, height: video.height, frameRate: frameRate && frameRate > 0 ? frameRate : undefined, hasAudio: streams.some((stream) => stream.codec_type === "audio"), hasSubtitles: streams.some((stream) => stream.codec_type === "subtitle") };
 	},
 	async createStoryboard(path, frameTimes, signal) {
 		const workDir = join(tmpdir(), `metis-video-sheet-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -339,6 +383,31 @@ const defaultVideoOperations: VideoOperations = {
 			args.push("-filter_complex", "xstack=inputs=9:layout=0_0|512_0|1024_0|0_512|512_512|1024_512|0_1024|512_1024|1024_1024", "-frames:v", "1", "-q:v", "3", "-y", output);
 			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", ...args], signal);
 			return await readFile(output);
+		} finally {
+			await rm(workDir, { recursive: true, force: true });
+		}
+	},
+	async createFrames(path, frameTimes, crop, signal) {
+		const workDir = join(tmpdir(), `metis-video-frames-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		await mkdir(workDir, { recursive: true });
+		try {
+			const images: Buffer[] = [];
+			for (let index = 0; index < frameTimes.length; index++) {
+				const output = join(workDir, `frame-${index}.png`);
+				const filters = crop ? [`crop=w='iw*${crop.width}':h='ih*${crop.height}':x='iw*${crop.x}':y='ih*${crop.y}'`] : [];
+				filters.push(`scale=w='min(${MAX_DETAIL_DIMENSION},iw)':h='min(${MAX_DETAIL_DIMENSION},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`);
+				const outputArgs = ["-frames:v", "1", "-vf", filters.join(","), "-compression_level", "4", "-y", output];
+				try {
+					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", path, "-ss", String(frameTimes[index]), ...outputArgs], signal);
+					await access(output);
+				} catch (error) {
+					if (index !== frameTimes.length - 1) throw error;
+					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-sseof", "-0.1", "-i", path, ...outputArgs], signal);
+					await access(output);
+				}
+				images.push(await readFile(output));
+			}
+			return images;
 		} finally {
 			await rm(workDir, { recursive: true, force: true });
 		}
@@ -461,9 +530,9 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 	return {
 		name: "video",
 		label: "video",
-		description: "Initialize inspection of a local video. inspect returns metadata and explicit next-call instructions without generating frames or a transcript. Then call storyboard and/or transcript for a chosen time range. The first local transcript request automatically downloads and verifies transcription assets.",
-		promptSnippet: "Initialize local video inspection, then explicitly request a storyboard or transcript",
-		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Read its returned instructions and choose the minimum follow-up action needed; do not assume storyboard and transcript are both necessary.", "For detailed visual work, inspect images in batches instead of extracting the entire video up front. If denser extraction is needed, sampling may skip source frames but the interval must never exceed 4 source frames; analyze each batch before deciding whether to continue.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en.", "The first local transcript request may take longer while Metis downloads and verifies the pinned transcription model. Retry normally if initialization reports a network or filesystem error.", "Never use this tool for remote URLs."],
+		description: "Inspect a local video with metadata, a timestamped overview storyboard, high-fidelity independent frames, and/or a transcript. Use frames for readable UI, text, styling, and exact visual state. The first local transcript request automatically downloads and verifies transcription assets.",
+		promptSnippet: "Inspect local video with an overview, high-fidelity detail frames, and transcript",
+		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Use storyboard for temporal overview, then use frames at explicit timestamps before claiming UI text, typography, colors, spacing, layout, selected state, or other small visual details.", "For interaction or motion, compare frames immediately before and after the event. Use the reported frame rate to choose timestamps 1–4 source frames apart, and verify uncertain evidence with another nearby frame.", "Use normalized crop with frames to enlarge a specific UI region. Request no more frames than needed and analyze each batch before continuing.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en. Transcript proves spoken text, not visual state.", "The first local transcript request may take longer while Metis downloads and verifies the pinned transcription model. Retry normally if initialization reports a network or filesystem error.", "Never use this tool for remote URLs."],
 		parameters: videoSchema,
 		async execute(_toolCallId, input, signal, onUpdate, ctx) {
 			const action: VideoAction = input.action ?? "inspect";
@@ -477,7 +546,7 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 				details.transcriptionReady = await operations.isModelInstalled();
 				content.push({
 					type: "text",
-					text: `Video inspector initialized. No storyboard or transcript has been generated.\nVideo dimensions: ${metadata.width ?? "unknown"}×${metadata.height ?? "unknown"}.\nAudio stream: ${metadata.hasAudio ? "yes" : "no"}.\nSubtitle stream: ${metadata.hasSubtitles ? "yes" : "no"}.\nTranscription runtime prepared: ${metadata.hasAudio ? (details.transcriptionReady ? "yes" : "no") : "not needed (no audio stream)"}.\n\nChoose next action based on user need:\n- For visual events: call video with action=storyboard, path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns exactly one timestamped 3×3 image. For detailed work, request bounded time ranges in batches.\n${metadata.hasAudio || metadata.hasSubtitles ? `- For spoken or subtitle text: call video with action=transcript, path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n- For both: make the two explicit calls above.\n` : "- Transcript is unavailable because this video has no audio or subtitle stream. Do not call action=transcript.\n"}\nUse start/end to narrow the range; omit them only when the whole video is required. When denser frame extraction is necessary, process batches and sample every 1–4 source frames, never a larger interval. If transcription runtime is not prepared and audio exists, the first transcript call downloads and verifies it automatically.`,
+					text: `Video inspector initialized. No visual frames or transcript have been generated.\nVideo dimensions: ${metadata.width ?? "unknown"}×${metadata.height ?? "unknown"}.\nFrame rate: ${metadata.frameRate ? `${metadata.frameRate.toFixed(3)} fps` : "unknown"}.\nAudio stream: ${metadata.hasAudio ? "yes" : "no"}.\nSubtitle stream: ${metadata.hasSubtitles ? "yes" : "no"}.\nTranscription runtime prepared: ${metadata.hasAudio ? (details.transcriptionReady ? "yes" : "no") : "not needed (no audio stream)"}.\n\nChoose next action based on evidence needed:\n- Temporal overview: action=storyboard with path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns one timestamped 3×3 overview.\n- Readable visual evidence: action=frames with path=${JSON.stringify(input.path)}, timestamps=[<time>, ...]. It returns up to ${MAX_DETAIL_FRAMES} independent lossless PNG frames. Use crop={x,y,width,height} with normalized 0–1 coordinates to enlarge a UI region.\n${metadata.hasAudio || metadata.hasSubtitles ? `- Spoken or subtitle text: action=transcript with path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n` : "- Transcript is unavailable because this video has no audio or subtitle stream. Do not call action=transcript.\n"}\nStoryboard is navigation evidence, not sufficient evidence for UI text, typography, colors, spacing, layout, or selected state. Verify those with action=frames. For an interaction, compare timestamps immediately before and after it${metadata.frameRate ? `; at ${metadata.frameRate.toFixed(3)} fps, 1–4 source frames span ${(1 / metadata.frameRate).toFixed(4)}–${(4 / metadata.frameRate).toFixed(4)} seconds` : ""}. If transcription runtime is not prepared and audio exists, first transcript call downloads and verifies it automatically.`,
 				});
 				return { content, details };
 			}
@@ -492,6 +561,25 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 					content.push({ type: "text", text: "[Current model is explicitly configured as text-only, so the storyboard image cannot be sent to it. Use a vision-capable model or change this model's input capability to [\"text\", \"image\"].]" });
 				}
 				content.push({ type: "image", data: sheet.toString("base64"), mimeType: "image/jpeg" });
+			}
+
+			if (action === "frames") {
+				if (!operations.createFrames) throw new Error("High-fidelity frame extraction is unavailable for these custom video operations");
+				const frameTimes = resolveFrameTimes(input, range, metadata.duration);
+				const crop = resolveCrop(input);
+				details.frameTimes = frameTimes;
+				details.crop = crop;
+				onUpdate?.({ content: [{ type: "text", text: `Extracting ${frameTimes.length} high-fidelity video frame${frameTimes.length === 1 ? "" : "s"}…` }], details: {} });
+				const frames = await operations.createFrames(path, frameTimes, crop, signal);
+				if (frames.length !== frameTimes.length) throw new Error(`Frame extractor returned ${frames.length} images for ${frameTimes.length} timestamps`);
+				content.push({ type: "text", text: `High-fidelity PNG frames (${MAX_DETAIL_DIMENSION}px maximum dimension, no upscaling)${crop ? `; crop x=${crop.x}, y=${crop.y}, width=${crop.width}, height=${crop.height}` : ""}:` });
+				if (ctx?.model && !ctx.model.input.includes("image")) {
+					content.push({ type: "text", text: "[Current model is explicitly configured as text-only, so the frame images cannot be sent to it. Use a vision-capable model or change this model's input capability to [\"text\", \"image\"].]" });
+				}
+				for (let index = 0; index < frames.length; index++) {
+					content.push({ type: "text", text: `Frame ${index + 1}/${frames.length}: ${formatTimestamp(frameTimes[index])}` });
+					content.push({ type: "image", data: frames[index].toString("base64"), mimeType: "image/png" });
+				}
 			}
 
 			if (action === "transcript") {

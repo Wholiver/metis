@@ -70,6 +70,7 @@ export {
 	createVideoTool,
 	createVideoToolDefinition,
 	type VideoAction,
+	type VideoCrop,
 	type VideoMetadata,
 	type VideoOperations,
 	type VideoToolDetails,

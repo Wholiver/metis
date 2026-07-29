@@ -14,6 +14,8 @@ const ffmpegPath = require("ffmpeg-static") as string;
 
 const TINY_JPEG = Buffer.from("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9k=", "base64");
 
+const TINY_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+Xw2cWQAAAABJRU5ErkJggg==", "base64");
+
 describe("video tool", () => {
 	let testDir: string;
 
@@ -30,8 +32,9 @@ describe("video tool", () => {
 
 	function operations(overrides: Partial<VideoOperations> = {}): VideoOperations {
 		return {
-			probe: vi.fn(async () => ({ duration: 80, width: 1280, height: 720, hasAudio: true, hasSubtitles: false })),
+			probe: vi.fn(async () => ({ duration: 80, width: 1280, height: 720, frameRate: 30, hasAudio: true, hasSubtitles: false })),
 			createStoryboard: vi.fn(async () => TINY_JPEG),
+			createFrames: vi.fn(async (_path, frameTimes) => frameTimes.map(() => TINY_PNG)),
 			readSidecarSubtitles: vi.fn(async () => undefined),
 			readEmbeddedSubtitles: vi.fn(async () => undefined),
 			transcribe: vi.fn(async () => [{ start: 10, end: 12, text: "hello video" }]),
@@ -72,7 +75,9 @@ describe("video tool", () => {
 		expect(result.content.find((block) => block.type === "image")).toBeUndefined();
 		expect(output).toContain("Video inspector initialized");
 		expect(output).toContain("action=storyboard");
+		expect(output).toContain("action=frames");
 		expect(output).toContain("action=transcript");
+		expect(output).toContain("30.000 fps");
 		expect(output).toContain("Audio stream: yes");
 		expect(output).toContain("Transcription runtime prepared: no");
 		expect(result.details.transcriptionReady).toBe(false);
@@ -104,15 +109,40 @@ describe("video tool", () => {
 		expect(ops.createStoryboard).toHaveBeenCalledTimes(1);
 	});
 
-	it("warns explicit text-only models and instructs visual batching", async () => {
+	it("returns independent high-fidelity PNG frames at exact timestamps", async () => {
+		const ops = operations();
+		const tool = createVideoTool(testDir, { operations: ops });
+		const crop = { x: 0, y: 0, width: 1, height: 0.25 };
+		const result = await tool.execute("video-detail", { action: "frames", path: "clip.mp4", timestamps: ["00:00:20.000", 20.1], crop });
+		const images = result.content.filter((block) => block.type === "image");
+		const output = result.content.map((block) => block.type === "text" ? block.text : "").join("\n");
+		expect(result.details.frameTimes).toEqual([20, 20.1]);
+		expect(result.details.crop).toEqual(crop);
+		expect(images).toHaveLength(2);
+		expect(images.every((image) => image.mimeType === "image/png")).toBe(true);
+		expect(output).toContain("Frame 1/2: 00:00:20.000");
+		expect(output).toContain("Frame 2/2: 00:00:20.100");
+		expect(ops.createFrames).toHaveBeenCalledWith(join(testDir, "clip.mp4"), [20, 20.1], crop, undefined);
+	});
+
+	it("samples four detail frames by default and validates detail requests", async () => {
+		const tool = createVideoTool(testDir, { operations: operations() });
+		const result = await tool.execute("video-detail-default", { action: "frames", path: "clip.mp4", start: 20, end: 28 });
+		expect(result.details.frameTimes).toEqual([21, 23, 25, 27]);
+		await expect(tool.execute("video-detail-time", { action: "frames", path: "clip.mp4", timestamps: [81] })).rejects.toThrow("beyond video duration");
+		await expect(tool.execute("video-detail-end", { action: "frames", path: "clip.mp4", timestamps: [80] })).rejects.toThrow("beyond video duration");
+		await expect(tool.execute("video-detail-crop", { action: "frames", path: "clip.mp4", timestamps: [20], crop: { x: 0.8, y: 0, width: 0.3, height: 1 } })).rejects.toThrow("normalized coordinates");
+	});
+
+	it("warns explicit text-only models and requires high-fidelity verification", async () => {
 		const definition = createVideoToolDefinition(testDir, { operations: operations() });
 		const result = await definition.execute("video-text-only", { action: "storyboard", path: "clip.mp4" }, undefined, undefined, {
 			model: { input: ["text"] },
 		} as any);
 		const output = result.content.map((block) => block.type === "text" ? block.text : "").join("\n");
 		expect(output).toContain("explicitly configured as text-only");
-		expect(definition.promptGuidelines?.join("\n")).toContain("batches");
-		expect(definition.promptGuidelines?.join("\n")).toContain("never exceed 4 source frames");
+		expect(definition.promptGuidelines?.join("\n")).toContain("frames at explicit timestamps");
+		expect(definition.promptGuidelines?.join("\n")).toContain("1–4 source frames apart");
 	});
 
 	it("automatically prepares a missing transcription model", async () => {
@@ -166,6 +196,16 @@ describe("video tool", () => {
 		const image = result.content.find((block) => block.type === "image");
 		expect(result.details.frameTimes).toHaveLength(9);
 		expect(image?.mimeType).toBe("image/jpeg");
-		expect(image?.data.length).toBeGreaterThan(1000);
+		 expect(image?.data.length).toBeGreaterThan(1000);
+	});
+
+	it("extracts real lossless detail frames and normalized crops with bundled FFmpeg", async () => {
+		const videoPath = join(testDir, "real-detail.mp4");
+		await runFile(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=1.5:size=320x180:rate=10", "-an", "-pix_fmt", "yuv420p", "-y", videoPath]);
+		const result = await createVideoTool(testDir).execute("video-real-detail", { action: "frames", path: "real-detail.mp4", timestamps: [0.5], crop: { x: 0, y: 0, width: 0.5, height: 1 } });
+		const image = result.content.find((block) => block.type === "image");
+		expect(result.details.frameTimes).toEqual([0.5]);
+		expect(image?.mimeType).toBe("image/png");
+		expect(Buffer.from(image?.data ?? "", "base64").subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
 	});
 });

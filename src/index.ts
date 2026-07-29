@@ -317,6 +317,7 @@ export {
 	type ReadToolInput,
 	type ReadToolOptions,
 	type VideoAction,
+	type VideoCrop,
 	type VideoMetadata,
 	type VideoOperations,
 	type VideoToolDetails,
