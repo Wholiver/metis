@@ -57,6 +57,19 @@ jobs:
           Copy-Item desktop/release/*.zip windows-artifacts/
           Copy-Item desktop/release/*.sha256 windows-artifacts/
 
+      - name: Upload portable Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: metis-windows-x64-portable
+          path: |
+            windows-artifacts/*.zip
+            windows-artifacts/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Install NSIS
+        run: choco install nsis --yes --no-progress
+
       - name: Build Windows installer
         run: npm --prefix desktop run package:win:installer
 
@@ -64,10 +77,10 @@ jobs:
         shell: pwsh
         run: Copy-Item desktop/release/*-setup.exe windows-artifacts/
 
-      - name: Upload Windows artifacts
+      - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: metis-windows-x64
-          path: windows-artifacts/*
+          name: metis-windows-x64-installer
+          path: windows-artifacts/*-setup.exe
           if-no-files-found: error
           retention-days: 7
