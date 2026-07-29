@@ -2,6 +2,15 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.3.3-rc.1] - 2026-07-29
+
+### Desktop final-response divider
+
+- Guaranteed exactly one divider above the final response whenever the Worked section is expanded.
+- Unified inline, separate-message, historical string, restored-session, and streaming render paths under one divider owner.
+- Fixed stale streaming state captured by the collapse handler, which could hide the divider after expanding completed work.
+- Removed legacy work-container dividers and reconciled stale or duplicated divider nodes during DOM reuse.
+
 ## [1.3.2-rc.3] - 2026-07-29
 
 ### Provider-independent session titles
