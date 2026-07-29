@@ -4,10 +4,20 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.3.4-rc.1] - 2026-07-29
+
 ### Desktop
 
 - Added Windows desktop packaging (`npm run package:win`) that produces a portable ZIP with a bundled CLI/Server runtime.
+- Added an NSIS Windows installer with per-user installation, shortcuts, and uninstall support.
 - Improved Windows window chrome with native title-bar overlay controls and File Explorer wording.
+- Added custom-provider reasoning configuration and model-registry refresh support.
+- Prevented Desktop from restoring the internal `unknown/unknown` placeholder after custom-provider refresh.
+- Preserved an available active model or fell back to the imported `other` model.
+
+### Release automation
+
+- Added a manually triggered Windows release build that produces portable ZIP, checksum, and installer artifacts.
 
 ## [1.3.3-rc.1] - 2026-07-29
 

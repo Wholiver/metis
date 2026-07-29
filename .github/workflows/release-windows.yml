@@ -1,0 +1,62 @@
+name: Build Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to package
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            npm-shrinkwrap.json
+            desktop/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Desktop dependencies
+        run: npm --prefix desktop ci
+
+      - name: Build portable Windows package
+        run: npm --prefix desktop run package:win
+
+      - name: Preserve portable artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path windows-artifacts | Out-Null
+          Copy-Item desktop/release/*.zip windows-artifacts/
+          Copy-Item desktop/release/*.sha256 windows-artifacts/
+
+      - name: Build Windows installer
+        run: npm --prefix desktop run package:win:installer
+
+      - name: Preserve installer artifact
+        shell: pwsh
+        run: Copy-Item desktop/release/*-setup.exe windows-artifacts/
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: metis-windows-x64
+          path: windows-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
