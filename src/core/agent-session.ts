@@ -2968,8 +2968,8 @@ export class AgentSession {
 	/**
 	 * Ensure the session has a display name. If none is set, generate an AI summary title asynchronously.
 	 */
-	async ensureSessionName(): Promise<string | undefined> {
-		if (!this._autoSessionName || this.sessionName || this._isGeneratingSessionName) {
+	async ensureSessionName(options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<string | undefined> {
+		if (!this._autoSessionName || this.sessionName || this._isGeneratingSessionName || this._sessionNameError) {
 			return this.sessionName;
 		}
 
@@ -2992,6 +2992,8 @@ export class AgentSession {
 				model: this.model,
 				modelRegistry: this._modelRegistry,
 				messages: this.messages,
+				signal: options.signal,
+				timeoutMs: options.timeoutMs,
 			});
 
 			if (name) {

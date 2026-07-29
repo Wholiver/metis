@@ -51,6 +51,47 @@ describe("automatic session names", () => {
 			"started",
 			"failed",
 		]);
+
+		harness.setResponses([fauxAssistantMessage("不应重试")]);
+		await harness.session.ensureSessionName();
+		expect(harness.getPendingResponseCount()).toBe(1);
+	});
+
+	it("times out a title provider that never settles", async () => {
+		const harness = await createHarness({ autoSessionName: true });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage("完成"),
+			async () => await new Promise<never>(() => {}),
+		]);
+
+		await harness.session.prompt("执行任务");
+		await harness.session.ensureSessionName({ timeoutMs: 10 });
+
+		expect(harness.session.isGeneratingSessionName).toBe(false);
+		expect(harness.session.sessionNameError).toBe("Session name generation timed out after 10ms");
+		expect(harness.eventsOfType("session_name_generation").map((event) => event.status)).toEqual([
+			"started",
+			"failed",
+		]);
+	});
+
+	it("settles when title generation is cancelled", async () => {
+		const harness = await createHarness({ autoSessionName: true });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage("完成"),
+			async () => await new Promise<never>(() => {}),
+		]);
+
+		await harness.session.prompt("执行任务");
+		const controller = new AbortController();
+		const naming = harness.session.ensureSessionName({ signal: controller.signal });
+		controller.abort(new Error("title cancelled"));
+		await naming;
+
+		expect(harness.session.isGeneratingSessionName).toBe(false);
+		expect(harness.session.sessionNameError).toBe("title cancelled");
 	});
 
 	it("never overwrites an explicit session name", async () => {
