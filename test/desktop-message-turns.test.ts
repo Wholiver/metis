@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { analyzeAssistantTurn, getSubagentProgress, getRunningSubagentCount, getSubagentToolCalls, shouldQueueDesktopMessage, getAssistantContentLayout, getAssistantWorkLayout, shouldHideAssistantWorkHeader, getAssistantTurnDuration, isSubagentLaunchNotice } = require("../desktop/renderer/message-turns.js") as {
+const { analyzeAssistantTurn, getSubagentProgress, getRunningSubagentCount, getSubagentToolCalls, shouldQueueDesktopMessage, getAssistantContentLayout, getAssistantWorkLayout, shouldHideAssistantWorkHeader, getAssistantTurnDuration, reconcileAssistantFinalDivider, isSubagentLaunchNotice } = require("../desktop/renderer/message-turns.js") as {
 	analyzeAssistantTurn: (message: unknown, messages: unknown[], isStreaming: boolean) => {
 		hasCoT: boolean;
 		hasRunningSubagent: boolean;
@@ -25,6 +25,7 @@ const { analyzeAssistantTurn, getSubagentProgress, getRunningSubagentCount, getS
 	isSubagentLaunchNotice: (text: unknown) => boolean;
 	shouldHideAssistantWorkHeader: (message: unknown, messages: unknown[]) => boolean;
 	getAssistantTurnDuration: (message: unknown, messages: unknown[], timings: Record<string, unknown>, options?: { active?: boolean; now?: number }) => number | undefined;
+	reconcileAssistantFinalDivider: (body: unknown, shouldRender: boolean, beforeNode?: unknown) => unknown;
 };
 
 describe("desktop assistant turn grouping", () => {
@@ -42,6 +43,58 @@ describe("desktop assistant turn grouping", () => {
 			cotParts: [waiting],
 			finalResponsePart: undefined,
 		});
+	});
+
+	it("deduplicates stale divider paths and places one directly above final response", () => {
+		const removed: string[] = [];
+		const finalResponse = { name: "final" };
+		const firstDivider = { name: "first", nextSibling: undefined, remove: () => removed.push("first") };
+		const duplicateDivider = { name: "duplicate", remove: () => removed.push("duplicate") };
+		const cotDivider = { remove: () => removed.push("cot") };
+		const cotContainer = { classList: { remove: (name: string) => removed.push(name) } };
+		let insertion: unknown[] = [];
+		const body = {
+			querySelectorAll: (selector: string) => {
+				if (selector === ".cot-divider") return [cotDivider];
+				if (selector === ".cot-container.has-final-response") return [cotContainer];
+				if (selector === ":scope > .turn-final-divider") return [firstDivider, duplicateDivider];
+				return [];
+			},
+			ownerDocument: { createElement: () => ({ className: "", remove: () => undefined }) },
+			insertBefore: (node: unknown, before: unknown) => { insertion = [node, before]; },
+		};
+
+		reconcileAssistantFinalDivider(body, true, finalResponse);
+
+		expect(removed).toEqual(["cot", "has-final-response", "duplicate"]);
+		expect(insertion).toEqual([firstDivider, finalResponse]);
+	});
+
+	it("removes every stale divider when message is not final response", () => {
+		const removed: string[] = [];
+		const divider = { remove: () => removed.push("direct") };
+		const body = {
+			querySelectorAll: (selector: string) => selector === ":scope > .turn-final-divider" ? [divider] : [],
+		};
+
+		reconcileAssistantFinalDivider(body, false);
+
+		expect(removed).toEqual(["direct"]);
+	});
+
+	it("creates one divider for a clean final-response body", () => {
+		const finalResponse = { name: "final" };
+		const created = { className: "", nextSibling: undefined };
+		let insertion: unknown[] = [];
+		const body = {
+			querySelectorAll: () => [],
+			ownerDocument: { createElement: () => created },
+			insertBefore: (node: unknown, before: unknown) => { insertion = [node, before]; },
+		};
+
+		expect(reconcileAssistantFinalDivider(body, true, finalResponse)).toBe(created);
+		expect(created.className).toBe("turn-final-divider");
+		expect(insertion).toEqual([created, finalResponse]);
 	});
 
 	it("selects only non-empty text after tool calls as the final response", () => {
@@ -151,6 +204,32 @@ describe("desktop assistant turn grouping", () => {
 		expect(analyzeAssistantTurn(reasoning, messages, false)).toMatchObject({ hasCoT: true, isIntermediate: true, shouldCollapse: false });
 		expect(analyzeAssistantTurn(waiting, messages, false)).toMatchObject({ hasCoT: true, isIntermediate: true, shouldCollapse: false });
 		expect(analyzeAssistantTurn(final, messages, false)).toMatchObject({ hasCoT: true, isFinalAssistant: true, shouldCollapse: false });
+	});
+
+	it("recognizes a historical string message as final response after tool work", () => {
+		const work = { role: "assistant", content: [{ type: "toolCall", id: "tool-call-log001", name: "log" }] };
+		const final = { role: "assistant", content: "Final answer" };
+		const messages = [{ role: "user", content: "question" }, work, final];
+
+		expect(analyzeAssistantTurn(work, messages, false)).toMatchObject({ hasCoT: true, isIntermediate: true });
+		expect(analyzeAssistantTurn(final, messages, false)).toMatchObject({
+			hasCoT: true,
+			hasFinalResponse: true,
+			isFinalAssistant: true,
+		});
+	});
+
+	it("keeps same-message tool work and final response in separate layout regions", () => {
+		const toolCall = { type: "toolCall", id: "tool-call-log001", name: "log" };
+		const finalResponse = { type: "text", text: "Final answer" };
+		const message = { role: "assistant", content: [toolCall, finalResponse] };
+		const messages = [{ role: "user", content: "question" }, message];
+
+		expect(analyzeAssistantTurn(message, messages, false)).toMatchObject({ hasCoT: true, isFinalAssistant: true });
+		expect(getAssistantWorkLayout(message, messages, true)).toEqual({
+			workItems: [toolCall],
+			finalResponsePart: finalResponse,
+		});
 	});
 
 	it.each(["openai", "anthropic", "google"])("keeps %s thinking content expanded after completion", (provider) => {

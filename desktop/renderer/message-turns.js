@@ -218,6 +218,33 @@
 		return { workItems, finalResponsePart };
 	}
 
+	function reconcileAssistantFinalDivider(body, shouldRender, beforeNode) {
+		if (!body) return undefined;
+
+		// Older renders placed a second divider inside the work container. Remove
+		// that ownership path so every turn can have only one final-response line.
+		for (const divider of body.querySelectorAll(".cot-divider")) divider.remove();
+		for (const container of body.querySelectorAll(".cot-container.has-final-response")) {
+			container.classList.remove("has-final-response");
+		}
+
+		const dividers = [...body.querySelectorAll(":scope > .turn-final-divider")];
+		let divider = dividers.shift();
+		for (const duplicate of dividers) duplicate.remove();
+
+		if (!shouldRender || !beforeNode) {
+			if (divider) divider.remove();
+			return undefined;
+		}
+
+		if (!divider) {
+			divider = body.ownerDocument.createElement("div");
+			divider.className = "turn-final-divider";
+		}
+		if (divider.nextSibling !== beforeNode) body.insertBefore(divider, beforeNode);
+		return divider;
+	}
+
 	const helpers = {
 		analyzeAssistantTurn,
 		getSubagentProgress,
@@ -228,6 +255,7 @@
 		shouldQueueDesktopMessage,
 		getAssistantContentLayout,
 		getAssistantWorkLayout,
+		reconcileAssistantFinalDivider,
 		isSubagentLaunchNotice,
 	};
 	if (typeof module === "object" && module.exports) module.exports = helpers;

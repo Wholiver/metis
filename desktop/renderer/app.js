@@ -1,6 +1,6 @@
 const desktop = window.metisDesktop;
 const desktopI18n = window.metisDesktopI18n;
-const { analyzeAssistantTurn, shouldQueueDesktopMessage, getAssistantWorkLayout, getSubagentToolCalls, shouldHideAssistantWorkHeader, getAssistantTurnDuration, isSubagentLaunchNotice } = window.metisMessageTurns;
+const { analyzeAssistantTurn, shouldQueueDesktopMessage, getAssistantWorkLayout, getSubagentToolCalls, shouldHideAssistantWorkHeader, getAssistantTurnDuration, reconcileAssistantFinalDivider, isSubagentLaunchNotice } = window.metisMessageTurns;
 const THINKING_LEVEL_KEYS = {
 	off: "thinkingOff",
 	minimal: "thinkingMinimal",
@@ -1227,7 +1227,7 @@ function setAssistantTurnCollapsed(article, isCollapsed, isActive = false) {
 			turnArticle.classList.toggle("assistant-turn-active", isActive);
 			const cotContainer = turnArticle.querySelector(".cot-container");
 			if (cotContainer) cotContainer.classList.toggle("collapsed", isCollapsed);
-			turnDividers.push(...turnArticle.querySelectorAll(".cot-container.has-final-response > .cot-divider, .turn-final-divider"));
+			turnDividers.push(...turnArticle.querySelectorAll(":scope > .assistant-body > .turn-final-divider"));
 
 			const hidesWithTurn = turnArticle.classList.contains("turn-intermediate-assistant")
 				&& (!cotContainer || cotContainer.classList.contains("cot-continuation"));
@@ -1242,12 +1242,23 @@ function setAssistantTurnCollapsed(article, isCollapsed, isActive = false) {
 }
 
 function refreshAllTurnDividers() {
-	elements.messageColumn.querySelectorAll(".assistant-message").forEach((article) => {
-		const turnDividers = [...article.querySelectorAll(".cot-container.has-final-response > .cot-divider, .turn-final-divider")];
+	const turnDividers = [];
+	const finishTurn = () => {
 		turnDividers.forEach((divider, index) => {
 			divider.classList.toggle("turn-terminal-divider", index === turnDividers.length - 1);
 		});
-	});
+		turnDividers.length = 0;
+	};
+	for (const article of elements.messageColumn.children) {
+		if (article.classList.contains("user-message")) {
+			finishTurn();
+			continue;
+		}
+		if (article.classList.contains("assistant-message")) {
+			turnDividers.push(...article.querySelectorAll(":scope > .assistant-body > .turn-final-divider"));
+		}
+	}
+	finishTurn();
 }
 
 function updateOrCreateAssistantMessage(existingArticle, message, messages, index) {
@@ -1277,21 +1288,38 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 	article.classList.toggle("turn-intermediate-assistant", turnContext.hasCoT && turnContext.isIntermediate);
 	
 	if (typeof message.content === "string") {
-		const newHtml = renderMarkdown(message.content);
-		if (body.innerHTML !== newHtml) {
-			body.innerHTML = newHtml;
+		let textPart = body.querySelector(":scope > .assistant-text-part");
+		if (body.querySelector(":scope > .cot-container") || !textPart) {
+			body.replaceChildren();
+			textPart = document.createElement("div");
+			textPart.className = "assistant-text-part animate-entrance";
+			body.append(textPart);
 		}
+		const newHtml = renderMarkdown(message.content);
+		if (textPart.innerHTML !== newHtml) {
+			textPart.innerHTML = newHtml;
+		}
+		const hasFinalText = Boolean(message.content.trim()) && !isSubagentLaunchNotice(message.content);
+		reconcileAssistantFinalDivider(
+			body,
+			turnContext.hasCoT && turnContext.isFinalAssistant && hasFinalText,
+			textPart,
+		);
 		if (turnContext.hasCoT) setAssistantTurnCollapsed(article, turnShouldCollapse, turnIsActive);
 		return;
 	}
 	
-	if (!Array.isArray(message.content)) return;
+	if (!Array.isArray(message.content)) {
+		body.replaceChildren();
+		return;
+	}
 	
 	const { workItems, finalResponsePart } = getAssistantWorkLayout(message, messages, turnContext.isFinalAssistant);
 	const hasCoT = workItems.length > 0;
 
 	if (!hasCoT) {
-		if (body.querySelector(".cot-container")) {
+		if (body.querySelector(":scope > .cot-container")
+			|| (!body.querySelector(":scope > .assistant-text-part") && body.children.length > 0)) {
 			body.replaceChildren();
 		}
 
@@ -1299,14 +1327,6 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 			&& Boolean(String(part.text || "").trim())
 			&& !isSubagentLaunchNotice(part.text));
 		const needsTurnDivider = turnContext.hasCoT && turnContext.isFinalAssistant && textParts.length > 0;
-		let turnDivider = body.querySelector(":scope > .turn-final-divider");
-		if (needsTurnDivider && !turnDivider) {
-			turnDivider = document.createElement("div");
-			turnDivider.className = "turn-final-divider";
-			body.prepend(turnDivider);
-		} else if (!needsTurnDivider && turnDivider) {
-			turnDivider.remove();
-		}
 		const existingTextParts = [...body.children].filter((child) => child.classList.contains("assistant-text-part"));
 		textParts.forEach((part, partIndex) => {
 				const existingTextDiv = existingTextParts[partIndex];
@@ -1323,10 +1343,16 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 				}
 		});
 		existingTextParts.slice(textParts.length).forEach((element) => element.remove());
+		reconcileAssistantFinalDivider(
+			body,
+			needsTurnDivider,
+			body.querySelector(":scope > .assistant-text-part"),
+		);
 	} else {
 		let cotContainer = body.querySelector(".cot-container");
 		let isNewCot = false;
 		if (!cotContainer) {
+			body.replaceChildren();
 			isNewCot = true;
 			cotContainer = document.createElement("div");
 			cotContainer.className = "cot-container animate-entrance";
@@ -1355,15 +1381,7 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 			cotWrapper.append(cotInner);
 			cotBody.append(cotWrapper);
 
-			const cotDivider = document.createElement("div");
-			cotDivider.className = "cot-divider";
-			cotDivider.addEventListener("mousemove", (e) => {
-				const rect = cotDivider.getBoundingClientRect();
-				const x = e.clientX - rect.left;
-				cotDivider.style.setProperty("--x", `${x}px`);
-			});
-
-			cotContainer.append(cotHeader, cotBody, cotDivider);
+			cotContainer.append(cotHeader, cotBody);
 			
 			if (body.firstChild) {
 				body.insertBefore(cotContainer, body.firstChild);
@@ -1372,7 +1390,11 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 			}
 
 			cotHeader.addEventListener("click", () => {
-				setAssistantTurnCollapsed(article, !cotContainer.classList.contains("collapsed"), turnIsActive);
+				setAssistantTurnCollapsed(
+					article,
+					!cotContainer.classList.contains("collapsed"),
+					article.classList.contains("assistant-turn-active"),
+				);
 			});
 		}
 
@@ -1591,12 +1613,6 @@ function getWorkItemKey(part, index) {
 			}
 		}
 
-		let cotDivider = cotContainer.querySelector(".cot-divider");
-		if (cotDivider) {
-			cotDivider.style.display = "";
-		}
-		cotContainer.classList.toggle("has-final-response", Boolean(finalResponsePart));
-
 		let finalResponseEl = body.querySelector(":scope > .assistant-text-part");
 		
 		if (finalResponsePart) {
@@ -1616,13 +1632,23 @@ function getWorkItemKey(part, index) {
 					} else {
 						body.append(textDiv);
 					}
+					finalResponseEl = textDiv;
 				}
 			} else if (finalResponseEl) {
 				finalResponseEl.remove();
+				finalResponseEl = null;
 			}
 		} else if (finalResponseEl) {
 			finalResponseEl.remove();
+			finalResponseEl = null;
 		}
+		reconcileAssistantFinalDivider(
+			body,
+			turnContext.hasCoT
+				&& turnContext.isFinalAssistant
+				&& Boolean(String(finalResponsePart?.text || "").trim()),
+			finalResponseEl,
+		);
 	}
 
 	if (turnContext.hasCoT) setAssistantTurnCollapsed(article, turnShouldCollapse, turnIsActive);
