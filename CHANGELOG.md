@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.4.0-rc.1] - 2026-07-30
+
+### Video detail inspection
+
+- Added a `frames` action that returns up to six independent lossless PNG frames for detailed visual inspection.
+- Added exact timestamp selection and normalized cropping for reading small UI regions and precise video states.
+- Exposed video frame-rate metadata and included it in inspection guidance.
+- Exported the public `VideoCrop` type and documented the expanded evidence workflow.
+
 ## [1.3.4-rc.1] - 2026-07-29
 
 ### Desktop
