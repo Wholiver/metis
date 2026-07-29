@@ -35,7 +35,7 @@ import {
 	resetApiProviders,
 	streamSimple,
 } from "@earendil-works/metis-ai/compat";
-import { generateSessionName } from "./session-name-generator.ts";
+import { generateFallbackSessionName, generateSessionName } from "./session-name-generator.ts";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
@@ -2984,13 +2984,9 @@ export class AgentSession {
 	/**
 	 * Ensure the session has a display name. If none is set, generate an AI summary title asynchronously.
 	 */
-	async ensureSessionName(): Promise<string | undefined> {
-		if (!this._autoSessionName || this.sessionName || this._isGeneratingSessionName) {
+	async ensureSessionName(options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<string | undefined> {
+		if (!this._autoSessionName || this.sessionName || this._isGeneratingSessionName || this._sessionNameError) {
 			return this.sessionName;
-		}
-
-		if (!this.model) {
-			return undefined;
 		}
 
 		const hasUser = this.messages.some((m) => m.role === "user");
@@ -3004,21 +3000,33 @@ export class AgentSession {
 		this._emit({ type: "session_name_generation", status: "started" });
 
 		try {
+			if (!this.model) {
+				const fallbackName = generateFallbackSessionName(this.messages);
+				this.setSessionName(fallbackName);
+				this._emit({ type: "session_name_generation", status: "completed", name: fallbackName });
+				return fallbackName;
+			}
+
 			const name = await generateSessionName({
 				model: this.model,
 				modelRegistry: this._modelRegistry,
 				messages: this.messages,
+				signal: options.signal,
+				timeoutMs: options.timeoutMs,
 			});
 
-			if (name) {
-				this.setSessionName(name);
-				this._emit({ type: "session_name_generation", status: "completed", name });
-				return name;
-			} else {
-				this._emit({ type: "session_name_generation", status: "completed" });
-			}
+			const resolvedName = name ?? generateFallbackSessionName(this.messages);
+			if (resolvedName) this.setSessionName(resolvedName);
+			this._emit({ type: "session_name_generation", status: "completed", name: resolvedName });
+			return resolvedName;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
+			const fallbackName = options.signal?.aborted ? undefined : generateFallbackSessionName(this.messages);
+			if (fallbackName) {
+				this.setSessionName(fallbackName);
+				this._emit({ type: "session_name_generation", status: "completed", name: fallbackName });
+				return fallbackName;
+			}
 			this._sessionNameError = message;
 			this._emit({ type: "session_name_generation", status: "failed", error: message });
 		} finally {

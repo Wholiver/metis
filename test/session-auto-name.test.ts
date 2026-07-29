@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { fauxAssistantMessage } from "@earendil-works/metis-ai";
-import { sanitizeGeneratedSessionName } from "../src/core/session-name-generator.ts";
+import { generateFallbackSessionName, sanitizeGeneratedSessionName } from "../src/core/session-name-generator.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
 describe("automatic session names", () => {
@@ -34,7 +34,7 @@ describe("automatic session names", () => {
 		]);
 	});
 
-	it("reports generation failure instead of remaining pending", async () => {
+	it("falls back to the user request when title generation fails", async () => {
 		const harness = await createHarness({ autoSessionName: true });
 		harnesses.push(harness);
 		harness.setResponses([
@@ -46,11 +46,85 @@ describe("automatic session names", () => {
 		await harness.session.ensureSessionName();
 
 		expect(harness.session.isGeneratingSessionName).toBe(false);
-		expect(harness.session.sessionNameError).toBe("title provider failed");
+		expect(harness.session.sessionName).toBe("执行任务");
+		expect(harness.session.sessionNameError).toBeUndefined();
 		expect(harness.eventsOfType("session_name_generation").map((event) => event.status)).toEqual([
 			"started",
-			"failed",
+			"completed",
 		]);
+
+		harness.setResponses([fauxAssistantMessage("不应重试")]);
+		await harness.session.ensureSessionName();
+		expect(harness.getPendingResponseCount()).toBe(1);
+	});
+
+	it("times out a title provider that never settles", async () => {
+		const harness = await createHarness({ autoSessionName: true });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage("完成"),
+			async () => await new Promise<never>(() => {}),
+		]);
+
+		await harness.session.prompt("执行任务");
+		await harness.session.ensureSessionName({ timeoutMs: 10 });
+
+		expect(harness.session.isGeneratingSessionName).toBe(false);
+		expect(harness.session.sessionName).toBe("执行任务");
+		expect(harness.session.sessionNameError).toBeUndefined();
+		expect(harness.eventsOfType("session_name_generation").map((event) => event.status)).toEqual([
+			"started",
+			"completed",
+		]);
+	});
+
+	it("falls back when a custom model returns no title text", async () => {
+		const harness = await createHarness({ autoSessionName: true });
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("完成"), fauxAssistantMessage("")]);
+
+		await harness.session.prompt("分析自定义模型标题");
+		await harness.session.ensureSessionName();
+
+		expect(harness.session.sessionName).toBe("分析自定义模型标题");
+		expect(harness.eventsOfType("session_name_generation").map((event) => event.status)).toEqual([
+			"started",
+			"completed",
+		]);
+	});
+
+	it("generates a fallback even when no model remains selected", async () => {
+		const harness = await createHarness({ autoSessionName: true });
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("完成")]);
+
+		await harness.session.prompt("无模型标题");
+		harness.session.state.model = undefined;
+		await harness.session.ensureSessionName();
+
+		expect(harness.session.sessionName).toBe("无模型标题");
+		expect(harness.eventsOfType("session_name_generation").map((event) => event.status)).toEqual([
+			"started",
+			"completed",
+		]);
+	});
+
+	it("settles when title generation is cancelled", async () => {
+		const harness = await createHarness({ autoSessionName: true });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage("完成"),
+			async () => await new Promise<never>(() => {}),
+		]);
+
+		await harness.session.prompt("执行任务");
+		const controller = new AbortController();
+		const naming = harness.session.ensureSessionName({ signal: controller.signal });
+		controller.abort(new Error("title cancelled"));
+		await naming;
+
+		expect(harness.session.isGeneratingSessionName).toBe(false);
+		expect(harness.session.sessionNameError).toBe("title cancelled");
 	});
 
 	it("never overwrites an explicit session name", async () => {
@@ -82,5 +156,26 @@ describe("automatic session names", () => {
 describe("sanitizeGeneratedSessionName", () => {
 	it("removes thinking, quotes, markdown, and extra lines", () => {
 		expect(sanitizeGeneratedSessionName('<think>analysis</think>\n"**会话标题**"\n额外解释')).toBe("会话标题");
+	});
+
+	it("builds a readable fallback without a leading quoted file path", () => {
+		expect(
+			generateFallbackSessionName([
+				{
+					role: "user",
+					content: "'/Users/demo/Desktop/video.mov' 复制视频中的网站，一比一复制",
+					timestamp: Date.now(),
+				},
+			]),
+		).toBe("复制视频中的网站，一比一复制");
+	});
+
+	it("uses a provider-independent title for empty multimodal messages", () => {
+		expect(
+			generateFallbackSessionName([
+				{ role: "user", content: [], timestamp: Date.now() },
+				{ role: "assistant", content: [], timestamp: Date.now() },
+			]),
+		).toBe("New task");
 	});
 });

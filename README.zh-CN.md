@@ -31,17 +31,18 @@
 
 ## 快速开始
 
-选择适合当前工作方式的界面。两种方式共用同一套 Metis 配置、模型和会话。
+选择一种界面即可。两种方式共用同一套 Metis 配置、模型和会话。
+
+| 界面 | 适合场景 | 运行要求 |
+| --- | --- | --- |
+| **桌面应用** | 图形化工作区，内置 CLI 与 Server | Apple 芯片（`arm64`）Mac 或 Windows（`x64`/`arm64`） |
+| **CLI** | 终端、脚本、Print/JSON、RPC 与 SDK 集成 | Node.js `>=22.19.0` 和 `npm` |
 
 ### macOS 桌面应用
 
-桌面应用提供图形化工作区，并内置完整的 Metis CLI 与 Server 运行环境。
-
-> **当前安装包：** 适用于 Apple 芯片（`arm64`）Mac，无需另行安装 Node.js。
-
-1. 从 [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) 下载最新的 `Metis-*-macos-arm64.dmg`。
+1. [下载最新的 `.dmg`](https://github.com/Wholiver/metis/releases/latest)。
 2. 打开安装包，将 **Metis.app** 拖入 **应用程序 (Applications)** 文件夹。
-3. 从“应用程序”文件夹启动 **Metis**。
+3. 启动 **Metis**。Node.js 已包含在应用中。
 
 ### Windows 桌面应用
 
@@ -55,27 +56,14 @@ Windows 版同样内置完整的 Metis CLI 与 Server 运行环境，解压即�
 
 ### CLI 与命令行
 
-CLI 适合终端工作流、脚本、Print/JSON 输出、RPC 与 SDK 集成。
+安装 Metis，然后启动交互式会话：
 
-> **运行要求：** Node.js `>=22.19.0` 和 `npm`。
+```bash
+npm install -g --ignore-scripts @wholiver_hu/metis@latest
+metis
+```
 
-1. 全局安装最新版本：
-
-   ```bash
-   npm install -g --ignore-scripts @wholiver_hu/metis@latest
-   ```
-
-2. 启动交互式会话：
-
-   ```bash
-   metis
-   ```
-
-3. 查看全部命令行选项：
-
-   ```bash
-   metis --help
-   ```
+运行 `metis --help` 查看全部命令行选项。
 
 ## 为什么选择 Metis
 

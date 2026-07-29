@@ -221,6 +221,20 @@ describe("ModelRegistry", () => {
 	});
 
 	describe("custom models merge behavior", () => {
+		test("custom models default to multimodal input when capability is omitted", () => {
+			writeRawModelsJson({
+				"custom-openai": {
+					baseUrl: "https://custom.example.com/v1",
+					apiKey: "test-key",
+					api: "openai-completions",
+					models: [{ id: "unknown-capabilities" }],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			expect(registry.find("custom-openai", "unknown-capabilities")?.input).toEqual(["text", "image"]);
+		});
+
 		test("built-in provider custom models inherit api and baseUrl without explicit fields", () => {
 			// Built-in providers already have api/baseUrl on every model, and auth
 			// comes from env vars / auth storage. No need to specify them.

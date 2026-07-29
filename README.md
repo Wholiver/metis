@@ -31,17 +31,18 @@
 
 ## Quick start
 
-Choose the interface that fits your workflow. Both options use the same Metis configuration, models, and sessions.
+Choose one interface. Both use the same Metis configuration, models, and sessions.
+
+| Interface | Best for | Requirement |
+| --- | --- | --- |
+| **Desktop app** | Graphical workspace with CLI and server included | Apple silicon Mac (`arm64`) or Windows (`x64`/`arm64`) |
+| **CLI** | Terminal, scripts, print/JSON, RPC, and SDK integrations | Node.js `>=22.19.0` and `npm` |
 
 ### Desktop app for macOS
 
-Use the desktop app for a graphical workspace with an embedded Metis CLI and server runtime.
-
-> **Current installer:** macOS on Apple silicon (`arm64`). No separate Node.js installation is required.
-
-1. Download the latest `Metis-*-macos-arm64.dmg` from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest).
-2. Open the installer and drag **Metis.app** into **Applications**.
-3. Launch **Metis** from the Applications folder.
+1. [Download the latest `.dmg`](https://github.com/Wholiver/metis/releases/latest).
+2. Open it and drag **Metis.app** into **Applications**.
+3. Launch **Metis**. Node.js is already included.
 
 ### Desktop app for Windows
 
@@ -55,27 +56,14 @@ The Windows build also bundles the full Metis CLI and server runtime. Extract th
 
 ### CLI and terminal
 
-Use the CLI for terminal workflows, scripts, print/JSON output, RPC, and SDK integrations.
+Install Metis, then start an interactive session:
 
-> **Requirements:** Node.js `>=22.19.0` and `npm`.
+```bash
+npm install -g --ignore-scripts @wholiver_hu/metis@latest
+metis
+```
 
-1. Install the latest release globally:
-
-   ```bash
-   npm install -g --ignore-scripts @wholiver_hu/metis@latest
-   ```
-
-2. Start an interactive session:
-
-   ```bash
-   metis
-   ```
-
-3. View every CLI option:
-
-   ```bash
-   metis --help
-   ```
+Run `metis --help` to view every CLI option.
 
 ## Why Metis
 

@@ -6,12 +6,18 @@ import type { ModelRegistry } from "./model-registry.ts";
 const MAX_CONVERSATION_MESSAGES = 4;
 const MAX_MESSAGE_CHARS = 1000;
 const MAX_SESSION_NAME_CHARS = 80;
+export const DEFAULT_SESSION_NAME_TIMEOUT_MS = 15_000;
 
 export interface GenerateSessionNameOptions {
 	model: Model<any>;
 	modelRegistry: ModelRegistry;
 	messages: readonly AgentMessage[];
 	signal?: AbortSignal;
+	timeoutMs?: number;
+}
+
+function abortError(signal: AbortSignal): Error {
+	return signal.reason instanceof Error ? signal.reason : new Error("Session name generation aborted");
 }
 
 function getMessageText(message: AgentMessage): string {
@@ -55,41 +61,85 @@ export function sanitizeGeneratedSessionName(value: string): string | undefined 
 	return firstLine || undefined;
 }
 
+export function generateFallbackSessionName(messages: readonly AgentMessage[]): string {
+	const firstUserMessage = messages.find((message) => message.role === "user");
+	const firstAssistantMessage = messages.find((message) => message.role === "assistant");
+	const originalText =
+		(firstUserMessage ? getMessageText(firstUserMessage).trim() : "") ||
+		(firstAssistantMessage ? getMessageText(firstAssistantMessage).trim() : "");
+	if (!originalText) return "New task";
+
+	const withoutLeadingFile = originalText.replace(/^(['"“‘])(?:\/|[A-Za-z]:\\).+?['"”’]\s*/, "");
+	return sanitizeGeneratedSessionName(withoutLeadingFile || originalText) ?? "New task";
+}
+
 export async function generateSessionName(options: GenerateSessionNameOptions): Promise<string | undefined> {
 	const conversationText = buildConversationText(options.messages);
 	if (!conversationText) return undefined;
+	if (options.signal?.aborted) throw abortError(options.signal);
 
-	const auth = await options.modelRegistry.getApiKeyAndHeaders(options.model);
-	if (!auth.ok) throw new Error(auth.error);
+	const timeoutMs = options.timeoutMs ?? DEFAULT_SESSION_NAME_TIMEOUT_MS;
+	const requestController = new AbortController();
+	let timeout: ReturnType<typeof setTimeout> | undefined;
+	let removeAbortListener: (() => void) | undefined;
+	const guard = new Promise<never>((_resolve, reject) => {
+		timeout = setTimeout(() => {
+			const error = new Error(`Session name generation timed out after ${timeoutMs}ms`);
+			reject(error);
+			requestController.abort(error);
+		}, timeoutMs);
 
-	const response = await completeSimple(
-		options.model,
-		{
-			systemPrompt:
-				"Generate a concise session title describing the conversation's main task. Use the same language as the user. Return only the title, normally 2-6 words, with no quotes, markdown, file extension, or explanation.",
-			messages: [
+		if (options.signal) {
+			const onAbort = () => {
+				const error = abortError(options.signal!);
+				reject(error);
+				requestController.abort(error);
+			};
+			options.signal.addEventListener("abort", onAbort, { once: true });
+			removeAbortListener = () => options.signal?.removeEventListener("abort", onAbort);
+		}
+	});
+
+	let response: Awaited<ReturnType<typeof completeSimple>>;
+	try {
+		const auth = await Promise.race([options.modelRegistry.getApiKeyAndHeaders(options.model), guard]);
+		if (!auth.ok) throw new Error(auth.error);
+
+		response = await Promise.race([
+			completeSimple(
+				options.model,
 				{
-					role: "user",
-					content: [
+					systemPrompt:
+						"Generate a concise session title describing the conversation's main task. Use the same language as the user. Return only the title, normally 2-6 words, with no quotes, markdown, file extension, or explanation.",
+					messages: [
 						{
-							type: "text",
-							text: `<conversation>\n${conversationText}\n</conversation>\n\nGenerate the session title now.`,
+							role: "user",
+							content: [
+								{
+									type: "text",
+									text: `<conversation>\n${conversationText}\n</conversation>\n\nGenerate the session title now.`,
+								},
+							],
+							timestamp: Date.now(),
 						},
 					],
-					timestamp: Date.now(),
 				},
-			],
-		},
-		{
-			apiKey: auth.apiKey,
-			headers: auth.headers,
-			env: auth.env,
-			maxTokens: 1024,
-			signal: options.signal,
-		},
-	);
+				{
+					apiKey: auth.apiKey,
+					headers: auth.headers,
+					env: auth.env,
+					maxTokens: 1024,
+					signal: requestController.signal,
+				},
+			),
+			guard,
+		]);
+	} finally {
+		if (timeout) clearTimeout(timeout);
+		removeAbortListener?.();
+	}
 
-	if (response.stopReason === "error") {
+	if (response.stopReason === "error" || response.stopReason === "aborted") {
 		throw new Error(response.errorMessage || "Session name generation failed");
 	}
 

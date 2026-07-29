@@ -325,7 +325,7 @@ const defaultVideoOperations: VideoOperations = {
 				const drawText = `drawtext=text='${formatTimestamp(frameTimes[index]).replace(/:/g, "\\:")}':x=18:y=h-42:fontcolor=white:fontsize=30:box=1:boxcolor=black@0.65:boxborderw=8`;
 				const outputArgs = ["-frames:v", "1", "-vf", `scale=${CELL_SIZE}:${CELL_SIZE}:force_original_aspect_ratio=decrease,pad=${CELL_SIZE}:${CELL_SIZE}:(ow-iw)/2:(oh-ih)/2:black,${drawText}`, "-q:v", "3", "-y", cell];
 				try {
-					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", path, "-ss", String(frameTimes[index]), ...outputArgs], signal);
+					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(frameTimes[index]), "-i", path, ...outputArgs], signal);
 					await access(cell);
 				} catch (error) {
 					if (index !== frameTimes.length - 1) throw error;
@@ -463,9 +463,9 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 		label: "video",
 		description: "Initialize inspection of a local video. inspect returns metadata and explicit next-call instructions without generating frames or a transcript. Then call storyboard and/or transcript for a chosen time range. The first local transcript request automatically downloads and verifies transcription assets.",
 		promptSnippet: "Initialize local video inspection, then explicitly request a storyboard or transcript",
-		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Read its returned instructions and choose the minimum follow-up action needed; do not assume storyboard and transcript are both necessary.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en.", "The first local transcript request may take longer while Metis downloads and verifies the pinned transcription model. Retry normally if initialization reports a network or filesystem error.", "Never use this tool for remote URLs."],
+		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Read its returned instructions and choose the minimum follow-up action needed; do not assume storyboard and transcript are both necessary.", "For detailed visual work, inspect images in batches instead of extracting the entire video up front. If denser extraction is needed, sampling may skip source frames but the interval must never exceed 4 source frames; analyze each batch before deciding whether to continue.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en.", "The first local transcript request may take longer while Metis downloads and verifies the pinned transcription model. Retry normally if initialization reports a network or filesystem error.", "Never use this tool for remote URLs."],
 		parameters: videoSchema,
-		async execute(_toolCallId, input, signal, onUpdate) {
+		async execute(_toolCallId, input, signal, onUpdate, ctx) {
 			const action: VideoAction = input.action ?? "inspect";
 			assertNotAborted(signal);
 			const path = await resolveReadPathAsync(input.path, cwd);
@@ -477,7 +477,7 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 				details.transcriptionReady = await operations.isModelInstalled();
 				content.push({
 					type: "text",
-					text: `Video inspector initialized. No storyboard or transcript has been generated.\nTranscription runtime prepared: ${details.transcriptionReady ? "yes" : "no"}.\n\nChoose next action based on user need:\n- For visual events: call video with action=storyboard, path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns exactly one timestamped 3×3 image.\n- For spoken or subtitle text: call video with action=transcript, path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n- For both: make the two explicit calls above.\n\nUse start/end to narrow the range; omit them only when the whole video is required. If transcription runtime is not prepared, the first transcript call downloads and verifies it automatically.`,
+					text: `Video inspector initialized. No storyboard or transcript has been generated.\nVideo dimensions: ${metadata.width ?? "unknown"}×${metadata.height ?? "unknown"}.\nAudio stream: ${metadata.hasAudio ? "yes" : "no"}.\nSubtitle stream: ${metadata.hasSubtitles ? "yes" : "no"}.\nTranscription runtime prepared: ${metadata.hasAudio ? (details.transcriptionReady ? "yes" : "no") : "not needed (no audio stream)"}.\n\nChoose next action based on user need:\n- For visual events: call video with action=storyboard, path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns exactly one timestamped 3×3 image. For detailed work, request bounded time ranges in batches.\n${metadata.hasAudio || metadata.hasSubtitles ? `- For spoken or subtitle text: call video with action=transcript, path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n- For both: make the two explicit calls above.\n` : "- Transcript is unavailable because this video has no audio or subtitle stream. Do not call action=transcript.\n"}\nUse start/end to narrow the range; omit them only when the whole video is required. When denser frame extraction is necessary, process batches and sample every 1–4 source frames, never a larger interval. If transcription runtime is not prepared and audio exists, the first transcript call downloads and verifies it automatically.`,
 				});
 				return { content, details };
 			}
@@ -488,6 +488,9 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 				onUpdate?.({ content: [{ type: "text", text: "Creating 3×3 timestamped storyboard…" }], details: {} });
 				const sheet = await operations.createStoryboard(path, frameTimes, signal);
 				content.push({ type: "text", text: `Storyboard frames: ${frameTimes.map((time, index) => `${index + 1}=${formatTimestamp(time)}`).join(", ")}` });
+				if (ctx?.model && !ctx.model.input.includes("image")) {
+					content.push({ type: "text", text: "[Current model is explicitly configured as text-only, so the storyboard image cannot be sent to it. Use a vision-capable model or change this model's input capability to [\"text\", \"image\"].]" });
+				}
 				content.push({ type: "image", data: sheet.toString("base64"), mimeType: "image/jpeg" });
 			}
 
