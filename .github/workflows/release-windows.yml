@@ -36,6 +36,17 @@ jobs:
       - name: Install Desktop dependencies
         run: npm --prefix desktop ci
 
+      - name: Restore vendored build artifacts
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $tarballUrl = npm view "@wholiver_hu/metis@$version" dist.tarball
+          Invoke-WebRequest -Uri $tarballUrl -OutFile published-package.tgz
+          tar -xzf published-package.tgz
+          Copy-Item -Recurse -Force package/node_modules/@earendil-works/metis-ai/dist vendor/metis-ai/dist
+          Copy-Item -Recurse -Force package/node_modules/@earendil-works/metis-agent-core/dist vendor/metis-agent-core/dist
+          Copy-Item -Recurse -Force package/node_modules/@earendil-works/metis-tui/dist vendor/metis-tui/dist
+
       - name: Build portable Windows package
         run: npm --prefix desktop run package:win
 
