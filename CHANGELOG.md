@@ -2,6 +2,13 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.3.2-rc.2] - 2026-07-29
+
+### Desktop session titles
+
+- Added a hard timeout and cancellation handling for automatic title generation so unresponsive providers cannot leave Desktop stuck on "Generating title".
+- Stopped session polling from repeatedly retrying title generation after a provider failure.
+
 ## [1.3.2-rc.1] - 2026-07-29
 
 ### Video model compatibility
