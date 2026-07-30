@@ -1,13 +1,16 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, session, shell, utilityProcess } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, session, shell, utilityProcess } = require("electron");
 const { execFile } = require("node:child_process");
+const { randomUUID } = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { promisify } = require("node:util");
+const { createApplicationMenuTemplate, createEditorContextMenuTemplate } = require("./main-menu.cjs");
 
 const execFileAsync = promisify(execFile);
 const MAX_TREE_ITEMS = 600;
 const MAX_DIFF_BYTES = 300_000;
+const MAX_BUFFERED_ATTACHMENT_BYTES = 128 * 1024 * 1024;
 const IGNORED_DIRECTORIES = new Set([".git", ".codegraph", ".sessions", "node_modules", "dist", "coverage"]);
 
 let mainWindow;
@@ -235,10 +238,16 @@ function createWindow() {
 		if (isHttpUrl(url)) void shell.openExternal(url);
 		return { action: "deny" };
 	});
+	mainWindow.webContents.on("context-menu", (_event, params) => {
+		if (!params.isEditable && !params.selectionText) return;
+		const template = createEditorContextMenuTemplate(params);
+		if (template.length > 0) Menu.buildFromTemplate(template).popup({ window: mainWindow });
+	});
 }
 
 app.whenReady().then(() => {
 	if (process.platform === "darwin") app.dock?.setIcon(createAppIcon());
+	Menu.setApplicationMenu(Menu.buildFromTemplate(createApplicationMenuTemplate(process.platform, app.name)));
 	const browserSession = session.fromPartition("persist:metis-browser");
 	browserSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 	registerIpc();
@@ -267,6 +276,21 @@ function registerIpc() {
 	}));
 	ipcMain.handle("app:quit", () => app.quit());
 	ipcMain.handle("clipboard:write-text", (_event, text) => clipboard.writeText(String(text ?? "")));
+	ipcMain.handle("attachment:save", async (_event, input = {}) => {
+		const encoded = String(input.data || "");
+		if (encoded.length > Math.ceil(MAX_BUFFERED_ATTACHMENT_BYTES * 4 / 3) + 4) {
+			throw new Error("Attachment is too large to copy from the clipboard");
+		}
+		const buffer = Buffer.from(encoded, "base64");
+		if (buffer.length > MAX_BUFFERED_ATTACHMENT_BYTES) throw new Error("Attachment is too large to copy from the clipboard");
+		const rawName = path.basename(String(input.name || "attachment"));
+		const safeName = rawName.replace(/[<>:\"/\\|?*\x00-\x1F]/g, "_").slice(-120) || "attachment";
+		const directory = path.join(app.getPath("temp"), "metis-desktop-attachments");
+		await fsp.mkdir(directory, { recursive: true });
+		const target = path.join(directory, `${Date.now()}-${randomUUID()}-${safeName}`);
+		await fsp.writeFile(target, buffer, { flag: "wx" });
+		return target;
+	});
 	ipcMain.handle("session-file:open", async () => {
 		const result = await dialog.showOpenDialog(mainWindow, {
 			properties: ["openFile"],

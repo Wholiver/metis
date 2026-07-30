@@ -850,12 +850,44 @@ body:has(.message-queue:not(.hidden)):has(.subagent-dock:not(.collapsed)) .messa
 .run-state.active .pulse-dot { border-color: #70a7e8; border-top-color: transparent; animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .composer {
+  position: relative;
   min-height: 99px;
   padding: 13px 12px 10px;
   border: 1px solid rgba(39,44,45,.13);
   border-radius: 17px;
   background: rgba(255,255,255,.97);
   box-shadow: var(--shadow-float);
+  overflow: hidden;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.composer-drop-feedback {
+  position: absolute;
+  inset: 6px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1.5px dashed rgba(22,128,212,.52);
+  border-radius: 13px;
+  background: rgba(239,248,255,.94);
+  color: #246da6;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(.985);
+  transition: opacity .16s ease, transform .2s cubic-bezier(.2,.8,.2,1);
+}
+.composer-drop-feedback svg { width: 18px; height: 18px; }
+.composer-drop-feedback strong { font-size: 13px; font-weight: 650; }
+.composer.is-dragging-attachments {
+  border-color: rgba(22,128,212,.42);
+  box-shadow: 0 0 0 4px rgba(22,128,212,.1), var(--shadow-float);
+  transform: translateY(-2px);
+}
+.composer.is-dragging-attachments .composer-drop-feedback { opacity: 1; transform: scale(1); }
+.composer.attachment-added { animation: composer-attachment-pulse .45s cubic-bezier(.2,.8,.2,1); }
+@keyframes composer-attachment-pulse {
+  45% { border-color: rgba(24,164,127,.45); box-shadow: 0 0 0 4px rgba(24,164,127,.1), var(--shadow-float); }
 }
 .composer textarea {
   display: block;
@@ -896,6 +928,23 @@ body:has(.message-queue:not(.hidden)):has(.subagent-dock:not(.collapsed)) .messa
   width: 16px;
   height: 16px;
 }
+.composer.is-attaching .attach-button svg { animation: attachment-button-spin .75s linear infinite; }
+@keyframes attachment-button-spin { to { transform: rotate(180deg); } }
+.attachment-feedback {
+  min-width: 0;
+  margin-left: auto;
+  color: #397f70;
+  font-size: 11px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  text-overflow: ellipsis;
+  transform: translateY(3px);
+  transition: opacity .16s ease, transform .16s ease;
+  white-space: nowrap;
+}
+.attachment-feedback.visible { opacity: 1; transform: translateY(0); }
+.attachment-feedback[data-tone="error"] { color: #b34e45; }
 .composer-attachments {
   display: flex;
   flex-wrap: wrap;
@@ -912,6 +961,11 @@ body:has(.message-queue:not(.hidden)):has(.subagent-dock:not(.collapsed)) .messa
   border-radius: 6px;
   overflow: hidden;
   border: 1px solid var(--line);
+}
+.attachment-enter { animation: attachment-enter .24s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes attachment-enter {
+  from { opacity: 0; transform: translateY(5px) scale(.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .attachment-preview img {
   width: 100%;
@@ -1598,6 +1652,7 @@ body:has(.message-queue:not(.hidden)):has(.subagent-dock:not(.collapsed)) .messa
   height: 16px;
   color: var(--ink-soft);
 }
+.file-preview[data-kind="video"] svg { color: #7864b4; }
 .file-preview-info {
   display: flex;
   flex-direction: column;

@@ -2,6 +2,9 @@ const desktop = window.metisDesktop;
 const desktopI18n = window.metisDesktopI18n;
 const { analyzeAssistantTurn, shouldQueueDesktopMessage, getAssistantWorkLayout, getSubagentToolCalls, shouldHideAssistantWorkHeader, getAssistantTurnDuration, reconcileAssistantFinalDivider, isSubagentLaunchNotice } = window.metisMessageTurns;
 const { resolveCustomProviderModel } = window.metisModelSelection;
+const attachmentTools = window.metisAttachments;
+const MAX_INLINE_TEXT_BYTES = 1024 * 1024;
+const MAX_BUFFERED_ATTACHMENT_BYTES = 128 * 1024 * 1024;
 const THINKING_LEVEL_KEYS = {
 	off: "thinkingOff",
 	minimal: "thinkingMinimal",
@@ -80,7 +83,10 @@ const elements = {
 	diffStats: document.querySelector("#diffStats"),
 	diffView: document.querySelector("#diffView"),
 	composerInput: document.querySelector("#composerInput"),
+	composer: document.querySelector("#composer"),
 	composerAttachments: document.querySelector("#composerAttachments"),
+	composerDropFeedback: document.querySelector("#composerDropFeedback"),
+	attachmentFeedback: document.querySelector("#attachmentFeedback"),
 	attachButton: document.querySelector("#attachButton"),
 	attachInput: document.querySelector("#attachInput"),
 	messageColumn: document.querySelector("#messageColumn"),
@@ -990,14 +996,30 @@ function extractMessageFiles(messageText) {
 	const fileRegex = /\n\n文件 \`([^\`]+)\` 的内容如下：\n\`\`\`(?:\w*\n)?([\s\S]*?)\n\`\`\`/g;
 	let match;
 	while ((match = fileRegex.exec(messageText)) !== null) {
-		files.push({ name: match[1], content: match[2] });
+		files.push({ name: match[1], content: match[2], kind: "text" });
+	}
+	const pathRegex = /\n\n已添加(视频|文件) \`([^\`]+)\`，本地路径：\`([^\`]+)\`。[^\n]*/g;
+	while ((match = pathRegex.exec(messageText)) !== null) {
+		files.push({ name: match[2], path: match[3], kind: match[1] === "视频" ? "video" : "file" });
 	}
 	return files;
 }
 
 function cleanMessageTextOfFiles(messageText) {
 	const fileRegex = /\n\n文件 \`([^\`]+)\` 的内容如下：\n\`\`\`(?:\w*\n)?([\s\S]*?)\n\`\`\`/g;
-	return messageText.replace(fileRegex, "").trim();
+	const pathRegex = /\n\n已添加(视频|文件) \`([^\`]+)\`，本地路径：\`([^\`]+)\`。[^\n]*/g;
+	return messageText.replace(fileRegex, "").replace(pathRegex, "").trim();
+}
+
+let attachmentFeedbackTimer;
+
+function showAttachmentFeedback(message, tone = "success") {
+	if (!elements.attachmentFeedback) return;
+	window.clearTimeout(attachmentFeedbackTimer);
+	elements.attachmentFeedback.textContent = message;
+	elements.attachmentFeedback.dataset.tone = tone;
+	elements.attachmentFeedback.classList.add("visible");
+	attachmentFeedbackTimer = window.setTimeout(() => elements.attachmentFeedback.classList.remove("visible"), 2400);
 }
 
 function renderAttachmentPreviews() {
@@ -1006,10 +1028,11 @@ function renderAttachmentPreviews() {
 	
 	state.attachedImages.forEach((img) => {
 		const preview = document.createElement("div");
-		preview.className = "attachment-preview";
+		preview.className = "attachment-preview attachment-enter";
 		
 		const thumb = document.createElement("img");
 		thumb.src = img.src;
+		thumb.alt = img.name || "Image attachment";
 		
 		const removeBtn = document.createElement("button");
 		removeBtn.type = "button";
@@ -1026,9 +1049,10 @@ function renderAttachmentPreviews() {
 
 	state.attachedFiles.forEach((file) => {
 		const preview = document.createElement("div");
-		preview.className = "file-preview";
+		preview.className = "file-preview attachment-enter";
+		preview.dataset.kind = file.kind || "file";
 		
-		const fileIcon = icon("file");
+		const fileIcon = icon(file.kind === "video" ? "video" : "file");
 		
 		const info = document.createElement("div");
 		info.className = "file-preview-info";
@@ -1057,49 +1081,73 @@ function renderAttachmentPreviews() {
 	});
 }
 
-async function handleAttachments(files) {
-	for (const file of files) {
-		if (file.type.startsWith("image/")) {
-			const reader = new FileReader();
-			reader.onload = (e) => {
-				const base64Data = e.target.result.split(",")[1];
-				const mimeType = file.type;
-				
-				const attachment = {
-					id: Math.random().toString(36).substring(7),
-					mimeType,
-					data: base64Data,
-					src: e.target.result
-				};
-				state.attachedImages.push(attachment);
-				renderAttachmentPreviews();
-			};
-			reader.readAsDataURL(file);
-		} else {
-			const reader = new FileReader();
-			reader.onload = (e) => {
-				const text = e.target.result;
-				
-				let sizeStr = `${file.size} B`;
-				if (file.size > 1024 * 1024) {
-					sizeStr = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
-				} else if (file.size > 1024) {
-					sizeStr = `${(file.size / 1024).toFixed(1)} KB`;
-				}
-				
-				const attachment = {
-					id: Math.random().toString(36).substring(7),
-					name: file.name,
-					content: text,
-					sizeStr
-				};
-				state.attachedFiles.push(attachment);
-				renderAttachmentPreviews();
-			};
-			reader.readAsText(file);
+function readFile(file, method) {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.addEventListener("load", () => resolve(reader.result), { once: true });
+		reader.addEventListener("error", () => reject(reader.error || new Error(`无法读取 ${file.name}`)), { once: true });
+		reader[method](file);
+	});
+}
+
+async function resolveAttachmentPath(file) {
+	try {
+		const nativePath = desktop.attachments.pathForFile(file);
+		if (nativePath) return nativePath;
+	} catch {
+		// Clipboard-created blobs may not expose a native path.
+	}
+	if (file.size > MAX_BUFFERED_ATTACHMENT_BYTES) throw new Error(`${file.name} 超过 128 MB，无法从剪贴板缓存`);
+	const dataUrl = String(await readFile(file, "readAsDataURL"));
+	return desktop.attachments.save({ name: file.name, mimeType: file.type, data: dataUrl.split(",")[1] || "" });
+}
+
+async function handleAttachments(files, source = "picker") {
+	const pending = Array.from(files || []);
+	if (pending.length === 0) return;
+	elements.composer.classList.add("is-attaching");
+	elements.composer.setAttribute("aria-busy", "true");
+	let added = 0;
+	const errors = [];
+	for (const file of pending) {
+		try {
+			const kind = attachmentTools.classifyAttachment(file);
+			if (kind === "image") {
+				const src = String(await readFile(file, "readAsDataURL"));
+				state.attachedImages.push({
+					id: crypto.randomUUID(), name: file.name, mimeType: attachmentTools.imageMimeType(file),
+					data: src.split(",")[1] || "", src,
+				});
+			} else if (kind === "text" && file.size <= MAX_INLINE_TEXT_BYTES) {
+				state.attachedFiles.push({
+					id: crypto.randomUUID(), kind, name: file.name,
+					content: String(await readFile(file, "readAsText")),
+					sizeStr: attachmentTools.formatFileSize(file.size),
+				});
+			} else {
+				state.attachedFiles.push({
+					id: crypto.randomUUID(), kind: kind === "text" ? "file" : kind, name: file.name,
+					path: await resolveAttachmentPath(file),
+					sizeStr: attachmentTools.formatFileSize(file.size),
+				});
+			}
+			added += 1;
+			renderAttachmentPreviews();
+		} catch (error) {
+			errors.push(`${file.name}: ${error.message}`);
 		}
 	}
 	elements.attachInput.value = "";
+	elements.composer.classList.remove("is-attaching");
+	elements.composer.removeAttribute("aria-busy");
+	if (added > 0) {
+		elements.composer.classList.remove("attachment-added");
+		requestAnimationFrame(() => elements.composer.classList.add("attachment-added"));
+		window.setTimeout(() => elements.composer.classList.remove("attachment-added"), 500);
+		const action = source === "paste" ? "已粘贴" : source === "drop" ? "已拖入" : "已添加";
+		showAttachmentFeedback(`${action} ${added} 个附件`);
+	}
+	if (errors.length > 0) showAttachmentFeedback(errors.join("；"), "error");
 }
 
 function renderEmptyState(connected = state.serverConnected) {
@@ -2005,8 +2053,8 @@ function renderServerMessages(messages = []) {
 						files.forEach((file) => {
 							const el = document.createElement("div");
 							el.className = "user-bubble-file";
-							el.append(icon("file"), document.createTextNode(file.name));
-							el.addEventListener("click", () => showFileContentModal(file.name, file.content));
+							el.append(icon(file.kind === "video" ? "video" : "file"), document.createTextNode(file.name));
+							el.addEventListener("click", () => showFileContentModal(file.name, file.content || file.path || ""));
 							filesContainer.append(el);
 						});
 						bubble.append(filesContainer);
@@ -2748,8 +2796,8 @@ function appendUserMessage(text, images = [], files = [], shouldScroll = true) {
 		files.forEach((file) => {
 			const el = document.createElement("div");
 			el.className = "user-bubble-file";
-			el.append(icon("file"), document.createTextNode(file.name));
-			el.addEventListener("click", () => showFileContentModal(file.name, file.content));
+			el.append(icon(file.kind === "video" ? "video" : "file"), document.createTextNode(file.name));
+			el.addEventListener("click", () => showFileContentModal(file.name, file.content || file.path || ""));
 			filesContainer.append(el);
 		});
 		bubble.append(filesContainer);
@@ -2824,7 +2872,7 @@ async function sendMessage() {
 	let payloadMessage = message;
 	if (hasFiles) {
 		messageFiles.forEach((file) => {
-			payloadMessage += `\n\n文件 \`${file.name}\` 的内容如下：\n\`\`\`\n${file.content}\n\`\`\``;
+			payloadMessage += `\n\n${attachmentTools.attachmentPrompt(file)}`;
 		});
 	}
 
@@ -3347,11 +3395,43 @@ elements.composerInput.addEventListener("keydown", (event) => {
 		void sendMessage();
 	}
 });
+elements.composerInput.addEventListener("paste", (event) => {
+	const files = attachmentTools.filesFromTransfer(event.clipboardData);
+	if (files.length === 0) return;
+	event.preventDefault();
+	const text = event.clipboardData?.getData("text/plain");
+	if (text) attachmentTools.insertTextAtSelection(elements.composerInput, text);
+	void handleAttachments(files, "paste");
+});
 elements.attachButton.addEventListener("click", () => elements.attachInput.click());
 elements.attachInput.addEventListener("change", (event) => {
 	if (event.target.files && event.target.files.length > 0) {
-		void handleAttachments(event.target.files);
+		void handleAttachments(event.target.files, "picker");
 	}
+});
+let attachmentDragDepth = 0;
+document.addEventListener("dragenter", (event) => {
+	if (!attachmentTools.transferHasFiles(event.dataTransfer)) return;
+	event.preventDefault();
+	attachmentDragDepth += 1;
+	elements.composer.classList.add("is-dragging-attachments");
+});
+document.addEventListener("dragover", (event) => {
+	if (!attachmentTools.transferHasFiles(event.dataTransfer)) return;
+	event.preventDefault();
+	if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+});
+document.addEventListener("dragleave", (event) => {
+	if (attachmentDragDepth === 0) return;
+	attachmentDragDepth = Math.max(0, attachmentDragDepth - 1);
+	if (attachmentDragDepth === 0 || !event.relatedTarget) elements.composer.classList.remove("is-dragging-attachments");
+});
+document.addEventListener("drop", (event) => {
+	if (!attachmentTools.transferHasFiles(event.dataTransfer)) return;
+	event.preventDefault();
+	attachmentDragDepth = 0;
+	elements.composer.classList.remove("is-dragging-attachments");
+	void handleAttachments(attachmentTools.filesFromTransfer(event.dataTransfer), "drop");
 });
 elements.sendButton.addEventListener("click", () => void (state.isStreaming ? abortGeneration() : sendMessage()));
 elements.messageQueueToggle?.addEventListener("click", () => {

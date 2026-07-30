@@ -1,10 +1,14 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("metisDesktop", {
 	appInfo: () => ipcRenderer.invoke("app:info"),
 	quit: () => ipcRenderer.invoke("app:quit"),
 	clipboard: {
 		writeText: (text) => ipcRenderer.invoke("clipboard:write-text", text),
+	},
+	attachments: {
+		pathForFile: (file) => webUtils.getPathForFile(file),
+		save: (attachment) => ipcRenderer.invoke("attachment:save", attachment),
 	},
 	sessionFile: {
 		open: () => ipcRenderer.invoke("session-file:open"),

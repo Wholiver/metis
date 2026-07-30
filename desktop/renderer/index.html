@@ -133,16 +133,20 @@
 					<div class="message-queue-list" id="messageQueueList"></div>
 				</section>
 				<div class="composer" id="composer">
+					<div class="composer-drop-feedback" id="composerDropFeedback" role="status" aria-live="polite">
+						<svg><use href="#i-plus"/></svg><strong data-i18n="dropAttachments">松开即可添加图片、视频或文件</strong>
+					</div>
 					<div class="composer-attachments" id="composerAttachments"></div>
 					<textarea id="composerInput" rows="1" placeholder="随心输入"></textarea>
 					<div class="composer-bottom">
 						<div class="composer-leading">
-							<button class="attach-button" id="attachButton" type="button" aria-label="上传文件或图片">
+							<button class="attach-button" id="attachButton" type="button" aria-label="添加图片、视频或文件" data-i18n-aria-label="uploadFile">
 								<svg><use href="#i-plus"/></svg>
 							</button>
 							<div class="dream-state hidden" id="dreamState" role="status" aria-live="polite"><span>Dream: Pending</span></div>
 						</div>
-						<input type="file" id="attachInput" multiple style="display: none;" accept="image/*,text/*,.txt,.py,.js,.ts,.tsx,.jsx,.html,.css,.json,.md,.sh,.yml,.yaml">
+						<input type="file" id="attachInput" multiple style="display: none;">
+						<span class="attachment-feedback" id="attachmentFeedback" role="status" aria-live="polite"></span>
 						<div class="composer-submit">
 							<div class="context-indicator hidden" id="contextIndicator">
 								<svg class="context-ring" viewBox="0 0 16 16">
@@ -616,6 +620,7 @@
 	<script src="message-turns.js"></script>
 	<script src="model-selection.js"></script>
 	<script src="onboarding.js"></script>
+	<script src="attachments.js"></script>
 	<script src="app.js"></script>
 </body>
 </html>

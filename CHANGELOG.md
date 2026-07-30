@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.5.0-rc.1] - 2026-07-31
+
+### Desktop attachments and editing
+
+- Added image, video, text, and binary-file attachments through picker, paste, and drag-and-drop flows.
+- Added attachment previews, progress feedback, removal controls, and path-backed prompts for video and binary files.
+- Added native application and editor context menus so standard editing shortcuts work consistently on macOS and Windows.
+- Added cross-platform attachment classification and desktop wiring tests.
+
 ## [1.4.0-rc.1] - 2026-07-30
 
 ### Video detail inspection
