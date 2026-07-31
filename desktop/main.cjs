@@ -6,6 +6,7 @@ const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { createApplicationMenuTemplate, createEditorContextMenuTemplate } = require("./main-menu.cjs");
+const desktopI18n = require("./renderer/i18n.js");
 
 const execFileAsync = promisify(execFile);
 const MAX_TREE_ITEMS = 600;
@@ -14,10 +15,19 @@ const MAX_BUFFERED_ATTACHMENT_BYTES = 128 * 1024 * 1024;
 const IGNORED_DIRECTORIES = new Set([".git", ".codegraph", ".sessions", "node_modules", "dist", "coverage"]);
 
 let mainWindow;
+let desktopLanguage = "auto";
 let isDefaultWorkspaceProjectRepo = false;
 let workspaceRoot = findDefaultWorkspace();
 let metisServer = { baseUrl: "http://127.0.0.1:4096", username: "metis", password: "" };
 let metisEventController;
+
+function nativeText(key, variables) {
+	return desktopI18n.t(key, desktopLanguage, variables, [app.getLocale()]);
+}
+
+function rebuildApplicationMenu() {
+	Menu.setApplicationMenu(Menu.buildFromTemplate(createApplicationMenuTemplate(process.platform, app.name, nativeText)));
+}
 let autoServerProcess;
 let appIsQuitting = false;
 
@@ -83,7 +93,7 @@ async function ensureLocalMetisServer() {
 		if (!appIsQuitting) {
 			const detail = lastStderr ? `: ${lastStderr}` : "";
 			console.error("[desktop] Auto-started Server exited (" + code + ")" + detail);
-			mainWindow?.webContents.send("metis:disconnected", `本地 Server 已停止 (${code})${detail}`);
+			mainWindow?.webContents.send("metis:disconnected", nativeText("localServerStopped", { code, detail }));
 		}
 	});
 	for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -240,14 +250,14 @@ function createWindow() {
 	});
 	mainWindow.webContents.on("context-menu", (_event, params) => {
 		if (!params.isEditable && !params.selectionText) return;
-		const template = createEditorContextMenuTemplate(params);
+		const template = createEditorContextMenuTemplate(params, nativeText);
 		if (template.length > 0) Menu.buildFromTemplate(template).popup({ window: mainWindow });
 	});
 }
 
 app.whenReady().then(() => {
 	if (process.platform === "darwin") app.dock?.setIcon(createAppIcon());
-	Menu.setApplicationMenu(Menu.buildFromTemplate(createApplicationMenuTemplate(process.platform, app.name)));
+	rebuildApplicationMenu();
 	const browserSession = session.fromPartition("persist:metis-browser");
 	browserSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 	registerIpc();
@@ -274,15 +284,20 @@ function registerIpc() {
 		version: app.getVersion(),
 		platform: process.platform,
 	}));
+	ipcMain.handle("app:set-language", (_event, language) => {
+		desktopLanguage = desktopI18n.languages.includes(language) ? language : "auto";
+		rebuildApplicationMenu();
+		return desktopI18n.resolve(desktopLanguage, [app.getLocale()]);
+	});
 	ipcMain.handle("app:quit", () => app.quit());
 	ipcMain.handle("clipboard:write-text", (_event, text) => clipboard.writeText(String(text ?? "")));
 	ipcMain.handle("attachment:save", async (_event, input = {}) => {
 		const encoded = String(input.data || "");
 		if (encoded.length > Math.ceil(MAX_BUFFERED_ATTACHMENT_BYTES * 4 / 3) + 4) {
-			throw new Error("Attachment is too large to copy from the clipboard");
+			throw new Error(nativeText("attachmentTooLargeMain"));
 		}
 		const buffer = Buffer.from(encoded, "base64");
-		if (buffer.length > MAX_BUFFERED_ATTACHMENT_BYTES) throw new Error("Attachment is too large to copy from the clipboard");
+		if (buffer.length > MAX_BUFFERED_ATTACHMENT_BYTES) throw new Error(nativeText("attachmentTooLargeMain"));
 		const rawName = path.basename(String(input.name || "attachment"));
 		const safeName = rawName.replace(/[<>:\"/\\|?*\x00-\x1F]/g, "_").slice(-120) || "attachment";
 		const directory = path.join(app.getPath("temp"), "metis-desktop-attachments");
@@ -293,16 +308,18 @@ function registerIpc() {
 	});
 	ipcMain.handle("session-file:open", async () => {
 		const result = await dialog.showOpenDialog(mainWindow, {
+			buttonLabel: nativeText("dialogOpen"),
 			properties: ["openFile"],
-			filters: [{ name: "Metis Session", extensions: ["jsonl"] }],
+			filters: [{ name: nativeText("metisSessionFilter"), extensions: ["jsonl"] }],
 		});
 		return result.canceled ? undefined : result.filePaths[0];
 	});
 	ipcMain.handle("session-file:save", async (_event, format) => {
 		const extension = format === "jsonl" ? "jsonl" : "html";
 		const result = await dialog.showSaveDialog(mainWindow, {
+			buttonLabel: nativeText("dialogSave"),
 			defaultPath: `metis-session.${extension}`,
-			filters: [{ name: format === "jsonl" ? "Metis Session" : "HTML", extensions: [extension] }],
+			filters: [{ name: format === "jsonl" ? nativeText("metisSessionFilter") : "HTML", extensions: [extension] }],
 		});
 		return result.canceled ? undefined : result.filePath;
 	});
@@ -321,7 +338,7 @@ function registerIpc() {
 		}
 	});
 	ipcMain.handle("workspace:select", async () => {
-		const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
+		const result = await dialog.showOpenDialog(mainWindow, { buttonLabel: nativeText("dialogSelectFolder"), properties: ["openDirectory", "createDirectory"] });
 		if (result.canceled || result.filePaths.length === 0) return undefined;
 		return setWorkspaceRoot(result.filePaths[0]);
 	});
@@ -335,7 +352,7 @@ function registerIpc() {
 	ipcMain.handle("provider-config:save-custom", (_event, config) => saveCustomProviderConfig(config));
 
 	ipcMain.handle("external:open", (_event, url) => {
-		if (!isHttpUrl(url)) throw new Error("Only http and https URLs are allowed");
+		if (!isHttpUrl(url)) throw new Error(nativeText("httpOnly"));
 		return shell.openExternal(url);
 	});
 
@@ -373,7 +390,7 @@ async function readModelsConfig(modelsPath) {
 	try {
 		modelsConfig = JSON.parse(stripJsonComments(source));
 	} catch (error) {
-		throw new Error(`Unable to parse existing models.json: ${error.message}`);
+		throw new Error(nativeText("modelsJsonParseFailed", { message: error.message }));
 	}
 	if (!modelsConfig || typeof modelsConfig !== "object" || Array.isArray(modelsConfig)) modelsConfig = { providers: {} };
 	if (!modelsConfig.providers || typeof modelsConfig.providers !== "object" || Array.isArray(modelsConfig.providers)) {
@@ -407,15 +424,15 @@ async function saveCustomProviderConfig(config = {}) {
 	const baseUrl = String(config.baseUrl || "").trim().replace(/\/+$/, "");
 	const apiKey = String(config.apiKey || "").trim();
 	const reasoning = Boolean(config.reasoning);
-	if (!name) throw new Error("Provider name is required");
-	if (!apiKey) throw new Error("API Key is required");
+	if (!name) throw new Error(nativeText("providerNameRequired"));
+	if (!apiKey) throw new Error(nativeText("apiKeyRequired"));
 	let parsedUrl;
 	try {
 		parsedUrl = new URL(baseUrl);
 	} catch {
-		throw new Error("Base URL must be a valid http or https URL");
+		throw new Error(nativeText("baseUrlInvalid"));
 	}
-	if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error("Base URL must use http or https");
+	if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error(nativeText("baseUrlProtocol"));
 
 	const modelIds = await fetchCustomProviderModels(baseUrl, apiKey);
 	const agentDir = resolveAgentDir();
@@ -474,10 +491,10 @@ function workspaceSummary() {
 }
 
 function setWorkspaceRoot(workspacePath) {
-	if (typeof workspacePath !== "string" || !workspacePath.trim()) throw new Error("Invalid workspace path");
+	if (typeof workspacePath !== "string" || !workspacePath.trim()) throw new Error(nativeText("invalidWorkspacePath"));
 	const resolved = path.resolve(workspacePath);
 	if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-		throw new Error(`Workspace directory does not exist: ${resolved}`);
+		throw new Error(nativeText("workspaceMissing", { path: resolved }));
 	}
 	workspaceRoot = resolved;
 	isDefaultWorkspaceProjectRepo = true;
@@ -537,7 +554,7 @@ async function readWorkspaceTree() {
 async function readGitDiff(relativePath) {
 	const absolutePath = resolveWorkspacePath(relativePath);
 	const stat = await fsp.stat(absolutePath);
-	if (!stat.isFile()) throw new Error("Diff target must be a file");
+	if (!stat.isFile()) throw new Error(nativeText("diffTargetFile"));
 	const normalized = path.relative(workspaceRoot, absolutePath);
 	let diff = "";
 	let isUntracked = false;
@@ -560,7 +577,7 @@ async function readGitDiff(relativePath) {
 			diff = staged.stdout;
 		}
 	} catch (error) {
-		if (error.code === "ENOENT") throw new Error("Git is not installed");
+		if (error.code === "ENOENT") throw new Error(nativeText("gitNotInstalled"));
 		diff = error.stdout || "";
 	}
 	if (!diff) {
@@ -577,19 +594,19 @@ async function readGitDiff(relativePath) {
 }
 
 function resolveWorkspacePath(relativePath) {
-	if (typeof relativePath !== "string" || path.isAbsolute(relativePath)) throw new Error("Invalid workspace path");
+	if (typeof relativePath !== "string" || path.isAbsolute(relativePath)) throw new Error(nativeText("invalidWorkspacePath"));
 	const absolutePath = path.resolve(workspaceRoot, relativePath);
 	const relative = path.relative(workspaceRoot, absolutePath);
-	if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Path escapes workspace");
+	if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(nativeText("pathEscapesWorkspace"));
 	return absolutePath;
 }
 
 async function metisRequest(requestPath, init = {}) {
 	if (typeof requestPath !== "string" || !requestPath.startsWith("/") || requestPath.startsWith("//")) {
-		throw new Error("Invalid Metis API path");
+		throw new Error(nativeText("invalidApiPath"));
 	}
 	const method = String(init.method || "GET").toUpperCase();
-	if (!["GET", "POST", "PUT"].includes(method)) throw new Error("Unsupported Metis API method");
+	if (!["GET", "POST", "PUT"].includes(method)) throw new Error(nativeText("unsupportedApiMethod"));
 	const headers = { Accept: "application/json" };
 	if (init.body !== undefined) headers["Content-Type"] = "application/json";
 	if (metisServer.password) {
@@ -627,14 +644,14 @@ async function streamMetisEvents() {
 	while (!controller.signal.aborted) {
 		try {
 			const response = await fetch(`${metisServer.baseUrl}/event`, { headers, signal: controller.signal });
-			if (!response.ok || !response.body) throw new Error(`SSE failed: HTTP ${response.status}`);
+			if (!response.ok || !response.body) throw new Error(nativeText("sseFailed", { status: response.status }));
 			retryDelay = 250;
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = "";
 			while (!controller.signal.aborted) {
 				const { done, value } = await reader.read();
-				if (done) throw new Error("SSE connection closed");
+				if (done) throw new Error(nativeText("sseClosed"));
 				buffer += decoder.decode(value, { stream: true });
 				let boundary;
 				while ((boundary = buffer.indexOf("\n\n")) !== -1) {
@@ -676,7 +693,7 @@ function waitForAbortableDelay(delay, signal) {
 
 function normalizeServerUrl(value) {
 	const url = new URL(String(value));
-	if (!isHttpUrl(url.href)) throw new Error("Metis Server URL must use http or https");
+	if (!isHttpUrl(url.href)) throw new Error(nativeText("serverUrlProtocol"));
 	return url.href.replace(/\/$/, "");
 }
 

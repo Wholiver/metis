@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.5.1-rc.1] - 2026-07-31
+
+### Desktop localization and platform parity
+
+- Added complete Desktop translations for 11 languages, including settings, onboarding, native menus, dialogs, and runtime feedback.
+- Added generated translation catalogs with completeness, placeholder, visible-copy, and locale-resolution coverage.
+- Kept the Windows settings content and layout aligned with the macOS baseline while preserving the native title-bar hit area.
+- Added cross-platform checks for settings layout and native edit-menu behavior.
+
 ## [1.5.0-rc.1] - 2026-07-31
 
 ### Desktop attachments and editing

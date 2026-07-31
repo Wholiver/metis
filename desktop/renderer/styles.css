@@ -118,9 +118,6 @@ body.platform-win32 .inspector-topbar {
 body.platform-win32 .settings-main-drag {
   right: var(--titlebar-overlay-width);
 }
-body.platform-win32 .settings-main {
-  padding-right: var(--titlebar-overlay-width);
-}
 .window-nav *,
 .window-nav .icon-button,
 #sidebarToggle,

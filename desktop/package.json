@@ -6,6 +6,7 @@
 	"main": "main.cjs",
 	"scripts": {
 		"prepare:renderer": "node scripts/sync-renderer-vendor.mjs",
+		"i18n:generate": "node scripts/generate-i18n-catalogs.mjs",
 		"dev": "npm run prepare:renderer && electron .",
 		"start": "npm run prepare:renderer && electron .",
 		"build": "npm run prepare:renderer && node scripts/build.mjs",

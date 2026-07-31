@@ -274,18 +274,18 @@ function renderSettingsAgentControls() {
 
 async function updateAgentSessionSettings(patch, feedbackElement) {
 	if (!state.serverConnected) return;
-	setSettingsFeedback(feedbackElement, "正在保存…");
+	setSettingsFeedback(feedbackElement, uiText("saving"));
 	try {
 		state.session = await requestServer("/session/settings", "PUT", patch);
 		renderSettingsAgentControls();
-		setSettingsFeedback(feedbackElement, "已保存并应用到当前 Agent 会话。");
+		setSettingsFeedback(feedbackElement, uiText("savedAndApplied"));
 	} catch (error) {
 		renderSettingsAgentControls();
-		setSettingsFeedback(feedbackElement, `保存失败：${error.message}`, true);
+		setSettingsFeedback(feedbackElement, uiText("saveFailed", { message: error.message }), true);
 	}
 }
 
-function replaceSelectOptions(select, items, getValue, getLabel, emptyLabel = "暂无可用项") {
+function replaceSelectOptions(select, items, getValue, getLabel, emptyLabel = uiText("noAvailableItems")) {
 	if (!select) return;
 	select.replaceChildren();
 	const seen = new Set();
@@ -314,12 +314,12 @@ function replaceSelectOptions(select, items, getValue, getLabel, emptyLabel = "�
 
 function flattenSessionTree(nodes, depth = 0, result = []) {
 	const entryTypeLabels = {
-		message: "消息",
-		thinking_level_change: "思考等级变更",
-		model_change: "模型变更",
-		compaction: "上下文摘要",
-		branch_summary: "分支摘要",
-		custom: "自定义记录",
+		message: uiText("timelineMessage"),
+		thinking_level_change: uiText("timelineThinkingLevel"),
+		model_change: uiText("timelineModelChange"),
+		compaction: uiText("timelineCompaction"),
+		branch_summary: uiText("timelineBranchSummary"),
+		custom: uiText("timelineCustom"),
 	};
 	for (const node of nodes || []) {
 		const entry = node.entry || {};
@@ -332,8 +332,8 @@ function flattenSessionTree(nodes, depth = 0, result = []) {
 }
 
 async function runVisualCommand(command, feedbackElement, { refresh = false } = {}) {
-	if (!state.serverConnected) throw new Error("请先连接 Metis Server");
-	setSettingsFeedback(feedbackElement, "正在应用…");
+	if (!state.serverConnected) throw new Error(uiText("connectServerFirst"));
+	setSettingsFeedback(feedbackElement, uiText("applying"));
 	const result = await requestServer("/session/command", "POST", { command });
 	if (result.action === "copy" && result.text) await desktop.clipboard.writeText(result.text);
 	if (result.action === "open-url" && result.url) await desktop.openExternal(result.url);
@@ -345,14 +345,14 @@ async function runVisualCommand(command, feedbackElement, { refresh = false } = 
 		await syncServerSession();
 		await loadVisualSettings();
 	}
-	setSettingsFeedback(feedbackElement, result.message || "已完成。");
+	setSettingsFeedback(feedbackElement, result.message || uiText("completed"));
 	return result;
 }
 
 function performVisualAction(feedbackElement, action) {
 	void Promise.resolve()
 		.then(action)
-		.catch((error) => setSettingsFeedback(feedbackElement, `操作失败：${error.message}`, true));
+		.catch((error) => setSettingsFeedback(feedbackElement, uiText("operationFailed", { message: error.message }), true));
 }
 
 function applySettingsBusyState() {
@@ -381,7 +381,7 @@ function applySettingsBusyState() {
 		const control = document.querySelector(`#${id}`);
 		if (!control) return;
 		control.disabled = !connected || busy;
-		control.title = busy ? "Agent 正在运行或压缩上下文，请等待本轮结束" : "";
+		control.title = busy ? uiText("agentBusyWait") : "";
 	});
 }
 
@@ -391,8 +391,8 @@ async function loadVisualSettings() {
 	controls.forEach((control) => { control.disabled = !state.serverConnected; });
 	applySettingsBusyState();
 	if (!state.serverConnected) {
-		setSettingsFeedback(elements.settingsSessionFeedback, "连接 Server 后载入会话信息。");
-		setSettingsFeedback(elements.settingsSecurityFeedback, "连接 Server 后载入账户状态。");
+		setSettingsFeedback(elements.settingsSessionFeedback, uiText("sessionFeedbackDisconnected"));
+		setSettingsFeedback(elements.settingsSecurityFeedback, uiText("securityFeedbackDisconnected"));
 		return;
 	}
 	try {
@@ -408,34 +408,34 @@ async function loadVisualSettings() {
 		]);
 		if (generation !== visualSettingsLoadGeneration) return;
 
-		replaceSelectOptions(elements.settingsLanguageSelect, language.options || [], (item) => item.code, (item) => item.nativeName);
+		replaceSelectOptions(elements.settingsLanguageSelect, language.options || [], (item) => item.code, (item) => item.code === "auto" ? uiText("automatic") : item.nativeName);
 		elements.settingsLanguageSelect.value = state.uiLanguage;
 
 		elements.settingsSessionNameInput.value = state.session?.sessionName || "";
 		const stats = sessionInfo.stats || {};
 		const totalMessages = stats.totalMessages ?? stats.messageCount ?? state.session?.messageCount ?? 0;
-		elements.settingsSessionSummary.textContent = `${totalMessages} 条消息 · ${state.session?.pendingMessageCount || 0} 条排队消息`;
+		elements.settingsSessionSummary.textContent = uiText("sessionSummary", { total: totalMessages, pending: state.session?.pendingMessageCount || 0 });
 
 		const otherSessions = window.metisDesktopConversations
 			.visibleSessions(sessions.sessions)
 			.filter((item) => item.path !== state.session?.sessionFile);
-		replaceSelectOptions(elements.settingsResumeSelect, otherSessions, (item) => item.path, (item) => item.name || item.firstMessage || item.path, "没有其他会话");
-		replaceSelectOptions(elements.settingsForkSelect, forks.entries || [], (item) => item.entryId || item.id, (item) => (item.text || item.message || item.entryId || item.id).toString().slice(0, 70), "没有可分叉消息");
+		replaceSelectOptions(elements.settingsResumeSelect, otherSessions, (item) => item.path, (item) => item.name || item.firstMessage || item.path, uiText("noOtherSessions"));
+		replaceSelectOptions(elements.settingsForkSelect, forks.entries || [], (item) => item.entryId || item.id, (item) => (item.text || item.message || item.entryId || item.id).toString().slice(0, 70), uiText("noForkMessages"));
 		const treeItems = flattenSessionTree(tree.tree || []).filter((item) => item.id !== tree.leafId);
-		replaceSelectOptions(elements.settingsTreeSelect, treeItems, (item) => item.id, (item) => item.label, "没有其他历史节点");
+		replaceSelectOptions(elements.settingsTreeSelect, treeItems, (item) => item.id, (item) => item.label, uiText("noHistoryNodes"));
 
 		elements.settingsTrustSelect.value = trust.decision === true ? "trusted" : trust.decision === false ? "untrusted" : "clear";
 		const loginProviders = login.providers || [];
-		replaceSelectOptions(elements.settingsOauthProvider, loginProviders.filter((provider) => OAUTH_PROVIDER_IDS.has(provider)), (item) => item, (item) => item, "没有可用 OAuth Provider");
-		replaceSelectOptions(elements.settingsApiKeyProvider, loginProviders.filter((provider) => provider !== "other"), (item) => item, (item) => item, "没有可用 Provider");
-		replaceSelectOptions(elements.settingsLogoutProvider, logout.providers || [], (item) => item, (item) => item, "没有已保存凭据");
+		replaceSelectOptions(elements.settingsOauthProvider, loginProviders.filter((provider) => OAUTH_PROVIDER_IDS.has(provider)), (item) => item, (item) => item, uiText("noOauthProviders"));
+		replaceSelectOptions(elements.settingsApiKeyProvider, loginProviders.filter((provider) => provider !== "other"), (item) => item, (item) => item, uiText("noProviders"));
+		replaceSelectOptions(elements.settingsLogoutProvider, logout.providers || [], (item) => item, (item) => item, uiText("noSavedCredentials"));
 		await fillCustomProviderForm();
-		setSettingsFeedback(elements.settingsSessionFeedback, "会话信息已同步。会话切换类操作会先保留当前会话，再载入目标状态。");
-		setSettingsFeedback(elements.settingsSecurityFeedback, "账户与项目权限状态已同步；项目可信状态需重启 Server 后生效。");
+		setSettingsFeedback(elements.settingsSessionFeedback, uiText("sessionSynced"));
+		setSettingsFeedback(elements.settingsSecurityFeedback, uiText("securitySynced"));
 		applySettingsBusyState();
 	} catch (error) {
-		setSettingsFeedback(elements.settingsSessionFeedback, `载入失败：${error.message}。请完全重启 Desktop 和 Server。`, true);
-		setSettingsFeedback(elements.settingsSecurityFeedback, `载入失败：${error.message}。请完全重启 Desktop 和 Server。`, true);
+		setSettingsFeedback(elements.settingsSessionFeedback, uiText("loadFailedRestart", { message: error.message }), true);
+		setSettingsFeedback(elements.settingsSecurityFeedback, uiText("loadFailedRestart", { message: error.message }), true);
 	}
 }
 
@@ -804,14 +804,14 @@ async function selectConversation(project, conversation, record = true) {
 	updateHeadingTitle(conversation.title, conversation.title === uiText("namingTitle") || (conversation.id === state.session?.sessionId && Boolean(state.session?.isGeneratingSessionName)));
 	renderConversations();
 	if (state.serverConnected && conversation.sessionPath && conversation.sessionPath !== state.session?.sessionFile) {
-		setStreamingState(true, "正在切换会话");
+		setStreamingState(true, uiText("switchingSession"));
 		try {
 			await requestServer("/session/switch", "POST", { sessionPath: conversation.sessionPath });
 			await syncServerSession({ loadModels: false });
 			project.lastSessionPath = conversation.sessionPath;
 			saveProjectState();
 		} catch (error) {
-			appendAssistantNotice(error.message, "切换失败");
+			appendAssistantNotice(error.message, uiText("sessionSwitchFailed"));
 		} finally {
 			setStreamingState(false);
 		}
@@ -824,12 +824,12 @@ async function createConversation() {
 		elements.serverDialog.showModal();
 		return;
 	}
-	setStreamingState(true, "正在创建任务");
+	setStreamingState(true, uiText("creatingTask"));
 	try {
 		await requestServer("/session/new", "POST", { cwd: activeProject()?.path });
 		await syncServerSession({ loadModels: false });
 	} catch (error) {
-		appendAssistantNotice(error.message, "创建失败");
+		appendAssistantNotice(error.message, uiText("createFailed"));
 	} finally {
 		setStreamingState(false);
 	}
@@ -850,7 +850,7 @@ async function activateProject(project, { targetSessionPath, record = true, load
 		await refreshFileTree();
 		if (!state.serverConnected) return;
 
-		setStreamingState(true, "正在切换项目");
+		setStreamingState(true, uiText("switchingProject"));
 		await loadProjectConversations(project);
 		const currentSession = await requestServer("/session");
 		const currentCwd = window.metisDesktopConversations.normalizeProjectPath(currentSession.cwd);
@@ -868,7 +868,7 @@ async function activateProject(project, { targetSessionPath, record = true, load
 		await syncServerSession({ loadModels });
 		if (record && state.activeConversationId) recordNavigation(state.activeConversationId);
 	} catch (error) {
-		appendAssistantNotice(error.message, "项目切换失败");
+		appendAssistantNotice(error.message, uiText("projectSwitchFailed"));
 	} finally {
 		projectSwitchInProgress = false;
 		setStreamingState(Boolean(state.session?.isStreaming), uiText(state.session?.isCompacting ? "compactingContext" : "agentWorking"));
@@ -906,14 +906,14 @@ async function loadWorkspace(select = false) {
 		applyProjectDetails(activeProject() || project);
 		await refreshFileTree();
 	} catch (error) {
-		elements.fileTree.textContent = `无法读取工作区：${error.message}`;
+		elements.fileTree.textContent = uiText("workspaceReadError", { message: error.message });
 	}
 }
 
 async function requestServer(path, method = "GET", body) {
 	const result = await desktop.metis.request({ path, method, body });
 	if (!result.ok) {
-		const message = result.data?.error?.message || result.error || `Server 请求失败（HTTP ${result.status || 0}）`;
+		const message = result.data?.error?.message || result.error || uiText("serverHttpError", { status: result.status || 0 });
 		throw new Error(message);
 	}
 	return result.data;
@@ -1085,7 +1085,7 @@ function readFile(file, method) {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
 		reader.addEventListener("load", () => resolve(reader.result), { once: true });
-		reader.addEventListener("error", () => reject(reader.error || new Error(`无法读取 ${file.name}`)), { once: true });
+		reader.addEventListener("error", () => reject(reader.error || new Error(uiText("attachmentReadError", { name: file.name }))), { once: true });
 		reader[method](file);
 	});
 }
@@ -1097,7 +1097,7 @@ async function resolveAttachmentPath(file) {
 	} catch {
 		// Clipboard-created blobs may not expose a native path.
 	}
-	if (file.size > MAX_BUFFERED_ATTACHMENT_BYTES) throw new Error(`${file.name} 超过 128 MB，无法从剪贴板缓存`);
+	if (file.size > MAX_BUFFERED_ATTACHMENT_BYTES) throw new Error(uiText("attachmentTooLarge", { name: file.name }));
 	const dataUrl = String(await readFile(file, "readAsDataURL"));
 	return desktop.attachments.save({ name: file.name, mimeType: file.type, data: dataUrl.split(",")[1] || "" });
 }
@@ -1144,8 +1144,8 @@ async function handleAttachments(files, source = "picker") {
 		elements.composer.classList.remove("attachment-added");
 		requestAnimationFrame(() => elements.composer.classList.add("attachment-added"));
 		window.setTimeout(() => elements.composer.classList.remove("attachment-added"), 500);
-		const action = source === "paste" ? "已粘贴" : source === "drop" ? "已拖入" : "已添加";
-		showAttachmentFeedback(`${action} ${added} 个附件`);
+		const key = source === "paste" ? "attachmentsPasted" : source === "drop" ? "attachmentsDropped" : "attachmentsAdded";
+		showAttachmentFeedback(uiText(key, { count: added }));
 	}
 	if (errors.length > 0) showAttachmentFeedback(errors.join("；"), "error");
 }
@@ -1469,7 +1469,7 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 
 			const cotTitle = document.createElement("span");
 			cotTitle.className = "cot-title";
-			cotTitle.textContent = "Thinking";
+			cotTitle.textContent = uiText("thinking");
 
 			const chevron = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 			chevron.innerHTML = '<use href="#i-chevron"/>';
@@ -1684,7 +1684,7 @@ function getWorkItemKey(part, index) {
 							} else {
 								const outTitle = document.createElement("div");
 								outTitle.className = "tool-section-title";
-								outTitle.textContent = "Output:";
+								outTitle.textContent = uiText("output");
 								
 								const newOutPre = document.createElement("pre");
 								const outCode = document.createElement("code");
@@ -1929,7 +1929,7 @@ function renderToolCallBlock(part, message, messages) {
 
 	const argsTitle = document.createElement("div");
 	argsTitle.className = "tool-section-title";
-	argsTitle.textContent = "Arguments:";
+	argsTitle.textContent = uiText("arguments");
 	
 	const argsPre = document.createElement("pre");
 	const argsCode = document.createElement("code");
@@ -1942,7 +1942,7 @@ function renderToolCallBlock(part, message, messages) {
 	if (resultMsg) {
 		const outTitle = document.createElement("div");
 		outTitle.className = "tool-section-title";
-		outTitle.textContent = "Output:";
+		outTitle.textContent = uiText("output");
 		
 		const outPre = document.createElement("pre");
 		const outCode = document.createElement("code");
@@ -2093,13 +2093,13 @@ function refreshWorkTimerTitles() {
 		const turnContext = analyzeAssistantTurn(message, state.messages, state.isStreaming);
 		if (!isAssistantTurnActive(turnContext)) return;
 		const duration = getThinkingDuration(message, state.messages);
-		title.textContent = duration !== undefined ? `Working for ${duration}s` : "Working...";
+		title.textContent = duration !== undefined ? uiText("workingForSeconds", { duration }) : uiText("working");
 		title.classList.add("working-shimmer");
 	});
 }
 
 function modelLabel(model) {
-	return model?.name || model?.id || (model?.provider ? `${model.provider}/model` : "模型");
+	return model?.name || model?.id || (model?.provider ? `${model.provider}/model` : uiText("genericModel"));
 }
 
 function thinkingLabel(level) {
@@ -2393,9 +2393,9 @@ function renderMessageQueue() {
 		const actions = document.createElement("div");
 		actions.className = "message-queue-actions";
 		const actionSpecs = [
-			{ name: "arrow-up", label: "优先处理", run: () => promoteFollowUp(index) },
-			{ name: "edit", label: "移回输入框编辑", run: () => removeFollowUpFromQueue(index, { restore: true }) },
-			{ name: "trash", label: "删除排队消息", danger: true, run: () => removeFollowUpFromQueue(index) },
+			{ name: "arrow-up", label: uiText("queuePromote"), run: () => promoteFollowUp(index) },
+			{ name: "edit", label: uiText("queueEdit"), run: () => removeFollowUpFromQueue(index, { restore: true }) },
+			{ name: "trash", label: uiText("queueDelete"), danger: true, run: () => removeFollowUpFromQueue(index) },
 		];
 		for (const spec of actionSpecs) {
 			const button = document.createElement("button");
@@ -2408,7 +2408,7 @@ function renderMessageQueue() {
 				button.disabled = true;
 				void spec.run().catch((error) => {
 					button.disabled = false;
-					appendAssistantNotice(error.message, "队列操作失败");
+					appendAssistantNotice(error.message, uiText("queueOperationFailed"));
 				});
 			});
 			actions.append(button);
@@ -2459,6 +2459,7 @@ function applyUiLanguage(language) {
 	localStorage.setItem("metis.desktopUiLanguage.v2", state.uiLanguage);
 	document.documentElement.lang = resolveUiLanguage(state.uiLanguage);
 	desktopI18n.translateDocument(state.uiLanguage);
+	void desktop.setUiLanguage?.(resolveUiLanguage(state.uiLanguage));
 	if (elements.settingsLanguageSelect) elements.settingsLanguageSelect.value = state.uiLanguage;
 	if (elements.revealFileButton) elements.revealFileButton.textContent = revealInFolderLabel();
 	setDreamStatus(state.dreamStatusText);
@@ -2506,7 +2507,7 @@ async function changeModel(index) {
 		await requestServer("/session/model", "PUT", { provider: model.provider, modelId: model.id });
 		state.session = await requestServer("/session");
 	} catch (error) {
-		appendAssistantNotice(error.message, "模型切换失败");
+		appendAssistantNotice(error.message, uiText("modelSwitchFailed"));
 	} finally {
 		updateModelSelect();
 	}
@@ -2525,7 +2526,7 @@ async function changeThinkingLevel(level) {
 		updateModelSelect();
 		elements.modelPicker.classList.add("advanced-open");
 	} catch (error) {
-		appendAssistantNotice(error.message, "思考等级切换失败");
+		appendAssistantNotice(error.message, uiText("thinkingSwitchFailed"));
 		renderThinkingControl();
 	} finally {
 		elements.thinkingScale.classList.remove("busy");
@@ -2533,13 +2534,13 @@ async function changeThinkingLevel(level) {
 }
 
 async function refreshFileTree() {
-	elements.fileTree.innerHTML = '<div class="tree-loading">正在读取工作区…</div>';
+	elements.fileTree.innerHTML = `<div class="tree-loading">${uiText("readingWorkspace")}</div>`;
 	try {
 		const result = await desktop.workspace.tree();
 		state.fileTree = result.nodes;
 		renderFileTree(elements.fileFilterInput.value);
 	} catch (error) {
-		elements.fileTree.textContent = `读取失败：${error.message}`;
+		elements.fileTree.textContent = uiText("fileReadFailed", { message: error.message });
 	}
 }
 
@@ -2551,7 +2552,7 @@ function renderFileTree(filter = "") {
 	if (nodes.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "tree-loading";
-		empty.textContent = "没有匹配文件";
+		empty.textContent = uiText("noMatchingFiles");
 		elements.fileTree.append(empty);
 	}
 }
@@ -2603,7 +2604,7 @@ function createTreeNode(node, depth, forceOpen) {
 async function showDiff(relativePath) {
 	state.activeFile = relativePath;
 	elements.diffTitle.textContent = relativePath;
-	elements.diffStats.textContent = "正在读取 Git 变更…";
+	elements.diffStats.textContent = uiText("readingGitDiff");
 	elements.diffView.replaceChildren();
 	selectInspectorTab("diff");
 	renderFileTree(elements.fileFilterInput.value);
@@ -2611,12 +2612,12 @@ async function showDiff(relativePath) {
 		const result = await desktop.workspace.diff(relativePath);
 		renderDiff(result.diff);
 	} catch (error) {
-		elements.diffStats.textContent = "读取失败";
+		elements.diffStats.textContent = uiText("readFailed");
 		const empty = document.createElement("div");
 		empty.className = "diff-empty";
 		empty.append(icon("diff"));
 		const strong = document.createElement("strong");
-		strong.textContent = "无法显示 Diff";
+		strong.textContent = uiText("cannotShowDiff");
 		const span = document.createElement("span");
 		span.textContent = error.message;
 		empty.append(strong, span);
@@ -2661,13 +2662,13 @@ function renderDiff(diff) {
 		row.append(number, sign, code);
 		elements.diffView.append(row);
 	}
-	elements.diffStats.textContent = `${added} 行新增 · ${removed} 行删除`;
+	elements.diffStats.textContent = uiText("diffStats", { added, removed });
 }
 
 const INSPECTOR_TAB_CONFIG = {
-	diff: { label: "审阅", icon: "#i-diff" },
-	browser: { label: "新标签页", icon: "#i-globe" },
-	files: { label: "文件", icon: "#i-folder" },
+	diff: { labelKey: "review", icon: "#i-diff" },
+	browser: { labelKey: "newTab", icon: "#i-globe" },
+	files: { labelKey: "files", icon: "#i-folder" },
 };
 
 function renderInspectorTabs() {
@@ -2691,14 +2692,15 @@ function renderInspectorTabs() {
 
 	state.openInspectorTabs.forEach((tabId) => {
 		const config = INSPECTOR_TAB_CONFIG[tabId] || { label: tabId, icon: "#i-file" };
+		const label = config.labelKey ? uiText(config.labelKey) : config.label;
 		const isActive = state.activeInspectorTab === tabId;
 
 		const pill = document.createElement("div");
 		pill.className = `inspector-tab-pill ${isActive ? "active" : ""}`;
 		pill.innerHTML = `
 			<svg class="tab-icon"><use href="${config.icon}"/></svg>
-			<span>${config.label}</span>
-			<span class="inspector-tab-close" data-close="${tabId}" title="关闭标签页"><svg><use href="#i-plus"/></svg></span>
+			<span>${label}</span>
+			<span class="inspector-tab-close" data-close="${tabId}" title="${uiText("closeTab")}"><svg><use href="#i-plus"/></svg></span>
 		`;
 
 		pill.addEventListener("click", (e) => {
@@ -2755,7 +2757,7 @@ function navigateBrowser(rawAddress) {
 		elements.browserView.loadURL(url.href);
 		elements.browserAddress.value = url.href;
 	} catch {
-		elements.browserStatus.textContent = "地址无效";
+		elements.browserStatus.textContent = uiText("invalidAddress");
 	}
 }
 
@@ -2907,7 +2909,7 @@ async function sendMessage() {
 		renderAttachmentPreviews();
 		autoSizeComposer();
 		setStreamingState(wasStreaming, wasStreaming ? uiText("agentWorking") : "");
-		appendAssistantNotice(error.message, "发送失败");
+		appendAssistantNotice(error.message, uiText("sendFailed"));
 	}
 }
 
@@ -2917,7 +2919,7 @@ async function abortGeneration() {
 	try {
 		await requestServer("/session/abort", "POST", {});
 	} catch (error) {
-		appendAssistantNotice(error.message, "停止失败");
+		appendAssistantNotice(error.message, uiText("stopFailed"));
 	} finally {
 		setStreamingState(false);
 	}
@@ -2931,14 +2933,14 @@ function autoSizeComposer() {
 async function connectServer() {
 	const button = document.querySelector("#connectServerButton");
 	button.disabled = true;
-	button.textContent = "连接中…";
+	button.textContent = uiText("connecting");
 	const result = await desktop.metis.connect({
 		baseUrl: document.querySelector("#serverUrlInput").value,
 		username: document.querySelector("#serverUsernameInput").value,
 		password: document.querySelector("#serverPasswordInput").value,
 	});
 	button.disabled = false;
-	button.textContent = "连接";
+	button.textContent = uiText("connect");
 	if (result.ok) {
 		state.serverConnected = true;
 		updateSettingsConnectionDetails();
@@ -2954,12 +2956,12 @@ async function connectServer() {
 			elements.serverDialog.close();
 			finishServerLoading();
 		} catch (error) {
-			button.textContent = "已连接，同步失败";
+			button.textContent = uiText("connectedSyncFailed");
 			showServerLoadingFailure();
-			appendAssistantNotice(error.message, "同步失败");
+			appendAssistantNotice(error.message, uiText("syncFailed"));
 		}
 	} else {
-		button.textContent = "连接失败，重试";
+		button.textContent = uiText("connectFailedRetry");
 	}
 }
 
@@ -3018,16 +3020,16 @@ async function handleExtensionUiRequest(event) {
 
 	let response;
 	if (event.method === "confirm") {
-		response = { id: event.id, confirmed: window.confirm(`${event.title || "确认"}\n\n${event.message || ""}`) };
+		response = { id: event.id, confirmed: window.confirm(`${event.title || uiText("confirm")}\n\n${event.message || ""}`) };
 	} else if (event.method === "select") {
 		const options = Array.isArray(event.options) ? event.options : [];
-		const answer = window.prompt(`${event.title || "请选择"}\n\n${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}`);
+		const answer = window.prompt(`${event.title || uiText("choose")}\n\n${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}`);
 		const index = Number(answer) - 1;
 		response = Number.isInteger(index) && options[index] !== undefined
 			? { id: event.id, value: options[index] }
 			: { id: event.id, cancelled: true };
 	} else if (event.method === "input" || event.method === "editor") {
-		const value = window.prompt(event.title || event.placeholder || "请输入", event.prefill || "");
+		const value = window.prompt(event.title || event.placeholder || uiText("enterValue"), event.prefill || "");
 		response = value === null ? { id: event.id, cancelled: true } : { id: event.id, value };
 	}
 	if (response) await requestServer("/extension/ui-response", "POST", response);
@@ -3043,13 +3045,13 @@ function handleMetisEvent(event) {
 		state.serverConnected = true;
 		updateSettingsConnectionDetails();
 		if (state.session && !projectSwitchInProgress) {
-			void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, "同步失败"));
+			void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
 		}
 		return;
 	}
 	if (event.type === "server.session_changed") {
 		if (!projectSwitchInProgress) {
-			void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, "同步失败"));
+			void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
 		}
 		return;
 	}
@@ -3096,7 +3098,7 @@ function handleMetisEvent(event) {
 				state.messageDurations[key] = parseFloat(((Date.now() - start) / 1000).toFixed(1));
 			}
 		}
-		void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, "同步失败"));
+		void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
 	} else if (active) {
 		setStreamingState(true, humanizeEvent(event.type));
 		
@@ -3137,21 +3139,21 @@ function handleMetisEvent(event) {
 				renderServerMessages(state.messages);
 			}
 		} else if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
-			void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, "同步失败"));
+			void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
 		}
 	}
 }
 
 function humanizeEvent(type) {
 	const labels = {
-		agent_start: "Agent 正在处理",
-		message_start: "开始生成",
-		message_update: "正在生成",
-		message_end: "处理完成",
-		tool_execution_start: "正在调用工具",
-		tool_execution_end: "工具执行完成",
-		compaction_start: "正在整理上下文",
-		compaction_end: "上下文已整理",
+		agent_start: uiText("agentWorking"),
+		message_start: uiText("eventMessageStart"),
+		message_update: uiText("eventMessageUpdate"),
+		message_end: uiText("eventMessageEnd"),
+		tool_execution_start: uiText("eventToolStart"),
+		tool_execution_end: uiText("eventToolEnd"),
+		compaction_start: uiText("eventCompactionStart"),
+		compaction_end: uiText("eventCompactionEnd"),
 	};
 	return labels[type] || type.replaceAll("_", " ");
 }
@@ -3163,8 +3165,8 @@ document.querySelector("#sidebarToggle")?.addEventListener("click", (e) => {
 	const isCollapsed = elements.appShell.classList.toggle("sidebar-collapsed");
 	const toggleBtn = document.querySelector("#sidebarToggle");
 	if (toggleBtn) {
-		toggleBtn.setAttribute("aria-label", isCollapsed ? "展开侧栏" : "收起侧栏");
-		toggleBtn.setAttribute("title", isCollapsed ? "展开侧栏" : "收起侧栏");
+		toggleBtn.setAttribute("aria-label", uiText(isCollapsed ? "expandSidebar" : "collapseSidebar"));
+		toggleBtn.setAttribute("title", uiText(isCollapsed ? "expandSidebar" : "collapseSidebar"));
 	}
 });
 document.querySelector("#inspectorToggle")?.addEventListener("click", (e) => {
@@ -3173,8 +3175,8 @@ document.querySelector("#inspectorToggle")?.addEventListener("click", (e) => {
 	const isCollapsed = elements.appShell.classList.toggle("inspector-collapsed");
 	const toggleBtn = document.querySelector("#inspectorToggle");
 	if (toggleBtn) {
-		toggleBtn.setAttribute("aria-label", isCollapsed ? "展开侧栏" : "收起侧栏");
-		toggleBtn.setAttribute("title", isCollapsed ? "展开侧栏" : "收起侧栏");
+		toggleBtn.setAttribute("aria-label", uiText(isCollapsed ? "expandSidebar" : "collapseSidebar"));
+		toggleBtn.setAttribute("title", uiText(isCollapsed ? "expandSidebar" : "collapseSidebar"));
 	}
 });
 document.querySelector("#inspectorCollapseToggle")?.addEventListener("click", (e) => {
@@ -3236,7 +3238,7 @@ elements.settingsLanguageSelect?.addEventListener("change", () => {
 	const language = elements.settingsLanguageSelect.value;
 	applyUiLanguage(language);
 	if (!state.serverConnected) {
-		setSettingsFeedback(elements.settingsAgentFeedback, "Desktop 语言已保存；连接 Server 后将同步 Agent / TUI。", false);
+		setSettingsFeedback(elements.settingsAgentFeedback, uiText("desktopLanguageSavedOffline"), false);
 		return;
 	}
 	performVisualAction(elements.settingsAgentFeedback, async () => {
@@ -3250,30 +3252,30 @@ document.querySelector("#settingsCompactButton")?.addEventListener("click", () =
 }));
 document.querySelector("#settingsSaveSessionName")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
 	const name = elements.settingsSessionNameInput.value.trim();
-	if (!name) throw new Error("请输入会话名称");
+	if (!name) throw new Error(uiText("enterSessionName"));
 	await runVisualCommand(`/name ${name}`, elements.settingsSessionFeedback, { refresh: true });
 }));
 document.querySelector("#settingsCopyReply")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, () => runVisualCommand("/copy", elements.settingsSessionFeedback)));
 document.querySelector("#settingsCloneSession")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, () => runVisualCommand("/clone", elements.settingsSessionFeedback, { refresh: true })));
 document.querySelector("#settingsNewSession")?.addEventListener("click", () => {
-	if (!window.confirm("开始新会话？当前会话会保留在历史记录中。")) return;
+	if (!window.confirm(uiText("confirmNewSession"))) return;
 	performVisualAction(elements.settingsSessionFeedback, () => runVisualCommand("/new", elements.settingsSessionFeedback, { refresh: true }));
 });
 document.querySelector("#settingsResumeButton")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
-	if (!elements.settingsResumeSelect.value) throw new Error("没有可恢复的会话");
+	if (!elements.settingsResumeSelect.value) throw new Error(uiText("noResumableSession"));
 	await runVisualCommand(`/resume ${elements.settingsResumeSelect.value}`, elements.settingsSessionFeedback, { refresh: true });
 }));
 document.querySelector("#settingsForkButton")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
-	if (!elements.settingsForkSelect.value) throw new Error("没有可分叉的消息");
+	if (!elements.settingsForkSelect.value) throw new Error(uiText("noForkableMessage"));
 	const result = await runVisualCommand(`/fork ${elements.settingsForkSelect.value}`, elements.settingsSessionFeedback, { refresh: true });
 	if (result.selectedText) {
 		elements.composerInput.value = result.selectedText;
 		autoSizeComposer();
-		setSettingsFeedback(elements.settingsSessionFeedback, "已创建分叉；所选用户消息已放回主界面输入框，可修改后发送。");
+		setSettingsFeedback(elements.settingsSessionFeedback, uiText("forkCreated"));
 	}
 }));
 document.querySelector("#settingsTreeButton")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
-	if (!elements.settingsTreeSelect.value) throw new Error("当前会话没有分支节点");
+	if (!elements.settingsTreeSelect.value) throw new Error(uiText("noBranchNodes"));
 	await runVisualCommand(`/tree ${elements.settingsTreeSelect.value}`, elements.settingsSessionFeedback, { refresh: true });
 }));
 document.querySelector("#settingsExportHtml")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
@@ -3286,26 +3288,26 @@ document.querySelector("#settingsExportJsonl")?.addEventListener("click", () => 
 }));
 document.querySelector("#settingsImportSession")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
 	const filePath = await desktop.sessionFile.open();
-	if (filePath && window.confirm("导入并立即切换到所选会话？当前会话会保留在历史记录中。")) {
+	if (filePath && window.confirm(uiText("confirmImportSession"))) {
 		await runVisualCommand(`/import ${filePath}`, elements.settingsSessionFeedback, { refresh: true });
 	}
 }));
 document.querySelector("#settingsShareSession")?.addEventListener("click", () => {
-	if (!window.confirm("将当前会话 HTML 上传为私密 GitHub Gist？持有链接的人可以查看内容。")) return;
+	if (!window.confirm(uiText("confirmShareSession"))) return;
 	performVisualAction(elements.settingsSessionFeedback, () => runVisualCommand("/share", elements.settingsSessionFeedback));
 });
 elements.settingsTrustSelect?.addEventListener("change", () => performVisualAction(elements.settingsSecurityFeedback, () => runVisualCommand(`/trust ${elements.settingsTrustSelect.value}`, elements.settingsSecurityFeedback)));
 document.querySelector("#settingsOauthLoginButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
 	const provider = elements.settingsOauthProvider.value;
-	if (!provider) throw new Error("没有可用 OAuth Provider");
+	if (!provider) throw new Error(uiText("noOauthProviders"));
 	await runVisualCommand(`/login ${provider}`, elements.settingsSecurityFeedback, { refresh: true });
 	window.MetisOnboarding?.notifyEvent("provider_saved");
 }));
 document.querySelector("#settingsApiKeySaveButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
 	const provider = elements.settingsApiKeyProvider.value;
-	if (!provider) throw new Error("没有可用 Provider");
+	if (!provider) throw new Error(uiText("noProviders"));
 	const apiKey = elements.settingsApiKeyInput.value.trim();
-	if (!apiKey) throw new Error("请输入 API Key");
+	if (!apiKey) throw new Error(uiText("enterApiKey"));
 	await runVisualCommand(`/login ${provider} ${apiKey}`, elements.settingsSecurityFeedback, { refresh: true });
 	elements.settingsApiKeyInput.value = "";
 	window.MetisOnboarding?.notifyEvent("provider_saved");
@@ -3315,9 +3317,9 @@ document.querySelector("#settingsCustomProviderSaveButton")?.addEventListener("c
 	const baseUrl = elements.settingsCustomBaseUrl.value.trim();
 	const apiKey = elements.settingsCustomApiKey.value.trim();
 	const reasoning = Boolean(elements.settingsCustomProviderReasoning?.checked);
-	if (!providerName) throw new Error("请输入 Provider 名称");
-	if (!baseUrl) throw new Error("请输入 Base URL");
-	if (!apiKey) throw new Error("请输入 API Key");
+	if (!providerName) throw new Error(uiText("enterProviderName"));
+	if (!baseUrl) throw new Error(uiText("enterBaseUrl"));
+	if (!apiKey) throw new Error(uiText("enterApiKey"));
 	const previousModel = state.session?.model;
 	await desktop.providerConfig.saveCustom({ name: providerName, baseUrl, apiKey, reasoning });
 	await runVisualCommand("/reload", elements.settingsSecurityFeedback, { refresh: true });
@@ -3330,21 +3332,21 @@ document.querySelector("#settingsCustomProviderSaveButton")?.addEventListener("c
 	await syncServerSession({ loadModels: true });
 	await loadVisualSettings();
 	if (reasoning && !state.session?.supportsThinking) {
-		throw new Error("已写入 reasoning，但当前会话仍不支持思考。请完全退出并重启 Desktop（会自动带上新 Server）。");
+		throw new Error(uiText("reasoningRestartRequired"));
 	}
 	elements.settingsCustomApiKey.value = "";
 	setSettingsFeedback(
 		elements.settingsSecurityFeedback,
 		reasoning
-			? `自定义 Provider 已保存；思考已启用（${state.session?.thinkingLevels?.join(" / ") || "可用"}）。`
-			: "自定义 Provider 已保存；未开启思考。",
+			? uiText("customProviderReasoningEnabled", { levels: state.session?.thinkingLevels?.join(" / ") || uiText("available") })
+			: uiText("customProviderNoReasoning"),
 	);
 	window.MetisOnboarding?.notifyEvent("provider_saved");
 }));
 document.querySelector("#settingsLogoutButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
 	const provider = elements.settingsLogoutProvider.value;
-	if (!provider) throw new Error("没有已保存凭据");
-	if (!window.confirm(`移除 ${provider} 的已保存凭据？`)) return;
+	if (!provider) throw new Error(uiText("noSavedCredentials"));
+	if (!window.confirm(uiText("confirmRemoveCredentials", { provider }))) return;
 	await runVisualCommand(`/logout ${provider}`, elements.settingsSecurityFeedback, { refresh: true });
 }));
 document.querySelector("#settingsShowOnboarding")?.addEventListener("click", () => {
@@ -3353,15 +3355,15 @@ document.querySelector("#settingsShowOnboarding")?.addEventListener("click", () 
 });
 document.querySelector("#settingsShowChangelog")?.addEventListener("click", () => performVisualAction(elements.settingsAgentFeedback, async () => {
 	const result = await runVisualCommand("/changelog", elements.settingsAgentFeedback);
-	showFileContentModal("Metis 更新记录", result.changelog || "没有更新记录");
+	showFileContentModal(uiText("changelogTitle"), result.changelog || uiText("noChangelog"));
 }));
 document.querySelector("#settingsShowHotkeys")?.addEventListener("click", () => performVisualAction(elements.settingsAgentFeedback, async () => {
 	const result = await runVisualCommand("/hotkeys", elements.settingsAgentFeedback);
-	showFileContentModal("Desktop 快捷键", `以下仅适用于 Desktop；终端 TUI 的快捷键可能不同。\n\n${(result.hotkeys || []).join("\n")}`);
+	showFileContentModal(uiText("hotkeysTitle"), uiText("hotkeysIntro", { hotkeys: (result.hotkeys || []).join("\n") }));
 }));
 document.querySelector("#settingsReloadResources")?.addEventListener("click", () => performVisualAction(elements.settingsAgentFeedback, () => runVisualCommand("/reload", elements.settingsAgentFeedback, { refresh: true })));
 document.querySelector("#settingsQuitApp")?.addEventListener("click", () => {
-	if (window.confirm("退出 Metis Desktop？")) performVisualAction(elements.settingsAgentFeedback, () => runVisualCommand("/quit", elements.settingsAgentFeedback));
+	if (window.confirm(uiText("confirmQuitDesktop"))) performVisualAction(elements.settingsAgentFeedback, () => runVisualCommand("/quit", elements.settingsAgentFeedback));
 });
 document.querySelector("#settingsChooseWorkspaceButton")?.addEventListener("click", async () => {
 	await loadWorkspace(true);
@@ -3381,12 +3383,12 @@ document.querySelector("#browserExternal")?.addEventListener("click", () => elem
 elements.browserAddress?.addEventListener("keydown", (event) => {
 	if (event.key === "Enter") navigateBrowser(elements.browserAddress.value);
 });
-elements.browserView?.addEventListener("did-start-loading", () => { if (elements.browserStatus) elements.browserStatus.textContent = "正在载入…"; });
+elements.browserView?.addEventListener("did-start-loading", () => { if (elements.browserStatus) elements.browserStatus.textContent = uiText("loadingPage"); });
 elements.browserView?.addEventListener("did-stop-loading", () => {
-	 if (elements.browserStatus) elements.browserStatus.textContent = "就绪";
+	 if (elements.browserStatus) elements.browserStatus.textContent = uiText("ready");
 	 if (elements.browserAddress && elements.browserView) elements.browserAddress.value = elements.browserView.getURL();
 });
-elements.browserView?.addEventListener("did-fail-load", () => { if (elements.browserStatus) elements.browserStatus.textContent = "页面载入失败"; });
+elements.browserView?.addEventListener("did-fail-load", () => { if (elements.browserStatus) elements.browserStatus.textContent = uiText("pageLoadFailed"); });
 
 elements.composerInput.addEventListener("input", autoSizeComposer);
 elements.composerInput.addEventListener("keydown", (event) => {
@@ -3610,6 +3612,7 @@ elements.messageScroll.addEventListener("scroll", () => {
 	}
 });
 
+desktopI18n.observeDocument();
 applyUiLanguage(state.uiLanguage);
 renderConversations();
 window.setInterval(refreshWorkTimerTitles, 100);

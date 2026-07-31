@@ -3,6 +3,8 @@
  */
 (function () {
 	const STORAGE_KEY = "metis.desktopOnboardingCompleted.v1";
+	const LANGUAGE_KEY = "metis.desktopUiLanguage.v2";
+	const text = (key, variables) => window.metisDesktopI18n.t(key, localStorage.getItem(LANGUAGE_KEY) || "auto", variables);
 
 	let isRunning = false;
 	let currentStep = 1; // 1: Credential, 2: Workspace, 3: First Message
@@ -20,8 +22,8 @@
 		{
 			id: "credential",
 			stepNum: 1,
-			title: "配置 AI 凭据",
-			desc: "请先配置模型 API Key、OAuth 授权或自定义 Base URL。点击【设置】进入账户与安全完成配置。",
+			titleKey: "onboardingCredentialsTitle",
+			descriptionKey: "onboardingCredentialsDescription",
 			targetSelector: "#sidebarSettingsButton",
 			targetPanel: null,
 			placementPriority: ["top", "right", "bottom", "left"],
@@ -29,8 +31,8 @@
 		{
 			id: "credential-panel",
 			stepNum: 1,
-			title: "配置 API / OAuth / Base URL",
-			desc: "在 Provider 登录中，支持 API Key、OAuth 或自定义 Base URL，任选一种配置保存即可开启 Metis 能力！",
+			titleKey: "onboardingProviderTitle",
+			descriptionKey: "onboardingProviderDescription",
 			targetSelector: ".settings-panel[data-settings-content='security'] .settings-group:nth-of-type(2)",
 			targetPanel: "security",
 			placementPriority: ["left", "bottom", "top", "right"],
@@ -38,8 +40,8 @@
 		{
 			id: "workspace",
 			stepNum: 2,
-			title: "添加项目工作区",
-			desc: "点击【添加项目】选择或新建一个本地代码仓库文件夹，Metis 将为你提供全项目级别的 Agent 协作！",
+			titleKey: "onboardingProjectTitle",
+			descriptionKey: "onboardingProjectDescription",
 			targetSelector: "#chooseWorkspaceButton",
 			targetPanel: null,
 			placementPriority: ["right", "bottom", "top", "left"],
@@ -47,8 +49,8 @@
 		{
 			id: "chat",
 			stepNum: 3,
-			title: "发送第一条消息",
-			desc: "在下方输入框填入你的第一个需求（例如：帮我分析项目结构），点击发送开启 AI 协作体验！",
+			titleKey: "onboardingMessageTitle",
+			descriptionKey: "onboardingMessageDescription",
 			targetSelector: "#composer",
 			targetPanel: null,
 			placementPriority: ["top", "right", "left", "bottom"],
@@ -98,16 +100,16 @@
 			<div class="onboarding-input-blocker" data-onboarding-blocker="left"></div>
 			<div id="onboardingCard" class="onboarding-card">
 				<div class="onboarding-card-header">
-					<span class="onboarding-step-badge" id="onboardingStepBadge">步骤 1 / 3</span>
-					<button class="onboarding-skip-btn" id="onboardingSkipBtn" type="button" title="跳过引导">✕</button>
+					<span class="onboarding-step-badge" id="onboardingStepBadge">${text("onboardingStep", { step: 1, total: 3 })}</span>
+					<button class="onboarding-skip-btn" id="onboardingSkipBtn" type="button" title="${text("onboardingSkip")}">✕</button>
 				</div>
 				<div class="onboarding-card-body">
-					<h3 id="onboardingCardTitle">配置 AI 凭据</h3>
-					<p id="onboardingCardDesc">请配置 API Key 或 OAuth 登录。</p>
+					<h3 id="onboardingCardTitle">${text("onboardingCredentialsTitle")}</h3>
+					<p id="onboardingCardDesc">${text("onboardingCredentialsDescription")}</p>
 				</div>
 				<div class="onboarding-card-footer">
-					<button class="onboarding-prev-btn" id="onboardingPrevBtn" type="button">上一步</button>
-					<button class="onboarding-next-btn" id="onboardingNextBtn" type="button">下一步</button>
+					<button class="onboarding-prev-btn" id="onboardingPrevBtn" type="button">${text("onboardingPrevious")}</button>
+					<button class="onboarding-next-btn" id="onboardingNextBtn" type="button">${text("onboardingNext")}</button>
 				</div>
 			</div>
 		`;
@@ -233,14 +235,14 @@
 		if (!isRunning) return;
 
 		const stepConfig = getStepConfig();
-		document.getElementById("onboardingStepBadge").textContent = `步骤 ${stepConfig.stepNum} / 3`;
-		document.getElementById("onboardingCardTitle").textContent = stepConfig.title;
-		document.getElementById("onboardingCardDesc").textContent = stepConfig.desc;
+		document.getElementById("onboardingStepBadge").textContent = text("onboardingStep", { step: stepConfig.stepNum, total: 3 });
+		document.getElementById("onboardingCardTitle").textContent = text(stepConfig.titleKey);
+		document.getElementById("onboardingCardDesc").textContent = text(stepConfig.descriptionKey);
 
 		const prevBtn = document.getElementById("onboardingPrevBtn");
 		const nextBtn = document.getElementById("onboardingNextBtn");
 		prevBtn.style.display = currentStep === 1 && subStep === 0 ? "none" : "inline-block";
-		nextBtn.textContent = currentStep === 3 ? "完成体验" : "下一步";
+		nextBtn.textContent = text(currentStep === 3 ? "onboardingFinish" : "onboardingNext");
 
 		let target = document.querySelector(stepConfig.targetSelector);
 
@@ -327,9 +329,9 @@
 	function showCelebration() {
 		if (!cardEl) return;
 		cardEl.classList.add("celebrating");
-		document.getElementById("onboardingStepBadge").textContent = "🎉 初始化完成";
-		document.getElementById("onboardingCardTitle").textContent = "开启 Metis AI 体验！";
-		document.getElementById("onboardingCardDesc").textContent = "你已成功完成凭据配置、新建项目与首条消息提示，开启智能编程之旅！";
+		document.getElementById("onboardingStepBadge").textContent = text("onboardingCompleteBadge");
+		document.getElementById("onboardingCardTitle").textContent = text("onboardingCompleteTitle");
+		document.getElementById("onboardingCardDesc").textContent = text("onboardingCompleteDescription");
 		document.getElementById("onboardingPrevBtn").style.display = "none";
 		document.getElementById("onboardingNextBtn").style.display = "none";
 	}
