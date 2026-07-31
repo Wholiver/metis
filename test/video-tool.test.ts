@@ -109,7 +109,7 @@ describe("video tool", () => {
 		expect(ops.createStoryboard).toHaveBeenCalledTimes(1);
 	});
 
-	it("returns independent high-fidelity PNG frames at exact timestamps", async () => {
+	it("returns independent high-fidelity JPEG frames at exact timestamps", async () => {
 		const ops = operations();
 		const tool = createVideoTool(testDir, { operations: ops });
 		const crop = { x: 0, y: 0, width: 1, height: 0.25 };
@@ -119,7 +119,7 @@ describe("video tool", () => {
 		expect(result.details.frameTimes).toEqual([20, 20.1]);
 		expect(result.details.crop).toEqual(crop);
 		expect(images).toHaveLength(2);
-		expect(images.every((image) => image.mimeType === "image/png")).toBe(true);
+		expect(images.every((image) => image.mimeType === "image/jpeg")).toBe(true);
 		expect(output).toContain("Frame 1/2: 00:00:20.000");
 		expect(output).toContain("Frame 2/2: 00:00:20.100");
 		expect(ops.createFrames).toHaveBeenCalledWith(join(testDir, "clip.mp4"), [20, 20.1], crop, undefined);
@@ -199,13 +199,13 @@ describe("video tool", () => {
 		 expect(image?.data.length).toBeGreaterThan(1000);
 	});
 
-	it("extracts real lossless detail frames and normalized crops with bundled FFmpeg", async () => {
+	it("extracts real high-fidelity detail frames and normalized crops with bundled FFmpeg", async () => {
 		const videoPath = join(testDir, "real-detail.mp4");
 		await runFile(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=1.5:size=320x180:rate=10", "-an", "-pix_fmt", "yuv420p", "-y", videoPath]);
 		const result = await createVideoTool(testDir).execute("video-real-detail", { action: "frames", path: "real-detail.mp4", timestamps: [0.5], crop: { x: 0, y: 0, width: 0.5, height: 1 } });
 		const image = result.content.find((block) => block.type === "image");
 		expect(result.details.frameTimes).toEqual([0.5]);
-		expect(image?.mimeType).toBe("image/png");
-		expect(Buffer.from(image?.data ?? "", "base64").subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+		expect(image?.mimeType).toBe("image/jpeg");
+		expect(Buffer.from(image?.data ?? "", "base64").subarray(0, 2).toString("hex")).toBe("ffd8");
 	});
 });

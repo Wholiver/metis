@@ -34,8 +34,9 @@ export const VIDEO_TRANSCRIPTION_DISCOVERY_FILES = ["config.json", "tokenizer_co
 const STORYBOARD_SIZE = 1536;
 const CELL_SIZE = STORYBOARD_SIZE / 3;
 const DETAIL_FRAME_COUNT = 4;
-const MAX_DETAIL_FRAMES = 6;
-const MAX_DETAIL_DIMENSION = 2048;
+const MAX_DETAIL_FRAMES = 4;
+const UNCROPPED_MAX_DIMENSION = 1280;
+const CROPPED_MAX_DIMENSION = 2048;
 const TRANSCRIPT_MAX_BYTES = 50 * 1024;
 const TRANSCRIPTION_DEVICES = ["cpu", "coreml", "webgpu"] as const;
 type TranscriptionDevice = (typeof TRANSCRIPTION_DEVICES)[number];
@@ -392,13 +393,14 @@ const defaultVideoOperations: VideoOperations = {
 		await mkdir(workDir, { recursive: true });
 		try {
 			const images: Buffer[] = [];
+			const maxDimension = crop ? CROPPED_MAX_DIMENSION : UNCROPPED_MAX_DIMENSION;
 			for (let index = 0; index < frameTimes.length; index++) {
-				const output = join(workDir, `frame-${index}.png`);
+				const output = join(workDir, `frame-${index}.jpg`);
 				const filters = crop ? [`crop=w='iw*${crop.width}':h='ih*${crop.height}':x='iw*${crop.x}':y='ih*${crop.y}'`] : [];
-				filters.push(`scale=w='min(${MAX_DETAIL_DIMENSION},iw)':h='min(${MAX_DETAIL_DIMENSION},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`);
-				const outputArgs = ["-frames:v", "1", "-vf", filters.join(","), "-compression_level", "4", "-y", output];
+				filters.push(`scale=w='min(${maxDimension},iw)':h='min(${maxDimension},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`);
+				const outputArgs = ["-frames:v", "1", "-vf", filters.join(","), "-q:v", "3", "-y", output];
 				try {
-					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", path, "-ss", String(frameTimes[index]), ...outputArgs], signal);
+					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(frameTimes[index]), "-i", path, ...outputArgs], signal);
 					await access(output);
 				} catch (error) {
 					if (index !== frameTimes.length - 1) throw error;
@@ -512,7 +514,11 @@ async function readCachedTranscript(path: string): Promise<TranscriptSegment[] |
 }
 
 async function cacheTranscript(path: string, segments: TranscriptSegment[]): Promise<void> {
-	await writeFile(await cachedTranscriptPath(path), JSON.stringify({ model: VIDEO_TRANSCRIPTION_MODEL_ID, revision: VIDEO_TRANSCRIPTION_MODEL_REVISION, segments }), "utf8");
+	try {
+		await writeFile(await cachedTranscriptPath(path), JSON.stringify({ model: VIDEO_TRANSCRIPTION_MODEL_ID, revision: VIDEO_TRANSCRIPTION_MODEL_REVISION, segments }), "utf8");
+	} catch {
+		// Ignore cache write failures
+	}
 }
 
 function renderCall(args: VideoToolInput | undefined, theme: Theme, cwd: string): string {
@@ -532,7 +538,7 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 		label: "video",
 		description: "Inspect a local video with metadata, a timestamped overview storyboard, high-fidelity independent frames, and/or a transcript. Use frames for readable UI, text, styling, and exact visual state. The first local transcript request automatically downloads and verifies transcription assets.",
 		promptSnippet: "Inspect local video with an overview, high-fidelity detail frames, and transcript",
-		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Use storyboard for temporal overview, then use frames at explicit timestamps before claiming UI text, typography, colors, spacing, layout, selected state, or other small visual details.", "For interaction or motion, compare frames immediately before and after the event. Use the reported frame rate to choose timestamps 1–4 source frames apart, and verify uncertain evidence with another nearby frame.", "Use normalized crop with frames to enlarge a specific UI region. Request no more frames than needed and analyze each batch before continuing.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en. Transcript proves spoken text, not visual state.", "The first local transcript request may take longer while Metis downloads and verifies the pinned transcription model. Retry normally if initialization reports a network or filesystem error.", "Never use this tool for remote URLs."],
+		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Use storyboard for temporal overview first to locate timestamp ranges, then use frames at explicit timestamps before claiming UI text, typography, colors, spacing, layout, selected state, or other small visual details.", "For interaction or motion, compare frames immediately before and after the event. Use the reported frame rate to choose timestamps 1–4 source frames apart, and verify uncertain evidence with another nearby frame.", "Use normalized crop with frames to enlarge a specific UI region. Request no more frames than needed (1–3 frames recommended, max 4) and analyze each batch before continuing.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en. Transcript proves spoken text, not visual state.", "The first local transcript request may take longer while Metis downloads and verifies the pinned transcription model. Retry normally if initialization reports a network or filesystem error.", "Never use this tool for remote URLs."],
 		parameters: videoSchema,
 		async execute(_toolCallId, input, signal, onUpdate, ctx) {
 			const action: VideoAction = input.action ?? "inspect";
@@ -546,7 +552,7 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 				details.transcriptionReady = await operations.isModelInstalled();
 				content.push({
 					type: "text",
-					text: `Video inspector initialized. No visual frames or transcript have been generated.\nVideo dimensions: ${metadata.width ?? "unknown"}×${metadata.height ?? "unknown"}.\nFrame rate: ${metadata.frameRate ? `${metadata.frameRate.toFixed(3)} fps` : "unknown"}.\nAudio stream: ${metadata.hasAudio ? "yes" : "no"}.\nSubtitle stream: ${metadata.hasSubtitles ? "yes" : "no"}.\nTranscription runtime prepared: ${metadata.hasAudio ? (details.transcriptionReady ? "yes" : "no") : "not needed (no audio stream)"}.\n\nChoose next action based on evidence needed:\n- Temporal overview: action=storyboard with path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns one timestamped 3×3 overview.\n- Readable visual evidence: action=frames with path=${JSON.stringify(input.path)}, timestamps=[<time>, ...]. It returns up to ${MAX_DETAIL_FRAMES} independent lossless PNG frames. Use crop={x,y,width,height} with normalized 0–1 coordinates to enlarge a UI region.\n${metadata.hasAudio || metadata.hasSubtitles ? `- Spoken or subtitle text: action=transcript with path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n` : "- Transcript is unavailable because this video has no audio or subtitle stream. Do not call action=transcript.\n"}\nStoryboard is navigation evidence, not sufficient evidence for UI text, typography, colors, spacing, layout, or selected state. Verify those with action=frames. For an interaction, compare timestamps immediately before and after it${metadata.frameRate ? `; at ${metadata.frameRate.toFixed(3)} fps, 1–4 source frames span ${(1 / metadata.frameRate).toFixed(4)}–${(4 / metadata.frameRate).toFixed(4)} seconds` : ""}. If transcription runtime is not prepared and audio exists, first transcript call downloads and verifies it automatically.`,
+					text: `Video inspector initialized. No visual frames or transcript have been generated.\nVideo dimensions: ${metadata.width ?? "unknown"}×${metadata.height ?? "unknown"}.\nFrame rate: ${metadata.frameRate ? `${metadata.frameRate.toFixed(3)} fps` : "unknown"}.\nAudio stream: ${metadata.hasAudio ? "yes" : "no"}.\nSubtitle stream: ${metadata.hasSubtitles ? "yes" : "no"}.\nTranscription runtime prepared: ${metadata.hasAudio ? (details.transcriptionReady ? "yes" : "no") : "not needed (no audio stream)"}.\n\nChoose next action based on evidence needed:\n- Temporal overview: action=storyboard with path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns one timestamped 3×3 overview.\n- Readable visual evidence: action=frames with path=${JSON.stringify(input.path)}, timestamps=[<time>, ...]. It returns up to ${MAX_DETAIL_FRAMES} independent JPEG frames. Use crop={x,y,width,height} with normalized 0–1 coordinates to enlarge a UI region.\n${metadata.hasAudio || metadata.hasSubtitles ? `- Spoken or subtitle text: action=transcript with path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n` : "- Transcript is unavailable because this video has no audio or subtitle stream. Do not call action=transcript.\n"}\nStoryboard is navigation evidence, not sufficient evidence for UI text, typography, colors, spacing, layout, or selected state. Verify those with action=frames. For an interaction, compare timestamps immediately before and after it${metadata.frameRate ? `; at ${metadata.frameRate.toFixed(3)} fps, 1–4 source frames span ${(1 / metadata.frameRate).toFixed(4)}–${(4 / metadata.frameRate).toFixed(4)} seconds` : ""}. If transcription runtime is not prepared and audio exists, first transcript call downloads and verifies it automatically.`,
 				});
 				return { content, details };
 			}
@@ -572,13 +578,14 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 				onUpdate?.({ content: [{ type: "text", text: `Extracting ${frameTimes.length} high-fidelity video frame${frameTimes.length === 1 ? "" : "s"}…` }], details: {} });
 				const frames = await operations.createFrames(path, frameTimes, crop, signal);
 				if (frames.length !== frameTimes.length) throw new Error(`Frame extractor returned ${frames.length} images for ${frameTimes.length} timestamps`);
-				content.push({ type: "text", text: `High-fidelity PNG frames (${MAX_DETAIL_DIMENSION}px maximum dimension, no upscaling)${crop ? `; crop x=${crop.x}, y=${crop.y}, width=${crop.width}, height=${crop.height}` : ""}:` });
+				const maxDimension = crop ? CROPPED_MAX_DIMENSION : UNCROPPED_MAX_DIMENSION;
+				content.push({ type: "text", text: `High-fidelity JPEG frames (${maxDimension}px maximum dimension, no upscaling)${crop ? `; crop x=${crop.x}, y=${crop.y}, width=${crop.width}, height=${crop.height}` : ""}:` });
 				if (ctx?.model && !ctx.model.input.includes("image")) {
 					content.push({ type: "text", text: "[Current model is explicitly configured as text-only, so the frame images cannot be sent to it. Use a vision-capable model or change this model's input capability to [\"text\", \"image\"].]" });
 				}
 				for (let index = 0; index < frames.length; index++) {
 					content.push({ type: "text", text: `Frame ${index + 1}/${frames.length}: ${formatTimestamp(frameTimes[index])}` });
-					content.push({ type: "image", data: frames[index].toString("base64"), mimeType: "image/png" });
+					content.push({ type: "image", data: frames[index].toString("base64"), mimeType: "image/jpeg" });
 				}
 			}
 
