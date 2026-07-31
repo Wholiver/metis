@@ -4,6 +4,16 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.5.2-rc.1] - 2026-07-31
+
+### Video tool performance optimization
+
+- Switched detail frame export format from PNG to JPEG (`-q:v 3`), reducing data payload by 80%–90%.
+- Optimized FFmpeg seeking order to use fast keyframe input seeking (`-ss` before `-i`), reducing frame extraction time to milliseconds.
+- Added dynamic max dimension limits (1280px for uncropped frames, 2048px for cropped frames).
+- Adjusted maximum detail frames limit from 6 to 4 (`MAX_DETAIL_FRAMES = 4`).
+- Updated tool guidelines to encourage `storyboard` preview and `crop` usage.
+
 ## [1.5.1-rc.1] - 2026-07-31
 
 ### Desktop localization and platform parity
