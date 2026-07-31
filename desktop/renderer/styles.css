@@ -854,7 +854,7 @@ body:has(.message-queue:not(.hidden)):has(.subagent-dock:not(.collapsed)) .messa
   border-radius: 17px;
   background: rgba(255,255,255,.97);
   box-shadow: var(--shadow-float);
-  overflow: hidden;
+  overflow: visible;
   transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
 }
 .composer-drop-feedback {

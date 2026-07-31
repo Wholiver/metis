@@ -4,6 +4,12 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.5.2-rc.2] - 2026-07-31
+
+### Desktop UI fix
+
+- Fixed model picker dropdown menu clipping by updating `.composer` container overflow to `visible`.
+
 ## [1.5.2-rc.1] - 2026-07-31
 
 ### Video tool performance optimization
