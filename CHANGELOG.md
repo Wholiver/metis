@@ -4,6 +4,13 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.5.2-rc.3] - 2026-07-31
+
+### Video tool guidelines enhancement
+
+- Enhanced tool guidelines and inspection feedback to encourage normalized `crop` usage for fine UI details.
+- Added explicit instructions for analyzing animations, hover effects, motion, and visual transitions using consecutive frame comparisons.
+
 ## [1.5.2-rc.2] - 2026-07-31
 
 ### Desktop UI fix
