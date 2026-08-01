@@ -90,4 +90,23 @@ describe("LoginDialogComponent OAuth prompts", () => {
 		dialog.handleInput("\n");
 		await expect(prompt).resolves.toBe("second-secret-demo");
 	});
+
+	test("configuration wizard replaces the previous step and submitted credential", async () => {
+		const dialog = createDialog();
+
+		const credentialStep = dialog.showFormStep(3, 5, "Credentials", "Enter API key.");
+		dialog.handleInput("secret-demo");
+		dialog.handleInput("\n");
+		await expect(credentialStep).resolves.toBe("secret-demo");
+
+		const modelStep = dialog.showFormStep(4, 5, "Models", "Review discovered models.", undefined, "model-a");
+		const output = renderDialog(dialog).join("\n");
+		expect(output).toContain("4/5  Models");
+		expect(output).toContain("model-a");
+		expect(output).not.toContain("Credentials");
+		expect(output).not.toContain("secret-demo");
+
+		dialog.handleInput("\n");
+		await expect(modelStep).resolves.toBe("model-a");
+	});
 });

@@ -133,6 +133,18 @@ const elements = {
 	fileContentDialog: document.querySelector("#fileContentDialog"),
 	fileContentTitle: document.querySelector("#fileContentTitle"),
 	fileContentBody: document.querySelector("#fileContentBody"),
+	extensionUiDialog: document.querySelector("#extensionUiDialog"),
+	extensionUiForm: document.querySelector("#extensionUiForm"),
+	extensionUiEyebrow: document.querySelector("#extensionUiEyebrow"),
+	extensionUiTitle: document.querySelector("#extensionUiTitle"),
+	extensionUiMessage: document.querySelector("#extensionUiMessage"),
+	extensionUiField: document.querySelector("#extensionUiField"),
+	extensionUiFieldLabel: document.querySelector("#extensionUiFieldLabel"),
+	extensionUiInput: document.querySelector("#extensionUiInput"),
+	extensionUiSelect: document.querySelector("#extensionUiSelect"),
+	extensionUiHint: document.querySelector("#extensionUiHint"),
+	extensionUiCancelButton: document.querySelector("#extensionUiCancelButton"),
+	extensionUiSubmitButton: document.querySelector("#extensionUiSubmitButton"),
 	browserView: document.querySelector("#browserView"),
 	browserAddress: document.querySelector("#browserAddress"),
 	browserStatus: document.querySelector("#browserStatus"),
@@ -3034,6 +3046,77 @@ async function autoConnectServer() {
 	return false;
 }
 
+let extensionUiDialogQueue = Promise.resolve();
+
+function showExtensionUiDialog(event) {
+	const dialog = elements.extensionUiDialog;
+	if (!dialog || !elements.extensionUiForm) throw new Error("Desktop interaction dialog is unavailable");
+
+	const method = event.method;
+	const isConfirm = method === "confirm";
+	const isSelect = method === "select";
+	const options = isSelect && Array.isArray(event.options) ? event.options : [];
+	elements.extensionUiEyebrow.textContent = uiText("providerAuthorization");
+	elements.extensionUiTitle.textContent = isConfirm
+		? event.title || uiText("confirm")
+		: isSelect
+			? uiText("choose")
+			: uiText("continueOperation");
+	elements.extensionUiMessage.textContent = isConfirm
+		? event.message || ""
+		: event.title || event.message || uiText("enterValue");
+	elements.extensionUiField.hidden = isConfirm;
+	elements.extensionUiFieldLabel.textContent = isSelect ? uiText("choose") : uiText("enterValue");
+	elements.extensionUiInput.hidden = isSelect;
+	elements.extensionUiSelect.hidden = !isSelect;
+	elements.extensionUiInput.value = event.prefill || "";
+	elements.extensionUiInput.placeholder = event.placeholder || "";
+	elements.extensionUiSelect.replaceChildren(...options.map((option) => new Option(option, option)));
+	elements.extensionUiSubmitButton.disabled = isSelect && options.length === 0;
+	elements.extensionUiSubmitButton.textContent = uiText("confirm");
+	elements.extensionUiCancelButton.textContent = uiText("cancel");
+	elements.extensionUiHint.textContent = uiText("completeToContinue");
+
+	return new Promise((resolve) => {
+		let settled = false;
+		const cleanup = () => {
+			elements.extensionUiForm.removeEventListener("submit", submit);
+			elements.extensionUiCancelButton.removeEventListener("click", cancel);
+			dialog.removeEventListener("cancel", cancel);
+			dialog.removeEventListener("close", cancel);
+		};
+		const finish = (response) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			if (dialog.open) dialog.close();
+			resolve(response);
+		};
+		const cancel = (domEvent) => {
+			domEvent?.preventDefault?.();
+			finish(isConfirm ? { id: event.id, confirmed: false } : { id: event.id, cancelled: true });
+		};
+		const submit = (domEvent) => {
+			domEvent.preventDefault();
+			if (isConfirm) finish({ id: event.id, confirmed: true });
+			else finish({ id: event.id, value: isSelect ? elements.extensionUiSelect.value : elements.extensionUiInput.value });
+		};
+
+		elements.extensionUiForm.addEventListener("submit", submit);
+		elements.extensionUiCancelButton.addEventListener("click", cancel);
+		dialog.addEventListener("cancel", cancel);
+		dialog.addEventListener("close", cancel);
+		dialog.showModal();
+		requestAnimationFrame(() => (isSelect ? elements.extensionUiSelect : elements.extensionUiInput).focus());
+	});
+}
+
+function queueExtensionUiDialog(event) {
+	const queued = extensionUiDialogQueue.then(() => showExtensionUiDialog(event));
+	extensionUiDialogQueue = queued.catch(() => undefined);
+	return queued;
+}
+
 async function handleExtensionUiRequest(event) {
 	if (event.method === "setStatus") {
 		if (event.statusKey === "dream") setDreamStatus(event.statusText);
@@ -3056,20 +3139,8 @@ async function handleExtensionUiRequest(event) {
 		return;
 	}
 
-	let response;
-	if (event.method === "confirm") {
-		response = { id: event.id, confirmed: window.confirm(`${event.title || uiText("confirm")}\n\n${event.message || ""}`) };
-	} else if (event.method === "select") {
-		const options = Array.isArray(event.options) ? event.options : [];
-		const answer = window.prompt(`${event.title || uiText("choose")}\n\n${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}`);
-		const index = Number(answer) - 1;
-		response = Number.isInteger(index) && options[index] !== undefined
-			? { id: event.id, value: options[index] }
-			: { id: event.id, cancelled: true };
-	} else if (event.method === "input" || event.method === "editor") {
-		const value = window.prompt(event.title || event.placeholder || uiText("enterValue"), event.prefill || "");
-		response = value === null ? { id: event.id, cancelled: true } : { id: event.id, value };
-	}
+	const interactiveMethods = new Set(["confirm", "select", "input", "editor"]);
+	const response = interactiveMethods.has(event.method) ? await queueExtensionUiDialog(event) : undefined;
 	if (response) await requestServer("/extension/ui-response", "POST", response);
 }
 

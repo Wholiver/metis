@@ -189,6 +189,54 @@ export class LoginDialogComponent extends Container implements Focusable {
 	}
 
 	/**
+	 * Show one self-contained step in a configuration wizard.
+	 * Unlike OAuth prompts, form steps replace previous content so completed fields
+	 * do not accumulate or leave credentials visible in the terminal.
+	 */
+	showFormStep(
+		step: number,
+		totalSteps: number,
+		title: string,
+		message: string,
+		placeholder?: string,
+		initialValue = "",
+	): Promise<string> {
+		this.contentContainer.clear();
+		this.contentContainer.addChild(new Spacer(1));
+		this.contentContainer.addChild(
+			new Text(theme.fg("accent", theme.bold(`${step}/${totalSteps}  ${title}`)), 1, 0),
+		);
+		this.contentContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
+		if (placeholder) {
+			this.contentContainer.addChild(new Text(theme.fg("dim", `Example: ${placeholder}`), 1, 0));
+		}
+		this.contentContainer.addChild(new Spacer(1));
+		this.input.setValue(initialValue);
+		this.contentContainer.addChild(this.input);
+		this.contentContainer.addChild(
+			new Text(
+				`(${keyHint("tui.select.cancel", "to cancel,")} ${keyHint("tui.select.confirm", "to continue")})`,
+				1,
+				0,
+			),
+		);
+		this.tui.requestRender();
+
+		return new Promise((resolve, reject) => {
+			this.inputResolver = resolve;
+			this.inputRejecter = reject;
+		});
+	}
+
+	showProgressScreen(title: string, message: string): void {
+		this.contentContainer.clear();
+		this.contentContainer.addChild(new Spacer(1));
+		this.contentContainer.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
+		this.contentContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
+		this.tui.requestRender();
+	}
+
+	/**
 	 * Show informational text without prompting for input.
 	 */
 	showInfo(lines: string[]): void {

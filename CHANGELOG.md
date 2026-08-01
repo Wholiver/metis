@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.6.0-rc.2] - 2026-08-01
+
+### OAuth reliability and Provider setup UI
+
+- Replaced unsupported Desktop browser prompts with styled in-window Electron dialogs for OAuth input, selection, confirmation, and cancellation.
+- Redesigned Desktop custom Provider settings into clear management, connection, model, and save sections with responsive layout.
+- Redesigned CLI custom Provider setup as a five-step wizard that clears completed fields and avoids leaving API keys visible in terminal history.
+- Added Desktop OAuth dialog regression coverage and expanded localization coverage for the new interface.
+
 ## [1.6.0-rc.1] - 2026-08-01
 
 ### Provider authentication and configuration

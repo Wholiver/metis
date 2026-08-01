@@ -23,6 +23,7 @@ const legitimateCognates = new Set([
 	"agent",
 	"apiKey",
 	"browser",
+	"customProviderBaseUrl",
 	"general",
 	"interaction",
 	"optional",

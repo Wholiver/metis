@@ -487,28 +487,37 @@
 								<div><strong>API Key</strong><span>为内置或已注册 Provider 保存独立 API Key，不修改 Provider Base URL。</span></div>
 								<div class="settings-stack-form settings-credential-form"><select id="settingsApiKeyProvider"><option>正在载入…</option></select><input id="settingsApiKeyInput" type="password" placeholder="API Key" autocomplete="off" /><button class="settings-action primary" id="settingsApiKeySaveButton" type="button">保存 API Key</button></div>
 							</div>
-							<div class="settings-form-row settings-custom-provider-row">
-								<div><strong>自定义 Base URL</strong><span data-i18n="customBaseUrlDescription">添加并管理多个 OpenAI-compatible Provider。模型可自动获取、从列表选择或手动输入。</span></div>
-								<div class="settings-stack-form settings-custom-provider-form">
-									<div class="settings-inline-form settings-custom-provider-picker">
-										<select id="settingsCustomProviderSelect"><option value="" data-i18n="newCustomProvider">添加新 Provider…</option></select>
-										<button class="settings-action" id="settingsCustomProviderNewButton" type="button" data-i18n="newCustomProviderButton">新建自定义 Provider</button>
+							<div class="settings-custom-provider-row">
+								<div class="settings-custom-provider-heading">
+									<div><strong data-i18n="customProviderTitle">自定义 Provider</strong><span data-i18n="customBaseUrlDescription">添加并管理多个 OpenAI-compatible Provider。模型可自动获取、从列表选择或手动输入。</span></div>
+									<div class="settings-custom-provider-picker">
+										<select id="settingsCustomProviderSelect" aria-label="选择自定义 Provider" data-i18n-aria-label="selectCustomProvider"><option value="" data-i18n="newCustomProvider">添加新 Provider…</option></select>
+										<button class="settings-action" id="settingsCustomProviderNewButton" type="button" data-i18n="newCustomProviderButton">新建</button>
 										<button class="settings-action danger" id="settingsCustomProviderDeleteButton" type="button" data-i18n="deleteCustomProviderButton" disabled>删除</button>
 									</div>
-									<input id="settingsCustomProviderName" type="text" placeholder="Provider 名称" />
-									<input id="settingsCustomBaseUrl" type="url" placeholder="https://api.example.com/v1" />
-									<input id="settingsCustomApiKey" type="password" placeholder="API Key（编辑时留空则保留原值）" data-i18n-placeholder="customApiKeyEditPlaceholder" autocomplete="off" />
-									<div class="settings-custom-model-header">
-										<span data-i18n="customModelList">模型列表（可多选）</span>
-										<button class="settings-action" id="settingsCustomModelsRefreshButton" type="button" data-i18n="discoverModels">自动获取模型</button>
+								</div>
+								<div class="settings-custom-provider-form">
+									<section class="settings-custom-provider-section" aria-labelledby="customProviderConnectionTitle">
+										<div class="settings-custom-section-heading"><strong id="customProviderConnectionTitle" data-i18n="connectionConfiguration">连接配置</strong><span data-i18n="connectionConfigurationDescription">填写 Provider 地址与访问凭据</span></div>
+										<label><span data-i18n="providerName">Provider 名称</span><input id="settingsCustomProviderName" type="text" placeholder="例如：Local Gateway" data-i18n-placeholder="localGatewayExample" /></label>
+										<label><span data-i18n="customProviderBaseUrl">Base URL</span><input id="settingsCustomBaseUrl" type="url" placeholder="https://api.example.com/v1" /></label>
+										<label><span>API Key</span><input id="settingsCustomApiKey" type="password" placeholder="编辑时留空则保留原值" data-i18n-placeholder="customApiKeyEditPlaceholder" autocomplete="off" /></label>
+									</section>
+									<section class="settings-custom-provider-section settings-custom-model-section" aria-labelledby="customProviderModelsTitle">
+										<div class="settings-custom-section-heading settings-custom-model-header">
+											<div><strong id="customProviderModelsTitle" data-i18n="customModelList">模型列表（可多选）</strong><span data-i18n="modelDiscoveryDescription">先自动获取，再按需补充模型 ID</span></div>
+											<button class="settings-action" id="settingsCustomModelsRefreshButton" type="button" data-i18n="discoverModels">自动获取</button>
+										</div>
+										<select id="settingsCustomModelSelect" class="settings-custom-model-select" multiple size="6" aria-label="模型列表" data-i18n-aria-label="customModelList"></select>
+										<label><span data-i18n="additionalModelIds">补充模型 ID</span><input id="settingsCustomModelInput" type="text" placeholder="多个模型用逗号分隔" data-i18n-placeholder="manualModelIdsPlaceholder" /></label>
+									</section>
+									<div class="settings-custom-provider-footer">
+										<label class="settings-checkbox" for="settingsCustomProviderReasoning">
+											<input id="settingsCustomProviderReasoning" type="checkbox" checked />
+											<span data-i18n="enableCustomProviderReasoning">为此 Provider 的模型启用思考等级</span>
+										</label>
+										<button class="settings-action primary" id="settingsCustomProviderSaveButton" type="button" data-i18n="saveCustomProvider">保存 Provider</button>
 									</div>
-									<select id="settingsCustomModelSelect" class="settings-custom-model-select" multiple size="6" aria-label="模型列表" data-i18n-aria-label="customModelList"></select>
-									<input id="settingsCustomModelInput" type="text" placeholder="手动输入模型 ID；多个用逗号分隔" data-i18n-placeholder="manualModelIdsPlaceholder" />
-									<label class="settings-checkbox" for="settingsCustomProviderReasoning">
-										<input id="settingsCustomProviderReasoning" type="checkbox" checked />
-										<span>支持思考（为该 Provider 下模型启用思考等级）</span>
-									</label>
-									<button class="settings-action primary" id="settingsCustomProviderSaveButton" type="button">保存自定义 Provider</button>
 								</div>
 							</div>
 							<div class="settings-form-row">
@@ -596,6 +605,26 @@
 		<button class="icon-button compact" id="historyForward" aria-label="前进" disabled><svg><use href="#i-forward"/></svg></button>
 		<button class="icon-button compact collapsed-new-chat" id="collapsedNewChat" aria-label="新建任务"><svg><use href="#i-compose"/></svg></button>
 	</nav>
+
+	<dialog class="extension-ui-dialog" id="extensionUiDialog">
+		<form id="extensionUiForm">
+			<div class="extension-ui-dialog-header">
+				<span class="extension-ui-dialog-mark"><svg><use href="#i-external"/></svg></span>
+				<div><small id="extensionUiEyebrow">Provider 授权</small><strong id="extensionUiTitle">继续操作</strong></div>
+			</div>
+			<p class="extension-ui-dialog-message" id="extensionUiMessage"></p>
+			<label class="extension-ui-dialog-field" id="extensionUiField">
+				<span id="extensionUiFieldLabel" data-i18n="enterValue">输入内容</span>
+				<input id="extensionUiInput" type="text" autocomplete="off" />
+				<select id="extensionUiSelect"></select>
+			</label>
+			<p class="extension-ui-dialog-hint" id="extensionUiHint" data-i18n="completeToContinue">完成后将自动继续当前操作。</p>
+			<div class="dialog-actions">
+				<button type="button" class="secondary-button" id="extensionUiCancelButton" data-i18n="cancel">取消</button>
+				<button type="submit" class="primary-button" id="extensionUiSubmitButton" data-i18n="confirm">确认</button>
+			</div>
+		</form>
+	</dialog>
 
 	<dialog class="server-dialog" id="serverDialog">
 		<form method="dialog">

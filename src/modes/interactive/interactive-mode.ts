@@ -5199,6 +5199,7 @@ export class InteractiveMode {
 			dialogProviderId,
 			(_success, _message) => {},
 			providerName,
+			existing ? `Edit ${providerName}` : "Add custom Provider",
 		);
 
 		this.editorContainer.clear();
@@ -5214,37 +5215,60 @@ export class InteractiveMode {
 		};
 
 		try {
-			// Page 1: Input provider name
-			const customName = (await dialog.showPrompt("Enter provider name:", undefined, existing?.name ?? "")).trim();
+			const totalSteps = 5;
+			const customName = (
+				await dialog.showFormStep(
+					1,
+					totalSteps,
+					"Provider identity",
+					"Name shown in model selection and settings.",
+					"Local Gateway",
+					existing?.name ?? "",
+				)
+			).trim();
 			if (!customName) {
 				throw new Error("Provider name cannot be empty.");
 			}
 
-			// Update title for Page 2 and 3
-			dialog.setTitle(`Login to ${customName}`);
-
-			// Page 2: Input API base URL
 			const baseUrl = (
-				await dialog.showPrompt("Enter API base URL:", "https://api.example.com/v1", existing?.baseUrl ?? "")
+				await dialog.showFormStep(
+					2,
+					totalSteps,
+					"Endpoint",
+					"OpenAI-compatible API base URL. Usually ends with /v1.",
+					"https://api.example.com/v1",
+					existing?.baseUrl ?? "",
+				)
 			).trim();
 			if (!baseUrl) {
 				throw new Error("API base URL cannot be empty.");
 			}
 
-			// Page 3: Input API key
 			const apiKey = (
-				await dialog.showPrompt(existing ? "Enter a new API key, or leave blank to keep the saved key:" : "Enter API key:")
+				await dialog.showFormStep(
+					3,
+					totalSteps,
+					"Credentials",
+					existing
+						? "Enter a new API key, or leave this blank to keep the saved key."
+						: "API key used for this Provider only.",
+				)
 			).trim();
 			const effectiveApiKey = apiKey || (existing ? await this.session.modelRegistry.getApiKeyForProvider(existing.providerId) : undefined);
 			if (!effectiveApiKey) {
 				throw new Error("API key cannot be empty.");
 			}
 
-			dialog.showProgress("Fetching available models from endpoint...");
+			dialog.showProgressScreen("Checking endpoint", "Fetching available models…");
 			const fetchedModelIds = await fetchOtherProviderModels(baseUrl, effectiveApiKey);
 			const suggestedModelIds = fetchedModelIds.length > 0 ? fetchedModelIds : existing?.modelIds ?? ["default"];
-			const modelInput = await dialog.showPrompt(
-				"Model IDs (comma or newline separated). Edit the discovered list or enter custom IDs:",
+			const modelInput = await dialog.showFormStep(
+				4,
+				totalSteps,
+				"Models",
+				fetchedModelIds.length > 0
+					? `Found ${fetchedModelIds.length} models. Edit the list or add custom IDs, separated by commas.`
+					: "No models were discovered. Enter one or more model IDs, separated by commas.",
 				"model-a, model-b",
 				suggestedModelIds.join(", "),
 			);
@@ -5253,8 +5277,11 @@ export class InteractiveMode {
 			);
 			if (modelIds.length === 0) throw new Error("At least one model ID is required.");
 			const reasoningAnswer = (
-				await dialog.showPrompt(
-					"Enable thinking for these models? Enter yes or no:",
+				await dialog.showFormStep(
+					5,
+					totalSteps,
+					"Capabilities",
+					"Enable thinking levels for models from this Provider? Enter yes or no.",
 					"yes",
 					existing?.reasoning === false ? "no" : "yes",
 				)
