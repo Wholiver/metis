@@ -25,7 +25,10 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 	},
 	providerConfig: {
 		getCustom: () => ipcRenderer.invoke("provider-config:get-custom"),
+		listCustom: () => ipcRenderer.invoke("provider-config:list-custom"),
+		discoverModels: (config) => ipcRenderer.invoke("provider-config:discover-models", config),
 		saveCustom: (config) => ipcRenderer.invoke("provider-config:save-custom", config),
+		deleteCustom: (providerId) => ipcRenderer.invoke("provider-config:delete-custom", providerId),
 	},
 	metis: {
 		connect: (options) => ipcRenderer.invoke("metis:connect", options),

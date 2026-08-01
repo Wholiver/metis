@@ -15,6 +15,7 @@ export type AuthSelectorProvider = {
 	id: string;
 	name: string;
 	authType: "oauth" | "api_key";
+	kind?: "provider" | "custom_provider" | "add_custom_provider";
 };
 
 /**
@@ -149,6 +150,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 	}
 
 	private formatStatusIndicator(provider: AuthSelectorProvider): string {
+		if (provider.kind === "add_custom_provider") return "";
 		const credential = this.authStorage.get(provider.id);
 		if (credential?.type === provider.authType) return theme.fg("success", " ✓ configured");
 		if (credential) {

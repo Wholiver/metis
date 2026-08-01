@@ -6,6 +6,7 @@ const { resolveCustomProviderModel } = require("../desktop/renderer/model-select
 	resolveCustomProviderModel: (
 		previousModel: { provider?: string; id?: string; api?: string } | undefined,
 		models: Array<{ provider: string; id: string }>,
+		preferredProviderId?: string,
 	) => { provider: string; id: string } | undefined;
 };
 
@@ -20,5 +21,18 @@ describe("desktop model selection", () => {
 			{ provider: "unknown", id: "unknown", api: "unknown" },
 			models,
 		)).toEqual({ provider: "other", id: "gpt-custom" });
+	});
+
+	it("prefers the newly saved custom Provider when multiple custom Providers exist", () => {
+		const models = [
+			{ provider: "other", id: "legacy" },
+			{ provider: "custom-local", id: "local-model" },
+		];
+
+		expect(resolveCustomProviderModel(
+			{ provider: "unknown", id: "unknown", api: "unknown" },
+			models,
+			"custom-local",
+		)).toEqual({ provider: "custom-local", id: "local-model" });
 	});
 });

@@ -13,3 +13,12 @@ test-subagent.log
 *.bun-build
 .temp
 desktop/release/
+
+# metis-ai is distributed as compiled vendor code; track the OAuth callback page override.
+!vendor/metis-ai/dist/
+vendor/metis-ai/dist/*
+!vendor/metis-ai/dist/utils/
+vendor/metis-ai/dist/utils/*
+!vendor/metis-ai/dist/utils/oauth/
+vendor/metis-ai/dist/utils/oauth/*
+!vendor/metis-ai/dist/utils/oauth/oauth-page.js

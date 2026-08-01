@@ -9,6 +9,7 @@ await rm(outputDir, { recursive: true, force: true });
 await mkdir(outputDir, { recursive: true });
 await cp(path.join(desktopDir, "main.cjs"), path.join(outputDir, "main.cjs"));
 await cp(path.join(desktopDir, "main-menu.cjs"), path.join(outputDir, "main-menu.cjs"));
+await cp(path.join(desktopDir, "provider-config.cjs"), path.join(outputDir, "provider-config.cjs"));
 await cp(path.join(desktopDir, "preload.cjs"), path.join(outputDir, "preload.cjs"));
 await cp(path.join(desktopDir, "renderer"), path.join(outputDir, "renderer"), { recursive: true });
 

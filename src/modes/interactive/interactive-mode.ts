@@ -77,7 +77,14 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
-import { fetchOtherProviderModels, saveOtherProviderConfig } from "../../core/model-registry.ts";
+import {
+	createCustomProviderId,
+	deleteCustomProviderConfig,
+	fetchOtherProviderModels,
+	listCustomProviderConfigs,
+	type SavedCustomProviderConfig,
+	saveOtherProviderConfig,
+} from "../../core/model-registry.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.ts";
@@ -315,6 +322,7 @@ function hasDefaultModelProvider(providerId: string): providerId is keyof typeof
 }
 
 const BEDROCK_PROVIDER_ID = "amazon-bedrock";
+const ADD_CUSTOM_PROVIDER_ID = "__add_custom_provider__";
 
 const BUILT_IN_MODEL_PROVIDERS = new Set<string>(getProviders());
 
@@ -4839,6 +4847,8 @@ export class InteractiveMode {
 		const authStorage = this.session.modelRegistry.authStorage;
 		const oauthProviders = authStorage.getOAuthProviders();
 		const oauthProviderIds = new Set(oauthProviders.map((provider) => provider.id));
+		const modelsPath = this.session.modelRegistry.getModelsJsonPath() ?? getModelsPath();
+		const customProviderIds = new Set(listCustomProviderConfigs(modelsPath).map((provider) => provider.providerId));
 		const options: AuthSelectorProvider[] = oauthProviders
 			.map((provider) => ({
 				id: provider.id,
@@ -4850,7 +4860,6 @@ export class InteractiveMode {
 		const modelProviders = new Set(this.session.modelRegistry.getAll().map((model) => model.provider));
 		const apiKeyOptions: AuthSelectorProvider[] = [];
 		for (const providerId of modelProviders) {
-			if (providerId === "other") continue;
 			if (!isApiKeyLoginProvider(providerId, oauthProviderIds)) {
 				continue;
 			}
@@ -4858,14 +4867,16 @@ export class InteractiveMode {
 				id: providerId,
 				name: this.session.modelRegistry.getProviderDisplayName(providerId),
 				authType: "api_key",
+				kind: customProviderIds.has(providerId) ? "custom_provider" : "provider",
 			});
 		}
 
 		apiKeyOptions.sort((a, b) => a.name.localeCompare(b.name));
 		apiKeyOptions.push({
-			id: "other",
-			name: "others",
+			id: ADD_CUSTOM_PROVIDER_ID,
+			name: "Add custom Provider…",
 			authType: "api_key",
+			kind: "add_custom_provider",
 		});
 
 		if (authType === "oauth") return options;
@@ -4939,8 +4950,12 @@ export class InteractiveMode {
 						await this.showLoginDialog(providerOption.id, providerOption.name);
 					} else if (providerOption.id === BEDROCK_PROVIDER_ID) {
 						this.showBedrockSetupDialog(providerOption.id, providerOption.name);
-					} else if (providerOption.id === "other") {
-						await this.showOtherProviderLoginDialog(providerOption.id, providerOption.name);
+					} else if (providerOption.kind === "add_custom_provider") {
+						await this.showOtherProviderLoginDialog();
+					} else if (providerOption.kind === "custom_provider") {
+						const modelsPath = this.session.modelRegistry.getModelsJsonPath() ?? getModelsPath();
+						const provider = listCustomProviderConfigs(modelsPath).find((item) => item.providerId === providerOption.id);
+						if (provider) this.showCustomProviderActionSelector(provider);
 					} else {
 						await this.showApiKeyLoginDialog(providerOption.id, providerOption.name);
 					}
@@ -5139,12 +5154,49 @@ export class InteractiveMode {
 		}
 	}
 
-	private async showOtherProviderLoginDialog(providerId: string, providerName: string): Promise<void> {
+	private showCustomProviderActionSelector(provider: SavedCustomProviderConfig): void {
+		const editLabel = "Edit configuration";
+		const deleteLabel = "Delete Provider";
+		this.showSelector((done) => {
+			const selector = new ExtensionSelectorComponent(
+				`${provider.name} (${provider.providerId})`,
+				[editLabel, deleteLabel],
+				(option) => {
+					done();
+					if (option === deleteLabel) void this.deleteSavedCustomProvider(provider);
+					else void this.showOtherProviderLoginDialog(provider);
+				},
+				() => {
+					done();
+					this.showLoginProviderSelector("api_key");
+				},
+			);
+			return { component: selector, focus: selector };
+		});
+	}
+
+	private async deleteSavedCustomProvider(provider: SavedCustomProviderConfig): Promise<void> {
+		try {
+			const modelsPath = this.session.modelRegistry.getModelsJsonPath() ?? getModelsPath();
+			this.session.modelRegistry.authStorage.logout(provider.providerId);
+			deleteCustomProviderConfig(modelsPath, provider.providerId);
+			this.session.modelRegistry.refresh();
+			this.session.syncModelFromRegistry();
+			await this.updateAvailableProviderCount();
+			this.showStatus(`Deleted ${provider.name} and its saved API key.`);
+		} catch (error: unknown) {
+			this.showError(`Failed to delete ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	private async showOtherProviderLoginDialog(existing?: SavedCustomProviderConfig): Promise<void> {
+		const providerName = existing?.name ?? "custom Provider";
+		const dialogProviderId = existing?.providerId ?? ADD_CUSTOM_PROVIDER_ID;
 		const previousModel = this.session.model;
 
 		const dialog = new LoginDialogComponent(
 			this.ui,
-			providerId,
+			dialogProviderId,
 			(_success, _message) => {},
 			providerName,
 		);
@@ -5163,7 +5215,7 @@ export class InteractiveMode {
 
 		try {
 			// Page 1: Input provider name
-			const customName = (await dialog.showPrompt("Enter provider name:")).trim();
+			const customName = (await dialog.showPrompt("Enter provider name:", undefined, existing?.name ?? "")).trim();
 			if (!customName) {
 				throw new Error("Provider name cannot be empty.");
 			}
@@ -5172,24 +5224,48 @@ export class InteractiveMode {
 			dialog.setTitle(`Login to ${customName}`);
 
 			// Page 2: Input API base URL
-			const baseUrl = (await dialog.showPrompt("Enter API base URL:")).trim();
+			const baseUrl = (
+				await dialog.showPrompt("Enter API base URL:", "https://api.example.com/v1", existing?.baseUrl ?? "")
+			).trim();
 			if (!baseUrl) {
 				throw new Error("API base URL cannot be empty.");
 			}
 
 			// Page 3: Input API key
-			const apiKey = (await dialog.showPrompt("Enter API key:")).trim();
-			if (!apiKey) {
+			const apiKey = (
+				await dialog.showPrompt(existing ? "Enter a new API key, or leave blank to keep the saved key:" : "Enter API key:")
+			).trim();
+			const effectiveApiKey = apiKey || (existing ? await this.session.modelRegistry.getApiKeyForProvider(existing.providerId) : undefined);
+			if (!effectiveApiKey) {
 				throw new Error("API key cannot be empty.");
 			}
 
 			dialog.showProgress("Fetching available models from endpoint...");
-			const fetchedModelIds = await fetchOtherProviderModels(baseUrl, apiKey);
-
-			this.session.modelRegistry.authStorage.set(providerId, { type: "api_key", key: apiKey });
-
+			const fetchedModelIds = await fetchOtherProviderModels(baseUrl, effectiveApiKey);
+			const suggestedModelIds = fetchedModelIds.length > 0 ? fetchedModelIds : existing?.modelIds ?? ["default"];
+			const modelInput = await dialog.showPrompt(
+				"Model IDs (comma or newline separated). Edit the discovered list or enter custom IDs:",
+				"model-a, model-b",
+				suggestedModelIds.join(", "),
+			);
+			const modelIds = Array.from(
+				new Set(modelInput.split(/[\n,]+/).map((id) => id.trim()).filter(Boolean)),
+			);
+			if (modelIds.length === 0) throw new Error("At least one model ID is required.");
+			const reasoningAnswer = (
+				await dialog.showPrompt(
+					"Enable thinking for these models? Enter yes or no:",
+					"yes",
+					existing?.reasoning === false ? "no" : "yes",
+				)
+			).trim().toLowerCase();
+			const reasoning = ["y", "yes", "true", "1"].includes(reasoningAnswer);
 			const modelsPath = this.session.modelRegistry.getModelsJsonPath() ?? getModelsPath();
-			saveOtherProviderConfig(modelsPath, providerId, customName, baseUrl, fetchedModelIds);
+			const providerId = existing?.providerId ?? createCustomProviderId(modelsPath, customName);
+
+			if (apiKey) this.session.modelRegistry.authStorage.set(providerId, { type: "api_key", key: apiKey });
+
+			saveOtherProviderConfig(modelsPath, providerId, customName, baseUrl, modelIds, reasoning);
 
 			this.session.modelRegistry.refresh();
 

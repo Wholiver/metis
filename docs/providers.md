@@ -261,7 +261,11 @@ Or set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key file.
 
 ## Custom Providers
 
-**Via models.json:** Add Ollama, LM Studio, vLLM, or any provider that speaks a supported API (OpenAI Completions, OpenAI Responses, Anthropic Messages, Google Generative AI). See [models.md](models.md).
+**Via TUI:** Run `/login`, choose **Use an API key**, then **Add custom Provider…**. Enter a name, OpenAI-compatible Base URL, and API key. Metis discovers `/models` automatically and shows the model IDs as an editable comma-separated list, so you can keep multiple discovered models or enter IDs manually. Selecting an existing custom Provider opens edit/delete actions. Deleting it also removes its saved API key.
+
+**Via Desktop:** Open **Settings → Account & security → Custom Base URL**. The Provider picker supports multiple independent configurations. Use **Discover models** to populate the multi-select list, select any number of models, or enter additional IDs manually. Existing configurations can be edited or deleted without editing files.
+
+**Via models.json:** Manual configuration remains supported for Ollama, LM Studio, vLLM, or any provider that speaks a supported API (OpenAI Completions, OpenAI Responses, Anthropic Messages, Google Generative AI). Existing legacy `other` configuration remains compatible. See [models.md](models.md).
 
 **Via extensions:** For providers that need custom API implementations or OAuth flows, create an extension. See [custom-provider.md](custom-provider.md) and [examples/extensions/custom-provider-gitlab-duo](../examples/extensions/custom-provider-gitlab-duo/).
 

@@ -1062,17 +1062,18 @@ export async function fetchOtherProviderModels(baseUrl: string, apiKey?: string)
 	return [];
 }
 
-/**
- * Save configuration for custom 'other' provider to models.json
- */
-export function saveOtherProviderConfig(
-	modelsPath: string,
-	providerId: string,
-	name: string,
-	baseUrl: string,
-	modelIds: string[] = [],
-): void {
-	let config: { providers?: Record<string, any> } = { providers: {} };
+export const CUSTOM_PROVIDER_ID_PREFIX = "custom-";
+
+export interface SavedCustomProviderConfig {
+	providerId: string;
+	name: string;
+	baseUrl: string;
+	modelIds: string[];
+	reasoning: boolean;
+}
+
+function readProviderConfigFile(modelsPath: string): { providers: Record<string, any>; [key: string]: any } {
+	let config: { providers?: Record<string, any>; [key: string]: any } = { providers: {} };
 	if (existsSync(modelsPath)) {
 		try {
 			const content = readFileSync(modelsPath, "utf-8");
@@ -1083,18 +1084,97 @@ export function saveOtherProviderConfig(
 		} catch {
 			config = { providers: {} };
 		}
-	} else {
+	}
+	return { ...config, providers: config.providers ?? {} };
+}
+
+function normalizeCustomModelIds(modelIds: string[]): string[] {
+	return Array.from(new Set(modelIds.map((id) => id.trim()).filter(Boolean)));
+}
+
+export function isCustomProviderId(providerId: string): boolean {
+	return providerId === "other" || providerId.startsWith(CUSTOM_PROVIDER_ID_PREFIX);
+}
+
+export function listCustomProviderConfigs(modelsPath: string): SavedCustomProviderConfig[] {
+	const config = readProviderConfigFile(modelsPath);
+	return Object.entries(config.providers)
+		.filter(([providerId, provider]) => isCustomProviderId(providerId) && provider && typeof provider === "object")
+		.map(([providerId, provider]) => {
+			const models = Array.isArray(provider.models) ? provider.models : [];
+			return {
+				providerId,
+				name: String(provider.name || providerId),
+				baseUrl: String(provider.baseUrl || ""),
+				modelIds: normalizeCustomModelIds(
+					models.map((model: any) => (typeof model === "string" ? model : String(model?.id || ""))),
+				),
+				reasoning: models.some((model: any) => model && typeof model === "object" && model.reasoning === true),
+			};
+		})
+		.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function createCustomProviderId(modelsPath: string, name: string): string {
+	const config = readProviderConfigFile(modelsPath);
+	const slug = name
+		.normalize("NFKD")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "") || "provider";
+	const base = `${CUSTOM_PROVIDER_ID_PREFIX}${slug}`;
+	let providerId = base;
+	let suffix = 2;
+	while (config.providers[providerId]) {
+		providerId = `${base}-${suffix}`;
+		suffix += 1;
+	}
+	return providerId;
+}
+
+export function deleteCustomProviderConfig(modelsPath: string, providerId: string): boolean {
+	if (!isCustomProviderId(providerId)) return false;
+	const config = readProviderConfigFile(modelsPath);
+	if (!Object.hasOwn(config.providers, providerId)) return false;
+	delete config.providers[providerId];
+	writeFileSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
+	return true;
+}
+
+/**
+ * Save an OpenAI-compatible custom provider to models.json.
+ * The historical function name is retained for public compatibility.
+ */
+export function saveOtherProviderConfig(
+	modelsPath: string,
+	providerId: string,
+	name: string,
+	baseUrl: string,
+	modelIds: string[] = [],
+	reasoning = false,
+): void {
+	const config = readProviderConfigFile(modelsPath);
+	if (!existsSync(modelsPath)) {
 		const dir = dirname(modelsPath);
 		if (!existsSync(dir)) {
 			mkdirSync(dir, { recursive: true });
 		}
 	}
 
-	config.providers = config.providers || {};
 	const existingProvider = config.providers[providerId] || {};
-
-	const finalModelIds = modelIds.length > 0 ? modelIds : ["default"];
-	const modelEntries = finalModelIds.map((id) => ({ id, input: ["text", "image"] }));
+	const existingModels = new Map(
+		(Array.isArray(existingProvider.models) ? existingProvider.models : [])
+			.filter((model: any) => model && typeof model === "object" && typeof model.id === "string")
+			.map((model: any) => [model.id, model]),
+	);
+	const finalModelIds = normalizeCustomModelIds(modelIds).length > 0 ? normalizeCustomModelIds(modelIds) : ["default"];
+	const modelEntries = finalModelIds.map((id) => {
+		const existingModel = existingModels.get(id) as any;
+		const entry: any = { ...(existingModel || {}), id, input: existingModel?.input || ["text", "image"] };
+		if (reasoning) entry.reasoning = true;
+		else delete entry.reasoning;
+		return entry;
+	});
 
 	config.providers[providerId] = {
 		...existingProvider,

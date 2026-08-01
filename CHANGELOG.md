@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.6.0-rc.1] - 2026-08-01
+
+### Provider authentication and configuration
+
+- Enabled Desktop OAuth login through the same browser-based flow used by the CLI.
+- Added multi-provider OpenAI-compatible configuration, automatic model discovery, manual model entry, editing, and deletion to both CLI and Desktop interfaces.
+- Removed the matching stored API key when deleting a custom provider without interrupting an active session.
+- Replaced OAuth callback branding with status icons: green check for success and red cross for failure.
+
 ## [1.5.2-rc.3] - 2026-07-31
 
 ### Video tool guidelines enhancement

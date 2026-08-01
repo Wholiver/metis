@@ -6,6 +6,7 @@ const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { createApplicationMenuTemplate, createEditorContextMenuTemplate } = require("./main-menu.cjs");
+const customProviderConfig = require("./provider-config.cjs");
 const desktopI18n = require("./renderer/i18n.js");
 
 const execFileAsync = promisify(execFile);
@@ -348,8 +349,11 @@ function registerIpc() {
 		const absolutePath = resolveWorkspacePath(relativePath);
 		shell.showItemInFolder(absolutePath);
 	});
-	ipcMain.handle("provider-config:get-custom", () => getCustomProviderConfig());
+	ipcMain.handle("provider-config:get-custom", async () => (await getCustomProviderConfigs())[0] ?? { exists: false });
+	ipcMain.handle("provider-config:list-custom", () => getCustomProviderConfigs());
+	ipcMain.handle("provider-config:discover-models", (_event, config) => discoverCustomProviderModels(config));
 	ipcMain.handle("provider-config:save-custom", (_event, config) => saveCustomProviderConfig(config));
+	ipcMain.handle("provider-config:delete-custom", (_event, providerId) => deleteCustomProvider(providerId));
 
 	ipcMain.handle("external:open", (_event, url) => {
 		if (!isHttpUrl(url)) throw new Error(nativeText("httpOnly"));
@@ -372,7 +376,7 @@ function registerIpc() {
 		return true;
 	});
 	ipcMain.handle("metis:request", (_event, request) =>
-		metisRequest(request.path, { method: request.method, body: request.body }),
+		metisRequest(request.path, { method: request.method, body: request.body, timeoutMs: request.timeoutMs }),
 	);
 }
 
@@ -383,103 +387,36 @@ function resolveAgentDir() {
 		: configuredAgentDir || path.join(app.getPath("home"), ".metis", "agent");
 }
 
-async function readModelsConfig(modelsPath) {
-	let modelsConfig = { providers: {} };
-	if (!fs.existsSync(modelsPath)) return modelsConfig;
-	const source = await fsp.readFile(modelsPath, "utf8");
-	try {
-		modelsConfig = JSON.parse(stripJsonComments(source));
-	} catch (error) {
-		throw new Error(nativeText("modelsJsonParseFailed", { message: error.message }));
-	}
-	if (!modelsConfig || typeof modelsConfig !== "object" || Array.isArray(modelsConfig)) modelsConfig = { providers: {} };
-	if (!modelsConfig.providers || typeof modelsConfig.providers !== "object" || Array.isArray(modelsConfig.providers)) {
-		modelsConfig.providers = {};
-	}
-	return modelsConfig;
+function customProviderOptions() {
+	return { translate: nativeText };
 }
 
-async function getCustomProviderConfig() {
-	const modelsPath = path.join(resolveAgentDir(), "models.json");
-	const modelsConfig = await readModelsConfig(modelsPath);
-	const other = modelsConfig.providers?.other;
-	if (!other || typeof other !== "object" || Array.isArray(other)) {
-		return { exists: false, provider: "other", name: "", baseUrl: "", reasoning: true };
-	}
-	const models = Array.isArray(other.models) ? other.models : [];
-	const reasoning = models.some((model) => model && typeof model === "object" && model.reasoning === true);
-	return {
-		exists: true,
-		provider: "other",
-		name: String(other.name || "").trim(),
-		baseUrl: String(other.baseUrl || "").trim(),
-		reasoning: models.length ? reasoning : true,
-		modelCount: models.length,
-		modelsPath,
-	};
+async function getCustomProviderConfigs() {
+	return customProviderConfig.listCustomProviderConfigs(resolveAgentDir(), customProviderOptions());
+}
+
+async function discoverCustomProviderModels(config = {}) {
+	return customProviderConfig.discoverCustomProviderModels(config.baseUrl, config.apiKey, customProviderOptions());
 }
 
 async function saveCustomProviderConfig(config = {}) {
-	const name = String(config.name || "").trim();
-	const baseUrl = String(config.baseUrl || "").trim().replace(/\/+$/, "");
-	const apiKey = String(config.apiKey || "").trim();
-	const reasoning = Boolean(config.reasoning);
-	if (!name) throw new Error(nativeText("providerNameRequired"));
-	if (!apiKey) throw new Error(nativeText("apiKeyRequired"));
-	let parsedUrl;
-	try {
-		parsedUrl = new URL(baseUrl);
-	} catch {
-		throw new Error(nativeText("baseUrlInvalid"));
-	}
-	if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error(nativeText("baseUrlProtocol"));
-
-	const modelIds = await fetchCustomProviderModels(baseUrl, apiKey);
-	const agentDir = resolveAgentDir();
-	const modelsPath = path.join(agentDir, "models.json");
-	const modelsConfig = await readModelsConfig(modelsPath);
-	const existing = modelsConfig.providers.other && typeof modelsConfig.providers.other === "object"
-		? modelsConfig.providers.other
-		: {};
-	modelsConfig.providers.other = {
-		...existing,
-		name,
-		baseUrl,
-		api: existing.api || "openai-completions",
-		models: (modelIds.length ? modelIds : ["default"]).map((id) => ({
-			id,
-			...(reasoning ? { reasoning: true } : {}),
-		})),
-	};
-
-	await fsp.mkdir(agentDir, { recursive: true });
-	const temporaryPath = `${modelsPath}.${process.pid}.tmp`;
-	await fsp.writeFile(temporaryPath, `${JSON.stringify(modelsConfig, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-	await fsp.rename(temporaryPath, modelsPath);
-	return { provider: "other", name, baseUrl, reasoning, modelCount: modelIds.length, modelsPath };
+	if (!config.providerId && !String(config.apiKey || "").trim()) throw new Error(nativeText("apiKeyRequired"));
+	return customProviderConfig.saveCustomProviderConfig(resolveAgentDir(), config, customProviderOptions());
 }
 
-async function fetchCustomProviderModels(baseUrl, apiKey) {
-	const urls = baseUrl.endsWith("/v1") ? [`${baseUrl}/models`] : [`${baseUrl}/v1/models`, `${baseUrl}/models`];
-	for (const url of urls) {
-		try {
-			const response = await fetch(url, {
-			headers: { Authorization: `Bearer ${apiKey}`, "User-Agent": "metis-desktop" },
-			signal: AbortSignal.timeout(5_000),
-			});
-			if (!response.ok) continue;
-			const data = await response.json();
-			const items = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
-			return [...new Set(items.map((item) => typeof item === "string" ? item : item?.id).filter((id) => typeof id === "string" && id.trim()))];
-		} catch {}
+async function deleteCustomProvider(providerId) {
+	if (!customProviderConfig.isCustomProviderId(String(providerId || ""))) {
+		throw new Error(nativeText("customProviderNotFound"));
 	}
-	return [];
-}
-
-function stripJsonComments(input) {
-	return input
-		.replace(/"(?:\\.|[^"\\])*"|\/\/[^\n]*/g, (match) => match[0] === '"' ? match : "")
-		.replace(/"(?:\\.|[^"\\])*"|,(\s*[}\]])/g, (match, tail) => tail ?? (match[0] === '"' ? match : ""));
+	const logout = await metisRequest("/session/command", {
+		method: "POST",
+		body: { command: `/logout ${providerId}` },
+	});
+	if (!logout.ok) throw new Error(logout.data?.error?.message || logout.error || nativeText("customProviderDeleteFailed"));
+	const deleted = await customProviderConfig.deleteCustomProviderConfig(resolveAgentDir(), providerId, customProviderOptions());
+	if (!deleted) throw new Error(nativeText("customProviderNotFound"));
+	await metisRequest("/session/command", { method: "POST", body: { command: "/reload" } });
+	return { provider: providerId, deleted: true };
 }
 
 function workspaceSummary() {
@@ -612,12 +549,16 @@ async function metisRequest(requestPath, init = {}) {
 	if (metisServer.password) {
 		headers.Authorization = `Basic ${Buffer.from(`${metisServer.username}:${metisServer.password}`).toString("base64")}`;
 	}
+	const requestedTimeout = Number(init.timeoutMs);
+	const timeoutMs = Number.isFinite(requestedTimeout)
+		? Math.max(1_000, Math.min(requestedTimeout, 10 * 60_000))
+		: 15_000;
 	try {
 		const response = await fetch(`${metisServer.baseUrl}${requestPath}`, {
 			method,
 			headers,
 			body: init.body === undefined ? undefined : JSON.stringify(init.body),
-			signal: AbortSignal.timeout(15_000),
+			signal: AbortSignal.timeout(timeoutMs),
 		});
 		const text = await response.text();
 		let data;

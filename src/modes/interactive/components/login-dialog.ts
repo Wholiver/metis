@@ -164,7 +164,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 	 * Called by onPrompt callback - show prompt and wait for input
 	 * Note: Does NOT clear content, appends to existing (preserves URL from showAuth)
 	 */
-	showPrompt(message: string, placeholder?: string): Promise<string> {
+	showPrompt(message: string, placeholder?: string, initialValue = ""): Promise<string> {
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("text", message), 1, 0));
 		if (placeholder) {
@@ -179,7 +179,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 			),
 		);
 
-		this.input.setValue("");
+		this.input.setValue(initialValue);
 		this.tui.requestRender();
 
 		return new Promise((resolve, reject) => {

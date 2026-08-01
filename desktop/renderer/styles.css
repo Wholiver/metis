@@ -1963,6 +1963,8 @@ body.settings-open .window-nav { display: none; }
 .settings-form-row strong, .settings-form-row > div:first-child > span { display: block; }
 .settings-form-row strong { color: #222627; font-size: 13px; font-weight: 620; }
 .settings-form-row > div:first-child > span { margin-top: 4px; color: var(--ink-faint); font-size: 12px; line-height: 1.45; }
+.settings-custom-provider-row { align-items: start; }
+.settings-custom-provider-row > div:first-child { padding-top: 8px; }
 .settings-inline-form { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
 .settings-stack-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .settings-stack-form input { grid-column: 1 / -1; }
@@ -1990,6 +1992,36 @@ body.settings-open .window-nav { display: none; }
 	flex: 0 0 auto;
 	accent-color: #3f6f8f;
 }
+.settings-custom-provider-picker {
+	grid-column: 1 / -1;
+	justify-content: stretch;
+}
+.settings-custom-provider-picker select { flex: 1 1 auto; }
+.settings-custom-provider-form .settings-custom-provider-picker .settings-action {
+	grid-column: auto;
+	width: auto;
+	white-space: nowrap;
+}
+.settings-custom-model-header {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	color: var(--ink-soft);
+	font-size: 12px;
+}
+.settings-custom-provider-form .settings-custom-model-header .settings-action {
+	grid-column: auto;
+	width: auto;
+}
+.settings-stack-form .settings-custom-model-select {
+	grid-column: 1 / -1;
+	width: 100%;
+	height: 126px;
+	padding: 6px;
+}
+.settings-custom-model-select option { padding: 4px 6px; border-radius: 4px; }
 .settings-inline-form input, .settings-inline-form select, .settings-stack-form input, .settings-stack-form select {
   min-width: 0;
   height: 31px;

@@ -3,7 +3,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { fetchOtherProviderModels, ModelRegistry, saveOtherProviderConfig } from "../src/core/model-registry.ts";
+import {
+	createCustomProviderId,
+	deleteCustomProviderConfig,
+	fetchOtherProviderModels,
+	listCustomProviderConfigs,
+	ModelRegistry,
+	saveOtherProviderConfig,
+} from "../src/core/model-registry.ts";
 
 describe("Other provider setup and login flow", () => {
 	let tempDir: string;
@@ -82,6 +89,7 @@ describe("Other provider setup and login flow", () => {
 
 	it("preserves existing providers when updating 'other' provider in models.json", () => {
 		const initial = {
+			metadata: { owner: "user" },
 			providers: {
 				existing: {
 					name: "Existing Provider",
@@ -95,8 +103,52 @@ describe("Other provider setup and login flow", () => {
 		saveOtherProviderConfig(modelsPath, "other", "Another LLM", "https://another.com/v1");
 
 		const content = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
+		expect(content.metadata).toEqual({ owner: "user" });
 		expect(content.providers.existing).toBeDefined();
 		expect(content.providers.other).toBeDefined();
 		expect(content.providers.other.name).toBe("Another LLM");
+	});
+
+	it("creates independent IDs and persists multiple custom providers", () => {
+		const firstId = createCustomProviderId(modelsPath, "Local Proxy");
+		saveOtherProviderConfig(modelsPath, firstId, "Local Proxy", "http://127.0.0.1:8045/v1", ["model-a"]);
+		const secondId = createCustomProviderId(modelsPath, "Local Proxy");
+		saveOtherProviderConfig(modelsPath, secondId, "Local Proxy 2", "http://127.0.0.1:9045/v1", ["model-b"]);
+
+		expect(firstId).toBe("custom-local-proxy");
+		expect(secondId).toBe("custom-local-proxy-2");
+		expect(listCustomProviderConfigs(modelsPath)).toEqual([
+			{
+				providerId: firstId,
+				name: "Local Proxy",
+				baseUrl: "http://127.0.0.1:8045/v1",
+				modelIds: ["model-a"],
+				reasoning: false,
+			},
+			{
+				providerId: secondId,
+				name: "Local Proxy 2",
+				baseUrl: "http://127.0.0.1:9045/v1",
+				modelIds: ["model-b"],
+				reasoning: false,
+			},
+		]);
+	});
+
+	it("stores chosen model IDs and reasoning, then deletes only requested provider", () => {
+		saveOtherProviderConfig(modelsPath, "custom-one", "One", "https://one.example/v1", ["a", "a", "b"], true);
+		saveOtherProviderConfig(modelsPath, "custom-two", "Two", "https://two.example/v1", ["c"]);
+
+		const before = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
+		expect(before.providers["custom-one"].models).toEqual([
+			{ id: "a", input: ["text", "image"], reasoning: true },
+			{ id: "b", input: ["text", "image"], reasoning: true },
+		]);
+
+		expect(deleteCustomProviderConfig(modelsPath, "custom-one")).toBe(true);
+		expect(deleteCustomProviderConfig(modelsPath, "anthropic")).toBe(false);
+		const after = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
+		expect(after.providers["custom-one"]).toBeUndefined();
+		expect(after.providers["custom-two"]).toBeDefined();
 	});
 });

@@ -1,12 +1,13 @@
 (function initModelSelection(globalScope) {
-	function resolveCustomProviderModel(previousModel, models) {
+	function resolveCustomProviderModel(previousModel, models, preferredProviderId) {
 		const availableModels = Array.isArray(models) ? models : [];
 		const previous = availableModels.find((model) => (
 			model.provider === previousModel?.provider && model.id === previousModel?.id
 		));
 		if (previous) return { provider: previous.provider, id: previous.id };
 
-		const custom = availableModels.find((model) => model.provider === "other");
+		const custom = availableModels.find((model) => model.provider === preferredProviderId)
+			?? availableModels.find((model) => model.provider === "other");
 		return custom ? { provider: custom.provider, id: custom.id } : undefined;
 	}
 

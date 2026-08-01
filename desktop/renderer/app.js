@@ -64,6 +64,7 @@ const state = {
 	navigationHistory: [],
 	navigationIndex: -1,
 	projects: [],
+	customProviders: [],
 };
 
 let thinkingDrag;
@@ -165,10 +166,14 @@ const elements = {
 	settingsOauthProvider: document.querySelector("#settingsOauthProvider"),
 	settingsApiKeyProvider: document.querySelector("#settingsApiKeyProvider"),
 	settingsApiKeyInput: document.querySelector("#settingsApiKeyInput"),
+	settingsCustomProviderSelect: document.querySelector("#settingsCustomProviderSelect"),
 	settingsCustomProviderName: document.querySelector("#settingsCustomProviderName"),
 	settingsCustomBaseUrl: document.querySelector("#settingsCustomBaseUrl"),
 	settingsCustomApiKey: document.querySelector("#settingsCustomApiKey"),
+	settingsCustomModelSelect: document.querySelector("#settingsCustomModelSelect"),
+	settingsCustomModelInput: document.querySelector("#settingsCustomModelInput"),
 	settingsCustomProviderReasoning: document.querySelector("#settingsCustomProviderReasoning"),
+	settingsCustomProviderDeleteButton: document.querySelector("#settingsCustomProviderDeleteButton"),
 	settingsLogoutProvider: document.querySelector("#settingsLogoutProvider"),
 };
 
@@ -331,10 +336,10 @@ function flattenSessionTree(nodes, depth = 0, result = []) {
 	return result;
 }
 
-async function runVisualCommand(command, feedbackElement, { refresh = false } = {}) {
+async function runVisualCommand(command, feedbackElement, { refresh = false, timeoutMs } = {}) {
 	if (!state.serverConnected) throw new Error(uiText("connectServerFirst"));
 	setSettingsFeedback(feedbackElement, uiText("applying"));
-	const result = await requestServer("/session/command", "POST", { command });
+	const result = await requestServer("/session/command", "POST", { command }, { timeoutMs });
 	if (result.action === "copy" && result.text) await desktop.clipboard.writeText(result.text);
 	if (result.action === "open-url" && result.url) await desktop.openExternal(result.url);
 	if (result.action === "quit") {
@@ -439,22 +444,55 @@ async function loadVisualSettings() {
 	}
 }
 
-async function fillCustomProviderForm() {
-	if (!desktop.providerConfig?.getCustom) return;
+function setCustomModelOptions(modelIds, selectedIds = modelIds) {
+	if (!elements.settingsCustomModelSelect) return;
+	const selected = new Set(selectedIds);
+	elements.settingsCustomModelSelect.replaceChildren();
+	for (const modelId of [...new Set(modelIds)].sort((a, b) => a.localeCompare(b))) {
+		const option = new Option(modelId, modelId, false, selected.has(modelId));
+		elements.settingsCustomModelSelect.append(option);
+	}
+}
+
+function selectedCustomModelIds() {
+	const selected = [...(elements.settingsCustomModelSelect?.selectedOptions || [])].map((option) => option.value);
+	const manual = String(elements.settingsCustomModelInput?.value || "")
+		.split(/[\n,]+/)
+		.map((id) => id.trim())
+		.filter(Boolean);
+	return [...new Set([...selected, ...manual])];
+}
+
+function renderCustomProviderForm(provider) {
+	const exists = Boolean(provider?.provider);
+	if (elements.settingsCustomProviderName) elements.settingsCustomProviderName.value = provider?.name || "";
+	if (elements.settingsCustomBaseUrl) elements.settingsCustomBaseUrl.value = provider?.baseUrl || "";
+	if (elements.settingsCustomApiKey) elements.settingsCustomApiKey.value = "";
+	if (elements.settingsCustomModelInput) elements.settingsCustomModelInput.value = "";
+	if (elements.settingsCustomProviderReasoning) elements.settingsCustomProviderReasoning.checked = provider?.reasoning !== false;
+	setCustomModelOptions(provider?.modelIds || []);
+	if (elements.settingsCustomProviderDeleteButton) elements.settingsCustomProviderDeleteButton.disabled = !exists;
+}
+
+async function fillCustomProviderForm(preferredProviderId) {
+	if (!desktop.providerConfig?.listCustom) return;
 	try {
-		const custom = await desktop.providerConfig.getCustom();
-		if (!custom) return;
-		if (elements.settingsCustomProviderName && !elements.settingsCustomProviderName.value.trim() && custom.name) {
-			elements.settingsCustomProviderName.value = custom.name;
-		}
-		if (elements.settingsCustomBaseUrl && !elements.settingsCustomBaseUrl.value.trim() && custom.baseUrl) {
-			elements.settingsCustomBaseUrl.value = custom.baseUrl;
-		}
-		if (elements.settingsCustomProviderReasoning) {
-			elements.settingsCustomProviderReasoning.checked = custom.reasoning !== false;
+		const previousProviderId = preferredProviderId ?? elements.settingsCustomProviderSelect?.value;
+		state.customProviders = await desktop.providerConfig.listCustom();
+		if (elements.settingsCustomProviderSelect) {
+			elements.settingsCustomProviderSelect.replaceChildren(new Option(uiText("newCustomProvider"), ""));
+			for (const provider of state.customProviders) {
+				elements.settingsCustomProviderSelect.append(new Option(`${provider.name} (${provider.provider})`, provider.provider));
+			}
+			const selectedProviderId = state.customProviders.some((provider) => provider.provider === previousProviderId)
+				? previousProviderId
+				: "";
+			elements.settingsCustomProviderSelect.value = selectedProviderId;
+			renderCustomProviderForm(state.customProviders.find((provider) => provider.provider === selectedProviderId));
 		}
 	} catch {
-		if (elements.settingsCustomProviderReasoning) elements.settingsCustomProviderReasoning.checked = true;
+		state.customProviders = [];
+		renderCustomProviderForm(undefined);
 	}
 }
 
@@ -910,8 +948,8 @@ async function loadWorkspace(select = false) {
 	}
 }
 
-async function requestServer(path, method = "GET", body) {
-	const result = await desktop.metis.request({ path, method, body });
+async function requestServer(path, method = "GET", body, options = {}) {
+	const result = await desktop.metis.request({ path, method, body, timeoutMs: options.timeoutMs });
 	if (!result.ok) {
 		const message = result.data?.error?.message || result.error || uiText("serverHttpError", { status: result.status || 0 });
 		throw new Error(message);
@@ -3300,7 +3338,7 @@ elements.settingsTrustSelect?.addEventListener("change", () => performVisualActi
 document.querySelector("#settingsOauthLoginButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
 	const provider = elements.settingsOauthProvider.value;
 	if (!provider) throw new Error(uiText("noOauthProviders"));
-	await runVisualCommand(`/login ${provider}`, elements.settingsSecurityFeedback, { refresh: true });
+	await runVisualCommand(`/login ${provider}`, elements.settingsSecurityFeedback, { refresh: true, timeoutMs: 10 * 60_000 });
 	window.MetisOnboarding?.notifyEvent("provider_saved");
 }));
 document.querySelector("#settingsApiKeySaveButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
@@ -3312,26 +3350,46 @@ document.querySelector("#settingsApiKeySaveButton")?.addEventListener("click", (
 	elements.settingsApiKeyInput.value = "";
 	window.MetisOnboarding?.notifyEvent("provider_saved");
 }));
+elements.settingsCustomProviderSelect?.addEventListener("change", () => {
+	const provider = state.customProviders.find((item) => item.provider === elements.settingsCustomProviderSelect.value);
+	renderCustomProviderForm(provider);
+});
+document.querySelector("#settingsCustomProviderNewButton")?.addEventListener("click", () => {
+	if (elements.settingsCustomProviderSelect) elements.settingsCustomProviderSelect.value = "";
+	renderCustomProviderForm(undefined);
+});
+document.querySelector("#settingsCustomModelsRefreshButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
+	const baseUrl = elements.settingsCustomBaseUrl.value.trim();
+	const apiKey = elements.settingsCustomApiKey.value.trim();
+	if (!baseUrl) throw new Error(uiText("enterBaseUrl"));
+	if (!apiKey) throw new Error(uiText("enterApiKeyToDiscoverModels"));
+	const modelIds = await desktop.providerConfig.discoverModels({ baseUrl, apiKey });
+	if (!modelIds.length) throw new Error(uiText("noModelsDiscovered"));
+	setCustomModelOptions(modelIds);
+	setSettingsFeedback(elements.settingsSecurityFeedback, uiText("modelsDiscovered", { count: modelIds.length }));
+}));
 document.querySelector("#settingsCustomProviderSaveButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
+	const providerId = elements.settingsCustomProviderSelect?.value || undefined;
 	const providerName = elements.settingsCustomProviderName.value.trim();
 	const baseUrl = elements.settingsCustomBaseUrl.value.trim();
 	const apiKey = elements.settingsCustomApiKey.value.trim();
+	const modelIds = selectedCustomModelIds();
 	const reasoning = Boolean(elements.settingsCustomProviderReasoning?.checked);
 	if (!providerName) throw new Error(uiText("enterProviderName"));
 	if (!baseUrl) throw new Error(uiText("enterBaseUrl"));
-	if (!apiKey) throw new Error(uiText("enterApiKey"));
+	if (!providerId && !apiKey) throw new Error(uiText("enterApiKey"));
 	const previousModel = state.session?.model;
-	await desktop.providerConfig.saveCustom({ name: providerName, baseUrl, apiKey, reasoning });
+	const saved = await desktop.providerConfig.saveCustom({ providerId, name: providerName, baseUrl, apiKey, modelIds, reasoning });
 	await runVisualCommand("/reload", elements.settingsSecurityFeedback, { refresh: true });
-	await runVisualCommand(`/login other ${apiKey}`, elements.settingsSecurityFeedback, { refresh: true });
+	if (apiKey) await runVisualCommand(`/login ${saved.provider} ${apiKey}`, elements.settingsSecurityFeedback, { refresh: true });
 	// Re-apply the active model so thinking capability updates without a manual switch.
-	const model = resolveCustomProviderModel(previousModel, state.models);
+	const model = resolveCustomProviderModel(previousModel, state.models, saved.provider);
 	if (model) {
 		await requestServer("/session/model", "PUT", { provider: model.provider, modelId: model.id });
 	}
 	await syncServerSession({ loadModels: true });
-	await loadVisualSettings();
-	if (reasoning && !state.session?.supportsThinking) {
+	await fillCustomProviderForm(saved.provider);
+	if (reasoning && state.session?.model?.provider === saved.provider && !state.session?.supportsThinking) {
 		throw new Error(uiText("reasoningRestartRequired"));
 	}
 	elements.settingsCustomApiKey.value = "";
@@ -3342,6 +3400,14 @@ document.querySelector("#settingsCustomProviderSaveButton")?.addEventListener("c
 			: uiText("customProviderNoReasoning"),
 	);
 	window.MetisOnboarding?.notifyEvent("provider_saved");
+}));
+elements.settingsCustomProviderDeleteButton?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
+	const providerId = elements.settingsCustomProviderSelect?.value;
+	if (!providerId) throw new Error(uiText("selectCustomProvider"));
+	await desktop.providerConfig.deleteCustom(providerId);
+	await syncServerSession({ loadModels: true });
+	await fillCustomProviderForm();
+	setSettingsFeedback(elements.settingsSecurityFeedback, uiText("customProviderDeleted"));
 }));
 document.querySelector("#settingsLogoutButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
 	const provider = elements.settingsLogoutProvider.value;

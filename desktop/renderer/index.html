@@ -487,12 +487,23 @@
 								<div><strong>API Key</strong><span>为内置或已注册 Provider 保存独立 API Key，不修改 Provider Base URL。</span></div>
 								<div class="settings-stack-form settings-credential-form"><select id="settingsApiKeyProvider"><option>正在载入…</option></select><input id="settingsApiKeyInput" type="password" placeholder="API Key" autocomplete="off" /><button class="settings-action primary" id="settingsApiKeySaveButton" type="button">保存 API Key</button></div>
 							</div>
-							<div class="settings-form-row">
-								<div><strong>自定义 Base URL</strong><span>添加一个 OpenAI-compatible Provider。名称、Base URL 与 API Key 作为一组独立配置保存。若代理模型支持推理但未自动识别，可手动开启思考。</span></div>
+							<div class="settings-form-row settings-custom-provider-row">
+								<div><strong>自定义 Base URL</strong><span data-i18n="customBaseUrlDescription">添加并管理多个 OpenAI-compatible Provider。模型可自动获取、从列表选择或手动输入。</span></div>
 								<div class="settings-stack-form settings-custom-provider-form">
+									<div class="settings-inline-form settings-custom-provider-picker">
+										<select id="settingsCustomProviderSelect"><option value="" data-i18n="newCustomProvider">添加新 Provider…</option></select>
+										<button class="settings-action" id="settingsCustomProviderNewButton" type="button" data-i18n="newCustomProviderButton">新建自定义 Provider</button>
+										<button class="settings-action danger" id="settingsCustomProviderDeleteButton" type="button" data-i18n="deleteCustomProviderButton" disabled>删除</button>
+									</div>
 									<input id="settingsCustomProviderName" type="text" placeholder="Provider 名称" />
 									<input id="settingsCustomBaseUrl" type="url" placeholder="https://api.example.com/v1" />
-									<input id="settingsCustomApiKey" type="password" placeholder="API Key" autocomplete="off" />
+									<input id="settingsCustomApiKey" type="password" placeholder="API Key（编辑时留空则保留原值）" data-i18n-placeholder="customApiKeyEditPlaceholder" autocomplete="off" />
+									<div class="settings-custom-model-header">
+										<span data-i18n="customModelList">模型列表（可多选）</span>
+										<button class="settings-action" id="settingsCustomModelsRefreshButton" type="button" data-i18n="discoverModels">自动获取模型</button>
+									</div>
+									<select id="settingsCustomModelSelect" class="settings-custom-model-select" multiple size="6" aria-label="模型列表" data-i18n-aria-label="customModelList"></select>
+									<input id="settingsCustomModelInput" type="text" placeholder="手动输入模型 ID；多个用逗号分隔" data-i18n-placeholder="manualModelIdsPlaceholder" />
 									<label class="settings-checkbox" for="settingsCustomProviderReasoning">
 										<input id="settingsCustomProviderReasoning" type="checkbox" checked />
 										<span>支持思考（为该 Provider 下模型启用思考等级）</span>
