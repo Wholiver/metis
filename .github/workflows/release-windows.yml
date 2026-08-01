@@ -37,6 +37,9 @@ jobs:
           $tarballUrl = npm view "@wholiver_hu/metis@$version" dist.tarball
           Invoke-WebRequest -Uri $tarballUrl -OutFile published-package.tgz
           tar -xzf published-package.tgz
+          Remove-Item -Recurse -Force vendor/metis-ai/dist -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force vendor/metis-agent-core/dist -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force vendor/metis-tui/dist -ErrorAction SilentlyContinue
           Copy-Item -Recurse -Force package/node_modules/@earendil-works/metis-ai/dist vendor/metis-ai/dist
           Copy-Item -Recurse -Force package/node_modules/@earendil-works/metis-agent-core/dist vendor/metis-agent-core/dist
           Copy-Item -Recurse -Force package/node_modules/@earendil-works/metis-tui/dist vendor/metis-tui/dist
