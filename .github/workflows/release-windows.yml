@@ -30,12 +30,6 @@ jobs:
             npm-shrinkwrap.json
             desktop/package-lock.json
 
-      - name: Install root dependencies
-        run: npm ci
-
-      - name: Install Desktop dependencies
-        run: npm --prefix desktop ci
-
       - name: Restore vendored build artifacts
         shell: pwsh
         run: |
@@ -46,6 +40,12 @@ jobs:
           Copy-Item -Recurse -Force package/node_modules/@earendil-works/metis-ai/dist vendor/metis-ai/dist
           Copy-Item -Recurse -Force package/node_modules/@earendil-works/metis-agent-core/dist vendor/metis-agent-core/dist
           Copy-Item -Recurse -Force package/node_modules/@earendil-works/metis-tui/dist vendor/metis-tui/dist
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Desktop dependencies
+        run: npm --prefix desktop ci
 
       - name: Build portable Windows package
         run: npm --prefix desktop run package:win
