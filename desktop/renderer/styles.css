@@ -105,6 +105,10 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
   height: var(--topbar-control-size);
   -webkit-app-region: no-drag !important;
 }
+body.platform-darwin .window-nav {
+  /* trafficLightPosition.y (18px) + half the 14px native button = 25px center. */
+  top: 9px;
+}
 body.platform-win32 {
   --titlebar-overlay-width: 138px;
 }
@@ -543,6 +547,10 @@ body:has(.app-shell.sidebar-collapsed) .window-nav::after {
   background: rgba(251, 251, 250, 0.93);
   backdrop-filter: blur(18px);
   transition: padding-left 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.platform-darwin .topbar {
+  padding-top: 0;
+  padding-bottom: 1px;
 }
 .app-shell.sidebar-collapsed .topbar { padding-left: 259px; }
 .conversation-heading { display: flex; align-items: center; min-width: 0; gap: 7px; }

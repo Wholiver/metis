@@ -52,6 +52,7 @@ const videoSchema = Type.Object({
 			Type.Literal("storyboard"),
 			Type.Literal("frames"),
 			Type.Literal("transcript"),
+			Type.Literal("motion"),
 		]),
 	),
 	path: Type.String({ description: "Local video path" }),
@@ -63,7 +64,7 @@ const videoSchema = Type.Object({
 		y: Type.Number({ minimum: 0, maximum: 1, description: "Top edge as a fraction of frame height" }),
 		width: Type.Number({ minimum: 0, maximum: 1, description: "Crop width as a fraction of frame width" }),
 		height: Type.Number({ minimum: 0, maximum: 1, description: "Crop height as a fraction of frame height" }),
-	}, { description: "Optional normalized crop for action=frames; useful for reading small UI regions" })),
+	}, { description: "Optional normalized crop for action=frames or action=motion; useful for reading small UI regions" })),
 	language: Type.Optional(Type.String({ description: "Whisper language code (for example zh or en); defaults to en" })),
 });
 
@@ -97,6 +98,8 @@ export interface VideoToolDetails {
 	range?: { start: number; end: number };
 	frameTimes?: number[];
 	crop?: VideoCrop;
+	motionBbox?: { x: number; y: number; width: number; height: number };
+	motionChangeRatio?: number;
 	transcript?: {
 		source: "sidecar" | "embedded" | "whisper";
 		truncated?: boolean;
@@ -110,6 +113,7 @@ export interface VideoOperations {
 	probe: (path: string, signal?: AbortSignal) => Promise<VideoMetadata>;
 	createStoryboard: (path: string, frameTimes: number[], signal?: AbortSignal) => Promise<Buffer>;
 	createFrames?: (path: string, frameTimes: number[], crop: VideoCrop | undefined, signal?: AbortSignal) => Promise<Buffer[]>;
+	createMotionComposite?: (path: string, start: number, end: number, crop: VideoCrop | undefined, signal?: AbortSignal) => Promise<{ image: Buffer; bbox?: { x: number; y: number; width: number; height: number }; changeRatio: number }>;
 	readSidecarSubtitles: (path: string) => Promise<TranscriptSegment[] | undefined>;
 	readEmbeddedSubtitles: (path: string, signal?: AbortSignal) => Promise<TranscriptSegment[] | undefined>;
 	transcribe: (path: string, range: { start: number; end: number }, language: string, signal?: AbortSignal) => Promise<TranscriptSegment[]>;
@@ -414,6 +418,83 @@ const defaultVideoOperations: VideoOperations = {
 			await rm(workDir, { recursive: true, force: true });
 		}
 	},
+	async createMotionComposite(path, start, end, crop, signal) {
+		const workDir = join(tmpdir(), `metis-video-motion-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		await mkdir(workDir, { recursive: true });
+		try {
+			const cellW = 768;
+			const cellH = 768;
+			const cropFilter = crop ? `crop=w='iw*${crop.width}':h='ih*${crop.height}':x='iw*${crop.x}':y='ih*${crop.y}',` : "";
+			const scaleFilter = `scale=${cellW}:${cellH}:force_original_aspect_ratio=decrease,pad=${cellW}:${cellH}:(ow-iw)/2:(oh-ih)/2:black`;
+
+			const frameA = join(workDir, "frame-a.jpg");
+			const drawTextA = `drawtext=text='Frame A (${formatTimestamp(start).replace(/:/g, "\\:")})':x=18:y=h-42:fontcolor=white:fontsize=28:box=1:boxcolor=black@0.65:boxborderw=8`;
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(start), "-i", path, "-frames:v", "1", "-vf", `${cropFilter}${scaleFilter},${drawTextA}`, "-q:v", "3", "-y", frameA], signal);
+
+			const frameB = join(workDir, "frame-b.jpg");
+			const drawTextB = `drawtext=text='Frame B (${formatTimestamp(end).replace(/:/g, "\\:")})':x=18:y=h-42:fontcolor=white:fontsize=28:box=1:boxcolor=black@0.65:boxborderw=8`;
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(end), "-i", path, "-frames:v", "1", "-vf", `${cropFilter}${scaleFilter},${drawTextB}`, "-q:v", "3", "-y", frameB], signal);
+
+			const rawW = 320;
+			const rawH = 180;
+			const rawAFile = join(workDir, "raw-a.rgb");
+			const rawBFile = join(workDir, "raw-b.rgb");
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(start), "-i", path, "-frames:v", "1", "-vf", `${cropFilter}scale=${rawW}:${rawH}`, "-f", "rawvideo", "-pix_fmt", "rgb24", "-y", rawAFile], signal);
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(end), "-i", path, "-frames:v", "1", "-vf", `${cropFilter}scale=${rawW}:${rawH}`, "-f", "rawvideo", "-pix_fmt", "rgb24", "-y", rawBFile], signal);
+
+			const bufA = await readFile(rawAFile);
+			const bufB = await readFile(rawBFile);
+			let minX = rawW;
+			let minY = rawH;
+			let maxX = -1;
+			let maxY = -1;
+			let changedPixels = 0;
+			const threshold = 12;
+			for (let y = 0; y < rawH; y++) {
+				for (let x = 0; x < rawW; x++) {
+					const idx = (y * rawW + x) * 3;
+					if (idx + 2 < bufA.length && idx + 2 < bufB.length) {
+						const dR = Math.abs(bufA[idx] - bufB[idx]);
+						const dG = Math.abs(bufA[idx + 1] - bufB[idx + 1]);
+						const dB = Math.abs(bufA[idx + 2] - bufB[idx + 2]);
+						if (dR > threshold || dG > threshold || dB > threshold) {
+							changedPixels++;
+							if (x < minX) minX = x;
+							if (x > maxX) maxX = x;
+							if (y < minY) minY = y;
+							if (y > maxY) maxY = y;
+						}
+					}
+				}
+			}
+
+			let bbox: { x: number; y: number; width: number; height: number } | undefined;
+			const changeRatio = changedPixels / (rawW * rawH);
+			if (changedPixels > 0 && maxX >= minX && maxY >= minY) {
+				bbox = {
+					x: Number((minX / rawW).toFixed(4)),
+					y: Number((minY / rawH).toFixed(4)),
+					width: Number(((maxX - minX + 1) / rawW).toFixed(4)),
+					height: Number(((maxY - minY + 1) / rawH).toFixed(4)),
+				};
+			}
+
+			const frameDiff = join(workDir, "frame-diff.jpg");
+			const drawTextDiff = `drawtext=text='Amplified Difference':x=18:y=h-42:fontcolor=white:fontsize=28:box=1:boxcolor=black@0.65:boxborderw=8`;
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", frameA, "-i", frameB, "-filter_complex", `[0:v][1:v]blend=all_mode=difference,eq=contrast=4:brightness=0.1,${drawTextDiff}`, "-q:v", "3", "-y", frameDiff], signal);
+
+			const frameOverlay = join(workDir, "frame-overlay.jpg");
+			const drawTextOverlay = `drawtext=text='Red-Cyan Motion (Red=A, Cyan=B)':x=18:y=h-42:fontcolor=white:fontsize=28:box=1:boxcolor=black@0.65:boxborderw=8`;
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", frameA, "-i", frameB, "-filter_complex", `[0:v][1:v]blend=c0_expr='A':c1_expr='B':c2_expr='B',${drawTextOverlay}`, "-q:v", "3", "-y", frameOverlay], signal);
+
+			const output = join(workDir, "motion-grid.jpg");
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", frameA, "-i", frameB, "-i", frameDiff, "-i", frameOverlay, "-filter_complex", `xstack=inputs=4:layout=0_0|${cellW}_0|0_${cellH}|${cellW}_${cellH}`, "-frames:v", "1", "-q:v", "3", "-y", output], signal);
+
+			return { image: await readFile(output), bbox, changeRatio };
+		} finally {
+			await rm(workDir, { recursive: true, force: true });
+		}
+	},
 	async readSidecarSubtitles(path) {
 		const base = join(dirname(path), basename(path, extname(path)));
 		for (const extension of [".vtt", ".srt"]) {
@@ -536,9 +617,9 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 	return {
 		name: "video",
 		label: "video",
-		description: "Inspect a local video with metadata, a timestamped overview storyboard, high-fidelity independent frames, and/or a transcript. Use frames for readable UI, text, styling, and exact visual state. The first local transcript request automatically downloads and verifies transcription assets.",
-		promptSnippet: "Inspect local video with an overview, high-fidelity detail frames, and transcript",
-		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Use storyboard for temporal overview first to locate timestamp ranges, then use frames at explicit timestamps before claiming UI text, typography, colors, spacing, layout, selected state, or other small visual details.", "For interactions, animations, or motion, compare frames immediately before, during, and after the event. Use the reported frame rate to choose timestamps 1–4 source frames apart, and track visual state shifts (position, opacity, hover/active states, transitions) across consecutive frames.", "Always use normalized crop with frames to enlarge specific UI components, buttons, text, icons, or small regions for high-precision verification. Request no more frames than needed (1–3 frames recommended, max 4) and analyze each batch before continuing.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en. Transcript proves spoken text, not visual state.", "The first local transcript request may take longer while Metis downloads and verifies the pinned transcription model. Retry normally if initialization reports a network or filesystem error.", "Never use this tool for remote URLs."],
+		description: "Inspect a local video with metadata, a timestamped overview storyboard, high-fidelity independent frames, motion difference composites, and/or a transcript. Use frames for readable UI, text, styling, and exact visual state. Use motion for subtle micro-interactions, animations, or motion direction analysis. The first local transcript request automatically downloads and verifies transcription assets.",
+		promptSnippet: "Inspect local video with an overview, high-fidelity detail frames, motion difference composites, and transcript",
+		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Use storyboard for temporal overview first to locate timestamp ranges, then use frames at explicit timestamps before claiming UI text, typography, colors, spacing, layout, selected state, or other small visual details.", "For interactions, animations, or motion, compare frames immediately before, during, and after the event. Use the reported frame rate to choose timestamps 1–4 source frames apart, and track visual state shifts (position, opacity, hover/active states, transitions) across consecutive frames.", "For micro-interactions, subtle motion, or small pixel shifts, call action=motion with start and end times spanning the movement interval (recommended <= 2s). Motion action outputs a 4-grid visual composite combining raw frames, an amplified black-background difference map (locating changes), and a Red-Cyan overlay (indicating motion direction from Red to Cyan).", "Always use normalized crop with frames or motion to enlarge specific UI components, buttons, text, icons, or small regions for high-precision verification. Request no more frames than needed (1–3 frames recommended, max 4) and analyze each batch before continuing.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en. Transcript proves spoken text, not visual state.", "The first local transcript request may take longer while Metis downloads and verifies the pinned transcription model. Retry normally if initialization reports a network or filesystem error.", "Never use this tool for remote URLs."],
 		parameters: videoSchema,
 		async execute(_toolCallId, input, signal, onUpdate, ctx) {
 			const action: VideoAction = input.action ?? "inspect";
@@ -552,7 +633,7 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 				details.transcriptionReady = await operations.isModelInstalled();
 				content.push({
 					type: "text",
-					text: `Video inspector initialized. No visual frames or transcript have been generated.\nVideo dimensions: ${metadata.width ?? "unknown"}×${metadata.height ?? "unknown"}.\nFrame rate: ${metadata.frameRate ? `${metadata.frameRate.toFixed(3)} fps` : "unknown"}.\nAudio stream: ${metadata.hasAudio ? "yes" : "no"}.\nSubtitle stream: ${metadata.hasSubtitles ? "yes" : "no"}.\nTranscription runtime prepared: ${metadata.hasAudio ? (details.transcriptionReady ? "yes" : "no") : "not needed (no audio stream)"}.\n\nChoose next action based on evidence needed:\n- Temporal overview: action=storyboard with path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns one timestamped 3×3 overview.\n- Readable visual evidence & details: action=frames with path=${JSON.stringify(input.path)}, timestamps=[<time>, ...]. It returns up to ${MAX_DETAIL_FRAMES} independent JPEG frames. Always use crop={x,y,width,height} with normalized 0–1 coordinates to zoom in on specific UI components, text, or small visual regions.\n- Animations & Motion analysis: For animations, hover effects, motion, or state transitions, choose timestamps 1–4 source frames apart around the event to compare frame-by-frame visual changes (position, opacity, transform, active state).\n${metadata.hasAudio || metadata.hasSubtitles ? `- Spoken or subtitle text: action=transcript with path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n` : "- Transcript is unavailable because this video has no audio or subtitle stream. Do not call action=transcript.\n"}\nStoryboard is navigation evidence, not sufficient evidence for UI text, typography, colors, spacing, layout, or selected state. Verify those with action=frames. For an interaction or animation, compare timestamps immediately before and after it${metadata.frameRate ? `; at ${metadata.frameRate.toFixed(3)} fps, 1–4 source frames span ${(1 / metadata.frameRate).toFixed(4)}–${(4 / metadata.frameRate).toFixed(4)} seconds` : ""}. If transcription runtime is not prepared and audio exists, first transcript call downloads and verifies it automatically.`,
+					text: `Video inspector initialized. No visual frames or transcript have been generated.\nVideo dimensions: ${metadata.width ?? "unknown"}×${metadata.height ?? "unknown"}.\nFrame rate: ${metadata.frameRate ? `${metadata.frameRate.toFixed(3)} fps` : "unknown"}.\nAudio stream: ${metadata.hasAudio ? "yes" : "no"}.\nSubtitle stream: ${metadata.hasSubtitles ? "yes" : "no"}.\nTranscription runtime prepared: ${metadata.hasAudio ? (details.transcriptionReady ? "yes" : "no") : "not needed (no audio stream)"}.\n\nChoose next action based on evidence needed:\n- Temporal overview: action=storyboard with path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns one timestamped 3×3 overview.\n- Readable visual evidence & details: action=frames with path=${JSON.stringify(input.path)}, timestamps=[<time>, ...]. It returns up to ${MAX_DETAIL_FRAMES} independent JPEG frames. Always use crop={x,y,width,height} with normalized 0–1 coordinates to zoom in on specific UI components, text, or small visual regions.\n- Micro-motion & Subtle animations: action=motion with path=${JSON.stringify(input.path)}, start=<time>, end=<time> (recommended span <= 2s). It returns a 4-grid composite (Frame A, Frame B, Amplified Difference, Red-Cyan Overlay) to clearly highlight location and direction of subtle visual changes.\n- Animations & Motion analysis: For animations, hover effects, motion, or state transitions, choose timestamps 1–4 source frames apart around the event to compare frame-by-frame visual changes (position, opacity, transform, active state).\n${metadata.hasAudio || metadata.hasSubtitles ? `- Spoken or subtitle text: action=transcript with path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n` : "- Transcript is unavailable because this video has no audio or subtitle stream. Do not call action=transcript.\n"}\nStoryboard is navigation evidence, not sufficient evidence for UI text, typography, colors, spacing, layout, or selected state. Verify those with action=frames. For an interaction or animation, compare timestamps immediately before and after it${metadata.frameRate ? `; at ${metadata.frameRate.toFixed(3)} fps, 1–4 source frames span ${(1 / metadata.frameRate).toFixed(4)}–${(4 / metadata.frameRate).toFixed(4)} seconds` : ""}. If transcription runtime is not prepared and audio exists, first transcript call downloads and verifies it automatically.`,
 				});
 				return { content, details };
 			}
@@ -587,6 +668,32 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 					content.push({ type: "text", text: `Frame ${index + 1}/${frames.length}: ${formatTimestamp(frameTimes[index])}` });
 					content.push({ type: "image", data: frames[index].toString("base64"), mimeType: "image/jpeg" });
 				}
+			}
+
+			if (action === "motion") {
+				if (!operations.createMotionComposite) throw new Error("Motion composite extraction is unavailable for these custom video operations");
+				const crop = resolveCrop(input);
+				details.crop = crop;
+				onUpdate?.({ content: [{ type: "text", text: "Generating 4-grid motion difference composite…" }], details: {} });
+				const { image, bbox, changeRatio } = await operations.createMotionComposite(path, range.start, range.end, crop, signal);
+				details.motionBbox = bbox;
+				details.motionChangeRatio = changeRatio;
+				const motionInfo = [
+					`Motion Composite (${formatTimestamp(range.start)} - ${formatTimestamp(range.end)}, duration ${(range.end - range.start).toFixed(3)}s)${crop ? `; crop x=${crop.x}, y=${crop.y}, width=${crop.width}, height=${crop.height}` : ""}:`,
+					bbox
+						? `Detected motion Bounding Box: x=${bbox.x}, y=${bbox.y}, width=${bbox.width}, height=${bbox.height} (${(changeRatio * 100).toFixed(2)}% changed pixels)`
+						: "No significant pixel difference detected in this range.",
+					"4-Grid Layout Description:",
+					"- Top-Left: Frame A (start frame)",
+					"- Top-Right: Frame B (end frame)",
+					"- Bottom-Left: Amplified Difference (black background highlights location of visual changes)",
+					"- Bottom-Right: Red-Cyan Motion Overlay (Red outlines show starting position in Frame A; Cyan outlines show ending position in Frame B)",
+				].join("\n");
+				content.push({ type: "text", text: motionInfo });
+				if (ctx?.model && !ctx.model.input.includes("image")) {
+					content.push({ type: "text", text: "[Current model is explicitly configured as text-only, so the motion image cannot be sent to it. Use a vision-capable model or change this model's input capability to [\"text\", \"image\"].]" });
+				}
+				content.push({ type: "image", data: image.toString("base64"), mimeType: "image/jpeg" });
 			}
 
 			if (action === "transcript") {

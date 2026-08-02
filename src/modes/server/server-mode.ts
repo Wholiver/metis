@@ -678,7 +678,8 @@ export async function startServerMode(
 							const label = await ui.select(prompt.message, prompt.options.map((option: any) => option.label));
 							return prompt.options.find((option: any) => option.label === label)?.id;
 						},
-						onManualCodeInput: () => ui.input("粘贴重定向 URL 或验证码"),
+						// Let the Provider's localhost callback finish first. If it cannot,
+						// the Provider falls back to onPrompt without forcing a paste dialog.
 					});
 				}
 				session.modelRegistry.refresh();

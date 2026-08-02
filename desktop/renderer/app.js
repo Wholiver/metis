@@ -1,6 +1,6 @@
 const desktop = window.metisDesktop;
 const desktopI18n = window.metisDesktopI18n;
-const { analyzeAssistantTurn, shouldQueueDesktopMessage, getAssistantWorkLayout, getSubagentToolCalls, shouldHideAssistantWorkHeader, getAssistantTurnDuration, reconcileAssistantFinalDivider, isSubagentLaunchNotice } = window.metisMessageTurns;
+const { analyzeAssistantTurn, shouldQueueDesktopMessage, getAssistantWorkLayout, getRunningSubagentIds, getSubagentToolCalls, shouldHideAssistantWorkHeader, getAssistantTurnDuration, reconcileAssistantFinalDivider, isSubagentLaunchNotice } = window.metisMessageTurns;
 const { resolveCustomProviderModel } = window.metisModelSelection;
 const attachmentTools = window.metisAttachments;
 const MAX_INLINE_TEXT_BYTES = 1024 * 1024;
@@ -1893,7 +1893,7 @@ function renderComposerStatusRow(messages = state.messages) {
 
 function renderSubagentDock(messages = state.messages) {
 	if (!elements.subagentDock) return;
-	const runningIds = [...new Set(Array.isArray(state.session?.runningSubagentIds) ? state.session.runningSubagentIds : [])];
+	const runningIds = getRunningSubagentIds(messages, state.session?.runningSubagentIds);
 	const previousIds = new Set(state.subagentDockRunningIds || []);
 	const hasNewSubagent = runningIds.some((jobId) => !previousIds.has(jobId));
 	if (hasNewSubagent) state.subagentDockExpanded = true;

@@ -293,6 +293,39 @@ describe("server mode", () => {
 		expect(fixture.runtime.newSession).toHaveBeenLastCalledWith({ cwd: "/tmp", parentSession: undefined });
 	});
 
+	test("waits for the localhost OAuth callback before showing fallback input", async () => {
+		const fixture = createRuntimeFixture();
+		const login = vi.fn(async (_providerId: string, callbacks: {
+			onAuth: (info: { url: string }) => void;
+			onPrompt: (prompt: { message: string; placeholder?: string }) => Promise<string>;
+			onManualCodeInput?: () => Promise<string>;
+		}) => {
+			expect(callbacks.onAuth).toBeTypeOf("function");
+			expect(callbacks.onPrompt).toBeTypeOf("function");
+			expect(callbacks.onManualCodeInput).toBeUndefined();
+		});
+		Object.assign(fixture.session.modelRegistry, {
+			authStorage: {
+				getOAuthProviders: vi.fn(() => [{ id: "anthropic" }]),
+				login,
+			},
+			getAll: vi.fn(() => [{ provider: "anthropic", id: "claude-test" }]),
+			refresh: vi.fn(),
+		});
+		Object.assign(fixture.session, { syncModelFromRegistry: vi.fn() });
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+
+		const response = await fetch(`${handle.address.url}/session/command`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ command: "/login anthropic" }),
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ command: "login", provider: "anthropic" });
+		expect(login).toHaveBeenCalledOnce();
+	});
+
 	test("streams connection and session events over SSE", async () => {
 		const fixture = createRuntimeFixture();
 		handle = await startServerMode(fixture.runtime, { port: 0 });

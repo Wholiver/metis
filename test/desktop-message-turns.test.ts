@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { analyzeAssistantTurn, getSubagentProgress, getRunningSubagentCount, getSubagentToolCalls, shouldQueueDesktopMessage, getAssistantContentLayout, getAssistantWorkLayout, shouldHideAssistantWorkHeader, getAssistantTurnDuration, reconcileAssistantFinalDivider, isSubagentLaunchNotice } = require("../desktop/renderer/message-turns.js") as {
+const { analyzeAssistantTurn, getSubagentProgress, getRunningSubagentCount, getRunningSubagentIds, getSubagentToolCalls, shouldQueueDesktopMessage, getAssistantContentLayout, getAssistantWorkLayout, shouldHideAssistantWorkHeader, getAssistantTurnDuration, reconcileAssistantFinalDivider, isSubagentLaunchNotice } = require("../desktop/renderer/message-turns.js") as {
 	analyzeAssistantTurn: (message: unknown, messages: unknown[], isStreaming: boolean) => {
 		hasCoT: boolean;
 		hasRunningSubagent: boolean;
@@ -12,6 +12,7 @@ const { analyzeAssistantTurn, getSubagentProgress, getRunningSubagentCount, getS
 	};
 	getSubagentProgress: (part: unknown, messages: unknown[]) => { jobId: string; state: "running" | "completed" | "failed" };
 	getRunningSubagentCount: (messages: unknown[]) => number;
+	getRunningSubagentIds: (messages: unknown[], reportedJobIds?: unknown[]) => string[];
 	getSubagentToolCalls: (messages: unknown[]) => Array<{ jobId: string; part: unknown }>;
 	shouldQueueDesktopMessage: (messages: unknown[], isStreaming: boolean) => boolean;
 	getAssistantContentLayout: (message: unknown, isFinalAssistant: boolean) => {
@@ -186,7 +187,7 @@ describe("desktop assistant turn grouping", () => {
 		expect(getAssistantTurnDuration(delegated, messages, {}, { active: true, now: 11_200 })).toBe(10.2);
 	});
 
-	it("keeps completed subagent work expanded while keeping final response separate", () => {
+	it("collapses completed subagent work while keeping final response separate", () => {
 		const reasoning = { role: "assistant", content: [{ type: "thinking", thinking: "spawn agent" }, { type: "toolCall", id: "tool-call-kqpvqh", name: "subagent" }] };
 		const waiting = { role: "assistant", content: [{ type: "text", text: "Waiting for subagent." }] };
 		const resumed = { role: "assistant", content: [{ type: "thinking", thinking: "subagent returned" }] };
@@ -201,9 +202,9 @@ describe("desktop assistant turn grouping", () => {
 			final,
 		];
 
-		expect(analyzeAssistantTurn(reasoning, messages, false)).toMatchObject({ hasCoT: true, isIntermediate: true, shouldCollapse: false });
-		expect(analyzeAssistantTurn(waiting, messages, false)).toMatchObject({ hasCoT: true, isIntermediate: true, shouldCollapse: false });
-		expect(analyzeAssistantTurn(final, messages, false)).toMatchObject({ hasCoT: true, isFinalAssistant: true, shouldCollapse: false });
+		expect(analyzeAssistantTurn(reasoning, messages, false)).toMatchObject({ hasCoT: true, isIntermediate: true, shouldCollapse: true });
+		expect(analyzeAssistantTurn(waiting, messages, false)).toMatchObject({ hasCoT: true, isIntermediate: true, shouldCollapse: true });
+		expect(analyzeAssistantTurn(final, messages, false)).toMatchObject({ hasCoT: true, isFinalAssistant: true, shouldCollapse: true });
 	});
 
 	it("recognizes a historical string message as final response after tool work", () => {
@@ -232,7 +233,7 @@ describe("desktop assistant turn grouping", () => {
 		});
 	});
 
-	it.each(["openai", "anthropic", "google"])("keeps %s thinking content expanded after completion", (provider) => {
+	it.each(["openai", "anthropic", "google"])("collapses %s thinking content after completion", (provider) => {
 		const reasoning = {
 			role: "assistant",
 			provider,
@@ -243,7 +244,7 @@ describe("desktop assistant turn grouping", () => {
 
 		expect(analyzeAssistantTurn(reasoning, messages, false)).toMatchObject({
 			hasCoT: true,
-			shouldCollapse: false,
+			shouldCollapse: true,
 		});
 	});
 
@@ -283,7 +284,7 @@ describe("desktop assistant turn grouping", () => {
 		expect(analyzeAssistantTurn(final, messages, false)).toMatchObject({
 			hasFinalResponse: true,
 			isFinalAssistant: true,
-			shouldCollapse: false,
+			shouldCollapse: true,
 		});
 		expect(analyzeAssistantTurn(placeholder, messages, false).isFinalAssistant).toBe(false);
 	});
@@ -324,6 +325,31 @@ describe("desktop subagent progress", () => {
 		];
 
 		expect(getRunningSubagentCount(messages)).toBe(1);
+	});
+
+	it("derives running Subagents from messages when session status is missing", () => {
+		const messages = [{ role: "assistant", content: [
+			{ type: "toolCall", id: "tool-call-first1", name: "subagent" },
+			{ type: "toolCall", id: "tool-call-second", name: "subagent" },
+		] }];
+
+		expect(getRunningSubagentIds(messages, [])).toEqual(["first1", "second"]);
+	});
+
+	it("shows reported Subagents before their tool call message arrives", () => {
+		expect(getRunningSubagentIds([], ["early1"])).toEqual(["early1"]);
+	});
+
+	it("removes completed Subagents even when session status is stale", () => {
+		const messages = [
+			{ role: "assistant", content: [
+				{ type: "toolCall", id: "tool-call-first1", name: "subagent" },
+				{ type: "toolCall", id: "tool-call-second", name: "subagent" },
+			] },
+			{ role: "custom", customType: "subagent_result", content: "[Subagent Job first1 finished]\n\nDone" },
+		];
+
+		expect(getRunningSubagentIds(messages, ["first1", "second"])).toEqual(["second"]);
 	});
 
 	it("queues desktop messages while streaming or while a subagent is running", () => {

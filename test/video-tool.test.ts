@@ -35,6 +35,7 @@ describe("video tool", () => {
 			probe: vi.fn(async () => ({ duration: 80, width: 1280, height: 720, frameRate: 30, hasAudio: true, hasSubtitles: false })),
 			createStoryboard: vi.fn(async () => TINY_JPEG),
 			createFrames: vi.fn(async (_path, frameTimes) => frameTimes.map(() => TINY_PNG)),
+			createMotionComposite: vi.fn(async () => ({ image: TINY_JPEG, bbox: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 }, changeRatio: 0.05 })),
 			readSidecarSubtitles: vi.fn(async () => undefined),
 			readEmbeddedSubtitles: vi.fn(async () => undefined),
 			transcribe: vi.fn(async () => [{ start: 10, end: 12, text: "hello video" }]),
@@ -205,6 +206,30 @@ describe("video tool", () => {
 		const result = await createVideoTool(testDir).execute("video-real-detail", { action: "frames", path: "real-detail.mp4", timestamps: [0.5], crop: { x: 0, y: 0, width: 0.5, height: 1 } });
 		const image = result.content.find((block) => block.type === "image");
 		expect(result.details.frameTimes).toEqual([0.5]);
+		expect(image?.mimeType).toBe("image/jpeg");
+		expect(Buffer.from(image?.data ?? "", "base64").subarray(0, 2).toString("hex")).toBe("ffd8");
+	});
+
+	it("returns a 4-grid motion composite image and bounding box metadata for action=motion", async () => {
+		const ops = operations();
+		const tool = createVideoTool(testDir, { operations: ops });
+		const result = await tool.execute("video-motion", { action: "motion", path: "clip.mp4", start: 1, end: 2 });
+		const image = result.content.find((block) => block.type === "image");
+		const output = result.content.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+		expect(result.details.motionBbox).toEqual({ x: 0.1, y: 0.2, width: 0.3, height: 0.4 });
+		expect(result.details.motionChangeRatio).toBe(0.05);
+		expect(image?.mimeType).toBe("image/jpeg");
+		expect(output).toContain("Motion Composite");
+		expect(output).toContain("Detected motion Bounding Box");
+		expect(output).toContain("4-Grid Layout Description");
+		expect(ops.createMotionComposite).toHaveBeenCalledWith(join(testDir, "clip.mp4"), 1, 2, undefined, undefined);
+	});
+
+	it("extracts real motion composite image and detects pixel difference with bundled FFmpeg", async () => {
+		const videoPath = join(testDir, "real-motion.mp4");
+		await runFile(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=1.5:size=320x180:rate=10", "-an", "-pix_fmt", "yuv420p", "-y", videoPath]);
+		const result = await createVideoTool(testDir).execute("video-real-motion", { action: "motion", path: "real-motion.mp4", start: 0.1, end: 1.0 });
+		const image = result.content.find((block) => block.type === "image");
 		expect(image?.mimeType).toBe("image/jpeg");
 		expect(Buffer.from(image?.data ?? "", "base64").subarray(0, 2).toString("hex")).toBe("ffd8");
 	});

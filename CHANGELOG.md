@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.6.1-rc.1] - 2026-08-02
+
+### Desktop workflow and video inspection
+
+- Completed Desktop OAuth through the automatic localhost callback flow, removing manual callback URL copying.
+- Restored automatic Worked-section collapse after completion and live Subagent dock expansion, counts, and cleanup.
+- Aligned macOS titlebar navigation controls with the traffic-light button centers.
+- Added video motion composites for inspecting subtle micro-interactions, animations, and movement direction.
+
 ## [1.6.0-rc.2] - 2026-08-01
 
 ### OAuth reliability and Provider setup UI

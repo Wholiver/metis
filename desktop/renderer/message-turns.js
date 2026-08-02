@@ -108,10 +108,7 @@
 			isCurrentTurn,
 			isFinalAssistant,
 			isIntermediate: !isFinalAssistant,
-			// Keep reasoning visible after completion. Providers expose different forms
-			// of thinking (for example OpenAI summaries versus Anthropic thinking), but
-			// any non-empty normalized thinking block should render expanded by default.
-			shouldCollapse: false,
+			shouldCollapse: hasCoT && hasFinalResponse && !isStreaming && !hasRunningSubagent,
 		};
 	}
 
@@ -141,17 +138,7 @@
 	}
 
 	function getRunningSubagentCount(messages) {
-		const runningToolCallIds = new Set();
-		for (const message of messages) {
-			if (message?.role !== "assistant" || !Array.isArray(message.content)) continue;
-			for (const part of message.content) {
-				if (part?.type !== "toolCall" || String(part.name || "").toLowerCase() !== "subagent") continue;
-				if (getSubagentProgress(part, messages).state === "running") {
-					runningToolCallIds.add(String(part.id || ""));
-				}
-			}
-		}
-		return runningToolCallIds.size;
+		return getRunningSubagentIds(messages).length;
 	}
 
 	function getSubagentToolCalls(messages) {
@@ -168,6 +155,27 @@
 			}
 		}
 		return calls;
+	}
+
+	function getRunningSubagentIds(messages, reportedJobIds = []) {
+		const progressByJobId = new Map(getSubagentToolCalls(messages).map(({ jobId, part }) => [
+			jobId,
+			getSubagentProgress(part, messages).state,
+		]));
+		const runningJobIds = new Set();
+
+		for (const rawJobId of Array.isArray(reportedJobIds) ? reportedJobIds : []) {
+			const jobId = String(rawJobId || "").trim();
+			if (!jobId) continue;
+			const progress = progressByJobId.get(jobId);
+			if (!progress || progress === "running") runningJobIds.add(jobId);
+		}
+
+		for (const [jobId, progress] of progressByJobId) {
+			if (progress === "running") runningJobIds.add(jobId);
+		}
+
+		return [...runningJobIds];
 	}
 
 	function shouldQueueDesktopMessage(messages, isStreaming) {
@@ -249,6 +257,7 @@
 		analyzeAssistantTurn,
 		getSubagentProgress,
 		getRunningSubagentCount,
+		getRunningSubagentIds,
 		getSubagentToolCalls,
 		shouldHideAssistantWorkHeader,
 		getAssistantTurnDuration,
