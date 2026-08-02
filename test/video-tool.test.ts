@@ -35,7 +35,7 @@ describe("video tool", () => {
 			probe: vi.fn(async () => ({ duration: 80, width: 1280, height: 720, frameRate: 30, hasAudio: true, hasSubtitles: false })),
 			createStoryboard: vi.fn(async () => TINY_JPEG),
 			createFrames: vi.fn(async (_path, frameTimes) => frameTimes.map(() => TINY_PNG)),
-			createMotionComposite: vi.fn(async () => ({ image: TINY_JPEG, bbox: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 }, changeRatio: 0.05 })),
+			createMotionComposite: vi.fn(async () => ({ image: TINY_JPEG, bbox: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 }, changeRatio: 0.05, magnitude: "Medium", isGlobalMotion: false })),
 			readSidecarSubtitles: vi.fn(async () => undefined),
 			readEmbeddedSubtitles: vi.fn(async () => undefined),
 			transcribe: vi.fn(async () => [{ start: 10, end: 12, text: "hello video" }]),
@@ -210,19 +210,21 @@ describe("video tool", () => {
 		expect(Buffer.from(image?.data ?? "", "base64").subarray(0, 2).toString("hex")).toBe("ffd8");
 	});
 
-	it("returns a 4-grid motion composite image and bounding box metadata for action=motion", async () => {
+	it("returns a dense motion sequence grid image, quantitative metrics, and 4D action guidance for action=motion", async () => {
 		const ops = operations();
 		const tool = createVideoTool(testDir, { operations: ops });
-		const result = await tool.execute("video-motion", { action: "motion", path: "clip.mp4", start: 1, end: 2 });
+		const result = await tool.execute("video-motion", { action: "motion", path: "clip.mp4", start: 1, end: 2, count: 6 });
 		const image = result.content.find((block) => block.type === "image");
 		const output = result.content.map((block) => (block.type === "text" ? block.text : "")).join("\n");
 		expect(result.details.motionBbox).toEqual({ x: 0.1, y: 0.2, width: 0.3, height: 0.4 });
 		expect(result.details.motionChangeRatio).toBe(0.05);
+		expect(result.details.motionMagnitude).toBe("Medium");
+		expect(result.details.isGlobalMotion).toBe(false);
 		expect(image?.mimeType).toBe("image/jpeg");
-		expect(output).toContain("Motion Composite");
-		expect(output).toContain("Detected motion Bounding Box");
-		expect(output).toContain("4-Grid Layout Description");
-		expect(ops.createMotionComposite).toHaveBeenCalledWith(join(testDir, "clip.mp4"), 1, 2, undefined, undefined);
+		expect(output).toContain("Universal Motion Sequence Grid");
+		expect(output).toContain("Motion Magnitude: Medium");
+		expect(output).toContain("4D Universal Action Analysis Instructions");
+		expect(ops.createMotionComposite).toHaveBeenCalledWith(join(testDir, "clip.mp4"), 1, 2, 6, undefined, undefined);
 	});
 
 	it("extracts real motion composite image and detects pixel difference with bundled FFmpeg", async () => {

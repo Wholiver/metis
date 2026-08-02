@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.6.2-rc.1] - 2026-08-03
+
+### Dense video motion analysis
+
+- Reworked video motion inspection into timestamped 4–9 frame sequence grids for UI transitions, human actions, sports, camera movement, and other motion.
+- Added motion magnitude, changed-region bounds, and global-motion classification to guide analysis.
+- Added a four-dimensional action-analysis framework and updated regression coverage for dense motion output.
+
 ## [1.6.1-rc.1] - 2026-08-02
 
 ### Desktop workflow and video inspection
