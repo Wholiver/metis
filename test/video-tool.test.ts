@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAllTools } from "../src/core/tools/index.ts";
-import { createVideoTool, createVideoToolDefinition, parseSubtitleText, resolveMediaBinaryPath, type VideoOperations } from "../src/core/tools/video.ts";
+import { createVideoTool, createVideoToolDefinition, motionFrameTimesForRange, motionGridLayout, parseSubtitleText, resolveMediaBinaryPath, type VideoOperations } from "../src/core/tools/video.ts";
 
 const runFile = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -35,7 +35,16 @@ describe("video tool", () => {
 			probe: vi.fn(async () => ({ duration: 80, width: 1280, height: 720, frameRate: 30, hasAudio: true, hasSubtitles: false })),
 			createStoryboard: vi.fn(async () => TINY_JPEG),
 			createFrames: vi.fn(async (_path, frameTimes) => frameTimes.map(() => TINY_PNG)),
-			createMotionComposite: vi.fn(async () => ({ image: TINY_JPEG, bbox: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 }, changeRatio: 0.05, magnitude: "Medium", isGlobalMotion: false })),
+			createMotionComposite: vi.fn(async (_path, start, end, count) => ({
+				image: TINY_JPEG,
+				evidenceImage: TINY_JPEG,
+				frameTimes: motionFrameTimesForRange({ start, end }, count),
+				stepChangeRatios: Array.from({ length: count - 1 }, () => 0.05),
+				bbox: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+				changeRatio: 0.05,
+				magnitude: "Medium",
+				isGlobalMotion: false,
+			})),
 			readSidecarSubtitles: vi.fn(async () => undefined),
 			readEmbeddedSubtitles: vi.fn(async () => undefined),
 			transcribe: vi.fn(async () => [{ start: 10, end: 12, text: "hello video" }]),
@@ -67,6 +76,14 @@ describe("video tool", () => {
 		expect(resolveMediaBinaryPath(dependencyPath, "ffmpeg", join(testDir, "missing-dist"))).toBe(dependencyPath);
 	});
 
+	it("builds exact motion timestamps and layouts for every supported sample count", () => {
+		expect(motionFrameTimesForRange({ start: 1, end: 1.5 }, 6)).toEqual([1, 1.1, 1.2, 1.3, 1.4, 1.5]);
+		for (let count = 4; count <= 9; count++) {
+			const { layout } = motionGridLayout(count);
+			expect(layout.split("|")).toHaveLength(count);
+		}
+	});
+
 	it("initializes inspection with explicit next-call instructions", async () => {
 		const ops = operations();
 		const tool = createVideoTool(testDir, { operations: ops });
@@ -77,7 +94,10 @@ describe("video tool", () => {
 		expect(output).toContain("Video inspector initialized");
 		expect(output).toContain("action=storyboard");
 		expect(output).toContain("action=frames");
+		expect(output).toContain("action=motion");
 		expect(output).toContain("action=transcript");
+		expect(output).toContain("sparse samples can miss intermediate motion");
+		expect(output).toContain("do not prove whether the cause");
 		expect(output).toContain("30.000 fps");
 		expect(output).toContain("Audio stream: yes");
 		expect(output).toContain("Transcription runtime prepared: no");
@@ -142,8 +162,12 @@ describe("video tool", () => {
 		} as any);
 		const output = result.content.map((block) => block.type === "text" ? block.text : "").join("\n");
 		expect(output).toContain("explicitly configured as text-only");
-		expect(definition.promptGuidelines?.join("\n")).toContain("frames at explicit timestamps");
-		expect(definition.promptGuidelines?.join("\n")).toContain("1–4 source frames apart");
+		const guidelines = definition.promptGuidelines?.join("\n") ?? "";
+		expect(guidelines).toContain("frames at explicit timestamps");
+		expect(guidelines).toContain("1–4 source frames apart");
+		expect(guidelines).toContain("sparse samples show broad phases");
+		expect(guidelines).toContain("cannot by itself distinguish subject motion from camera movement");
+		expect(guidelines).not.toContain("4D Universal");
 	});
 
 	it("automatically prepares a missing transcription model", async () => {
@@ -210,29 +234,64 @@ describe("video tool", () => {
 		expect(Buffer.from(image?.data ?? "", "base64").subarray(0, 2).toString("hex")).toBe("ffd8");
 	});
 
-	it("returns a dense motion sequence grid image, quantitative metrics, and 4D action guidance for action=motion", async () => {
+	it("returns ordered motion evidence with honest sampling guidance", async () => {
 		const ops = operations();
 		const tool = createVideoTool(testDir, { operations: ops });
 		const result = await tool.execute("video-motion", { action: "motion", path: "clip.mp4", start: 1, end: 2, count: 6 });
-		const image = result.content.find((block) => block.type === "image");
+		const images = result.content.filter((block) => block.type === "image");
 		const output = result.content.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+		expect(result.details.frameTimes).toEqual([1, 1.2, 1.4, 1.6, 1.8, 2]);
 		expect(result.details.motionBbox).toEqual({ x: 0.1, y: 0.2, width: 0.3, height: 0.4 });
 		expect(result.details.motionChangeRatio).toBe(0.05);
+		expect(result.details.motionStepChangeRatios).toEqual([0.05, 0.05, 0.05, 0.05, 0.05]);
 		expect(result.details.motionMagnitude).toBe("Medium");
 		expect(result.details.isGlobalMotion).toBe(false);
-		expect(image?.mimeType).toBe("image/jpeg");
-		expect(output).toContain("Universal Motion Sequence Grid");
-		expect(output).toContain("Motion Magnitude: Medium");
-		expect(output).toContain("4D Universal Action Analysis Instructions");
+		expect(result.details.motionSampling).toBe("sparse");
+		expect(result.details.motionFrameGap).toBeCloseTo(6);
+		expect(images).toHaveLength(2);
+		expect(images.every((image) => image.mimeType === "image/jpeg")).toBe(true);
+		expect(output).toContain("Motion sequence evidence");
+		expect(output).toContain("Sparse evidence");
+		expect(output).toContain("Per-step changed pixels");
+		expect(output).toContain("not an action classification");
+		expect(output).not.toContain("4D Universal");
 		expect(ops.createMotionComposite).toHaveBeenCalledWith(join(testDir, "clip.mp4"), 1, 2, 6, undefined, undefined);
+	});
+
+	it("marks a tight motion range as near-continuous using source frame rate", async () => {
+		const result = await createVideoTool(testDir, { operations: operations() }).execute("video-motion-tight", { action: "motion", path: "clip.mp4", start: 1, end: 1.5, count: 6 });
+		const output = result.content.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+		expect(result.details.motionSampling).toBe("near-continuous");
+		expect(result.details.motionFrameGap).toBeCloseTo(3);
+		expect(output).toContain("Near-continuous evidence");
 	});
 
 	it("extracts real motion composite image and detects pixel difference with bundled FFmpeg", async () => {
 		const videoPath = join(testDir, "real-motion.mp4");
 		await runFile(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=1.5:size=320x180:rate=10", "-an", "-pix_fmt", "yuv420p", "-y", videoPath]);
 		const result = await createVideoTool(testDir).execute("video-real-motion", { action: "motion", path: "real-motion.mp4", start: 0.1, end: 1.0 });
-		const image = result.content.find((block) => block.type === "image");
-		expect(image?.mimeType).toBe("image/jpeg");
-		expect(Buffer.from(image?.data ?? "", "base64").subarray(0, 2).toString("hex")).toBe("ffd8");
+		const images = result.content.filter((block) => block.type === "image");
+		expect(images).toHaveLength(2);
+		expect(images.every((image) => Buffer.from(image.data, "base64").subarray(0, 2).toString("hex") === "ffd8")).toBe(true);
+		expect(result.details.frameTimes).toHaveLength(6);
+		expect(result.details.motionStepChangeRatios).toHaveLength(5);
+	});
+
+	it.each([5, 8])("renders an incomplete %i-sample motion grid with bundled FFmpeg", async (count) => {
+		const videoPath = join(testDir, `motion-grid-${count}.mp4`);
+		await runFile(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=1.2:size=160x90:rate=10", "-an", "-pix_fmt", "yuv420p", "-y", videoPath]);
+		const result = await createVideoTool(testDir).execute(`video-motion-${count}`, { action: "motion", path: `motion-grid-${count}.mp4`, start: 0.1, end: 0.9, count });
+		expect(result.details.frameTimes).toHaveLength(count);
+		expect(result.content.filter((block) => block.type === "image")).toHaveLength(2);
+	});
+
+	it("does not invent motion for a static encoded clip", async () => {
+		const videoPath = join(testDir, "static.mp4");
+		await runFile(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:duration=1.5:size=320x180:rate=10", "-an", "-pix_fmt", "yuv420p", "-y", videoPath]);
+		const result = await createVideoTool(testDir).execute("video-static-motion", { action: "motion", path: "static.mp4", start: 0.1, end: 1.0 });
+		expect(result.details.motionChangeRatio).toBe(0);
+		expect(result.details.motionStepChangeRatios).toEqual([0, 0, 0, 0, 0]);
+		expect(result.details.motionBbox).toBeUndefined();
+		expect(result.details.motionMagnitude).toBe("Low");
 	});
 });

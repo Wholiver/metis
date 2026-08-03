@@ -34,9 +34,13 @@ export const VIDEO_TRANSCRIPTION_DISCOVERY_FILES = ["config.json", "tokenizer_co
 const STORYBOARD_SIZE = 1536;
 const CELL_SIZE = STORYBOARD_SIZE / 3;
 const DETAIL_FRAME_COUNT = 4;
-const MAX_DETAIL_FRAMES = 4;
-const UNCROPPED_MAX_DIMENSION = 1280;
+const MAX_DETAIL_FRAMES = 6;
+const UNCROPPED_MAX_DIMENSION = 2048;
 const CROPPED_MAX_DIMENSION = 2048;
+const MOTION_DEFAULT_FRAME_COUNT = 6;
+const MOTION_MIN_FRAME_COUNT = 4;
+const MOTION_MAX_FRAME_COUNT = 9;
+const MOTION_NEAR_CONTINUOUS_MAX_FRAME_GAP = 4;
 const TRANSCRIPT_MAX_BYTES = 50 * 1024;
 const TRANSCRIPTION_DEVICES = ["cpu", "coreml", "webgpu"] as const;
 type TranscriptionDevice = (typeof TRANSCRIPTION_DEVICES)[number];
@@ -65,7 +69,7 @@ const videoSchema = Type.Object({
 		width: Type.Number({ minimum: 0, maximum: 1, description: "Crop width as a fraction of frame width" }),
 		height: Type.Number({ minimum: 0, maximum: 1, description: "Crop height as a fraction of frame height" }),
 	}, { description: "Optional normalized crop for action=frames or action=motion; useful for reading small UI regions" })),
-	count: Type.Optional(Type.Integer({ minimum: 4, maximum: 9, description: "Number of dense sequence frames to extract for action=motion (default 6)" })),
+	count: Type.Optional(Type.Integer({ minimum: MOTION_MIN_FRAME_COUNT, maximum: MOTION_MAX_FRAME_COUNT, description: "Number of ordered samples for action=motion (default 6). Samples span start..end; use a tight interval for frame-adjacent animation evidence." })),
 	language: Type.Optional(Type.String({ description: "Whisper language code (for example zh or en); defaults to en" })),
 });
 
@@ -101,8 +105,11 @@ export interface VideoToolDetails {
 	crop?: VideoCrop;
 	motionBbox?: { x: number; y: number; width: number; height: number };
 	motionChangeRatio?: number;
+	motionStepChangeRatios?: number[];
 	motionMagnitude?: "Low" | "Medium" | "High";
 	isGlobalMotion?: boolean;
+	motionSampling?: "near-continuous" | "sparse";
+	motionFrameGap?: number;
 	transcript?: {
 		source: "sidecar" | "embedded" | "whisper";
 		truncated?: boolean;
@@ -116,7 +123,17 @@ export interface VideoOperations {
 	probe: (path: string, signal?: AbortSignal) => Promise<VideoMetadata>;
 	createStoryboard: (path: string, frameTimes: number[], signal?: AbortSignal) => Promise<Buffer>;
 	createFrames?: (path: string, frameTimes: number[], crop: VideoCrop | undefined, signal?: AbortSignal) => Promise<Buffer[]>;
-	createMotionComposite?: (path: string, start: number, end: number, count: number, crop: VideoCrop | undefined, signal?: AbortSignal) => Promise<{ image: Buffer; bbox?: { x: number; y: number; width: number; height: number }; changeRatio: number; magnitude: "Low" | "Medium" | "High"; isGlobalMotion: boolean }>;
+	createMotionComposite?: (path: string, start: number, end: number, count: number, crop: VideoCrop | undefined, signal?: AbortSignal) => Promise<{
+		image: Buffer;
+		evidenceImage?: Buffer;
+		frameTimes?: number[];
+		stepChangeRatios?: number[];
+		bbox?: { x: number; y: number; width: number; height: number };
+		changeRatio: number;
+		magnitude: "Low" | "Medium" | "High";
+		/** Legacy broad-change heuristic. This does not prove camera motion. */
+		isGlobalMotion: boolean;
+	}>;
 	readSidecarSubtitles: (path: string) => Promise<TranscriptSegment[] | undefined>;
 	readEmbeddedSubtitles: (path: string, signal?: AbortSignal) => Promise<TranscriptSegment[] | undefined>;
 	transcribe: (path: string, range: { start: number; end: number }, language: string, signal?: AbortSignal) => Promise<TranscriptSegment[]>;
@@ -173,6 +190,30 @@ function resolveRange(input: VideoToolInput, duration: number): { start: number;
 function frameTimesForRange(range: { start: number; end: number }, count = 9): number[] {
 	const span = range.end - range.start;
 	return Array.from({ length: count }, (_, index) => range.start + (span * (index + 0.5)) / count);
+}
+
+export function motionFrameTimesForRange(range: { start: number; end: number }, count: number): number[] {
+	if (count === 1) return [range.start];
+	const span = range.end - range.start;
+	return Array.from({ length: count }, (_, index) => range.start + (span * index) / (count - 1));
+}
+
+export function motionGridLayout(count: number): { cellSize: number; layout: string } {
+	const columns = count <= 4 ? 2 : 3;
+	const cellSize = count <= 4 ? 768 : 512;
+	const layout = Array.from({ length: count }, (_, index) => `${(index % columns) * cellSize}_${Math.floor(index / columns) * cellSize}`).join("|");
+	return { cellSize, layout };
+}
+
+function motionSampling(frameTimes: number[], frameRate?: number): { kind: "near-continuous" | "sparse"; interval: number; frameGap?: number } {
+	const intervals = frameTimes.slice(1).map((time, index) => time - frameTimes[index]);
+	const interval = intervals.length ? Math.max(...intervals) : 0;
+	const frameGap = frameRate ? interval * frameRate : undefined;
+	return {
+		kind: frameGap !== undefined && frameGap <= MOTION_NEAR_CONTINUOUS_MAX_FRAME_GAP + 0.001 ? "near-continuous" : "sparse",
+		interval,
+		frameGap,
+	};
 }
 
 function resolveFrameTimes(input: VideoToolInput, range: { start: number; end: number }, duration: number): number[] {
@@ -405,7 +446,7 @@ const defaultVideoOperations: VideoOperations = {
 				const output = join(workDir, `frame-${index}.jpg`);
 				const filters = crop ? [`crop=w='iw*${crop.width}':h='ih*${crop.height}':x='iw*${crop.x}':y='ih*${crop.y}'`] : [];
 				filters.push(`scale=w='min(${maxDimension},iw)':h='min(${maxDimension},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`);
-				const outputArgs = ["-frames:v", "1", "-vf", filters.join(","), "-q:v", "3", "-y", output];
+				const outputArgs = ["-frames:v", "1", "-vf", filters.join(","), "-q:v", "2", "-y", output];
 				try {
 					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(frameTimes[index]), "-i", path, ...outputArgs], signal);
 					await access(output);
@@ -421,39 +462,23 @@ const defaultVideoOperations: VideoOperations = {
 			await rm(workDir, { recursive: true, force: true });
 		}
 	},
-	async createMotionComposite(path, start, end, count = 6, crop, signal) {
-		const numFrames = Math.max(4, Math.min(9, count || 6));
+	async createMotionComposite(path, start, end, count = MOTION_DEFAULT_FRAME_COUNT, crop, signal) {
+		const numFrames = Math.max(MOTION_MIN_FRAME_COUNT, Math.min(MOTION_MAX_FRAME_COUNT, count || MOTION_DEFAULT_FRAME_COUNT));
 		const workDir = join(tmpdir(), `metis-video-motion-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		await mkdir(workDir, { recursive: true });
 		try {
-			const frameTimes: number[] = [];
-			const span = end - start;
-			for (let i = 0; i < numFrames; i++) {
-				frameTimes.push(start + (span * i) / (numFrames - 1));
-			}
-
-			let cellW = 512;
-			let cellH = 512;
-			let layoutStr = "0_0|512_0|1024_0|0_512|512_512|1024_512";
-			if (numFrames <= 4) {
-				cellW = 768;
-				cellH = 768;
-				layoutStr = "0_0|768_0|0_768|768_768";
-			} else if (numFrames > 6) {
-				cellW = 512;
-				cellH = 512;
-				layoutStr = "0_0|512_0|1024_0|0_512|512_512|1024_512|0_1024|512_1024|1024_1024";
-			}
+			const frameTimes = motionFrameTimesForRange({ start, end }, numFrames);
+			const { cellSize, layout } = motionGridLayout(numFrames);
 
 			const cropFilter = crop ? `crop=w='iw*${crop.width}':h='ih*${crop.height}':x='iw*${crop.x}':y='ih*${crop.y}',` : "";
-			const scaleFilter = `scale=${cellW}:${cellH}:force_original_aspect_ratio=decrease,pad=${cellW}:${cellH}:(ow-iw)/2:(oh-ih)/2:black`;
+			const scaleFilter = `scale=${cellSize}:${cellSize}:force_original_aspect_ratio=decrease,pad=${cellSize}:${cellSize}:(ow-iw)/2:(oh-ih)/2:black`;
 
 			const cellFiles: string[] = [];
 			for (let i = 0; i < numFrames; i++) {
 				const cellFile = join(workDir, `cell-${i}.jpg`);
 				const timeLabel = formatTimestamp(frameTimes[i]).replace(/:/g, "\\:");
 				const drawText = `drawtext=text='#${i + 1}\\: ${timeLabel}':x=18:y=h-42:fontcolor=white:fontsize=28:box=1:boxcolor=black@0.65:boxborderw=8`;
-				const outputArgs = ["-frames:v", "1", "-vf", `${cropFilter}${scaleFilter},${drawText}`, "-q:v", "3", "-y", cellFile];
+				const outputArgs = ["-frames:v", "1", "-vf", `${cropFilter}${scaleFilter},${drawText}`, "-q:v", "2", "-y", cellFile];
 				try {
 					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(frameTimes[i]), "-i", path, ...outputArgs], signal);
 					await access(cellFile);
@@ -482,19 +507,26 @@ const defaultVideoOperations: VideoOperations = {
 			const threshold = 12;
 			const totalPixelsPerFrame = rawW * rawH;
 			const frameDiffsCount = numFrames - 1;
+			const maxPixelDeltas = Buffer.alloc(totalPixelsPerFrame);
+			const stepChangeRatios: number[] = [];
 
 			for (let i = 0; i < frameDiffsCount; i++) {
 				const bufA = rawBuffers[i];
 				const bufB = rawBuffers[i + 1];
+				let stepChangedPixels = 0;
 				for (let y = 0; y < rawH; y++) {
 					for (let x = 0; x < rawW; x++) {
-						const idx = (y * rawW + x) * 3;
+						const pixelIndex = y * rawW + x;
+						const idx = pixelIndex * 3;
 						if (idx + 2 < bufA.length && idx + 2 < bufB.length) {
 							const dR = Math.abs(bufA[idx] - bufB[idx]);
 							const dG = Math.abs(bufA[idx + 1] - bufB[idx + 1]);
 							const dB = Math.abs(bufA[idx + 2] - bufB[idx + 2]);
-							if (dR > threshold || dG > threshold || dB > threshold) {
+							const maxDelta = Math.max(dR, dG, dB);
+							if (maxDelta > maxPixelDeltas[pixelIndex]) maxPixelDeltas[pixelIndex] = maxDelta;
+							if (maxDelta > threshold) {
 								totalChangedPixels++;
+								stepChangedPixels++;
 								if (x < minX) minX = x;
 								if (x > maxX) maxX = x;
 								if (y < minY) minY = y;
@@ -503,6 +535,7 @@ const defaultVideoOperations: VideoOperations = {
 						}
 					}
 				}
+				stepChangeRatios.push(Number((stepChangedPixels / totalPixelsPerFrame).toFixed(4)));
 			}
 
 			const changeRatio = Number((totalChangedPixels / (totalPixelsPerFrame * frameDiffsCount)).toFixed(4));
@@ -524,11 +557,38 @@ const defaultVideoOperations: VideoOperations = {
 				}
 			}
 
+			const motionMapPixels = Buffer.alloc(totalPixelsPerFrame * 3);
+			const referenceFrame = rawBuffers[0];
+			for (let pixelIndex = 0; pixelIndex < totalPixelsPerFrame; pixelIndex++) {
+				const idx = pixelIndex * 3;
+				const luminance = Math.round((referenceFrame[idx] + referenceFrame[idx + 1] + referenceFrame[idx + 2]) / 3);
+				const background = Math.round(luminance * 0.28);
+				const delta = maxPixelDeltas[pixelIndex];
+				const heat = delta > threshold ? Math.min(255, (delta - threshold) * 5) : 0;
+				motionMapPixels[idx] = Math.max(background, heat);
+				motionMapPixels[idx + 1] = heat > 0 ? Math.round(background * 0.35) : background;
+				motionMapPixels[idx + 2] = heat > 0 ? Math.round(background * 0.15) : background;
+			}
+			const motionMapPpm = join(workDir, "motion-evidence.ppm");
+			await writeFile(motionMapPpm, Buffer.concat([Buffer.from(`P6\n${rawW} ${rawH}\n255\n`, "ascii"), motionMapPixels]));
+			const evidenceOutput = join(workDir, "motion-evidence.jpg");
+			const evidenceLabel = "Motion evidence\\: brighter red = larger adjacent-sample pixel change";
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", motionMapPpm, "-frames:v", "1", "-vf", `scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,drawtext=text='${evidenceLabel}':x=18:y=h-42:fontcolor=white:fontsize=28:box=1:boxcolor=black@0.65:boxborderw=8`, "-q:v", "2", "-y", evidenceOutput], signal);
+
 			const output = join(workDir, "motion-grid.jpg");
 			const inputArgs = cellFiles.flatMap((file) => ["-i", file]);
-			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", ...inputArgs, "-filter_complex", `xstack=inputs=${numFrames}:layout=${layoutStr}`, "-frames:v", "1", "-q:v", "3", "-y", output], signal);
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", ...inputArgs, "-filter_complex", `xstack=inputs=${numFrames}:layout=${layout}`, "-frames:v", "1", "-q:v", "2", "-y", output], signal);
 
-			return { image: await readFile(output), bbox, changeRatio, magnitude, isGlobalMotion };
+			return {
+				image: await readFile(output),
+				evidenceImage: await readFile(evidenceOutput),
+				frameTimes,
+				stepChangeRatios,
+				bbox,
+				changeRatio,
+				magnitude,
+				isGlobalMotion,
+			};
 		} finally {
 			await rm(workDir, { recursive: true, force: true });
 		}
@@ -655,9 +715,18 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 	return {
 		name: "video",
 		label: "video",
-		description: "Inspect a local video with metadata, a timestamped overview storyboard, high-fidelity independent frames, dense motion sequence grids, and/or a transcript. Use frames for readable UI, text, styling, and exact visual state. Use motion for dense sequence grids and universal action/motion analysis across all video types (human actions, sports, physical movement, camera motion, animations, and UI transitions). The first local transcript request automatically downloads and verifies transcription assets.",
-		promptSnippet: "Inspect local video with an overview, high-fidelity detail frames, dense motion sequence grids, and transcript",
-		promptGuidelines: ["For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.", "Call inspect first. Use storyboard for temporal overview first to locate timestamp ranges, then use frames at explicit timestamps before claiming UI text, typography, colors, spacing, layout, selected state, or other small visual details.", "For interactions, animations, or motion, compare frames immediately before, during, and after the event. Use the reported frame rate to choose timestamps 1–4 source frames apart, and track visual state shifts (position, opacity, hover/active states, transitions) across consecutive frames.", "For universal motion analysis across any video type (human actions, sports, gestures, physics, camera movement, or UI transitions), call action=motion with start and end times spanning the movement interval. Motion action outputs a dense temporal sequence grid (4–9 consecutive clean frames) with frame-by-frame timestamps, motion magnitude, and a 4D action analysis framework.", "Always use normalized crop with frames or motion to enlarge specific subjects, UI components, text, icons, or small regions for high-precision verification. Request no more frames than needed (1–3 frames recommended, max 4) and analyze each batch before continuing.", "For transcript, pass the spoken language code when known (for example zh or en); the local runtime defaults to en. Transcript proves spoken text, not visual state.", "The first local transcript request may take longer while Metis downloads and verifies the pinned transcription model. Retry normally if initialization reports a network or filesystem error.", "Never use this tool for remote URLs."],
+		description: "Inspect a local video without sending video bytes directly to the model. Use inspect for metadata, storyboard to locate events, motion for ordered visual samples and pixel-change evidence inside a chosen time range, frames for high-resolution confirmation, and transcript for spoken text. Motion metrics are heuristics: they show where pixels changed but do not by themselves prove the cause of movement.",
+		promptSnippet: "Inspect local video with metadata, temporal overview, motion evidence, detail frames, and transcript",
+		promptGuidelines: [
+			"For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.",
+			"Call action=inspect first. It reports duration and frame rate but provides no visual evidence. Then choose the smallest action that answers the question.",
+			"Use action=storyboard to locate scenes or event ranges across time. Storyboard cells are navigation evidence; do not use them to make fine claims about text, styling, state, or animation details.",
+			"Use action=motion with a start and end tightly surrounding one movement. It returns ordered samples spanning that exact range, their timestamps and spacing, per-step pixel-change ratios, and a separate motion-evidence map. Read the reported sampling mode: sparse samples show broad phases but may miss intermediate motion; near-continuous samples support finer transition analysis.",
+			"When analyzing action or animation, track the same subject across every ordered sample. Describe observed changes in position, shape, scale, rotation, opacity, and state before inferring intent or cause. Pixel-change coverage cannot by itself distinguish subject motion from camera movement, a scene cut, a fade, lighting change, or compression noise.",
+			"Use action=frames at explicit timestamps to confirm small visual details or ambiguous motion states. For UI transitions and micro-interactions, sample immediately before, during, and after the event, usually 1–4 source frames apart. Use normalized crop to enlarge the relevant subject or UI region.",
+			"For transcript, pass the spoken language code when known (for example zh or en). Transcript proves spoken or subtitle text, not visual state. The first local transcript request may download and verify the pinned model.",
+			"Never use this tool for remote URLs.",
+		],
 		parameters: videoSchema,
 		async execute(_toolCallId, input, signal, onUpdate, ctx) {
 			const action: VideoAction = input.action ?? "inspect";
@@ -671,7 +740,28 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 				details.transcriptionReady = await operations.isModelInstalled();
 				content.push({
 					type: "text",
-					text: `Video inspector initialized. No visual frames or transcript have been generated.\nVideo dimensions: ${metadata.width ?? "unknown"}×${metadata.height ?? "unknown"}.\nFrame rate: ${metadata.frameRate ? `${metadata.frameRate.toFixed(3)} fps` : "unknown"}.\nAudio stream: ${metadata.hasAudio ? "yes" : "no"}.\nSubtitle stream: ${metadata.hasSubtitles ? "yes" : "no"}.\nTranscription runtime prepared: ${metadata.hasAudio ? (details.transcriptionReady ? "yes" : "no") : "not needed (no audio stream)"}.\n\nChoose next action based on evidence needed:\n- Temporal overview: action=storyboard with path=${JSON.stringify(input.path)}, start=<time>, end=<time>. It returns one timestamped 3×3 overview.\n- Readable visual evidence & details: action=frames with path=${JSON.stringify(input.path)}, timestamps=[<time>, ...]. It returns up to ${MAX_DETAIL_FRAMES} independent JPEG frames. Always use crop={x,y,width,height} with normalized 0–1 coordinates to zoom in on specific UI components, text, or small visual regions.\n- Universal Motion & Action Sequence: action=motion with path=${JSON.stringify(input.path)}, start=<time>, end=<time> (optional count=4..9, default 6). It returns a dense temporal sequence grid of consecutive real frames (#1 to #N) with exact timestamps, quantitative motion metrics, and 4D action analysis guidance for any video type (human actions, sports, camera motion, or UI transitions).\n- Animations & Motion analysis: For animations, hover effects, motion, or state transitions, choose timestamps 1–4 source frames apart around the event to compare frame-by-frame visual changes (position, opacity, transform, active state).\n${metadata.hasAudio || metadata.hasSubtitles ? `- Spoken or subtitle text: action=transcript with path=${JSON.stringify(input.path)}, start=<time>, end=<time>.\n` : "- Transcript is unavailable because this video has no audio or subtitle stream. Do not call action=transcript.\n"}\nStoryboard is navigation evidence, not sufficient evidence for UI text, typography, colors, spacing, layout, or selected state. Verify those with action=frames. For an interaction or animation, compare timestamps immediately before and after it${metadata.frameRate ? `; at ${metadata.frameRate.toFixed(3)} fps, 1–4 source frames span ${(1 / metadata.frameRate).toFixed(4)}–${(4 / metadata.frameRate).toFixed(4)} seconds` : ""}. If transcription runtime is not prepared and audio exists, first transcript call downloads and verifies it automatically.`,
+					text: [
+						"Video inspector initialized. No visual frames or transcript have been generated.",
+						`Video dimensions: ${metadata.width ?? "unknown"}×${metadata.height ?? "unknown"}.`,
+						`Frame rate: ${metadata.frameRate ? `${metadata.frameRate.toFixed(3)} fps` : "unknown"}.`,
+						`Audio stream: ${metadata.hasAudio ? "yes" : "no"}.`,
+						`Subtitle stream: ${metadata.hasSubtitles ? "yes" : "no"}.`,
+						`Transcription runtime prepared: ${metadata.hasAudio ? (details.transcriptionReady ? "yes" : "no") : "not needed (no audio stream)"}.`,
+						"",
+						"Evidence workflow:",
+						`1. Locate time: action=storyboard with path=${JSON.stringify(input.path)}, start=<time>, end=<time>. This overview helps find scenes or event ranges; its small cells do not prove fine visual details.`,
+						`2. Understand movement: action=motion with path=${JSON.stringify(input.path)}, start=<tight-event-start>, end=<tight-event-end>, count=${MOTION_DEFAULT_FRAME_COUNT}. Samples span the requested range. The result states whether spacing is near-continuous or sparse; sparse samples can miss intermediate motion.`,
+						`3. Confirm state and detail: action=frames with path=${JSON.stringify(input.path)}, timestamps=[<before>, <during>, <after>], crop={x,y,width,height}. This returns up to ${MAX_DETAIL_FRAMES} independent high-resolution JPEG frames.`,
+						metadata.hasAudio || metadata.hasSubtitles
+							? `4. Verify speech: action=transcript with path=${JSON.stringify(input.path)}, start=<time>, end=<time>. Transcript proves spoken or subtitle text, not visual state.`
+							: "4. Transcript is unavailable because this video has no audio or subtitle stream. Do not call action=transcript.",
+						"",
+						`For animation or interaction, track the same subject through before/during/after samples. Check position, shape, scale, rotation, opacity, and state. Pixel-change metrics show visual difference only; they do not prove whether the cause is subject motion, camera motion, a cut, a fade, lighting, or compression.`,
+						metadata.frameRate
+							? `At ${metadata.frameRate.toFixed(3)} fps, 1–4 source frames span ${(1 / metadata.frameRate).toFixed(4)}–${(4 / metadata.frameRate).toFixed(4)} seconds.`
+							: "Frame rate is unknown, so verify timing with nearby samples.",
+						metadata.hasAudio && !details.transcriptionReady ? "The first transcript call downloads and verifies the local transcription model." : "",
+					].filter(Boolean).join("\n"),
 				});
 				return { content, details };
 			}
@@ -711,33 +801,55 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 			if (action === "motion") {
 				if (!operations.createMotionComposite) throw new Error("Motion composite extraction is unavailable for these custom video operations");
 				const crop = resolveCrop(input);
-				const count = Math.max(4, Math.min(9, input.count ?? 6));
+				const count = Math.max(MOTION_MIN_FRAME_COUNT, Math.min(MOTION_MAX_FRAME_COUNT, input.count ?? MOTION_DEFAULT_FRAME_COUNT));
 				details.crop = crop;
-				onUpdate?.({ content: [{ type: "text", text: `Generating ${count}-frame dense motion sequence grid…` }], details: {} });
-				const { image, bbox, changeRatio, magnitude, isGlobalMotion } = await operations.createMotionComposite(path, range.start, range.end, count, crop, signal);
+				onUpdate?.({ content: [{ type: "text", text: `Generating ${count}-sample ordered motion evidence…` }], details: {} });
+				const motion = await operations.createMotionComposite(path, range.start, range.end, count, crop, signal);
+				const frameTimes = motion.frameTimes ?? motionFrameTimesForRange(range, count);
+				const sampling = motionSampling(frameTimes, metadata.frameRate);
+				const { image, evidenceImage, bbox, changeRatio, stepChangeRatios, magnitude, isGlobalMotion } = motion;
+				details.frameTimes = frameTimes;
 				details.motionBbox = bbox;
 				details.motionChangeRatio = changeRatio;
+				details.motionStepChangeRatios = stepChangeRatios;
 				details.motionMagnitude = magnitude;
 				details.isGlobalMotion = isGlobalMotion;
+				details.motionSampling = sampling.kind;
+				details.motionFrameGap = sampling.frameGap;
+				const spacingDescription = sampling.frameGap === undefined
+					? `${sampling.interval.toFixed(4)}s between samples; source-frame gap unknown because frame rate is unavailable`
+					: `${sampling.interval.toFixed(4)}s between samples, about ${sampling.frameGap.toFixed(2)} source frames`;
+				const samplingGuidance = sampling.kind === "near-continuous"
+					? "Near-continuous evidence: spacing is at most four source frames. Track the same subject across every sample before describing trajectory or state change."
+					: `Sparse evidence: these are ordered samples, not consecutive source frames. Use them to identify broad phases only; intermediate motion may be missing.${metadata.frameRate ? ` For finer evidence with ${count} samples, narrow start..end to about ${(((count - 1) * MOTION_NEAR_CONTINUOUS_MAX_FRAME_GAP) / metadata.frameRate).toFixed(3)}s or less.` : " Narrow the interval and run motion again for finer evidence."}`;
 				const motionInfo = [
-					`Universal Motion Sequence Grid (${count} consecutive frames, ${formatTimestamp(range.start)} - ${formatTimestamp(range.end)}, duration ${(range.end - range.start).toFixed(3)}s)${crop ? `; crop x=${crop.x}, y=${crop.y}, width=${crop.width}, height=${crop.height}` : ""}:`,
-					`Motion Magnitude: ${magnitude} (${(changeRatio * 100).toFixed(2)}% changed pixels across sequence)`,
-					`Motion Classification: ${isGlobalMotion ? "Global / Camera / Scene Motion" : "Localized Subject / Component Motion"}`,
+					`Motion sequence evidence (${count} ordered samples, ${formatTimestamp(range.start)} - ${formatTimestamp(range.end)}, duration ${(range.end - range.start).toFixed(3)}s)${crop ? `; crop x=${crop.x}, y=${crop.y}, width=${crop.width}, height=${crop.height}` : ""}:`,
+					`Samples: ${frameTimes.map((time, index) => `#${index + 1}=${formatTimestamp(time)}`).join(", ")}`,
+					`Sampling: ${sampling.kind}; ${spacingDescription}.`,
+					samplingGuidance,
+					`Pixel-change level: ${magnitude} (${(changeRatio * 100).toFixed(2)}% average changed pixels per adjacent sample pair). This is a visual-difference heuristic, not an action classification.`,
+					stepChangeRatios?.length ? `Per-step changed pixels: ${stepChangeRatios.map((ratio, index) => `#${index + 1}→#${index + 2}=${(ratio * 100).toFixed(2)}%`).join(", ")}` : "Per-step changed-pixel ratios are unavailable for these custom video operations.",
+					`Spatial coverage heuristic: ${bbox ? (isGlobalMotion ? "broad change across the frame" : "change concentrated in part of the frame") : "no change above threshold"}. Broad change can come from camera movement, a cut, a fade, lighting, or a large moving subject; inspect the images before assigning a cause.`,
 					bbox
-						? `Active Motion Bounding Box: x=${bbox.x}, y=${bbox.y}, width=${bbox.width}, height=${bbox.height}`
-						: "No significant pixel difference detected across sequence.",
+						? `Union changed-pixel bounding box: x=${bbox.x}, y=${bbox.y}, width=${bbox.width}, height=${bbox.height}`
+						: "No changed-pixel bounding box detected.",
 					"",
-					"4D Universal Action Analysis Instructions:",
-					"1. Subject / Entity: Identify what or who is moving across frames #1 to #" + count + " (human, gesture, vehicle, object, camera, user pointer, or UI element).",
-					"2. Trajectory & Form Shift: Observe spatial displacement, rotation, scaling, or state transitions across sequential timestamps.",
-					"3. Cause & Context: Distinguish user input indicators (e.g. mouse pointers or touch points, which are external triggers) from actual subject/UI component state shifts. DO NOT code mouse cursors as self-moving UI elements or auto-animating cursor components.",
-					"4. State Transformation: Contrast initial state (#1) vs final state (#" + count + ").",
+					"How to interpret this evidence:",
+					"1. Identify the same subject or UI element in each ordered sample; do not treat a cursor or touch marker as the animated component.",
+					"2. Report only visible changes first: position, shape, scale, rotation, opacity, color, or discrete state.",
+					"3. Separate observation from cause. Use surrounding frames, transcript, or user context before claiming what triggered the change.",
+					"4. If timing, direction, or an intermediate state remains ambiguous, narrow the range or request explicit detail frames before concluding.",
 				].join("\n");
 				content.push({ type: "text", text: motionInfo });
 				if (ctx?.model && !ctx.model.input.includes("image")) {
 					content.push({ type: "text", text: "[Current model is explicitly configured as text-only, so the motion image cannot be sent to it. Use a vision-capable model or change this model's input capability to [\"text\", \"image\"].]" });
 				}
+				content.push({ type: "text", text: "Ordered sample grid:" });
 				content.push({ type: "image", data: image.toString("base64"), mimeType: "image/jpeg" });
+				if (evidenceImage) {
+					content.push({ type: "text", text: "Motion-evidence map: brighter red marks pixels with larger change across adjacent sample pairs. Use it to locate change, not to infer direction or cause." });
+					content.push({ type: "image", data: evidenceImage.toString("base64"), mimeType: "image/jpeg" });
+				}
 			}
 
 			if (action === "transcript") {

@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.6.3-rc.1] - 2026-08-03
+
+### Accurate video motion evidence
+
+- Replaced overstated universal action guidance with a clear evidence workflow for locating events, inspecting ordered motion samples, and confirming exact visual states.
+- Added exact motion timestamps, sparse versus near-continuous sampling guidance, per-step pixel-change metrics, and a separate motion-evidence map without claiming unsupported causes.
+- Restored up to six 2048-pixel detail frames, fixed every 4–9 sample grid layout, and expanded real FFmpeg regression coverage.
+- Added Windows and Linux CI coverage for video tests and the production TypeScript build.
+
 ## [1.6.2-rc.1] - 2026-08-03
 
 ### Dense video motion analysis

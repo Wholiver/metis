@@ -1,0 +1,77 @@
+name: Test video cross-platform
+
+on:
+  pull_request:
+    paths:
+      - "src/core/tools/video.ts"
+      - "test/video-tool.test.ts"
+      - "test/video-transcription-prepare.test.ts"
+      - "scripts/prepare-video-transcription.mjs"
+      - "scripts/copy-assets.mjs"
+      - "package.json"
+      - "npm-shrinkwrap.json"
+      - ".github/workflows/test-video-cross-platform.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/core/tools/video.ts"
+      - "test/video-tool.test.ts"
+      - "test/video-transcription-prepare.test.ts"
+      - "scripts/prepare-video-transcription.mjs"
+      - "scripts/copy-assets.mjs"
+      - "package.json"
+      - "npm-shrinkwrap.json"
+      - ".github/workflows/test-video-cross-platform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  video:
+    name: Video (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: npm-shrinkwrap.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build vendored packages
+        run: |
+          npm --prefix vendor/metis-tui run build
+          npm --prefix vendor/metis-ai run build
+          npm --prefix vendor/metis-agent-core run build
+
+      - name: Refresh local package builds
+        shell: node {0}
+        run: |
+          const { cpSync, rmSync } = require("node:fs");
+          for (const name of ["metis-tui", "metis-ai", "metis-agent-core"]) {
+            const target = `node_modules/@earendil-works/${name}/dist`;
+            rmSync(target, { recursive: true, force: true });
+            cpSync(`vendor/${name}/dist`, target, { recursive: true });
+          }
+
+      - name: Run video regression tests
+        run: npm test -- test/video-tool.test.ts test/video-transcription-prepare.test.ts
+
+      - name: Build production package
+        run: npm run build
