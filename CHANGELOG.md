@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.6.4-rc.1] - 2026-08-03
+
+### Cross-platform video evidence
+
+- Removed reliance on FFmpeg's optional `drawtext` filter so storyboard and motion evidence render with bundled FFmpeg on macOS, Windows, and Linux.
+- Preserved exact cell-to-timestamp meaning in adjacent model-readable text, with explicit left-to-right and top-to-bottom grid instructions.
+- Fixed CI vendor artifact restoration and verified video regression tests plus production builds on Ubuntu and Windows.
+
 ## [1.6.3-rc.1] - 2026-08-03
 
 ### Accurate video motion evidence
