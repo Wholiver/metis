@@ -126,6 +126,9 @@ describe("video tool", () => {
 		expect(result.details.frameTimes?.[0]).toBeCloseTo(20.444, 3);
 		expect(result.details.frameTimes?.[8]).toBeCloseTo(27.556, 3);
 		expect(result.content.find((block) => block.type === "image")?.mimeType).toBe("image/jpeg");
+		expect(output).toContain("ordered left-to-right, top-to-bottom");
+		expect(output).toContain("#1=00:00:20.444");
+		expect(output).toContain("#9=00:00:27.556");
 		expect(output).not.toContain("focused text");
 		expect(ops.createStoryboard).toHaveBeenCalledTimes(1);
 	});
@@ -165,6 +168,7 @@ describe("video tool", () => {
 		const guidelines = definition.promptGuidelines?.join("\n") ?? "";
 		expect(guidelines).toContain("frames at explicit timestamps");
 		expect(guidelines).toContain("1–4 source frames apart");
+		expect(guidelines).toContain("left-to-right, top-to-bottom");
 		expect(guidelines).toContain("sparse samples show broad phases");
 		expect(guidelines).toContain("cannot by itself distinguish subject motion from camera movement");
 		expect(guidelines).not.toContain("4D Universal");

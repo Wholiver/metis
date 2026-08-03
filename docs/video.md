@@ -7,14 +7,14 @@
 | Action | Result |
 | --- | --- |
 | `inspect` (default) | probes metadata, then returns instructions for next calls; it does not generate frames or transcript |
-| `storyboard` | one 3×3 image containing nine timestamped frames |
+| `storyboard` | one 3×3 image containing nine ordered frames plus an explicit cell-to-timestamp mapping |
 | `motion` | 4–9 ordered samples spanning `start..end`, per-step pixel-change metrics, and a separate motion-evidence map |
 | `frames` | up to six independent high-quality JPEG frames for readable text, UI styling, and exact visual state |
 | `transcript` | timestamped subtitle/transcript text only |
 
 `path` is required. `start`, `end`, and each `timestamps` value accept seconds, `MM:SS`, or `HH:MM:SS.mmm`. `start` and `end` limit storyboard sampling, default frame sampling, and transcript output.
 
-Use `storyboard` to navigate time, not to prove small visual details: each cell is only 512×512. Before reporting website copy, typography, colors, spacing, layout, selected controls, cursor targets, or other UI details, call `frames` with explicit `timestamps`. Each result is a separate high-quality JPEG capped to 2048 pixels on its longest dimension without upscaling. If `timestamps` is omitted, `frames` returns four evenly spaced frames from the requested range.
+Use `storyboard` to navigate time, not to prove small visual details: read cells left-to-right, top-to-bottom and pair `#1`–`#9` with the timestamp mapping returned beside the image. Timestamps remain outside pixels so rendering does not depend on FFmpeg's optional `drawtext` filter across macOS, Windows, and Linux. Each cell is only 512×512. Before reporting website copy, typography, colors, spacing, layout, selected controls, cursor targets, or other UI details, call `frames` with explicit `timestamps`. Each result is a separate high-quality JPEG capped to 2048 pixels on its longest dimension without upscaling. If `timestamps` is omitted, `frames` returns four evenly spaced frames from the requested range.
 
 `frames` also accepts `crop={x,y,width,height}` using normalized 0–1 coordinates. Crop a header, button, table, dialog, or other small region when the full frame still makes details hard to read. For clicks, animation, scrolling, or state transitions, compare timestamps immediately before and after the event. `inspect` reports frame rate so adjacent samples can be placed one to four source frames apart.
 
@@ -23,7 +23,7 @@ Use `motion` only after locating an event range. Pass a tight `start` and `end`;
 - `near-continuous`: samples are no more than four source frames apart and can support finer transition analysis;
 - `sparse`: samples show broad phases but may omit intermediate movement; narrow the range and call `motion` again before making precise timing or direction claims.
 
-The first motion image is the ordered sample grid. The second is a motion-evidence map where brighter red pixels indicate larger changes between adjacent samples. Pixel-change ratios, bounding boxes, and broad/localized coverage are heuristics. They cannot by themselves distinguish subject movement from camera movement, a scene cut, a fade, lighting change, or compression noise. Inspect the ordered frames before assigning a cause.
+The first motion image is the ordered sample grid: read it left-to-right, top-to-bottom and pair each cell with the numbered timestamp mapping in the adjacent text. The second is a motion-evidence map where brighter red pixels indicate larger changes between adjacent samples. Pixel-change ratios, bounding boxes, and broad/localized coverage are heuristics. They cannot by themselves distinguish subject movement from camera movement, a scene cut, a fade, lighting change, or compression noise. Inspect the ordered frames before assigning a cause.
 
 For local Whisper transcription, pass `language` when known (for example `zh` or `en`). Transformers.js does not currently auto-detect Whisper language, so an omitted or `auto` value uses `en`.
 

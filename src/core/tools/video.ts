@@ -415,8 +415,7 @@ const defaultVideoOperations: VideoOperations = {
 			const cells: string[] = [];
 			for (let index = 0; index < frameTimes.length; index++) {
 				const cell = join(workDir, `frame-${index}.jpg`);
-				const drawText = `drawtext=text='${formatTimestamp(frameTimes[index]).replace(/:/g, "\\:")}':x=18:y=h-42:fontcolor=white:fontsize=30:box=1:boxcolor=black@0.65:boxborderw=8`;
-				const outputArgs = ["-frames:v", "1", "-vf", `scale=${CELL_SIZE}:${CELL_SIZE}:force_original_aspect_ratio=decrease,pad=${CELL_SIZE}:${CELL_SIZE}:(ow-iw)/2:(oh-ih)/2:black,${drawText}`, "-q:v", "3", "-y", cell];
+				const outputArgs = ["-frames:v", "1", "-vf", `scale=${CELL_SIZE}:${CELL_SIZE}:force_original_aspect_ratio=decrease,pad=${CELL_SIZE}:${CELL_SIZE}:(ow-iw)/2:(oh-ih)/2:black`, "-q:v", "3", "-y", cell];
 				try {
 					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(frameTimes[index]), "-i", path, ...outputArgs], signal);
 					await access(cell);
@@ -476,9 +475,7 @@ const defaultVideoOperations: VideoOperations = {
 			const cellFiles: string[] = [];
 			for (let i = 0; i < numFrames; i++) {
 				const cellFile = join(workDir, `cell-${i}.jpg`);
-				const timeLabel = formatTimestamp(frameTimes[i]).replace(/:/g, "\\:");
-				const drawText = `drawtext=text='#${i + 1}\\: ${timeLabel}':x=18:y=h-42:fontcolor=white:fontsize=28:box=1:boxcolor=black@0.65:boxborderw=8`;
-				const outputArgs = ["-frames:v", "1", "-vf", `${cropFilter}${scaleFilter},${drawText}`, "-q:v", "2", "-y", cellFile];
+				const outputArgs = ["-frames:v", "1", "-vf", `${cropFilter}${scaleFilter}`, "-q:v", "2", "-y", cellFile];
 				try {
 					await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-ss", String(frameTimes[i]), "-i", path, ...outputArgs], signal);
 					await access(cellFile);
@@ -572,8 +569,7 @@ const defaultVideoOperations: VideoOperations = {
 			const motionMapPpm = join(workDir, "motion-evidence.ppm");
 			await writeFile(motionMapPpm, Buffer.concat([Buffer.from(`P6\n${rawW} ${rawH}\n255\n`, "ascii"), motionMapPixels]));
 			const evidenceOutput = join(workDir, "motion-evidence.jpg");
-			const evidenceLabel = "Motion evidence\\: brighter red = larger adjacent-sample pixel change";
-			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", motionMapPpm, "-frames:v", "1", "-vf", `scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,drawtext=text='${evidenceLabel}':x=18:y=h-42:fontcolor=white:fontsize=28:box=1:boxcolor=black@0.65:boxborderw=8`, "-q:v", "2", "-y", evidenceOutput], signal);
+			await run(resolveMediaBinaryPath(ffmpegPath, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", motionMapPpm, "-frames:v", "1", "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black", "-q:v", "2", "-y", evidenceOutput], signal);
 
 			const output = join(workDir, "motion-grid.jpg");
 			const inputArgs = cellFiles.flatMap((file) => ["-i", file]);
@@ -720,8 +716,8 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 		promptGuidelines: [
 			"For requests to understand, inspect, summarize, or locate content in a local video file, call video before using bash or other file tools.",
 			"Call action=inspect first. It reports duration and frame rate but provides no visual evidence. Then choose the smallest action that answers the question.",
-			"Use action=storyboard to locate scenes or event ranges across time. Storyboard cells are navigation evidence; do not use them to make fine claims about text, styling, state, or animation details.",
-			"Use action=motion with a start and end tightly surrounding one movement. It returns ordered samples spanning that exact range, their timestamps and spacing, per-step pixel-change ratios, and a separate motion-evidence map. Read the reported sampling mode: sparse samples show broad phases but may miss intermediate motion; near-continuous samples support finer transition analysis.",
+			"Use action=storyboard to locate scenes or event ranges across time. Read its 3×3 cells left-to-right, top-to-bottom, and pair cell #1–#9 with the timestamp mapping in the adjacent text. Storyboard cells are navigation evidence; do not use them to make fine claims about text, styling, state, or animation details.",
+			"Use action=motion with a start and end tightly surrounding one movement. Read its grid left-to-right, top-to-bottom, and pair each cell number with the timestamp mapping in the adjacent text. It returns ordered samples spanning that exact range, their timestamps and spacing, per-step pixel-change ratios, and a separate motion-evidence map. Read the reported sampling mode: sparse samples show broad phases but may miss intermediate motion; near-continuous samples support finer transition analysis.",
 			"When analyzing action or animation, track the same subject across every ordered sample. Describe observed changes in position, shape, scale, rotation, opacity, and state before inferring intent or cause. Pixel-change coverage cannot by itself distinguish subject motion from camera movement, a scene cut, a fade, lighting change, or compression noise.",
 			"Use action=frames at explicit timestamps to confirm small visual details or ambiguous motion states. For UI transitions and micro-interactions, sample immediately before, during, and after the event, usually 1–4 source frames apart. Use normalized crop to enlarge the relevant subject or UI region.",
 			"For transcript, pass the spoken language code when known (for example zh or en). Transcript proves spoken or subtitle text, not visual state. The first local transcript request may download and verify the pinned model.",
@@ -769,9 +765,9 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 			if (action === "storyboard") {
 				const frameTimes = frameTimesForRange(range);
 				details.frameTimes = frameTimes;
-				onUpdate?.({ content: [{ type: "text", text: "Creating 3×3 timestamped storyboard…" }], details: {} });
+				onUpdate?.({ content: [{ type: "text", text: "Creating 3×3 ordered storyboard…" }], details: {} });
 				const sheet = await operations.createStoryboard(path, frameTimes, signal);
-				content.push({ type: "text", text: `Storyboard frames: ${frameTimes.map((time, index) => `${index + 1}=${formatTimestamp(time)}`).join(", ")}` });
+				content.push({ type: "text", text: `Storyboard cells are ordered left-to-right, top-to-bottom. Timestamp mapping: ${frameTimes.map((time, index) => `#${index + 1}=${formatTimestamp(time)}`).join(", ")}` });
 				if (ctx?.model && !ctx.model.input.includes("image")) {
 					content.push({ type: "text", text: "[Current model is explicitly configured as text-only, so the storyboard image cannot be sent to it. Use a vision-capable model or change this model's input capability to [\"text\", \"image\"].]" });
 				}
@@ -824,6 +820,7 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 					: `Sparse evidence: these are ordered samples, not consecutive source frames. Use them to identify broad phases only; intermediate motion may be missing.${metadata.frameRate ? ` For finer evidence with ${count} samples, narrow start..end to about ${(((count - 1) * MOTION_NEAR_CONTINUOUS_MAX_FRAME_GAP) / metadata.frameRate).toFixed(3)}s or less.` : " Narrow the interval and run motion again for finer evidence."}`;
 				const motionInfo = [
 					`Motion sequence evidence (${count} ordered samples, ${formatTimestamp(range.start)} - ${formatTimestamp(range.end)}, duration ${(range.end - range.start).toFixed(3)}s)${crop ? `; crop x=${crop.x}, y=${crop.y}, width=${crop.width}, height=${crop.height}` : ""}:`,
+					"Grid order: read left-to-right, top-to-bottom; map each cell to the numbered timestamp below.",
 					`Samples: ${frameTimes.map((time, index) => `#${index + 1}=${formatTimestamp(time)}`).join(", ")}`,
 					`Sampling: ${sampling.kind}; ${spacingDescription}.`,
 					samplingGuidance,
