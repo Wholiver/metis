@@ -17,79 +17,83 @@
 </p>
 
 <p align="center">
-  <strong>Help coding models write better code and finish faster with better context, reusable experience, and verified results.</strong>
+  <strong>A coding agent that searches, remembers, executes, and verifies across terminal and desktop.</strong>
 </p>
 
 <p align="center">
-  <a href="#why-metis">Why Metis</a> ·
-  <a href="#better-coding-performance">Coding performance</a> ·
-  <a href="#what-makes-it-reliable">Reliability</a> ·
-  <a href="#quick-start">Quick start</a>
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#highlights">Highlights</a> ·
+  <a href="#how-metis-works">How it works</a> ·
+  <a href="#documentation">Documentation</a>
 </p>
 
 ---
 
 ## Quick start
 
-Choose one interface. Both use the same Metis configuration, models, and sessions.
+### CLI
 
-| Interface | Best for | Requirement |
-| --- | --- | --- |
-| **Desktop app** | Graphical workspace with CLI and server included | Apple silicon Mac (`arm64`) or Windows (`x64`) |
-| **CLI** | Terminal, scripts, print/JSON, RPC, and SDK integrations | Node.js `>=22.19.0` and `npm` |
-
-### Desktop app for macOS
-
-1. [Download the latest Apple silicon `.dmg`](https://github.com/Wholiver/metis/releases/latest) (`Metis-*-macos-arm64.dmg`).
-2. Open it and drag **Metis.app** into **Applications**.
-3. Launch **Metis**. Node.js is already included.
-
-### Desktop app for Windows
-
-The Windows build bundles the full Metis CLI and server runtime. Choose the setup EXE for a normal installation or the ZIP for a portable copy.
-
-> **Current build:** Windows `x64`. No separate Node.js installation is required.
-
-1. Open the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest).
-2. Download and run `Metis-*-win-x64-setup.exe`, or download `Metis-*-win-x64.zip`, extract it, and launch **Metis.exe** from the **Metis** folder.
-3. Use the attached `.sha256` file to verify your download. If Windows SmartScreen warns about an unknown publisher, continue only when the file came from the official release page.
-
-### CLI and terminal
-
-Install Metis, then start an interactive session:
+Requires Node.js `>=22.19.0` and npm.
 
 ```bash
 npm install -g --ignore-scripts @wholiver_hu/metis@latest
 metis
 ```
 
-Run `metis --help` to view every CLI option.
+Use `/login` for supported subscription providers, or configure an API key. Run `metis --help` for CLI options and see the [Quickstart](docs/quickstart.md) for the complete first-run flow.
 
-## Why Metis
+<details>
+<summary><strong>Desktop installation (macOS and Windows)</strong></summary>
 
-Metis is an agent layer for coding models. It does not replace the model or change its weights. It improves the model's effective coding performance by giving it a better way to search, remember, work, and check its own result.
+Desktop includes the Metis CLI and Server runtime; Node.js is not required separately.
 
-That means better repository understanding, fewer unsupported assumptions and missed requirements, stronger task completion, and less time spent repeating context.
+| Platform | Build | Install |
+| --- | --- | --- |
+| macOS | Apple silicon (`arm64`) | Download `Metis-*-macos-arm64.dmg`, then drag **Metis.app** to **Applications**. |
+| Windows | `x64` | Run `Metis-*-win-x64-setup.exe`, or extract `Metis-*-win-x64.zip` and launch **Metis.exe**. |
 
-### Better coding performance
+Download files and matching `.sha256` checksums from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest). If Windows SmartScreen reports an unknown publisher, continue only when the file came from the official release page and its checksum matches.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/metis-coding-performance.dark.png" />
-    <img src="docs/images/metis-coding-performance.png" width="100%" alt="How Metis helps the same coding model achieve better coding outcomes" />
-  </picture>
-</p>
+</details>
 
-For the same underlying model, Metis strengthens the system around it:
+## Highlights
 
-- **Relevant context** — search the repository and authoritative sources before editing.
-- **Reusable experience** — carry useful decisions, lessons, and technical knowledge into later work.
-- **Evidence-based implementation** — follow existing code, constraints, and project conventions instead of guessing.
-- **Verified completion** — build, test, inspect output, and compare the result with the original request.
+- **Plan and Build workflows** — investigate safely in read-only Plan mode, then execute an approved proposal with a persistent checklist in Build mode.
+- **Durable memory and recovery** — search reusable project knowledge and resume work after interruption, compaction, or session reload.
+- **Flexible models and authentication** — use built-in subscription login, API-key providers, or custom OpenAI-compatible providers with model discovery.
+- **Desktop workspace** — attach images, videos, text, and other files through the picker, clipboard, or drag and drop; manage providers and sessions graphically.
+- **Video evidence** — inspect local video through metadata, timestamped storyboards, ordered motion samples, high-resolution frames, subtitles, and local transcription.
+- **Extensible core** — add TypeScript extensions, Agent Skills, prompt templates, themes, and Metis packages; integrate through print, JSON, RPC, Server, or the Node.js SDK.
+- **Verified execution** — coordinate subagents, preserve tool-result ordering, run relevant checks, and compare delivery against the original request.
 
-These mechanisms can improve practical coding outcomes without retraining or replacing the model. Results still depend on the model, task, tools, and environment.
+## How Metis works
 
-### Faster completion
+1. **Ground** — load trusted instructions and relevant context, then search code, memory, or authoritative sources when needed.
+2. **Plan or build** — Plan mode stays read-only and produces a durable proposal; Build mode performs evidence-supported changes.
+3. **Persist** — retain sessions, message/tool pairs, workflow checkpoints, plans, and compacted context.
+4. **Verify** — run risk-proportionate checks and report completed requirements, evidence, and remaining risk.
+
+<details>
+<summary><strong>Technical design</strong></summary>
+
+### Deterministic workflow runtime
+
+Metis freezes a `StepSnapshot` before every model sample. Model, reasoning level, collaboration mode, instructions, messages, visible tools, dispatcher, and context window therefore remain consistent for that step. Safe reads may run in parallel; writes and mixed tools are serialized. Steering and follow-ups are applied only after current tool results persist.
+
+### Plans and interactive input
+
+New interactive and Desktop sessions start in Plan mode. `/mode plan` and `/mode build` switch workflows when idle. Approved proposals survive reload and compaction through `read_plan`; Build checklists update in place in TUI and Desktop. Interactive hosts can answer `ask_user`, while unattended print/JSON and SDK runs return a recoverable unsupported result instead of hanging.
+
+### Memory
+
+Metis checkpoints active work after prompts, completed steps, compaction, errors, aborts, and completion. Durable records and their search index live in `~/.metis/memories/state.sqlite`, with inspectable global and project `MEMORY.md` views. `search_memory` is available on demand in Plan and Build; results are advisory and never override current instructions.
+
+Use `/memory status|on|off|run|search|forget|reset`. Proposal artifacts and long-term memory remain separate, so an unexecuted draft is not promoted automatically.
+
+</details>
+
+<details>
+<summary><strong>Performance example</strong></summary>
 
 <p align="center">
   <picture>
@@ -98,98 +102,42 @@ These mechanisms can improve practical coding outcomes without retraining or rep
   </picture>
 </p>
 
-In one user test with the same task:
+In one user test on the same task, Metis finished in 1 minute 30 seconds and OpenCode in 3 minutes 30 seconds, with no observed accuracy difference. This single comparison is not a universal benchmark; results depend on the task, model, tools, and environment.
 
-- **Metis finished in 1 minute 30 seconds.**
-- **OpenCode finished in 3 minutes 30 seconds.**
-- No accuracy difference was observed in that test.
+</details>
 
-Metis used about 57% less time in this comparison. This is one user test, not a universal benchmark; results depend on the task, model, tools, and environment.
+## Documentation
 
-## What makes it reliable
+| Topic | Guide |
+| --- | --- |
+| Install, authenticate, and start | [Quickstart](docs/quickstart.md) |
+| Commands and interactive usage | [Using Metis](docs/usage.md) |
+| Providers and custom models | [Providers](docs/providers.md) · [Custom models](docs/models.md) |
+| Sessions and compaction | [Sessions](docs/sessions.md) · [Compaction](docs/compaction.md) |
+| Extensions, skills, and packages | [Extensions](docs/extensions.md) · [Skills](docs/skills.md) · [Packages](docs/packages.md) |
+| Programmatic integration | [SDK](docs/sdk.md) · [RPC](docs/rpc.md) · [JSON](docs/json.md) |
+| Video inspection | [Video tool](docs/video.md) |
+| Security and configuration | [Security](docs/security.md) · [Settings](docs/settings.md) |
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/metis-capabilities.dark.png" />
-    <img src="docs/images/metis-capabilities.png" width="100%" alt="Metis workflow, memory, search, and verification features" />
-  </picture>
-</p>
-
-### Deterministic workflow runtime
-
-Metis freezes a `StepSnapshot` before every model sample: model, reasoning level, Build/Plan mode, instruction stack, messages, visible tools, dispatcher, and context window. A tool call always executes against the snapshot that exposed it; a later step is the first point where a model, tool, extension, instruction, or mode change can take effect.
-
-The local dispatcher runs explicitly safe read tools in parallel and serializes write or mixed tools. Steering is consumed only after current tool results persist; follow-ups wait until the turn is otherwise complete. This preserves assistant/tool-result pairing through retry, compaction, abort, and resume.
-
-### Build and Plan
-
-New CLI, TUI, and Desktop conversations start in Plan. Restored, switched, and forked sessions retain their saved mode; explicit Build selection wins. SDK callers keep its compatible default unless they pass `collaborationMode`. In Build, non-trivial work initializes `update_plan` before mutation, keeps one active step, and updates the checklist through verification. Build also emits concise ordinary progress text in the user's language around meaningful tool batches.
-
-Plan is a read-only collaboration mode, not an OS sandbox. It hides and rejects write, mixed, shell, edit, and unclassified tools—including `update_plan`. It first grounds itself in repository evidence, uses `ask_user` only for material unresolved decisions, then returns a decision-complete `<proposed_plan>`. The latest proposal is a branch artifact: `read_plan` retrieves it after reload or context compaction. Switching back to Build restores the saved Build tool set. In Desktop, the latest proposal appears as a compact, expandable preview; **Process** switches to Build and immediately starts implementation and verification.
-
-Use `/mode build` or `/mode plan` in CLI. Desktop exposes the same idle-only choice next to the model selector. Desktop replaces its composer with one `ask_user` question at a time, then restores the editor after submit or cancel. The TUI renders proposals without protocol tags, limits the preview to 12 source lines, and replaces the idle composer with terminal-native **Process** and **Submit changes** actions. Process first reads the durable proposal and current execution progress, then creates the Build checklist before any other tool. CLI, Desktop, JSON, RPC, Server, and SDK share the same mode, context-window, plan, and instruction-source state. Hosts with an interactive handler can answer `ask_user`; print/JSON and unattended SDK runs receive a recoverable unsupported result instead of hanging.
-
-### Execution plans
-
-Build persists a task-scoped execution checklist with one active step at most. Desktop and TUI show one live “Execution plan” surface above the composer and update it in place, so progress remains visible while tools run, after abort, after compaction, and after session reload. During Process, the surface first shows proposal-reading and checklist-creation states; runtime blocks every other tool until `read_plan` and then `update_plan` succeed. The surface intentionally shows only execution status and checklist items; the complete approved proposal remains available through its conversational preview and `read_plan`. Raw `update_plan` tool cards stay hidden to avoid duplicate UI. Completed state clears when a later independent Build prompt starts, while interrupted work remains resumable. `read_plan` returns both the latest proposal and current execution checklist.
-
-### Memory
-
-Metis automatically checkpoints active task state after prompts, complete steps, compaction, errors, aborts, and completion. It never requires model bookkeeping calls or adds a foreground model round trip.
-
-The durable memory coordinator stores jobs, records, provenance, and a search index in `~/.metis/memories/state.sqlite`, with inspectable `MEMORY.md`, project views, and a summary index. It separates global preferences, project knowledge, and checkout-only facts. Metis exposes `search_memory` in Plan and Build so the model can search on demand, refine queries, and search again without a call-count limit; memory is no longer queried and injected automatically on every prompt. Results remain advisory evidence and cannot override current user, developer, or AGENTS instructions.
-
-Background extraction can use only `search_memory`, with no Metis-specific output-token cap or search-round cap. Reasoning-capable models run extraction at `low`; models without reasoning support receive no reasoning parameter. Provider and model limits, aborts, timeouts, per-search result limits, and the six-candidate checkpoint limit still apply.
-
-Use `/memory status|on|off|run|search|forget|reset`. `reset` requires explicit confirmation. `/memory status` and Desktop show why record count is zero, pending work, eligibility time, latest run counts, and fallback state. Proposal artifacts and long-term Memory are separate: no draft is automatically promoted to memory. Legacy Dream extensions, brain maps, and `.temp` memory logs are removed.
-
-### Search before action
-
-Metis investigates before making changes. It searches the repository first and uses web research when needed to check authoritative documentation, known solutions, release notes, or security information.
-
-### Logs and verification
-
-Metis records meaningful errors and completion summaries automatically. Before it says a task is finished, it compares the result with the user's original prompt and checks every requirement, constraint, and later clarification. It also runs relevant builds, tests, and functional checks when available.
-
-Together, these behaviors help the same coding model work with better context, fewer assumptions, and a stronger completion loop.
-
-## How it works
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/metis-workflow.dark.png" />
-    <img src="docs/images/metis-workflow.png" width="100%" alt="Metis workflow: Understand, Build, Verify" />
-  </picture>
-</p>
-
-1. **Freeze context** — assemble trusted base/developer instructions, untrusted runtime context, and the real user request; the model retrieves durable memory explicitly when useful.
-2. **Investigate or build** — Plan reads and proposes; Build changes only what evidence supports.
-3. **Persist and recover** — retain message/tool pairs, workflow checkpoints, structured plan state, and compaction summaries.
-4. **Verify and deliver** — run risk-proportionate checks, report evidence, and name remaining risk.
+See the [documentation index](docs/index.md) for every guide.
 
 <details>
 <summary><strong>Developer information</strong></summary>
 
-### Interfaces
+```bash
+npm run build                 # Compile TypeScript and copy runtime assets
+npm test                      # Run the Vitest suite
+npm run clean                 # Remove compiled output
+npm run build:binary          # Build the standalone binary
+```
 
-Metis supports an interactive terminal, print and JSON output, RPC integration, and an SDK for Node.js applications.
-
-The package exports the SDK from `@wholiver_hu/metis` and the RPC entry point from `@wholiver_hu/metis/rpc-entry`.
-
-### Commands
-
-| Command | Purpose |
-| --- | --- |
-| `npm run build` | Compile TypeScript and copy runtime assets. |
-| `npm test` | Run the Vitest test suite. |
-| `npm run clean` | Remove compiled output. |
-| `npm run build:binary` | Build the standalone binary. |
+The package exports the Node.js SDK from `@wholiver_hu/metis` and the RPC entry point from `@wholiver_hu/metis/rpc-entry`.
 
 </details>
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for core development, Extension integration, Package distribution, testing, and AI-assisted contribution guidance.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development, Extension and Package integration, testing, and AI-assisted contribution guidance.
 
 ## License
 
