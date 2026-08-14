@@ -29,21 +29,13 @@
 
 ---
 
+<p align="center">
+  <img src="docs/images/metis-desktop.png" width="100%" alt="Metis Desktop workspace" />
+</p>
+
 ## Quick start
 
-### CLI
-
-Requires Node.js `>=22.19.0` and npm.
-
-```bash
-npm install -g --ignore-scripts @wholiver_hu/metis@latest
-metis
-```
-
-Use `/login` for supported subscription providers, or configure an API key. Run `metis --help` for CLI options and see the [Quickstart](docs/quickstart.md) for the complete first-run flow.
-
-<details>
-<summary><strong>Desktop installation (macOS and Windows)</strong></summary>
+### Desktop installation
 
 Desktop includes the Metis CLI and Server runtime; Node.js is not required separately.
 
@@ -53,6 +45,18 @@ Desktop includes the Metis CLI and Server runtime; Node.js is not required separ
 | Windows | `x64` | Run `Metis-*-win-x64-setup.exe`, or extract `Metis-*-win-x64.zip` and launch **Metis.exe**. |
 
 Download files and matching `.sha256` checksums from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest). If Windows SmartScreen reports an unknown publisher, continue only when the file came from the official release page and its checksum matches.
+
+<details>
+<summary><strong>CLI installation</strong></summary>
+
+Requires Node.js `>=22.19.0` and npm.
+
+```bash
+npm install -g --ignore-scripts @wholiver_hu/metis@latest
+metis
+```
+
+Use `/login` for supported subscription providers, or configure an API key. Run `metis --help` for CLI options and see the [Quickstart](docs/quickstart.md) for the complete first-run flow.
 
 </details>
 

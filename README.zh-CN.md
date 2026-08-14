@@ -29,21 +29,13 @@
 
 ---
 
+<p align="center">
+  <img src="docs/images/metis-desktop.zh-CN.png" width="100%" alt="Metis Desktop 中文工作区" />
+</p>
+
 ## 快速开始
 
-### CLI
-
-需要 Node.js `>=22.19.0` 与 npm。
-
-```bash
-npm install -g --ignore-scripts @wholiver_hu/metis@latest
-metis
-```
-
-支持的订阅 Provider 可通过 `/login` 登录，也可配置 API Key。运行 `metis --help` 查看全部命令行选项；完整首次使用流程见[快速入门](docs/quickstart.md)。
-
-<details>
-<summary><strong>桌面版安装（macOS 与 Windows）</strong></summary>
+### 桌面版安装
 
 桌面版已内置 Metis CLI 与 Server 运行环境，无需另行安装 Node.js。
 
@@ -53,6 +45,18 @@ metis
 | Windows | `x64` | 运行 `Metis-*-win-x64-setup.exe`；或解压 `Metis-*-win-x64.zip` 后启动 **Metis.exe**。 |
 
 安装包及对应 `.sha256` 校验文件见[最新 GitHub Release](https://github.com/Wholiver/metis/releases/latest)。若 Windows SmartScreen 提示“未知发布者”，仅在文件来自官方 Release 页面且校验值一致时继续。
+
+<details>
+<summary><strong>CLI 安装</strong></summary>
+
+需要 Node.js `>=22.19.0` 与 npm。
+
+```bash
+npm install -g --ignore-scripts @wholiver_hu/metis@latest
+metis
+```
+
+支持的订阅 Provider 可通过 `/login` 登录，也可配置 API Key。运行 `metis --help` 查看全部命令行选项；完整首次使用流程见[快速入门](docs/quickstart.md)。
 
 </details>
 
