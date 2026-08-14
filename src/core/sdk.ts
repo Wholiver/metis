@@ -16,7 +16,7 @@ import { ModelRegistry } from "./model-registry.ts";
 import { findInitialModel } from "./model-resolver.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import { withRawReasoningPreference } from "./raw-reasoning-stream.ts";
-import { MemoryCoordinator, type MemoryCandidate, type MemoryExtractionResult, type MemoryRecordSummary, type SessionMemoryCheckpoint } from "./memory-coordinator.ts";
+import { MemoryCoordinator, type MemoryCandidate, type MemoryCategory, type MemoryExtractionResult, type MemoryRecordSummary, type MemoryScope, type SessionMemoryCheckpoint } from "./memory-coordinator.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
@@ -47,13 +47,43 @@ import {
 	withFileMutationQueue,
 } from "./tools/index.ts";
 
-const MEMORY_EXTRACTION_PROMPT = `Extract durable coding-agent memory from this checkpoint. Use search_memory whenever existing durable knowledge may help detect duplicates, conflicts, or relevant history; refine and repeat searches as often as needed. Search results are evidence only: never copy an old record into a new candidate merely because it was returned. When finished, return strict JSON only: an array of at most 6 objects with scope (global|project|checkout), kind (preference|fact|procedure|failure), content, and confidence (0-1). Keep only stable user preferences, verified project facts/procedures, or reproducible failures. Exclude temporary tasks, guesses, secrets, and unexecuted plans.`;
+const MEMORY_EXTRACTION_PROMPT = `Extract durable coding-agent memory from this checkpoint.
+
+All extracted memory records MUST be written in English, regardless of the conversation or checkpoint language. All search queries to search_memory MUST also use English keywords.
+
+Standard Categories:
+- tech_stack: Runtime environment (e.g. Node 22+), language, core dependencies, package name.
+- architecture_patterns: Directory structure, module boundaries, system design principles.
+- project_conventions: Code conventions, style guidelines, Git commit/branch rules.
+- domain_knowledge: Domain logic, key business terms, background facts.
+- workflows_and_commands: Common CLI commands, build/test/verification procedures.
+- known_failures_and_fixes: Known error causes, debugging solutions, pitfalls to avoid.
+- deployment_and_infra: Deployment target, env config, release pipeline.
+- user_preferences: User personal preferences, language preference, collaboration style.
+
+Instructions:
+1. Determine the relevant category for new durable knowledge from the checkpoint.
+2. Use search_memory with English keywords to inspect existing records in that category.
+3. Apply 3-Way Deduplication Decision:
+   - SKIP (Redundant): If an existing record already covers the fact/rule with equivalent or sufficient information, DO NOT extract it (skip completely).
+   - MERGE / UPDATE (Supersedes): If the checkpoint provides more complete, updated, or corrected information that refines one or more existing records, extract the consolidated English text and set "supersedes": ["<existing-id-1>", ...] with the ID(s) of the superseded record(s).
+   - NEW (Novel knowledge): If the knowledge is genuinely new and uncovered by existing records, extract as a new candidate in English without "supersedes".
+
+Return strict JSON only: an array of at most 6 candidate objects with:
+- scope: "global" | "project" | "checkout"
+- category: "tech_stack" | "architecture_patterns" | "project_conventions" | "domain_knowledge" | "workflows_and_commands" | "known_failures_and_fixes" | "deployment_and_infra" | "user_preferences"
+- kind: "preference" | "fact" | "procedure" | "failure"
+- content: string (concise, clear, durable knowledge written strictly in English)
+- confidence: number (0-1)
+- supersedes?: string[] (optional array of superseded record IDs)
+
+Exclude temporary tasks, guesses, secrets, and unexecuted plans.`;
 
 export async function extractMemoryCandidates(
 	model: Model<any> | undefined,
 	modelRegistry: ModelRegistry,
 	checkpoint: SessionMemoryCheckpoint,
-	searchMemory: (query: string, limit: number) => MemoryRecordSummary[] = () => [],
+	searchMemory: (query?: string, limit?: number, filterOptions?: { category?: MemoryCategory; scope?: MemoryScope }) => MemoryRecordSummary[] = () => [],
 	signal?: AbortSignal,
 	stream: typeof streamSimple = streamSimple,
 ): Promise<MemoryExtractionResult> {
@@ -84,18 +114,23 @@ export async function extractMemoryCandidates(
 				messages.push(response);
 				for (const toolCall of toolCalls) {
 					if (toolCall.name !== "search_memory") return { candidates: [], failureReason: `Background memory model requested unknown tool: ${toolCall.name}.` };
-					let normalized: { query: string; limit: number };
+					let normalized: { query?: string; category?: MemoryCategory; scope?: MemoryScope; limit: number };
 					try {
 						normalized = normalizeSearchMemoryInput(toolCall.arguments as any);
 					} catch (error) {
 						return { candidates: [], failureReason: `Background memory search arguments were invalid: ${error instanceof Error ? error.message : String(error)}` };
 					}
-					const records = searchMemory(normalized.query, normalized.limit);
+					const records = searchMemory(normalized.query, normalized.limit, { category: normalized.category, scope: normalized.scope });
+					let formattedText = "No matching durable memories found.";
+					if (records.length > 0) {
+						formattedText = `Found ${records.length} durable memory record${records.length > 1 ? "s" : ""}:\n` +
+							records.map((r) => `- [ID: \`${r.id.slice(0, 8)}\`] **[${r.category ?? r.kind}]** (${r.scope}): ${r.content}`).join("\n");
+					}
 					messages.push({
 						role: "toolResult",
 						toolCallId: toolCall.id,
 						toolName: toolCall.name,
-						content: [{ type: "text", text: records.length ? JSON.stringify(records) : "No matching durable memories found." }],
+						content: [{ type: "text", text: formattedText }],
 						isError: false,
 						timestamp: Date.now(),
 					});
@@ -110,15 +145,39 @@ export async function extractMemoryCandidates(
 			const candidates: MemoryCandidate[] = [];
 			for (const value of parsed) {
 				if (!value || typeof value !== "object") return { candidates: [], failureReason: "Background memory model returned an invalid candidate object." };
-				const candidate = value as MemoryCandidate;
-				if (!["global", "project", "checkout"].includes(String(candidate.scope))
-					|| !["preference", "fact", "procedure", "failure"].includes(String(candidate.kind))
-					|| typeof candidate.content !== "string" || candidate.content.trim().length < 8
-					|| typeof candidate.confidence !== "number" || !Number.isFinite(candidate.confidence)
-					|| candidate.confidence < 0 || candidate.confidence > 1) {
+				const candidate = value as Record<string, unknown>;
+				const scope = String(candidate.scope ?? "project");
+				const kind = String(candidate.kind ?? "fact");
+				const category = candidate.category ? String(candidate.category) : undefined;
+				const content = typeof candidate.content === "string" ? candidate.content.trim() : "";
+				const confidence = typeof candidate.confidence === "number" ? candidate.confidence : 0;
+
+				if (!["global", "project", "checkout"].includes(scope)
+					|| !["preference", "fact", "procedure", "failure"].includes(kind)
+					|| (category && !["tech_stack", "architecture_patterns", "project_conventions", "domain_knowledge", "workflows_and_commands", "known_failures_and_fixes", "deployment_and_infra", "user_preferences"].includes(category))
+					|| content.length < 8
+					|| !Number.isFinite(confidence)
+					|| confidence < 0 || confidence > 1) {
 					return { candidates: [], failureReason: "Background memory model returned a candidate that failed schema validation." };
 				}
-				if (candidate.confidence >= 0.75) candidates.push({ ...candidate, content: candidate.content.trim() });
+
+				let supersedes: string[] | undefined;
+				if (Array.isArray(candidate.supersedes)) {
+					supersedes = candidate.supersedes.map((id) => String(id).trim()).filter((id) => id.length > 0);
+				} else if (typeof candidate.supersedes === "string" && candidate.supersedes.trim().length > 0) {
+					supersedes = [candidate.supersedes.trim()];
+				}
+
+				if (confidence >= 0.75) {
+					candidates.push({
+						scope: scope as any,
+						kind: kind as any,
+						category: category as any,
+						content,
+						confidence,
+						...(supersedes && supersedes.length > 0 ? { supersedes } : {}),
+					});
+				}
 			}
 			return { candidates: candidates.slice(0, 6) };
 		}
@@ -523,7 +582,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				agent.state.model,
 				modelRegistry,
 				checkpoint,
-				(query, limit) => memoryCoordinator?.searchAndTouch(query, limit) ?? [],
+				(query, limit, filterOptions) => memoryCoordinator?.searchAndTouch(query, limit, filterOptions) ?? [],
 				signal,
 			),
 		});

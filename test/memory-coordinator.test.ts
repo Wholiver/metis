@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { MemoryCoordinator, resolveMemoryProjectIdentity, type MemoryCoordinatorOptions } from "../src/core/memory-coordinator.ts";
+import { MemoryCoordinator, resolveMemoryProjectIdentity, type MemoryCandidate, type MemoryCoordinatorOptions } from "../src/core/memory-coordinator.ts";
 
 const roots: string[] = [];
 function coordinator(overrides: Partial<MemoryCoordinatorOptions> = {}) {
@@ -74,21 +74,39 @@ describe("MemoryCoordinator", () => {
 
 	it("aborts an in-flight extraction without consuming its pending checkpoint", async () => {
 		let observedAbort = false;
+		let waitForAbort = false;
 		const memory = coordinator({
-			extract: async (_checkpoint, signal) => await new Promise((_, reject) => {
+			extract: async (_checkpoint, signal) => waitForAbort ? await new Promise((_, reject) => {
 				signal?.addEventListener("abort", () => {
 					observedAbort = true;
 					reject(new Error("aborted"));
 				}, { once: true });
-			}),
+			}) : [{ scope: "project", kind: "fact", content: "Previously extracted durable fact", confidence: 0.9 }],
 		});
+		memory.recordCheckpoint({ sessionId: "session-before-abort", reason: "completed", timestamp: new Date().toISOString() });
+		await memory.run(true);
+		expect(memory.getState()).toMatchObject({ lastRunProcessed: 1, lastRunAdded: 1 });
+
+		waitForAbort = true;
 		memory.recordCheckpoint({ sessionId: "session-abort", reason: "completed", timestamp: new Date().toISOString() });
 		const running = memory.run(true);
 		await Promise.resolve();
 		memory.abort();
-		const state = await running;
+		await expect(running).rejects.toThrow("aborted");
+		const state = memory.getState();
 		expect(observedAbort).toBe(true);
-		expect(state).toMatchObject({ phase: "retry_wait", pendingJobs: 1 });
+		expect(state).toMatchObject({ phase: "retry_wait", pendingJobs: 1, lastRunProcessed: 0, lastRunAdded: 0, lastRunSkipped: 0, lastExtractionMethod: "none", fallbackUsed: false, error: "aborted" });
+	});
+
+	it("rejects a duplicate manual run instead of reporting stale success", async () => {
+		let release: (() => void) | undefined;
+		const memory = coordinator({ extract: async () => await new Promise<MemoryCandidate[]>((resolve) => { release = () => resolve([]); }) });
+		memory.recordCheckpoint({ sessionId: "session-running", reason: "completed", timestamp: new Date().toISOString() });
+		const running = memory.run(true);
+		await Promise.resolve();
+		await expect(memory.run(true)).rejects.toThrow("already running");
+		release?.();
+		await running;
 	});
 
 	it("does not return records whose last use and update are outside TTL", async () => {
@@ -97,5 +115,80 @@ describe("MemoryCoordinator", () => {
 		await memory.run(true);
 		(memory as any).db.prepare("UPDATE memory_records SET updated_at = ?, last_used_at = NULL").run(new Date(0).toISOString());
 		expect(memory.search("expired workflow")).toEqual([]);
+	});
+
+	it("merges superseded records and consolidates source sessions", async () => {
+		const memory = coordinator({
+			extract: async () => ({
+				candidates: [
+					{ scope: "project", category: "tech_stack", kind: "fact", content: "Initial project fact about Node version", confidence: 0.9 },
+				],
+			}),
+		});
+		memory.recordCheckpoint({ sessionId: "session-1", reason: "completed", timestamp: new Date().toISOString() });
+		await memory.run(true);
+		const [initial] = memory.search("Node version");
+		expect(initial).toBeTruthy();
+		expect(initial.sourceSessionIds).toEqual(["session-1"]);
+		expect(initial.category).toBe("tech_stack");
+
+		// Second run: model provides supersedes
+		const memory2 = coordinator({
+			extract: async () => ({
+				candidates: [
+					{
+						scope: "project",
+						category: "tech_stack",
+						kind: "fact",
+						content: "Refined project fact with Node 22+ and package details",
+						confidence: 0.95,
+						supersedes: [initial.id],
+					},
+				],
+			}),
+		});
+		// Reuse db path from first coordinator
+		(memory2 as any).db = (memory as any).db;
+		(memory2 as any).root = (memory as any).root;
+		memory2.recordCheckpoint({ sessionId: "session-2", reason: "completed", timestamp: new Date().toISOString() });
+		await memory2.run(true);
+
+		const searchOld = memory2.search("Initial project fact");
+		expect(searchOld).toEqual([]);
+
+		const [updated] = memory2.search("Refined project fact");
+		expect(updated).toBeTruthy();
+		expect(updated.sourceSessionIds).toContain("session-1");
+		expect(updated.sourceSessionIds).toContain("session-2");
+		expect(updated.category).toBe("tech_stack");
+	});
+
+	it("supports search and searchAndTouch filtering by category and scope", async () => {
+		const memory = coordinator({
+			extract: async () => ({
+				candidates: [
+					{ scope: "global", category: "user_preferences", kind: "preference", content: "Always use concise responses", confidence: 0.95 },
+					{ scope: "project", category: "tech_stack", kind: "fact", content: "TypeScript with Vitest for testing", confidence: 0.9 },
+					{ scope: "project", category: "known_failures_and_fixes", kind: "failure", content: "ENOENT when package.json is missing", confidence: 0.9 },
+				],
+			}),
+		});
+		memory.recordCheckpoint({ sessionId: "session-filter", reason: "completed", timestamp: new Date().toISOString() });
+		await memory.run(true);
+
+		// Category filter without query
+		const bugRecords = memory.search(undefined, 6, { category: "known_failures_and_fixes" });
+		expect(bugRecords).toHaveLength(1);
+		expect(bugRecords[0].content).toContain("ENOENT");
+
+		// Scope filter with category
+		const globalRecords = memory.search(undefined, 6, { scope: "global", category: "user_preferences" });
+		expect(globalRecords).toHaveLength(1);
+		expect(globalRecords[0].content).toContain("concise responses");
+
+		// Touch updates lastUsedAt
+		const touched = memory.searchAndTouch("Vitest", 6, { category: "tech_stack" });
+		expect(touched).toHaveLength(1);
+		expect(touched[0].lastUsedAt).toBeTruthy();
 	});
 });

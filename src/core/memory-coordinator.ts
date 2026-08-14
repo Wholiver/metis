@@ -16,6 +16,75 @@ export type MemoryScope = "global" | "project" | "checkout";
 export type MemoryKind = "preference" | "fact" | "procedure" | "failure";
 export type MemoryRecordStatus = "active" | "stale" | "conflicted";
 
+export type MemoryCategory =
+	| "tech_stack"
+	| "architecture_patterns"
+	| "project_conventions"
+	| "domain_knowledge"
+	| "workflows_and_commands"
+	| "known_failures_and_fixes"
+	| "deployment_and_infra"
+	| "user_preferences";
+
+export const MEMORY_CATEGORIES: readonly MemoryCategory[] = [
+	"tech_stack",
+	"architecture_patterns",
+	"project_conventions",
+	"domain_knowledge",
+	"workflows_and_commands",
+	"known_failures_and_fixes",
+	"deployment_and_infra",
+	"user_preferences",
+] as const;
+
+export const CATEGORY_DISPLAY_TITLES: Record<MemoryCategory, string> = {
+	tech_stack: "Tech Stack & Runtime",
+	architecture_patterns: "Architecture & Modular Patterns",
+	project_conventions: "Project Conventions & Code Guidelines",
+	domain_knowledge: "Domain Knowledge & Core Facts",
+	workflows_and_commands: "Workflows & Standard Commands",
+	known_failures_and_fixes: "Known Failures & Debugging Solutions",
+	deployment_and_infra: "Deployment & Infrastructure",
+	user_preferences: "User Preferences & Collaboration Style",
+};
+
+export function normalizeCategory(category?: string | null, kind?: string | null, content = ""): MemoryCategory {
+	if (category && (MEMORY_CATEGORIES as readonly string[]).includes(category)) {
+		return category as MemoryCategory;
+	}
+	const lower = content.toLowerCase();
+	if (kind === "preference" || lower.includes("偏好") || lower.includes("preference") || lower.includes("习惯")) return "user_preferences";
+	if (kind === "failure" || lower.includes("failed") || lower.includes("error") || lower.includes("eisdir") || lower.includes("enoent") || lower.includes("失败") || lower.includes("报错")) return "known_failures_and_fixes";
+	if (kind === "procedure" || lower.includes("workflow") || lower.includes("command") || lower.includes("npm run") || lower.includes("npm test") || lower.includes("工作流") || lower.includes("命令")) return "workflows_and_commands";
+	if (lower.includes("node.js") || lower.includes("typescript") || lower.includes("npm package") || lower.includes("@wholiver_hu") || lower.includes("license") || lower.includes("mit")) return "tech_stack";
+	if (lower.includes("architecture") || lower.includes("agent layer") || lower.includes("架构") || lower.includes("context") || lower.includes("reusable")) return "architecture_patterns";
+	if (lower.includes("readme") || lower.includes("docs") || lower.includes("documentation") || lower.includes("capabilities") || lower.includes("dream")) return "domain_knowledge";
+	switch (kind) {
+		case "preference":
+			return "user_preferences";
+		case "failure":
+			return "known_failures_and_fixes";
+		case "procedure":
+			return "workflows_and_commands";
+		case "fact":
+		default:
+			return "tech_stack";
+	}
+}
+
+export function categoryToKind(category?: MemoryCategory | null): MemoryKind {
+	switch (category) {
+		case "user_preferences":
+			return "preference";
+		case "known_failures_and_fixes":
+			return "failure";
+		case "workflows_and_commands":
+			return "procedure";
+		default:
+			return "fact";
+	}
+}
+
 export interface MemoryState {
 	enabled: boolean;
 	phase: MemoryPhase;
@@ -38,6 +107,7 @@ export interface MemoryState {
 export interface MemoryRecordSummary {
 	id: string;
 	scope: MemoryScope;
+	category?: MemoryCategory;
 	kind: MemoryKind;
 	content: string;
 	status: MemoryRecordStatus;
@@ -52,6 +122,11 @@ export interface MemorySettings {
 	maxRolloutAgeDays?: number;
 	minRolloutIdleHours?: number;
 	maxRolloutsPerSweep?: number;
+}
+
+export interface MemorySearchOptions {
+	category?: MemoryCategory;
+	scope?: MemoryScope;
 }
 
 export const DEFAULT_MEMORY_SETTINGS: Required<MemorySettings> = {
@@ -93,9 +168,11 @@ export interface MemoryCoordinatorOptions {
 
 export interface MemoryCandidate {
 	scope?: MemoryScope;
-	kind: MemoryKind;
+	category?: MemoryCategory;
+	kind?: MemoryKind;
 	content: string;
 	confidence?: number;
+	supersedes?: string[];
 }
 
 export interface MemoryExtractionResult {
@@ -164,6 +241,7 @@ export class MemoryCoordinator {
 		this.identity = resolveMemoryProjectIdentity(options.cwd);
 		this.initialize();
 		this.migrateLegacyArtifacts();
+		this.migrateCategoryConsolidation();
 		this.state = this.buildState();
 	}
 
@@ -174,7 +252,8 @@ export class MemoryCoordinator {
 			CREATE TABLE IF NOT EXISTS memory_records (
 				id TEXT PRIMARY KEY, scope TEXT NOT NULL, project_key TEXT, checkout_key TEXT,
 				kind TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
-				sources TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_used_at TEXT
+				sources TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_used_at TEXT,
+				category TEXT
 			);
 			CREATE TABLE IF NOT EXISTS memory_jobs (
 				id TEXT PRIMARY KEY, session_id TEXT NOT NULL, checkpoint TEXT NOT NULL, status TEXT NOT NULL,
@@ -183,6 +262,7 @@ export class MemoryCoordinator {
 			CREATE TABLE IF NOT EXISTS memory_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 			CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(id UNINDEXED, content);
 		`);
+		try { this.db.exec("ALTER TABLE memory_records ADD COLUMN category TEXT"); } catch { /* already migrated */ }
 		try { this.db.exec("ALTER TABLE memory_jobs ADD COLUMN semantic_hash TEXT"); } catch { /* already migrated */ }
 	}
 
@@ -205,6 +285,80 @@ export class MemoryCoordinator {
 		this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("memory-v2-migrated", now());
 	}
 
+	/** Deduplicate and structure legacy unpartitioned records. */
+	private migrateCategoryConsolidation(): void {
+		const migrated = this.db.prepare("SELECT value FROM memory_meta WHERE key = 'memory-v2-category-consolidated'").get() as { value?: string } | undefined;
+		if (migrated) return;
+		try {
+			const rows = this.db.prepare("SELECT * FROM memory_records").all() as Array<Record<string, string | null>>;
+			if (rows.length === 0) {
+				this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("memory-v2-category-consolidated", now());
+				return;
+			}
+			const tokenize = (text: string) => new Set((text.toLowerCase().match(/[\p{L}\p{N}_-]+/gu) || []).filter((w) => w.length > 1));
+			const similarity = (setA: Set<string>, setB: Set<string>) => {
+				if (setA.size === 0 || setB.size === 0) return 0;
+				let intersection = 0;
+				for (const item of setA) if (setB.has(item)) intersection++;
+				const union = new Set([...setA, ...setB]).size;
+				const containment = intersection / Math.min(setA.size, setB.size);
+				const jaccard = intersection / union;
+				return Math.max(jaccard, containment * 0.75);
+			};
+
+			const groups = new Map<string, Array<Record<string, string | null>>>();
+			for (const r of rows) {
+				const cat = normalizeCategory(r.category, r.kind, r.content ?? "");
+				const key = `${r.scope}:${r.project_key || ""}:${r.checkout_key || ""}:${cat}`;
+				if (!groups.has(key)) groups.set(key, []);
+				groups.get(key)!.push({ ...r, category: cat });
+			}
+
+			const toDeleteIds: string[] = [];
+			const toUpdate: Array<{ id: string; category: string; content: string; sources: string }> = [];
+
+			for (const group of groups.values()) {
+				const merged: Array<{ record: Record<string, string | null>; tokens: Set<string> }> = [];
+				for (const item of group) {
+					const tokens = tokenize(item.content ?? "");
+					let matched = false;
+					for (const m of merged) {
+						if (similarity(tokens, m.tokens) >= 0.4) {
+							matched = true;
+							toDeleteIds.push(item.id!);
+							const sourcesA = parseJson<string[]>(item.sources, []);
+							const sourcesB = parseJson<string[]>(m.record.sources, []);
+							m.record.sources = JSON.stringify([...new Set([...sourcesA, ...sourcesB])]);
+							if ((item.content?.length ?? 0) > (m.record.content?.length ?? 0)) {
+								m.record.content = item.content;
+								m.tokens = tokens;
+							}
+							break;
+						}
+					}
+					if (!matched) {
+						merged.push({ record: { ...item }, tokens });
+					}
+				}
+				for (const m of merged) {
+					toUpdate.push({ id: m.record.id!, category: m.record.category!, content: m.record.content!, sources: m.record.sources! });
+				}
+			}
+
+			for (const id of toDeleteIds) {
+				this.db.prepare("DELETE FROM memory_records WHERE id = ?").run(id);
+				this.db.prepare("DELETE FROM memory_fts WHERE id = ?").run(id);
+			}
+			for (const u of toUpdate) {
+				this.db.prepare("UPDATE memory_records SET category = ?, content = ?, sources = ?, updated_at = ? WHERE id = ?").run(u.category, u.content, u.sources, now(), u.id);
+				this.db.prepare("DELETE FROM memory_fts WHERE id = ?").run(u.id);
+				this.db.prepare("INSERT INTO memory_fts(id, content) VALUES (?, ?)").run(u.id, u.content);
+			}
+			this.writeViews();
+		} catch { /* never block startup */ }
+		this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("memory-v2-category-consolidated", now());
+	}
+
 	private config(): Required<MemorySettings> { return { ...DEFAULT_MEMORY_SETTINGS, ...(this.options.settings() ?? {}) }; }
 	private enabled(): boolean { return this.config().enabled; }
 
@@ -216,8 +370,9 @@ export class MemoryCoordinator {
 		const meta = this.db.prepare("SELECT key, value FROM memory_meta WHERE key IN ('lastExtractedAt','lastConsolidatedAt','nextRetryAt','error','lastRunProcessed','lastRunAdded','lastRunSkipped','lastExtractionMethod','fallbackUsed','modelFailureReason')").all() as Array<{ key: string; value: string }>;
 		const get = (key: string) => meta.find((row) => row.key === key)?.value;
 		const next = this.db.prepare("SELECT MIN(due_at) AS dueAt FROM memory_jobs WHERE status IN ('pending','retry')").get() as { dueAt?: number };
+		const error = get("error");
 		return {
-			enabled, phase: enabled ? "idle" : "disabled", globalCount: count("global"), projectCount: count("project") + count("checkout"), pendingJobs: pending.count,
+			enabled, phase: enabled ? error ? "retry_wait" : "idle" : "disabled", globalCount: count("global"), projectCount: count("project") + count("checkout"), pendingJobs: pending.count,
 			lastExtractedAt: get("lastExtractedAt"), lastConsolidatedAt: get("lastConsolidatedAt"), nextRetryAt: get("nextRetryAt"), error: get("error"),
 			nextEligibleAt: next.dueAt ? new Date(next.dueAt).toISOString() : undefined,
 			lastRunProcessed: Number(get("lastRunProcessed") ?? 0), lastRunAdded: Number(get("lastRunAdded") ?? 0), lastRunSkipped: Number(get("lastRunSkipped") ?? 0),
@@ -281,33 +436,33 @@ export class MemoryCoordinator {
 	}
 
 	async run(force = false): Promise<MemoryState> {
-		if (!this.enabled() || this.running) return this.getState();
+		if (!this.enabled()) return this.getState();
+		if (this.running) {
+			if (force) throw new Error("Memory extraction is already running.");
+			return this.getState();
+		}
 		this.running = true;
 		this.extractionAbortController = new AbortController();
+		let processed = 0;
+		let added = 0;
+		let skipped = 0;
+		let fallbackUsed = false;
+		let modelFailureReason: string | undefined;
 		try {
 			this.phase("extracting");
 			const settings = this.config();
 			const max = force ? Number.MAX_SAFE_INTEGER : settings.maxRolloutsPerSweep;
 			const oldest = new Date(Date.now() - settings.maxRolloutAgeDays * DAY).toISOString();
 			const jobs = this.db.prepare("SELECT * FROM memory_jobs WHERE status IN ('pending','retry') AND due_at <= ? AND created_at >= ? ORDER BY created_at LIMIT ?").all(force ? Number.MAX_SAFE_INTEGER : Date.now(), oldest, max) as Array<Record<string, unknown>>;
-			let added = 0;
-			let skipped = 0;
-			let fallbackUsed = false;
-			let modelFailureReason: string | undefined;
 			for (const job of jobs) {
 				const result = await this.extractJob(job, this.extractionAbortController.signal);
+				processed += 1;
 				added += result.added;
 				skipped += result.skipped;
 				fallbackUsed ||= result.fallbackUsed;
 				modelFailureReason = result.modelFailureReason ?? modelFailureReason;
 			}
-			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastRunProcessed", String(jobs.length));
-			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastRunAdded", String(added));
-			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastRunSkipped", String(skipped));
-			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastExtractionMethod", jobs.length === 0 ? "none" : fallbackUsed ? "fallback" : "model");
-			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("fallbackUsed", String(fallbackUsed));
-			if (modelFailureReason) this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("modelFailureReason", modelFailureReason);
-			else this.db.prepare("DELETE FROM memory_meta WHERE key = 'modelFailureReason'").run();
+			this.storeRunStats(processed, added, skipped, fallbackUsed, modelFailureReason);
 			this.db.prepare("DELETE FROM memory_meta WHERE key IN ('error', 'nextRetryAt')").run();
 			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastExtractedAt", now());
 			this.phase("consolidating");
@@ -318,9 +473,11 @@ export class MemoryCoordinator {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			const retry = new Date(Date.now() + 15 * 60_000).toISOString();
+			this.storeRunStats(processed, added, skipped, fallbackUsed, modelFailureReason);
 			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("error", message);
 			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("nextRetryAt", retry);
 			this.phase("retry_wait", message);
+			if (force) throw error;
 			return this.getState();
 		} finally {
 			this.running = false;
@@ -328,6 +485,16 @@ export class MemoryCoordinator {
 			if (this.enabled()) this.publish();
 			if (this.closeWhenIdle) this.db.close();
 		}
+	}
+
+	private storeRunStats(processed: number, added: number, skipped: number, fallbackUsed: boolean, modelFailureReason?: string): void {
+		this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastRunProcessed", String(processed));
+		this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastRunAdded", String(added));
+		this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastRunSkipped", String(skipped));
+		this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastExtractionMethod", processed === 0 ? "none" : fallbackUsed ? "fallback" : "model");
+		this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("fallbackUsed", String(fallbackUsed));
+		if (modelFailureReason) this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("modelFailureReason", modelFailureReason);
+		else this.db.prepare("DELETE FROM memory_meta WHERE key = 'modelFailureReason'").run();
 	}
 
 	private async extractJob(job: Record<string, unknown>, signal?: AbortSignal): Promise<{ added: number; skipped: number; fallbackUsed: boolean; modelFailureReason?: string }> {
@@ -356,52 +523,113 @@ export class MemoryCoordinator {
 		// Conservative deterministic fallback. It only retains explicitly verified procedures/errors;
 		// semantic extraction can be supplied by the background model adapter later.
 		const candidates: MemoryCandidate[] = [];
-		for (const value of checkpoint.verification ?? []) candidates.push({ scope: "project", kind: "procedure", content: `Verified workflow: ${value}` });
-		for (const value of checkpoint.errors ?? []) candidates.push({ scope: "project", kind: "failure", content: `Known failure: ${value}` });
-		for (const value of checkpoint.constraints ?? []) candidates.push({ scope: "project", kind: "preference", content: `Explicit user requirement: ${value}` });
+		for (const value of checkpoint.verification ?? []) candidates.push({ scope: "project", category: "workflows_and_commands", kind: "procedure", content: `Verified workflow: ${value}` });
+		for (const value of checkpoint.errors ?? []) candidates.push({ scope: "project", category: "known_failures_and_fixes", kind: "failure", content: `Known failure: ${value}` });
+		for (const value of checkpoint.constraints ?? []) candidates.push({ scope: "project", category: "user_preferences", kind: "preference", content: `Explicit user requirement: ${value}` });
 		return candidates;
 	}
 
 	private upsert(candidate: MemoryCandidate, sessionId: string): boolean {
-		if (!candidate.content || candidate.content.length < 8 || !["preference", "fact", "procedure", "failure"].includes(candidate.kind) || (candidate.scope && !["global", "project", "checkout"].includes(candidate.scope)) || (candidate.confidence !== undefined && (!Number.isFinite(candidate.confidence) || candidate.confidence < 0.75 || candidate.confidence > 1)) || !this.options.trusted() && candidate.scope !== "global") return false;
+		if (!candidate.content || candidate.content.length < 8) return false;
 		const scope = candidate.scope ?? "project";
+		if (!["global", "project", "checkout"].includes(scope)) return false;
+		if (candidate.confidence !== undefined && (!Number.isFinite(candidate.confidence) || candidate.confidence < 0.75 || candidate.confidence > 1)) return false;
+		if (!this.options.trusted() && scope !== "global") return false;
+
+		const category = normalizeCategory(candidate.category, candidate.kind, candidate.content);
+		const kind = candidate.kind && ["preference", "fact", "procedure", "failure"].includes(candidate.kind)
+			? candidate.kind
+			: categoryToKind(category);
+
 		const projectKey = scope === "global" ? null : this.identity.projectKey;
 		const checkoutKey = scope === "checkout" ? this.identity.checkoutKey : null;
+
+		// Handle supersedes: merge sources and remove superseded records
+		const supersedes = Array.isArray(candidate.supersedes)
+			? candidate.supersedes.map((id) => String(id).trim()).filter((id) => id.length > 0)
+			: [];
+
+		const collectedSources = [sessionId];
+
+		if (supersedes.length > 0) {
+			for (const oldId of supersedes) {
+				const oldRow = this.db.prepare("SELECT sources FROM memory_records WHERE id = ?").get(oldId) as { sources?: string } | undefined;
+				if (oldRow) {
+					const oldSources = parseJson<string[]>(oldRow.sources, []);
+					collectedSources.push(...oldSources);
+					this.db.prepare("DELETE FROM memory_records WHERE id = ?").run(oldId);
+					this.db.prepare("DELETE FROM memory_fts WHERE id = ?").run(oldId);
+				}
+			}
+		}
+
+		// Exact match deduplication check
 		const existing = this.db.prepare("SELECT id, sources FROM memory_records WHERE scope = ? AND project_key IS ? AND checkout_key IS ? AND content = ?").get(scope, projectKey, checkoutKey, candidate.content) as { id: string; sources: string } | undefined;
 		if (existing) {
-			const sources = [...new Set([...parseJson<string[]>(existing.sources, []), sessionId])];
-			this.db.prepare("UPDATE memory_records SET sources = ?, updated_at = ?, status = 'active' WHERE id = ?").run(JSON.stringify(sources), now(), existing.id);
+			const mergedSources = [...new Set([...parseJson<string[]>(existing.sources, []), ...collectedSources])];
+			this.db.prepare("UPDATE memory_records SET category = ?, kind = ?, sources = ?, updated_at = ?, status = 'active' WHERE id = ?").run(category, kind, JSON.stringify(mergedSources), now(), existing.id);
 			return false;
 		}
+
 		const id = randomUUID();
-		this.db.prepare("INSERT INTO memory_records VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, NULL)")
-			.run(id, scope, projectKey, checkoutKey, candidate.kind, candidate.content.slice(0, 4000), JSON.stringify([sessionId]), now(), now());
+		const finalSources = [...new Set(collectedSources)];
+		this.db.prepare("INSERT INTO memory_records (id, scope, project_key, checkout_key, kind, content, status, sources, created_at, updated_at, last_used_at, category) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, NULL, ?)")
+			.run(id, scope, projectKey, checkoutKey, kind, candidate.content.slice(0, 4000), JSON.stringify(finalSources), now(), now(), category);
 		this.db.prepare("INSERT INTO memory_fts(id, content) VALUES (?, ?)").run(id, candidate.content);
 		return true;
 	}
 
-	search(query: string, limit = 6): MemoryRecordSummary[] {
+	search(query?: string, limit = 6, filterOptions?: MemorySearchOptions): MemoryRecordSummary[] {
 		const cutoff = new Date(Date.now() - this.config().maxUnusedDays * DAY).toISOString();
-		const terms = query.match(/[\p{L}\p{N}_-]+/gu) ?? [];
+		const trimmedQuery = String(query ?? "").trim();
+		const terms = trimmedQuery.match(/[\p{L}\p{N}_-]+/gu) ?? [];
 		const match = terms.map((term) => `"${term.replace(/"/g, "")}"`).join(" AND ");
 		const safeLimit = Math.min(20, Math.max(1, Math.trunc(limit) || 6));
-		const base = `r.status = 'active' AND (r.scope = 'global' OR (r.scope = 'project' AND r.project_key = ?) OR (r.scope = 'checkout' AND r.checkout_key = ?)) AND COALESCE(r.last_used_at, r.updated_at) >= ?`;
-		let rows = match
-			? this.db.prepare(`SELECT r.* FROM memory_fts f JOIN memory_records r ON r.id = f.id WHERE ${base} AND f.memory_fts MATCH ? ORDER BY bm25(memory_fts), COALESCE(r.last_used_at, r.updated_at) DESC LIMIT ?`).all(this.identity.projectKey, this.identity.checkoutKey, cutoff, match, safeLimit)
-			: this.db.prepare(`SELECT r.* FROM memory_records r WHERE ${base} ORDER BY COALESCE(r.last_used_at, r.updated_at) DESC LIMIT ?`).all(this.identity.projectKey, this.identity.checkoutKey, cutoff, safeLimit);
+
+		let base = `r.status = 'active' AND COALESCE(r.last_used_at, r.updated_at) >= ?`;
+		const params: Array<string | null> = [cutoff];
+
+		if (filterOptions?.scope) {
+			if (filterOptions.scope === "global") {
+				base += ` AND r.scope = 'global'`;
+			} else if (filterOptions.scope === "project") {
+				base += ` AND r.scope = 'project' AND r.project_key = ?`;
+				params.push(this.identity.projectKey);
+			} else if (filterOptions.scope === "checkout") {
+				base += ` AND r.scope = 'checkout' AND r.checkout_key = ?`;
+				params.push(this.identity.checkoutKey);
+			}
+		} else {
+			base += ` AND (r.scope = 'global' OR (r.scope = 'project' AND r.project_key = ?) OR (r.scope = 'checkout' AND r.checkout_key = ?))`;
+			params.push(this.identity.projectKey, this.identity.checkoutKey);
+		}
+
+		if (filterOptions?.category) {
+			base += ` AND r.category = ?`;
+			params.push(filterOptions.category);
+		}
+
+		let rows: Array<Record<string, string | null>> = [];
+
+		if (match) {
+			rows = this.db.prepare(`SELECT r.* FROM memory_fts f JOIN memory_records r ON r.id = f.id WHERE ${base} AND f.memory_fts MATCH ? ORDER BY bm25(memory_fts), COALESCE(r.last_used_at, r.updated_at) DESC LIMIT ?`).all(...params, match, safeLimit) as any;
+		} else {
+			rows = this.db.prepare(`SELECT r.* FROM memory_records r WHERE ${base} ORDER BY COALESCE(r.last_used_at, r.updated_at) DESC LIMIT ?`).all(...params, safeLimit) as any;
+		}
+
 		// SQLite's unicode61 tokenizer does not segment every CJK phrase. Keep FTS as
 		// the primary path, then use a bounded substring fallback for CJK queries.
-		if (rows.length === 0 && terms.some((term) => /\p{Script=Han}/u.test(term))) {
+		if (rows.length === 0 && match && terms.some((term) => /\p{Script=Han}/u.test(term))) {
 			const clauses = terms.map(() => "r.content LIKE ? ESCAPE '\\'").join(" AND ");
 			const values = terms.map((term) => `%${term.replace(/[\\%_]/g, "\\$&")}%`);
-			rows = this.db.prepare(`SELECT r.* FROM memory_records r WHERE ${base} AND ${clauses} ORDER BY COALESCE(r.last_used_at, r.updated_at) DESC LIMIT ?`).all(this.identity.projectKey, this.identity.checkoutKey, cutoff, ...values, safeLimit);
+			rows = this.db.prepare(`SELECT r.* FROM memory_records r WHERE ${base} AND ${clauses} ORDER BY COALESCE(r.last_used_at, r.updated_at) DESC LIMIT ?`).all(...params, ...values, safeLimit) as any;
 		}
-		return (rows as Array<Record<string, string | null>>).map((row) => this.summary(row));
+		return rows.map((row) => this.summary(row));
 	}
 
-	searchAndTouch(query: string, limit = 6): MemoryRecordSummary[] {
+	searchAndTouch(query?: string, limit = 6, filterOptions?: MemorySearchOptions): MemoryRecordSummary[] {
 		if (!this.enabled()) return [];
-		const records = this.search(query, limit);
+		const records = this.search(query, limit, filterOptions);
 		const usedAt = now();
 		for (const record of records) {
 			this.db.prepare("UPDATE memory_records SET last_used_at = ? WHERE id = ?").run(usedAt, record.id);
@@ -424,13 +652,38 @@ export class MemoryCoordinator {
 	}
 
 	private summary(row: Record<string, string | null>): MemoryRecordSummary {
-		return { id: row.id!, scope: row.scope as MemoryScope, kind: row.kind as MemoryKind, content: row.content!, status: row.status as MemoryRecordStatus, sourceSessionIds: parseJson(row.sources, []), updatedAt: row.updated_at!, lastUsedAt: row.last_used_at ?? undefined };
+		const category = normalizeCategory(row.category, row.kind, row.content ?? "");
+		return {
+			id: row.id!,
+			scope: row.scope as MemoryScope,
+			category,
+			kind: (row.kind as MemoryKind) ?? categoryToKind(category),
+			content: row.content!,
+			status: row.status as MemoryRecordStatus,
+			sourceSessionIds: parseJson(row.sources, []),
+			updatedAt: row.updated_at!,
+			lastUsedAt: row.last_used_at ?? undefined,
+		};
 	}
 
 	private writeViews(): void {
 		const rows = this.db.prepare("SELECT * FROM memory_records WHERE status = 'active' ORDER BY updated_at DESC").all() as Array<Record<string, string | null>>;
 		const write = (path: string, content: string) => { mkdirSync(dirname(path), { recursive: true }); const temp = `${path}.${process.pid}.tmp`; writeFileSync(temp, content, "utf8"); renameSync(temp, path); };
-		const render = (title: string, values: Array<Record<string, string | null>>) => `# ${title}\n\n${values.map((row) => `- [${row.kind}] ${row.content}`).join("\n") || "No consolidated memories yet."}\n`;
+		const render = (title: string, values: Array<Record<string, string | null>>) => {
+			if (values.length === 0) return `# ${title}\n\nNo consolidated memories yet.\n`;
+			let doc = `# ${title}\n\n`;
+			for (const cat of MEMORY_CATEGORIES) {
+				const catRows = values.filter((row) => normalizeCategory(row.category, row.kind, row.content ?? "") === cat);
+				if (catRows.length > 0) {
+					doc += `## ${CATEGORY_DISPLAY_TITLES[cat]}\n`;
+					for (const row of catRows) {
+						doc += `- [${row.kind ?? categoryToKind(cat)}] ${row.content}\n`;
+					}
+					doc += `\n`;
+				}
+			}
+			return doc.trimEnd() + "\n";
+		};
 		write(join(this.root, "MEMORY.md"), render("Metis memory", rows.filter((row) => row.scope === "global")));
 		write(join(this.root, "projects", this.identity.projectKey, "MEMORY.md"), render("Project memory", rows.filter((row) => row.scope !== "global")));
 		write(join(this.root, "memory_summary.md"), render("Memory index", rows.slice(0, 20)).slice(0, 6000));

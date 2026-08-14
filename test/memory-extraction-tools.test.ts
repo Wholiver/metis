@@ -92,4 +92,35 @@ describe("background memory extraction", () => {
 		controller.abort();
 		await expect(extraction).rejects.toThrow("aborted");
 	});
+
+	it("parses valid category and supersedes fields", async () => {
+		const stream = vi.fn(() => ({
+			result: async () =>
+				response([
+					{
+						type: "text",
+						text: JSON.stringify([
+							{
+								scope: "project",
+								category: "tech_stack",
+								kind: "fact",
+								content: "TypeScript with Node.js runtime",
+								confidence: 0.95,
+								supersedes: ["old-id-1", "old-id-2"],
+							},
+						]),
+					},
+				], "stop"),
+		}));
+		const result = await extractMemoryCandidates({ reasoning: false } as any, registry, checkpoint, () => [], undefined, stream as any);
+		expect(result.candidates).toHaveLength(1);
+		expect(result.candidates[0]).toMatchObject({
+			scope: "project",
+			category: "tech_stack",
+			kind: "fact",
+			content: "TypeScript with Node.js runtime",
+			confidence: 0.95,
+			supersedes: ["old-id-1", "old-id-2"],
+		});
+	});
 });

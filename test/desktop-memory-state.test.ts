@@ -50,4 +50,12 @@ describe("Desktop unified memory state", () => {
 		const app = read("desktop/renderer/app.js");
 		expect(app).toContain('confirm: "RESET_MEMORY"');
 	});
+
+	it("keeps a manual run single-flight and reports failed extraction as an error", () => {
+		const app = read("desktop/renderer/app.js");
+		expect(app).toContain("let memoryRunPending = false");
+		expect(app).toContain("|| memoryRunPending");
+		expect(app).toContain('uiText("settingsMemoryFailure"');
+		expect(app).toContain("memoryRunPending = false");
+	});
 });

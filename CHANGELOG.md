@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.0.1] - 2026-08-14
+
+### Desktop & Memory Improvements
+
+- Enhanced memory coordinator and search memory tools.
+- Refined Desktop memory state integration and status indicators.
+- Performance and stability fixes across core agent session runtime.
+
 ## [1.0.0] - 2026-08-14
 
 ### Official 1.0.0 Release

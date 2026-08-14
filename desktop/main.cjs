@@ -313,6 +313,10 @@ function createWindow() {
 						renderMemoryStatus();
 						const busyState = { disabled: button?.disabled || false, hint: document.querySelector('#settingsMemoryRunHint')?.textContent || '' };
 						state.session.isStreaming = false;
+						memoryRunPending = true;
+						renderMemoryStatus();
+						const runPendingState = { disabled: button?.disabled || false };
+						memoryRunPending = false;
 						renderMemoryStatus();
 						return {
 							viewportWidth: window.innerWidth,
@@ -333,6 +337,7 @@ function createWindow() {
 							method: document.querySelector('#settingsMemoryMethod')?.textContent || '',
 							errorHidden: document.querySelector('#settingsMemoryError')?.hidden !== false,
 							busyState,
+							runPendingState,
 						};
 					})()`);
 					console.error(`[capture:memory] ${JSON.stringify(memoryMetrics)}`);

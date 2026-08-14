@@ -117,7 +117,7 @@ import {
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
-import { type MemoryCoordinator, type MemoryRecordSummary, type MemoryState } from "./memory-coordinator.ts";
+import { type MemoryCoordinator, type MemoryRecordSummary, type MemorySearchOptions, type MemoryState } from "./memory-coordinator.ts";
 
 // ============================================================================
 // Skill Block Parsing
@@ -1169,7 +1169,7 @@ export class AgentSession {
 		return (await this._memoryCoordinator?.run(true)) ?? this.memoryState;
 	}
 
-	searchMemory(query: string): MemoryRecordSummary[] { return this._memoryCoordinator?.search(query) ?? []; }
+	searchMemory(query?: string, limit?: number, filterOptions?: MemorySearchOptions): MemoryRecordSummary[] { return this._memoryCoordinator?.search(query, limit, filterOptions) ?? []; }
 	forgetMemory(id: string): boolean {
 		if (this.isStreaming) throw new Error("Memory can only change while the session is idle.");
 		return this._memoryCoordinator?.forget(id) ?? false;
@@ -3127,7 +3127,7 @@ export class AgentSession {
 						},
 					},
 					askUser: { handler: () => (request, signal) => this._askUser(request, signal) },
-					searchMemory: { search: (query, limit) => this._memoryCoordinator?.searchAndTouch(query, limit) ?? [] },
+					searchMemory: { search: (query, limit, filterOptions) => this._memoryCoordinator?.searchAndTouch(query, limit, filterOptions) ?? [] },
 				});
 
 		this._baseToolDefinitions = new Map(

@@ -69,5 +69,6 @@ describe("Desktop Memory status dashboard", () => {
 		expect(styles).not.toMatch(/\.memory-[^{]+\{[^}]*transition:\s*all/);
 		expect(main).toContain("METIS_DESKTOP_CAPTURE_MEMORY");
 		expect(main).toContain("[capture:memory]");
+		expect(main).toContain("runPendingState");
 	});
 });

@@ -92,6 +92,7 @@ let serverDisconnectTimer;
 let autoConnectServerRequest;
 let workStatsRequest;
 let scheduledServerMessageRenderFrame;
+let memoryRunPending = false;
 const renderedConversationTokenTrailWidths = new Map();
 
 const elements = {
@@ -408,7 +409,7 @@ function renderMemoryStatus() {
 	}
 	const runHintKey = !connected ? "settingsMemoryRunConnectHint" : busy ? "settingsMemoryRunBusyHint" : !view.enabled ? "settingsMemoryRunEnableHint" : view.pendingJobs ? "settingsMemoryRunPendingHint" : "settingsMemoryRunReadyHint";
 	setText(elements.settingsMemoryRunHint, uiText(runHintKey, { pending: view.pendingJobs }));
-	if (elements.settingsMemoryRun) elements.settingsMemoryRun.disabled = !connected || busy || !view.enabled;
+	if (elements.settingsMemoryRun) elements.settingsMemoryRun.disabled = !connected || busy || !view.enabled || memoryRunPending;
 }
 
 function renderPreferencesControls() {
@@ -5268,13 +5269,20 @@ elements.settingsMemoryInput?.addEventListener("change", async () => {
 	} catch (error) { setPreferencesFeedback(elements.settingsAgentFeedback, error.message || String(error)); }
 });
 elements.settingsMemoryRun?.addEventListener("click", async () => {
+	if (memoryRunPending) return;
+	memoryRunPending = true;
+	renderMemoryStatus();
 	try {
 		setPreferencesFeedback(elements.settingsAgentFeedback, uiText("settingsMemoryRunStarted"));
 		const memory = await requestServer("/memory/run", "POST");
 		setMemoryState(memory);
 		setPreferencesFeedback(elements.settingsAgentFeedback, uiText("settingsMemoryRunCompleted", { processed: memory.lastRunProcessed || 0, added: memory.lastRunAdded || 0, skipped: memory.lastRunSkipped || 0, fallback: memory.fallbackUsed ? uiText("settingsMemoryFallbackSuffix") : "" }));
 	}
-	catch (error) { setPreferencesFeedback(elements.settingsAgentFeedback, error.message || String(error)); }
+	catch (error) { setPreferencesFeedback(elements.settingsAgentFeedback, uiText("settingsMemoryFailure", { message: error.message || String(error) }), true); }
+	finally {
+		memoryRunPending = false;
+		renderMemoryStatus();
+	}
 });
 elements.settingsMemorySearch?.addEventListener("click", async () => {
 	const query = globalThis.prompt?.(uiText("settingsMemorySearchPrompt"));
