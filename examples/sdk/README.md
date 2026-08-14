@@ -53,9 +53,9 @@ const { session } = await createAgentSession({ authStorage, modelRegistry });
 const model = getModel("anthropic", "claude-opus-4-5");
 const { session } = await createAgentSession({ model, thinkingLevel: "high", authStorage, modelRegistry });
 
-// Modify prompt
+// Provide base instructions
 const loader = new DefaultResourceLoader({
-  systemPromptOverride: (base) => `${base}\n\nBe concise.`,
+  baseInstructions: "You are a concise assistant.",
 });
 await loader.reload();
 const { session } = await createAgentSession({ resourceLoader: loader, authStorage, modelRegistry });
@@ -76,7 +76,7 @@ customAuth.setRuntimeApiKey("anthropic", process.env.MY_KEY!);
 const customRegistry = ModelRegistry.create(customAuth);
 
 const resourceLoader = new DefaultResourceLoader({
-  systemPromptOverride: () => "You are helpful.",
+  baseInstructions: "You are helpful.",
   extensionFactories: [myExtension],
   skillsOverride: () => ({ skills: [], diagnostics: [] }),
   agentsFilesOverride: () => ({ agentsFiles: [] }),

@@ -64,6 +64,8 @@ With images:
 
 If the agent is streaming and no `streamingBehavior` is specified, the command returns an error.
 
+To execute an approved proposal, send `workflowAction: "process_proposal"` on a `prompt` command. Metis then enforces `read_plan`, followed by `update_plan`, before any other model tool. `get_state.workflowPlan` exposes task identity, proposal revision, preparation phase, and checklist progress.
+
 **Extension commands**: If the message is an extension command (e.g., `/mycommand`), it executes immediately even during streaming. Extension commands manage their own LLM interaction via `metis.sendMessage()`.
 
 **Input expansion**: Skill commands (`/skill:name`) and prompt templates (`/template`) are expanded before sending/queueing.
@@ -158,6 +160,18 @@ If an extension cancelled:
 ```
 
 ### State
+
+#### Memory
+
+`get_state` includes `memoryState`. RPC also supports `get_memory`, `set_memory_enabled`, `run_memory`, `search_memory`, `forget_memory`, and `reset_memory`. Separately, the model-facing read-only `search_memory` tool is enabled in Plan and Build, so the model—not the RPC host—decides when and how often to retrieve durable records. Memory writes and runs are rejected while the session is active; `reset_memory` requires `confirm: "RESET_MEMORY"`.
+
+#### Plan and ask_user
+
+`get_state` also includes `workflowProposal` and `pendingUserInput`. When the model calls `ask_user`, RPC emits `user_input_request`; reply exactly once with `user_input_response` using its `requestId`. Cancelled responses require an empty `answers` array. Successful responses require one non-empty answer per question, reject unknown/duplicate/missing IDs, and validate `selectedLabel` against the offered options. Unknown, expired, invalid, or duplicate responses emit an RPC protocol error. stdin EOF, shutdown, restart, or session replacement resolves pending input as cancelled.
+
+```json
+{"type":"user_input_response","requestId":"request-id","cancelled":false,"answers":[{"id":"scope","value":"full","selectedLabel":"Full"}]}
+```
 
 #### get_state
 
@@ -338,6 +352,14 @@ Control how follow-up messages (from `follow_up`) are delivered.
 
 ```json
 {"type": "set_follow_up_mode", "mode": "one-at-a-time"}
+
+#### set_collaboration_mode
+
+Switch workflow policy while idle. `build` is default and permits configured tools; `plan` exposes only read-effect tools and blocks write/mixed tools again at dispatch.
+
+```json
+{"type": "set_collaboration_mode", "mode": "plan"}
+```
 ```
 
 Modes:

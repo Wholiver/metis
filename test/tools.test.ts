@@ -279,7 +279,7 @@ describe("Coding Agent Tools", () => {
 			} as any;
 		}
 
-		it("should append to current session temp log", async () => {
+		it("routes explicit notes to unified memory without creating a temp log", async () => {
 			const sessionId = "abc123";
 			const tempLogPath = join(testDir, ".temp", `${sessionId}_log.md`);
 			const content = "- checkpoint: tool writes session log";
@@ -293,14 +293,11 @@ describe("Coding Agent Tools", () => {
 				createLogTestContext(sessionId),
 			);
 
-				expect(getTextOutput(result)).toContain("Successfully appended");
-				expect(getTextOutput(result)).toContain(tempLogPath);
-				expect(readFileSync(tempLogPath, "utf-8")).toMatch(
-					new RegExp(`## \\[\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}\\] Task summary\\n${content}`),
-				);
+			expect(getTextOutput(result)).toContain("unified memory pipeline");
+			expect(existsSync(tempLogPath)).toBe(false);
 		});
 
-		it("should insert separator when log already exists", async () => {
+		it("does not mutate an existing legacy log", async () => {
 			const sessionId = "abc123";
 			const tempLogPath = join(testDir, ".temp", `${sessionId}_log.md`);
 			mkdirSync(join(testDir, ".temp"), { recursive: true });
@@ -315,9 +312,7 @@ describe("Coding Agent Tools", () => {
 				createLogTestContext(sessionId),
 			);
 
-				expect(readFileSync(tempLogPath, "utf-8")).toMatch(
-					/first line\n\n## \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] Task summary\nsecond line\n/,
-				);
+			expect(readFileSync(tempLogPath, "utf-8")).toBe("first line\n");
 		});
 
 		describe("user_intent tool", () => {
@@ -335,7 +330,7 @@ describe("Coding Agent Tools", () => {
 				} as any;
 			}
 
-		it("returns full saved history for current session only", async () => {
+		it("returns a compatibility message when no persisted session history is available", async () => {
 				const rememberTool = (await import("../src/core/tools/remember-user-intent.ts")).createRememberUserIntentToolDefinition(testDir);
 				const tool = (await import("../src/core/tools/user-intent.ts")).createUserIntentToolDefinition(testDir);
 				await rememberTool.execute("remember-1", { content: "Build feature A" }, undefined, undefined, createUserIntentTestContext("session-a"));
@@ -344,10 +339,7 @@ describe("Coding Agent Tools", () => {
 
 				const result = await tool.execute("test-call-user-intent", {}, undefined, undefined, createUserIntentTestContext("session-a"));
 
-				expect(getTextOutput(result)).toContain("Build feature A");
-				expect(getTextOutput(result)).toContain("补充测试约束");
-				expect(getTextOutput(result)).not.toContain("Build feature B");
-				expect(getTextOutput(result)).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
+			expect(getTextOutput(result)).toContain("No user prompts");
 			});
 
 			it("returns a clear message when no prompt is recorded", async () => {
@@ -355,7 +347,7 @@ describe("Coding Agent Tools", () => {
 
 				const result = await tool.execute("test-call-user-intent-empty", {}, undefined, undefined, createUserIntentTestContext("missing"));
 
-				expect(getTextOutput(result)).toContain("No user intent");
+				expect(getTextOutput(result)).toContain("No user prompts");
 			});
 		});
 	});
@@ -377,20 +369,20 @@ describe("Coding Agent Tools", () => {
 
 			expect(websearch.promptSnippet).toContain("Prefer web search");
 			expect(searchGuidelines).toContain("lean toward one focused search");
-			expect(searchGuidelines).toContain("current or time-sensitive");
+			expect(searchGuidelines).toContain("current/time-sensitive");
 			expect(searchGuidelines).toContain("high-stakes claims");
-			expect(searchGuidelines).toContain("fully answerable from supplied or local repository content");
+			expect(searchGuidelines).toContain("supplied/local repository content fully answers");
 			expect(searchGuidelines).toContain("deterministic calculation");
-			expect(searchGuidelines).toContain("Start with one focused query");
-			expect(searchGuidelines).toContain("Add complementary queries only when");
+			expect(searchGuidelines).toContain("Start one focused query");
+			expect(searchGuidelines).toContain("add complementary queries only");
 			expect(searchGuidelines).not.toContain("For every task");
-			expect(searchGuidelines).toContain("official documentation");
-			expect(searchGuidelines).toContain("Do not cite or mention research sources");
+			expect(searchGuidelines).toContain("official docs/specs");
+			expect(searchGuidelines).toContain("Never cite/mention research sources");
 			expect(webfetch.promptSnippet).toContain("when search results need verification");
-			expect(fetchGuidelines).toContain("primary or authoritative page");
-			expect(fetchGuidelines).toContain("only when a material conflict");
-			expect(fetchGuidelines).toContain("license permits it");
-			expect(fetchGuidelines).toContain("Do not cite or mention fetched sources");
+			expect(fetchGuidelines).toContain("primary/authoritative page");
+			expect(fetchGuidelines).toContain("only for material conflict");
+			expect(fetchGuidelines).toContain("only if licensed");
+			expect(fetchGuidelines).toContain("Never cite/mention fetched sources");
 		});
 	});
 

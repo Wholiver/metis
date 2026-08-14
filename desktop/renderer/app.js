@@ -1,8 +1,12 @@
 const desktop = window.metisDesktop;
 const desktopI18n = window.metisDesktopI18n;
-const { analyzeAssistantTurn, shouldQueueDesktopMessage, getAssistantWorkLayout, getRunningSubagentIds, getSubagentToolCalls, shouldHideAssistantWorkHeader, getAssistantTurnDuration, reconcileAssistantFinalDivider, isSubagentLaunchNotice } = window.metisMessageTurns;
+const { analyzeAssistantTurn, shouldQueueDesktopMessage, getAssistantWorkLayout, shouldHideAssistantWorkHeader, getAssistantTurnDuration, extractProposedPlan, reconcileAssistantFinalDivider, isSubagentLaunchNotice, mergeStreamingMessage, classifyDesktopActivityEvent } = window.metisMessageTurns;
 const { resolveCustomProviderModel } = window.metisModelSelection;
 const attachmentTools = window.metisAttachments;
+const skillComposer = window.metisSkillComposer;
+const workStatsView = window.metisDesktopWorkStats;
+const conversationTokenComet = window.metisConversationTokenComet;
+const memoryStateView = window.metisMemoryState;
 const MAX_INLINE_TEXT_BYTES = 1024 * 1024;
 const MAX_BUFFERED_ATTACHMENT_BYTES = 128 * 1024 * 1024;
 const THINKING_LEVEL_KEYS = {
@@ -16,9 +20,6 @@ const THINKING_LEVEL_KEYS = {
 const THINKING_TAIL_CELL_COUNT = 90;
 const UI_LANGUAGES = desktopI18n.languages;
 const PROJECT_STATE_KEY = "metis.desktopProjects.v2";
-const DEFAULT_VISIBLE_CONVERSATIONS = 5;
-const OAUTH_PROVIDER_IDS = new Set(["anthropic", "openai-codex", "github-copilot"]);
-
 function resolveUiLanguage(language = state?.uiLanguage || "auto") {
 	return desktopI18n.resolve(language);
 }
@@ -46,11 +47,16 @@ const state = {
 	fileTree: [],
 	platform: undefined,
 	serverConnected: false,
+	serverInstanceId: undefined,
+	lastServerSequence: 0,
+	lastServerStateSequence: 0,
 	uiLanguage: UI_LANGUAGES.includes(localStorage.getItem("metis.desktopUiLanguage.v2")) ? localStorage.getItem("metis.desktopUiLanguage.v2") : "auto",
-	dreamStatusText: undefined,
+	memoryState: { enabled: false, phase: "disabled", globalCount: 0, projectCount: 0, pendingJobs: 0 },
 	isStreaming: false,
 	session: undefined,
 	models: [],
+	defaults: undefined,
+	security: undefined,
 	messages: [],
 	messageStartTimes: {},
 	messageDurations: {},
@@ -58,136 +64,205 @@ const state = {
 	attachedImages: [],
 	attachedFiles: [],
 	toolCallTimes: {},
-	subagentDockExpanded: false,
-	subagentDockRunningIds: [],
+	thoughtSegmentTimings: {},
 	hasSubmittedMessage: false,
 	navigationHistory: [],
 	navigationIndex: -1,
 	projects: [],
 	customProviders: [],
+	workStats: undefined,
+	workStatsLoadedAt: 0,
+	workflowPlanCollapsed: false,
+	workflowPlanAutoCollapsedKey: undefined,
+	pendingUserInputId: undefined,
+	skillCommands: [],
+	skillCommandsLoadedFor: undefined,
+	activeSkillIndex: 0,
+	queueOperation: undefined,
+	queueOperationFeedback: "",
 };
 
 let thinkingDrag;
-let visualSettingsLoadGeneration = 0;
 let projectStateInitialized = false;
 let projectSwitchInProgress = false;
+let customizingProjectId;
+let customizingProjectButton;
+let sessionSyncGeneration = 0;
+let serverDisconnectTimer;
+let autoConnectServerRequest;
+let workStatsRequest;
+let scheduledServerMessageRenderFrame;
+const renderedConversationTokenTrailWidths = new Map();
 
 const elements = {
-	appShell: document.querySelector("#appShell"),
-	conversationList: document.querySelector("#conversationList"),
-	headingTitle: document.querySelector("#headingTitle"),
-	fileRootName: document.querySelector("#fileRootName"),
-	fileRootPath: document.querySelector("#fileRootPath"),
-	fileTree: document.querySelector("#fileTree"),
-	fileFilterInput: document.querySelector("#fileFilterInput"),
-	diffTitle: document.querySelector("#diffTitle"),
-	diffStats: document.querySelector("#diffStats"),
-	diffView: document.querySelector("#diffView"),
-	composerInput: document.querySelector("#composerInput"),
-	composer: document.querySelector("#composer"),
-	composerAttachments: document.querySelector("#composerAttachments"),
-	composerDropFeedback: document.querySelector("#composerDropFeedback"),
-	attachmentFeedback: document.querySelector("#attachmentFeedback"),
-	attachButton: document.querySelector("#attachButton"),
-	attachInput: document.querySelector("#attachInput"),
-	messageColumn: document.querySelector("#messageColumn"),
-	messageScroll: document.querySelector("#messageScroll"),
-	conversationPane: document.querySelector(".conversation-pane"),
-	emptyState: document.querySelector("#emptyState"),
-	runState: document.querySelector("#runState"),
-	messageQueue: document.querySelector("#messageQueue"),
-	messageQueueToggle: document.querySelector("#messageQueueToggle"),
-	messageQueueCount: document.querySelector("#messageQueueCount"),
-	messageQueueList: document.querySelector("#messageQueueList"),
-	subagentDock: document.querySelector("#subagentDock"),
-	subagentDockToggle: document.querySelector("#subagentDockToggle"),
-	subagentDockStatus: document.querySelector("#subagentDockStatus"),
-	subagentDockList: document.querySelector("#subagentDockList"),
-	composerStatusRow: document.querySelector("#composerStatusRow"),
-	projectSwitcher: document.querySelector("#projectSwitcher"),
-	projectSwitchCapsule: document.querySelector("#projectSwitchCapsule"),
-	projectSwitchLabel: document.querySelector("#projectSwitchLabel"),
-	projectSwitchMenu: document.querySelector("#projectSwitchMenu"),
-	projectSwitchOptions: document.querySelector("#projectSwitchOptions"),
-	projectSwitchAdd: document.querySelector("#projectSwitchAdd"),
-	dreamState: document.querySelector("#dreamState"),
-	modelPicker: document.querySelector("#modelPicker"),
-	modelTrigger: document.querySelector("#modelTrigger"),
-	modelTriggerLabel: document.querySelector("#modelTriggerLabel"),
-	modelMenu: document.querySelector("#modelMenu"),
-	modelOptions: document.querySelector("#modelOptions"),
-	advancedEntry: document.querySelector("#advancedEntry"),
-	contextIndicator: document.querySelector("#contextIndicator"),
-	contextPercentRing: document.querySelector("#contextPercentRing"),
-	advancedValue: document.querySelector("#advancedValue"),
-	thinkingScale: document.querySelector("#thinkingScale"),
-	thinkingBack: document.querySelector("#thinkingBack"),
-	sendButton: document.querySelector("#sendButton"),
-	sendButtonIcon: document.querySelector("#sendButtonIcon"),
-	historyBack: document.querySelector("#historyBack"),
-	historyForward: document.querySelector("#historyForward"),
-	serverDialog: document.querySelector("#serverDialog"),
-	serverLoading: document.querySelector("#serverLoading"),
-	serverLoadingText: document.querySelector("#serverLoadingText"),
-	serverLoadingConnect: document.querySelector("#serverLoadingConnect"),
-	fileContentDialog: document.querySelector("#fileContentDialog"),
-	fileContentTitle: document.querySelector("#fileContentTitle"),
-	fileContentBody: document.querySelector("#fileContentBody"),
-	extensionUiDialog: document.querySelector("#extensionUiDialog"),
-	extensionUiForm: document.querySelector("#extensionUiForm"),
-	extensionUiEyebrow: document.querySelector("#extensionUiEyebrow"),
-	extensionUiTitle: document.querySelector("#extensionUiTitle"),
-	extensionUiMessage: document.querySelector("#extensionUiMessage"),
-	extensionUiField: document.querySelector("#extensionUiField"),
-	extensionUiFieldLabel: document.querySelector("#extensionUiFieldLabel"),
-	extensionUiInput: document.querySelector("#extensionUiInput"),
-	extensionUiSelect: document.querySelector("#extensionUiSelect"),
-	extensionUiHint: document.querySelector("#extensionUiHint"),
-	extensionUiCancelButton: document.querySelector("#extensionUiCancelButton"),
-	extensionUiSubmitButton: document.querySelector("#extensionUiSubmitButton"),
-	browserView: document.querySelector("#browserView"),
-	browserAddress: document.querySelector("#browserAddress"),
-	browserStatus: document.querySelector("#browserStatus"),
-	settingsShell: document.querySelector("#settingsShell"),
-	settingsSearchInput: document.querySelector("#settingsSearchInput"),
-	settingsSearchEmpty: document.querySelector("#settingsSearchEmpty"),
-	settingsServerStatus: document.querySelector("#settingsServerStatus"),
-	settingsServerAddress: document.querySelector("#settingsServerAddress"),
-	settingsWorkspaceName: document.querySelector("#settingsWorkspaceName"),
-	settingsWorkspacePath: document.querySelector("#settingsWorkspacePath"),
-	settingsAppVersion: document.querySelector("#settingsAppVersion"),
-	settingsPlatform: document.querySelector("#settingsPlatform"),
+	get appShell() { return document.querySelector("#appShell"); },
+	get projectList() { return document.querySelector("#projectList"); },
+	get channelListPane() { return document.querySelector('[data-purpose="channel-list"]'); },
+	get conversationList() { return document.querySelector("#conversationList"); },
+	get conversationListLoading() { return document.querySelector("#conversationListLoading"); },
+	get conversationListLoadingLabel() { return document.querySelector("#conversationListLoadingLabel"); },
+	get conversationSidebarTitle() { return document.querySelector("#conversationSidebarTitle"); },
+	get headingTitle() { return document.querySelector("#headingTitle"); },
+	get fileRootName() { return document.querySelector("#fileRootName"); },
+	get fileRootPath() { return document.querySelector("#fileRootPath"); },
+	get fileTree() { return document.querySelector("#fileTree"); },
+	get fileFilterInput() { return document.querySelector("#fileFilterInput"); },
+	get diffTitle() { return document.querySelector("#diffTitle"); },
+	get diffStats() { return document.querySelector("#diffStats"); },
+	get diffView() { return document.querySelector("#diffView"); },
+	get composerInput() { return document.querySelector("#composerInput"); },
+	get composer() { return document.querySelector("#composer"); },
+	get composerSkillMenu() { return document.querySelector("#composerSkillMenu"); },
+	get composerAttachments() { return document.querySelector("#composerAttachments"); },
+	get composerDropFeedback() { return document.querySelector("#composerDropFeedback"); },
+	get attachmentFeedback() { return document.querySelector("#attachmentFeedback"); },
+	get attachButton() { return document.querySelector("#attachButton"); },
+	get attachInput() { return document.querySelector("#attachInput"); },
+	get messageColumn() { return document.querySelector("#messageColumn"); },
+	get messageScroll() { return document.querySelector("#messageScroll"); },
+	get conversationViewLoading() { return document.querySelector("#conversationViewLoading"); },
+	get conversationViewLoadingLabel() { return document.querySelector("#conversationViewLoadingLabel"); },
+	get conversationPane() { return document.querySelector('[data-purpose="main-chat"]'); },
+	get emptyState() { return document.querySelector("#emptyState"); },
+	get messageQueue() { return document.querySelector("#messageQueue"); },
+	get messageQueueToggle() { return document.querySelector("#messageQueueToggle"); },
+	get messageQueueCount() { return document.querySelector("#messageQueueCount"); },
+	get messageQueueList() { return document.querySelector("#messageQueueList"); },
+	get messageQueueFeedback() { return document.querySelector("#messageQueueFeedback"); },
+	get composerStatusRow() { return document.querySelector("#composerStatusRow"); },
+	get projectSwitcher() { return document.querySelector("#projectSwitcher"); },
+	get projectSwitchCapsule() { return document.querySelector("#projectSwitchCapsule"); },
+	get projectSwitchLabel() { return document.querySelector("#projectSwitchLabel"); },
+	get projectSwitchMenu() { return document.querySelector("#projectSwitchMenu"); },
+	get projectSwitchOptions() { return document.querySelector("#projectSwitchOptions"); },
+	get projectSwitchCount() { return document.querySelector("#projectSwitchCount"); },
+	get projectSwitchAdd() { return document.querySelector("#projectSwitchAdd"); },
+	get projectCustomizePopover() { return document.querySelector("#projectCustomizePopover"); },
+	get projectCustomizeForm() { return document.querySelector("#projectCustomizeForm"); },
+	get projectDisplayNameInput() { return document.querySelector("#projectDisplayNameInput"); },
+	get projectColorInput() { return document.querySelector("#projectColorInput"); },
+	get dreamTokenCard() { return document.querySelector("#dreamTokenCard"); },
+	get dreamTokenTotal() { return document.querySelector("#dreamTokenTotal"); },
+	get dreamTokenPeak() { return document.querySelector("#dreamTokenPeak"); },
+	get dreamTokenActiveDays() { return document.querySelector("#dreamTokenActiveDays"); },
+	get dreamTokenHeatmap() { return document.querySelector("#dreamTokenHeatmap"); },
+	get dreamTokenMonths() { return document.querySelector("#dreamTokenMonths"); },
+	get modelPicker() { return document.querySelector("#modelPicker"); },
+	get modelTrigger() { return document.querySelector("#modelTrigger"); },
+	get modelTriggerLabel() { return document.querySelector("#modelTriggerLabel"); },
+	get modelMenu() { return document.querySelector("#modelMenu"); },
+	get modelOptions() { return document.querySelector("#modelOptions"); },
+	get workflowPicker() { return document.querySelector("#workflowPicker"); },
+	get workflowTrigger() { return document.querySelector("#workflowTrigger"); },
+	get workflowTriggerLabel() { return document.querySelector("#workflowTriggerLabel"); },
+	get workflowMenu() { return document.querySelector("#workflowMenu"); },
+	get workflowPlanCard() { return document.querySelector("#workflowPlanCard"); },
+	get workflowPlanToggle() { return document.querySelector("#workflowPlanToggle"); },
+	get workflowPlanProgress() { return document.querySelector("#workflowPlanProgress"); },
+	get workflowPlanBody() { return document.querySelector("#workflowPlanBody"); },
+	get advancedEntry() { return document.querySelector("#advancedEntry"); },
+	get contextIndicator() { return document.querySelector("#contextIndicator"); },
+	get contextPercentRing() { return document.querySelector("#contextPercentRing"); },
+	get advancedValue() { return document.querySelector("#advancedValue"); },
+	get thinkingScale() { return document.querySelector("#thinkingScale"); },
+	get thinkingBack() { return document.querySelector("#thinkingBack"); },
+	get sendButton() { return document.querySelector("#sendButton"); },
+	get sendButtonIcon() { return document.querySelector("#sendButtonIcon"); },
+	get historyBack() { return document.querySelector("#historyBack"); },
+	get historyForward() { return document.querySelector("#historyForward"); },
+	get serverDialog() { return document.querySelector("#serverDialog"); },
+	get serverLoading() { return document.querySelector("#serverLoading"); },
+	get serverLoadingText() { return document.querySelector("#serverLoadingText"); },
+	get serverLoadingConnect() { return document.querySelector("#serverLoadingConnect"); },
+	get fileContentDialog() { return document.querySelector("#fileContentDialog"); },
+	get fileContentTitle() { return document.querySelector("#fileContentTitle"); },
+	get fileContentBody() { return document.querySelector("#fileContentBody"); },
+	get extensionUiDialog() { return document.querySelector("#extensionUiDialog"); },
+	get extensionUiForm() { return document.querySelector("#extensionUiForm"); },
+	get extensionUiEyebrow() { return document.querySelector("#extensionUiEyebrow"); },
+	get extensionUiTitle() { return document.querySelector("#extensionUiTitle"); },
+	get extensionUiMessage() { return document.querySelector("#extensionUiMessage"); },
+	get extensionUiField() { return document.querySelector("#extensionUiField"); },
+	get extensionUiFieldLabel() { return document.querySelector("#extensionUiFieldLabel"); },
+	get extensionUiInput() { return document.querySelector("#extensionUiInput"); },
+	get extensionUiSelect() { return document.querySelector("#extensionUiSelect"); },
+	get extensionUiHint() { return document.querySelector("#extensionUiHint"); },
+	get extensionUiCancelButton() { return document.querySelector("#extensionUiCancelButton"); },
+	get extensionUiSubmitButton() { return document.querySelector("#extensionUiSubmitButton"); },
+	get browserView() { return document.querySelector("#browserView"); },
+	get settingsDialog() { return document.querySelector("#settingsDialog"); },
+	get settingsLanguageSelect() { return document.querySelector("#settingsLanguageSelect"); },
+	get settingsAutoCompactInput() { return document.querySelector("#settingsAutoCompactInput"); },
+	get settingsAutoRetryInput() { return document.querySelector("#settingsAutoRetryInput"); },
+	get settingsSteeringModeSelect() { return document.querySelector("#settingsSteeringModeSelect"); },
+	get settingsFollowUpModeSelect() { return document.querySelector("#settingsFollowUpModeSelect"); },
+	get settingsModelSelect() { return document.querySelector("#settingsModelSelect"); },
+	get settingsThinkingSelect() { return document.querySelector("#settingsThinkingSelect"); },
+	get settingsDefaultModelSelect() { return document.querySelector("#settingsDefaultModelSelect"); },
+	get settingsDefaultThinkingSelect() { return document.querySelector("#settingsDefaultThinkingSelect"); },
+	get settingsTrustSelect() { return document.querySelector("#settingsTrustSelect"); },
+	get settingsOauthProvider() { return document.querySelector("#settingsOauthProvider"); },
+	get settingsOauthLoginButton() { return document.querySelector("#settingsOauthLoginButton"); },
+	get settingsApiKeyProvider() { return document.querySelector("#settingsApiKeyProvider"); },
+	get settingsApiKeyInput() { return document.querySelector("#settingsApiKeyInput"); },
+	get settingsApiKeySaveButton() { return document.querySelector("#settingsApiKeySaveButton"); },
+	get settingsLogoutProvider() { return document.querySelector("#settingsLogoutProvider"); },
+	get settingsLogoutButton() { return document.querySelector("#settingsLogoutButton"); },
+	get settingsCustomProviderSelect() { return document.querySelector("#settingsCustomProviderSelect"); },
+	get settingsCustomProviderName() { return document.querySelector("#settingsCustomProviderName"); },
+	get settingsCustomBaseUrl() { return document.querySelector("#settingsCustomBaseUrl"); },
+	get settingsCustomApiKey() { return document.querySelector("#settingsCustomApiKey"); },
+	get settingsCustomModelIds() { return document.querySelector("#settingsCustomModelIds"); },
+	get settingsCustomProviderReasoning() { return document.querySelector("#settingsCustomProviderReasoning"); },
+	get settingsMemoryInput() { return document.querySelector("#settingsMemoryInput"); },
+	get settingsMemoryDashboard() { return document.querySelector("#settingsMemoryDashboard"); },
+	get settingsMemoryStateLabel() { return document.querySelector("#settingsMemoryStateLabel"); },
+	get settingsMemorySummary() { return document.querySelector("#settingsMemorySummary"); },
+	get settingsMemoryRecordCount() { return document.querySelector("#settingsMemoryRecordCount"); },
+	get settingsMemoryRecordDetail() { return document.querySelector("#settingsMemoryRecordDetail"); },
+	get settingsMemoryPendingCount() { return document.querySelector("#settingsMemoryPendingCount"); },
+	get settingsMemoryPendingDetail() { return document.querySelector("#settingsMemoryPendingDetail"); },
+	get settingsMemoryLastRunValue() { return document.querySelector("#settingsMemoryLastRunValue"); },
+	get settingsMemoryLastRunDetail() { return document.querySelector("#settingsMemoryLastRunDetail"); },
+	get settingsMemoryMethod() { return document.querySelector("#settingsMemoryMethod"); },
+	get settingsMemoryNextRun() { return document.querySelector("#settingsMemoryNextRun"); },
+	get settingsMemoryLastCompleted() { return document.querySelector("#settingsMemoryLastCompleted"); },
+	get settingsMemoryError() { return document.querySelector("#settingsMemoryError"); },
+	get settingsMemoryRun() { return document.querySelector("#settingsMemoryRun"); },
+	get settingsMemoryRunHint() { return document.querySelector("#settingsMemoryRunHint"); },
+	get settingsMemorySearch() { return document.querySelector("#settingsMemorySearch"); },
+	get settingsMemoryReset() { return document.querySelector("#settingsMemoryReset"); },
+	get settingsMemoryRecordBadge() { return document.querySelector("#settingsMemoryRecordBadge"); },
+	get settingsMemoryGlobalBar() { return document.querySelector("#settingsMemoryGlobalBar"); },
+	get settingsMemoryProjectBar() { return document.querySelector("#settingsMemoryProjectBar"); },
+	get settingsMemoryPendingBadge() { return document.querySelector("#settingsMemoryPendingBadge"); },
+	get settingsMemoryPendingBar() { return document.querySelector("#settingsMemoryPendingBar"); },
+	get settingsMemoryLastRunRate() { return document.querySelector("#settingsMemoryLastRunRate"); },
+	get settingsMemoryLastRunBar() { return document.querySelector("#settingsMemoryLastRunBar"); },
+	get settingsMemorySkippedBar() { return document.querySelector("#settingsMemorySkippedBar"); },
+	get settingsMemoryMethodIndicator() { return document.querySelector("#settingsMemoryMethodIndicator"); },
+	get settingsMemoryMethodBadge() { return document.querySelector("#settingsMemoryMethodBadge"); },
+	get settingsMemoryMethodBadgeText() { return document.querySelector("#settingsMemoryMethodBadgeText"); },
+	get settingsMemoryMethodBar() { return document.querySelector("#settingsMemoryMethodBar"); },
+	get settingsCollaborationModeSelect() { return document.querySelector("#settingsCollaborationModeSelect"); },
+	get instructionSources() { return document.querySelector("#instructionSources"); },
+	get settingsGeneralFeedback() { return document.querySelector("#settingsGeneralFeedback"); },
+	get settingsModelFeedback() { return document.querySelector("#settingsModelFeedback"); },
+	get settingsAgentFeedback() { return document.querySelector("#settingsAgentFeedback"); },
+	get settingsSecurityFeedback() { return document.querySelector("#settingsSecurityFeedback"); },
+	get settingsSessionFeedback() { return document.querySelector("#settingsSessionFeedback"); },
+	get settingsSessionNameInput() { return document.querySelector("#settingsSessionNameInput"); },
+	get settingsAboutFeedback() { return document.querySelector("#settingsAboutFeedback"); },
+	get settingsServerStatus() { return document.querySelector("#settingsServerStatus"); },
+	get settingsServerAddress() { return document.querySelector("#settingsServerAddress"); },
+	get settingsWorkspaceName() { return document.querySelector("#settingsWorkspaceName"); },
+	get settingsWorkspacePath() { return document.querySelector("#settingsWorkspacePath"); },
+	get settingsAppVersion() { return document.querySelector("#settingsAppVersion"); },
+	get settingsPlatform() { return document.querySelector("#settingsPlatform"); },
 	revealFileButton: document.querySelector("#revealFileButton"),
-	settingsAgentFeedback: document.querySelector("#settingsAgentFeedback"),
-	settingsBehaviorFeedback: document.querySelector("#settingsBehaviorFeedback"),
-	settingsModelSelect: document.querySelector("#settingsModelSelect"),
-	settingsThinkingSelect: document.querySelector("#settingsThinkingSelect"),
-	settingsAutoCompactInput: document.querySelector("#settingsAutoCompactInput"),
-	settingsSteeringModeSelect: document.querySelector("#settingsSteeringModeSelect"),
-	settingsFollowUpModeSelect: document.querySelector("#settingsFollowUpModeSelect"),
-	settingsLanguageSelect: document.querySelector("#settingsLanguageSelect"),
-	settingsCompactInstructions: document.querySelector("#settingsCompactInstructions"),
-	settingsSessionFeedback: document.querySelector("#settingsSessionFeedback"),
-	settingsSecurityFeedback: document.querySelector("#settingsSecurityFeedback"),
-	settingsSessionNameInput: document.querySelector("#settingsSessionNameInput"),
-	settingsSessionSummary: document.querySelector("#settingsSessionSummary"),
-	settingsResumeSelect: document.querySelector("#settingsResumeSelect"),
-	settingsForkSelect: document.querySelector("#settingsForkSelect"),
-	settingsTreeSelect: document.querySelector("#settingsTreeSelect"),
-	settingsTrustSelect: document.querySelector("#settingsTrustSelect"),
-	settingsOauthProvider: document.querySelector("#settingsOauthProvider"),
-	settingsApiKeyProvider: document.querySelector("#settingsApiKeyProvider"),
-	settingsApiKeyInput: document.querySelector("#settingsApiKeyInput"),
-	settingsCustomProviderSelect: document.querySelector("#settingsCustomProviderSelect"),
-	settingsCustomProviderName: document.querySelector("#settingsCustomProviderName"),
-	settingsCustomBaseUrl: document.querySelector("#settingsCustomBaseUrl"),
-	settingsCustomApiKey: document.querySelector("#settingsCustomApiKey"),
-	settingsCustomModelSelect: document.querySelector("#settingsCustomModelSelect"),
-	settingsCustomModelInput: document.querySelector("#settingsCustomModelInput"),
-	settingsCustomProviderReasoning: document.querySelector("#settingsCustomProviderReasoning"),
-	settingsCustomProviderDeleteButton: document.querySelector("#settingsCustomProviderDeleteButton"),
-	settingsLogoutProvider: document.querySelector("#settingsLogoutProvider"),
 };
+
+skillComposer.installValueProperty(elements.composerInput, () => state.skillCommands);
 
 function icon(name, className = "") {
 	const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -210,26 +285,150 @@ function showServerLoadingFailure() {
 	elements.serverLoading.classList.add("failed");
 	elements.serverLoadingText.textContent = uiText("serverConnectFailed");
 	elements.serverLoadingConnect.classList.remove("hidden");
+	elements.serverLoadingConnect.onclick = (e) => {
+		e.stopPropagation();
+		finishServerLoading();
+	};
+	elements.serverLoading.onclick = () => {
+		finishServerLoading();
+	};
 }
 
-function setSettingsFeedback(element, message, isError = false) {
+const SETTINGS_LANGUAGE_KEYS = {
+	auto: "automatic",
+	"zh-CN": "languageChineseSimplified",
+	"zh-TW": "languageChineseTraditional",
+	en: "languageEnglish",
+	ja: "languageJapanese",
+	ko: "languageKorean",
+	es: "languageSpanish",
+	fr: "languageFrench",
+	de: "languageGerman",
+	pt: "languagePortuguese",
+	ru: "languageRussian",
+	it: "languageItalian",
+};
+
+const NATIVE_LANGUAGE_NAMES = {
+	auto: "automatic",
+	"zh-CN": "\u7b80\u4f53\u4e2d\u6587",
+	"zh-TW": "\u7e41\u9ad4\u4e2d\u6587",
+	en: "English",
+	ja: "\u65e5\u672c\u8a9e",
+	ko: "\ud55c\uad6d\uc5b4",
+	es: "Espa\u00f1ol",
+	fr: "Fran\u00e7ais",
+	de: "Deutsch",
+	pt: "Portugu\u00eas",
+	ru: "\u0420\u0443\u0441\u0441\u043a\u0438\u0439",
+	it: "Italiano",
+};
+
+function setPreferencesFeedback(element, message = "", isError = false) {
 	if (!element) return;
 	element.textContent = message;
 	element.classList.toggle("error", isError);
 }
 
-function renderSettingsAgentControls() {
-	const connected = Boolean(state.serverConnected && state.session);
-	const agentControls = [
-		elements.settingsModelSelect,
-		elements.settingsThinkingSelect,
-		elements.settingsAutoCompactInput,
-		elements.settingsSteeringModeSelect,
-		elements.settingsFollowUpModeSelect,
-	];
-	agentControls.forEach((control) => {
-		if (control) control.disabled = !connected;
+function selectPreferencesPanel(panelName) {
+	document.querySelectorAll("[data-settings-panel]").forEach((button) => {
+		const active = button.dataset.settingsPanel === panelName;
+		button.classList.toggle("active", active);
+		if (active) button.setAttribute("aria-current", "page");
+		else button.removeAttribute("aria-current");
 	});
+	document.querySelectorAll("[data-settings-content]").forEach((panel) => {
+		const active = panel.dataset.settingsContent === panelName;
+		panel.classList.toggle("active", active);
+		panel.hidden = !active;
+	});
+}
+
+function renderMemoryStatus() {
+	if (!elements.settingsMemoryDashboard || !memoryStateView) return;
+	const connected = Boolean(state.serverConnected && state.session);
+	const busy = Boolean(state.session?.isStreaming || state.session?.isCompacting);
+	const view = memoryStateView.createMemoryStatusView(state.memoryState, {
+		formatDate: (value) => new Intl.DateTimeFormat(resolveUiLanguage(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)),
+	});
+	const setText = (element, value) => { if (element) element.textContent = value; };
+	elements.settingsMemoryDashboard.dataset.tone = view.tone;
+	setText(elements.settingsMemoryStateLabel, uiText(view.labelKey));
+	setText(elements.settingsMemorySummary, uiText(view.summaryKey, view.summaryVariables));
+	setText(elements.settingsMemoryRecordCount, String(view.records));
+	setText(elements.settingsMemoryRecordDetail, uiText("settingsMemoryRecordScopes", view.recordsDetailVariables));
+	setText(elements.settingsMemoryPendingCount, String(view.pendingJobs));
+	setText(elements.settingsMemoryPendingDetail, uiText(view.pendingDetailKey, view.pendingDetailVariables));
+	setText(elements.settingsMemoryLastRunValue, view.lastRunValue);
+	setText(elements.settingsMemoryLastRunDetail, uiText(view.lastRunDetailKey, view.lastRunDetailVariables));
+	setText(elements.settingsMemoryMethod, uiText(view.methodKey));
+	setText(elements.settingsMemoryNextRun, view.nextEligibleAt || "—");
+	setText(elements.settingsMemoryLastCompleted, view.lastCompletedAt || "—");
+
+	// Micro-chart indicators
+	if (elements.settingsMemoryRecordBadge) {
+		elements.settingsMemoryRecordBadge.textContent = view.records > 0 ? `${view.projectPercent}%` : "0%";
+	}
+	if (elements.settingsMemoryGlobalBar) {
+		elements.settingsMemoryGlobalBar.style.width = `${view.globalPercent}%`;
+	}
+	if (elements.settingsMemoryProjectBar) {
+		elements.settingsMemoryProjectBar.style.width = `${view.projectPercent}%`;
+	}
+	if (elements.settingsMemoryPendingBadge) {
+		elements.settingsMemoryPendingBadge.textContent = view.pendingJobs > 0 ? String(view.pendingJobs) : "0";
+		elements.settingsMemoryPendingBadge.dataset.active = view.pendingJobs > 0 ? "true" : "false";
+	}
+	if (elements.settingsMemoryPendingBar) {
+		elements.settingsMemoryPendingBar.style.width = `${view.pendingPercent}%`;
+	}
+	if (elements.settingsMemoryLastRunRate) {
+		elements.settingsMemoryLastRunRate.textContent = view.lastRunValue !== "—" ? view.lastRunValue : "—";
+	}
+	if (elements.settingsMemoryLastRunBar) {
+		elements.settingsMemoryLastRunBar.style.width = `${Math.min(100, view.addedPercent)}%`;
+	}
+	if (elements.settingsMemorySkippedBar) {
+		elements.settingsMemorySkippedBar.style.width = `${Math.min(100, view.skippedPercent)}%`;
+	}
+	if (elements.settingsMemoryMethodIndicator) {
+		elements.settingsMemoryMethodIndicator.dataset.method = view.method;
+	}
+	if (elements.settingsMemoryMethodBadgeText) {
+		elements.settingsMemoryMethodBadgeText.textContent = view.method === "model" ? "AI" : view.method === "fallback" ? "Rule" : "—";
+	}
+	if (elements.settingsMemoryMethodBar) {
+		elements.settingsMemoryMethodBar.style.width = view.method !== "none" ? "100%" : "0%";
+		elements.settingsMemoryMethodBar.dataset.method = view.method;
+	}
+
+	if (elements.settingsMemoryError) {
+		elements.settingsMemoryError.hidden = !view.failure;
+		elements.settingsMemoryError.textContent = view.failure ? uiText("settingsMemoryFailure", { message: view.failure }) : "";
+	}
+	const runHintKey = !connected ? "settingsMemoryRunConnectHint" : busy ? "settingsMemoryRunBusyHint" : !view.enabled ? "settingsMemoryRunEnableHint" : view.pendingJobs ? "settingsMemoryRunPendingHint" : "settingsMemoryRunReadyHint";
+	setText(elements.settingsMemoryRunHint, uiText(runHintKey, { pending: view.pendingJobs }));
+	if (elements.settingsMemoryRun) elements.settingsMemoryRun.disabled = !connected || busy || !view.enabled;
+}
+
+function renderPreferencesControls() {
+	if (!elements.settingsDialog) return;
+	const connected = Boolean(state.serverConnected && state.session);
+	const busy = Boolean(state.session?.isStreaming || state.session?.isCompacting);
+	const disableAgentControl = !connected || busy;
+
+	if (elements.settingsLanguageSelect) {
+		for (const language of UI_LANGUAGES) {
+			let option = elements.settingsLanguageSelect.querySelector(`option[value="${language}"]`);
+			if (!option) {
+				option = document.createElement("option");
+				option.value = language;
+				elements.settingsLanguageSelect.append(option);
+			}
+			option.textContent = language === "auto" ? uiText("automatic") : (NATIVE_LANGUAGE_NAMES[language] || language);
+		}
+		elements.settingsLanguageSelect.value = state.uiLanguage;
+	}
 
 	if (elements.settingsModelSelect) {
 		elements.settingsModelSelect.replaceChildren();
@@ -246,6 +445,7 @@ function renderSettingsAgentControls() {
 				option.selected = model.provider === state.session?.model?.provider && model.id === state.session?.model?.id;
 				elements.settingsModelSelect.append(option);
 			});
+			elements.settingsModelSelect.disabled = disableAgentControl;
 		}
 	}
 
@@ -258,327 +458,340 @@ function renderSettingsAgentControls() {
 			elements.settingsThinkingSelect.append(option);
 			elements.settingsThinkingSelect.disabled = true;
 		} else {
-			levels.forEach((level) => {
+			for (const level of levels) {
 				const option = document.createElement("option");
 				option.value = level;
 				option.textContent = thinkingLabel(level);
 				option.selected = level === state.session?.thinkingLevel;
 				elements.settingsThinkingSelect.append(option);
-			});
+			}
+			elements.settingsThinkingSelect.disabled = disableAgentControl;
 		}
+	}
+
+	if (elements.settingsDefaultModelSelect) {
+		elements.settingsDefaultModelSelect.replaceChildren();
+		const automatic = document.createElement("option");
+		automatic.value = "";
+		automatic.textContent = uiText("settingsNoDefault");
+		elements.settingsDefaultModelSelect.append(automatic);
+		for (const [index, model] of state.models.entries()) {
+			const option = document.createElement("option");
+			option.value = String(index);
+			option.textContent = `${modelLabel(model)} · ${model.provider}`;
+			option.selected = model.provider === state.defaults?.provider && model.id === state.defaults?.modelId;
+			elements.settingsDefaultModelSelect.append(option);
+		}
+		elements.settingsDefaultModelSelect.disabled = !connected;
+	}
+
+	if (elements.settingsDefaultThinkingSelect) {
+		elements.settingsDefaultThinkingSelect.replaceChildren();
+		const automatic = document.createElement("option");
+		automatic.value = "";
+		automatic.textContent = uiText("settingsNoDefault");
+		elements.settingsDefaultThinkingSelect.append(automatic);
+		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
+			const option = document.createElement("option");
+			option.value = level;
+			option.textContent = thinkingLabel(level);
+			option.selected = level === state.defaults?.thinkingLevel;
+			elements.settingsDefaultThinkingSelect.append(option);
+		}
+		elements.settingsDefaultThinkingSelect.disabled = !connected;
 	}
 
 	if (elements.settingsAutoCompactInput) {
 		elements.settingsAutoCompactInput.checked = Boolean(state.session?.autoCompactionEnabled);
+		elements.settingsAutoCompactInput.disabled = disableAgentControl;
 	}
-	if (elements.settingsSteeringModeSelect && state.session?.steeringMode) {
-		elements.settingsSteeringModeSelect.value = state.session.steeringMode;
+	if (elements.settingsAutoRetryInput) {
+		elements.settingsAutoRetryInput.checked = Boolean(state.session?.autoRetryEnabled);
+		elements.settingsAutoRetryInput.disabled = disableAgentControl;
 	}
-	if (elements.settingsFollowUpModeSelect && state.session?.followUpMode) {
-		elements.settingsFollowUpModeSelect.value = state.session.followUpMode;
-	}
-
-	setSettingsFeedback(
-		elements.settingsAgentFeedback,
-		uiText(connected ? "agentFeedbackConnected" : "agentFeedbackDisconnected"),
-	);
-	setSettingsFeedback(
-		elements.settingsBehaviorFeedback,
-		uiText(connected ? "behaviorFeedbackConnected" : "behaviorFeedbackDisconnected"),
-	);
-	applySettingsBusyState();
-}
-
-async function updateAgentSessionSettings(patch, feedbackElement) {
-	if (!state.serverConnected) return;
-	setSettingsFeedback(feedbackElement, uiText("saving"));
-	try {
-		state.session = await requestServer("/session/settings", "PUT", patch);
-		renderSettingsAgentControls();
-		setSettingsFeedback(feedbackElement, uiText("savedAndApplied"));
-	} catch (error) {
-		renderSettingsAgentControls();
-		setSettingsFeedback(feedbackElement, uiText("saveFailed", { message: error.message }), true);
-	}
-}
-
-function replaceSelectOptions(select, items, getValue, getLabel, emptyLabel = uiText("noAvailableItems")) {
-	if (!select) return;
-	select.replaceChildren();
-	const seen = new Set();
-	const uniqueItems = items.filter((item) => {
-		const value = String(getValue(item));
-		if (!value || seen.has(value)) return false;
-		seen.add(value);
-		return true;
-	});
-	if (!uniqueItems.length) {
-		const option = document.createElement("option");
-		option.textContent = emptyLabel;
-		option.value = "";
-		select.append(option);
-		select.disabled = true;
-		return;
-	}
-	uniqueItems.forEach((item) => {
-		const option = document.createElement("option");
-		option.value = getValue(item);
-		option.textContent = getLabel(item);
-		select.append(option);
-	});
-	select.disabled = false;
-}
-
-function flattenSessionTree(nodes, depth = 0, result = []) {
-	const entryTypeLabels = {
-		message: uiText("timelineMessage"),
-		thinking_level_change: uiText("timelineThinkingLevel"),
-		model_change: uiText("timelineModelChange"),
-		compaction: uiText("timelineCompaction"),
-		branch_summary: uiText("timelineBranchSummary"),
-		custom: uiText("timelineCustom"),
+	const security = state.security;
+	const populateProviders = (select, providers) => {
+		if (!select) return;
+		select.replaceChildren();
+		for (const provider of providers || []) {
+			const option = document.createElement("option");
+			option.value = provider;
+			option.textContent = provider;
+			select.append(option);
+		}
+		if (!select.options.length) select.append(new Option(uiText("noAvailableItems"), ""));
+		select.disabled = disableAgentControl || !providers?.length;
 	};
-	for (const node of nodes || []) {
-		const entry = node.entry || {};
-		const text = extractMessageText(entry.message || {}).replace(/\s+/g, " ").trim();
-		const fallback = entryTypeLabels[entry.type] || entry.type || entry.id;
-		result.push({ id: entry.id, label: `${"　".repeat(depth)}${text.slice(0, 48) || fallback}` });
-		flattenSessionTree(node.children, depth + 1, result);
+	if (elements.settingsTrustSelect) {
+		elements.settingsTrustSelect.value = security?.trust?.decision === true ? "trusted" : security?.trust?.decision === false ? "untrusted" : "clear";
+		elements.settingsTrustSelect.disabled = disableAgentControl;
 	}
-	return result;
+	populateProviders(elements.settingsOauthProvider, security?.login?.oauthProviders);
+	populateProviders(elements.settingsApiKeyProvider, security?.login?.providers);
+	populateProviders(elements.settingsLogoutProvider, security?.logout?.providers);
+	if (elements.settingsOauthLoginButton) elements.settingsOauthLoginButton.disabled = elements.settingsOauthProvider?.disabled ?? true;
+	if (elements.settingsApiKeySaveButton) elements.settingsApiKeySaveButton.disabled = disableAgentControl;
+	if (elements.settingsApiKeyInput) elements.settingsApiKeyInput.disabled = disableAgentControl;
+	if (elements.settingsLogoutButton) elements.settingsLogoutButton.disabled = elements.settingsLogoutProvider?.disabled ?? true;
+	if (elements.settingsSessionNameInput) elements.settingsSessionNameInput.value = state.session?.sessionName || "";
+	if (elements.settingsSteeringModeSelect) {
+		elements.settingsSteeringModeSelect.value = state.session?.steeringMode || "one-at-a-time";
+		elements.settingsSteeringModeSelect.disabled = disableAgentControl;
+	}
+	if (elements.settingsFollowUpModeSelect) {
+		elements.settingsFollowUpModeSelect.value = state.session?.followUpMode || "one-at-a-time";
+		elements.settingsFollowUpModeSelect.disabled = disableAgentControl;
+	}
+	if (elements.settingsMemoryInput) {
+		elements.settingsMemoryInput.checked = Boolean(state.memoryState?.enabled);
+		elements.settingsMemoryInput.disabled = disableAgentControl;
+	}
+	renderMemoryStatus();
+	if (elements.settingsMemorySearch) elements.settingsMemorySearch.disabled = disableAgentControl || !state.memoryState?.enabled;
+	if (elements.settingsMemoryReset) elements.settingsMemoryReset.disabled = disableAgentControl || !state.memoryState?.enabled;
+	renderWorkflowControls();
+	renderInstructionSources();
+
+	if (elements.settingsServerStatus) {
+		elements.settingsServerStatus.classList.toggle("connected", state.serverConnected);
+		const label = elements.settingsServerStatus.querySelector("b");
+		if (label) label.textContent = state.serverConnected ? uiText("connected") : uiText("disconnected");
+	}
+	if (elements.settingsServerAddress) {
+		elements.settingsServerAddress.textContent = document.querySelector("#serverUrlInput")?.value || "http://127.0.0.1:4096";
+	}
 }
 
-async function runVisualCommand(command, feedbackElement, { refresh = false, timeoutMs } = {}) {
-	if (!state.serverConnected) throw new Error(uiText("connectServerFirst"));
-	setSettingsFeedback(feedbackElement, uiText("applying"));
-	const result = await requestServer("/session/command", "POST", { command }, { timeoutMs });
-	if (result.action === "copy" && result.text) await desktop.clipboard.writeText(result.text);
-	if (result.action === "open-url" && result.url) await desktop.openExternal(result.url);
-	if (result.action === "quit") {
-		await desktop.quit();
-		return result;
-	}
-	if (refresh || ["model", "import", "fork", "clone", "new", "resume"].includes(result.command)) {
-		await syncServerSession();
-		await loadVisualSettings();
-	}
-	setSettingsFeedback(feedbackElement, result.message || uiText("completed"));
-	return result;
-}
-
-function performVisualAction(feedbackElement, action) {
-	void Promise.resolve()
-		.then(action)
-		.catch((error) => setSettingsFeedback(feedbackElement, uiText("operationFailed", { message: error.message }), true));
-}
-
-function applySettingsBusyState() {
-	const connected = Boolean(state.serverConnected && state.session);
-	const busy = Boolean(state.session?.isStreaming || state.session?.isCompacting);
-	const busySensitiveIds = [
-		"settingsModelSelect",
-		"settingsThinkingSelect",
-		"settingsCompactButton",
-		"settingsCloneSession",
-		"settingsNewSession",
-		"settingsResumeButton",
-		"settingsForkButton",
-		"settingsTreeButton",
-		"settingsExportHtml",
-		"settingsExportJsonl",
-		"settingsImportSession",
-		"settingsShareSession",
-		"settingsOauthLoginButton",
-		"settingsApiKeySaveButton",
-		"settingsCustomProviderSaveButton",
-		"settingsLogoutButton",
-		"settingsReloadResources",
-	];
-	busySensitiveIds.forEach((id) => {
-		const control = document.querySelector(`#${id}`);
-		if (!control) return;
-		control.disabled = !connected || busy;
-		control.title = busy ? uiText("agentBusyWait") : "";
-	});
-}
-
-async function loadVisualSettings() {
-	const generation = ++visualSettingsLoadGeneration;
-	const controls = document.querySelectorAll("[data-settings-content='session'] button, [data-settings-content='security'] button, #settingsCompactButton");
-	controls.forEach((control) => { control.disabled = !state.serverConnected; });
-	applySettingsBusyState();
-	if (!state.serverConnected) {
-		setSettingsFeedback(elements.settingsSessionFeedback, uiText("sessionFeedbackDisconnected"));
-		setSettingsFeedback(elements.settingsSecurityFeedback, uiText("securityFeedbackDisconnected"));
-		return;
-	}
+async function refreshPreferencesDetails() {
+	renderPreferencesControls();
 	try {
-		const [language, sessionInfo, sessions, forks, tree, trust, login, logout] = await Promise.all([
-			requestServer("/session/command", "POST", { command: "/language" }),
-			requestServer("/session/command", "POST", { command: "/session" }),
-			requestServer("/session/command", "POST", { command: "/resume" }),
-			requestServer("/session/command", "POST", { command: "/fork" }),
-			requestServer("/session/command", "POST", { command: "/tree" }),
-			requestServer("/session/command", "POST", { command: "/trust" }),
-			requestServer("/session/command", "POST", { command: "/login" }),
-			requestServer("/session/command", "POST", { command: "/logout" }),
+		const [appInfo, workspace, defaults, trust, login, logout] = await Promise.all([
+			desktop.appInfo(), desktop.workspace.get(),
+			state.serverConnected ? requestServer("/settings/defaults") : Promise.resolve(undefined),
+			state.serverConnected ? requestServer("/session/command", "POST", { command: "/trust" }) : Promise.resolve(undefined),
+			state.serverConnected ? requestServer("/session/command", "POST", { command: "/login" }) : Promise.resolve(undefined),
+			state.serverConnected ? requestServer("/session/command", "POST", { command: "/logout" }) : Promise.resolve(undefined),
 		]);
-		if (generation !== visualSettingsLoadGeneration) return;
-
-		replaceSelectOptions(elements.settingsLanguageSelect, language.options || [], (item) => item.code, (item) => item.code === "auto" ? uiText("automatic") : item.nativeName);
-		elements.settingsLanguageSelect.value = state.uiLanguage;
-
-		elements.settingsSessionNameInput.value = state.session?.sessionName || "";
-		const stats = sessionInfo.stats || {};
-		const totalMessages = stats.totalMessages ?? stats.messageCount ?? state.session?.messageCount ?? 0;
-		elements.settingsSessionSummary.textContent = uiText("sessionSummary", { total: totalMessages, pending: state.session?.pendingMessageCount || 0 });
-
-		const otherSessions = window.metisDesktopConversations
-			.visibleSessions(sessions.sessions)
-			.filter((item) => item.path !== state.session?.sessionFile);
-		replaceSelectOptions(elements.settingsResumeSelect, otherSessions, (item) => item.path, (item) => item.name || item.firstMessage || item.path, uiText("noOtherSessions"));
-		replaceSelectOptions(elements.settingsForkSelect, forks.entries || [], (item) => item.entryId || item.id, (item) => (item.text || item.message || item.entryId || item.id).toString().slice(0, 70), uiText("noForkMessages"));
-		const treeItems = flattenSessionTree(tree.tree || []).filter((item) => item.id !== tree.leafId);
-		replaceSelectOptions(elements.settingsTreeSelect, treeItems, (item) => item.id, (item) => item.label, uiText("noHistoryNodes"));
-
-		elements.settingsTrustSelect.value = trust.decision === true ? "trusted" : trust.decision === false ? "untrusted" : "clear";
-		const loginProviders = login.providers || [];
-		replaceSelectOptions(elements.settingsOauthProvider, loginProviders.filter((provider) => OAUTH_PROVIDER_IDS.has(provider)), (item) => item, (item) => item, uiText("noOauthProviders"));
-		replaceSelectOptions(elements.settingsApiKeyProvider, loginProviders.filter((provider) => provider !== "other"), (item) => item, (item) => item, uiText("noProviders"));
-		replaceSelectOptions(elements.settingsLogoutProvider, logout.providers || [], (item) => item, (item) => item, uiText("noSavedCredentials"));
-		await fillCustomProviderForm();
-		setSettingsFeedback(elements.settingsSessionFeedback, uiText("sessionSynced"));
-		setSettingsFeedback(elements.settingsSecurityFeedback, uiText("securitySynced"));
-		applySettingsBusyState();
+		state.defaults = defaults;
+		state.security = { trust, login, logout };
+		state.customProviders = await desktop.providerConfig.listCustom();
+		refreshCustomProviderForm();
+		renderPreferencesControls();
+		state.platform = appInfo.platform;
+		if (elements.settingsAppVersion) elements.settingsAppVersion.textContent = `v${appInfo.version}`;
+		if (elements.settingsPlatform) elements.settingsPlatform.textContent = platformDisplayName(appInfo.platform);
+		if (elements.settingsWorkspaceName) elements.settingsWorkspaceName.textContent = workspace.name || uiText("currentWorkspace");
+		if (elements.settingsWorkspacePath) elements.settingsWorkspacePath.textContent = workspace.path || uiText("noWorkspace");
 	} catch (error) {
-		setSettingsFeedback(elements.settingsSessionFeedback, uiText("loadFailedRestart", { message: error.message }), true);
-		setSettingsFeedback(elements.settingsSecurityFeedback, uiText("loadFailedRestart", { message: error.message }), true);
+		if (elements.settingsWorkspacePath) elements.settingsWorkspacePath.textContent = error.message;
 	}
 }
 
-function setCustomModelOptions(modelIds, selectedIds = modelIds) {
-	if (!elements.settingsCustomModelSelect) return;
-	const selected = new Set(selectedIds);
-	elements.settingsCustomModelSelect.replaceChildren();
-	for (const modelId of [...new Set(modelIds)].sort((a, b) => a.localeCompare(b))) {
-		const option = new Option(modelId, modelId, false, selected.has(modelId));
-		elements.settingsCustomModelSelect.append(option);
-	}
-}
-
-function selectedCustomModelIds() {
-	const selected = [...(elements.settingsCustomModelSelect?.selectedOptions || [])].map((option) => option.value);
-	const manual = String(elements.settingsCustomModelInput?.value || "")
-		.split(/[\n,]+/)
-		.map((id) => id.trim())
-		.filter(Boolean);
-	return [...new Set([...selected, ...manual])];
-}
-
-function renderCustomProviderForm(provider) {
-	const exists = Boolean(provider?.provider);
+function refreshCustomProviderForm() {
+	const select = elements.settingsCustomProviderSelect;
+	if (!select) return;
+	const previous = select.value;
+	select.replaceChildren(new Option(uiText("newCustomProvider"), ""));
+	for (const provider of state.customProviders) select.append(new Option(`${provider.name} (${provider.provider})`, provider.provider));
+	select.value = state.customProviders.some((provider) => provider.provider === previous) ? previous : "";
+	const provider = state.customProviders.find((item) => item.provider === select.value);
 	if (elements.settingsCustomProviderName) elements.settingsCustomProviderName.value = provider?.name || "";
 	if (elements.settingsCustomBaseUrl) elements.settingsCustomBaseUrl.value = provider?.baseUrl || "";
-	if (elements.settingsCustomApiKey) elements.settingsCustomApiKey.value = "";
-	if (elements.settingsCustomModelInput) elements.settingsCustomModelInput.value = "";
+	if (elements.settingsCustomModelIds) elements.settingsCustomModelIds.value = (provider?.modelIds || []).join(", ");
 	if (elements.settingsCustomProviderReasoning) elements.settingsCustomProviderReasoning.checked = provider?.reasoning !== false;
-	setCustomModelOptions(provider?.modelIds || []);
-	if (elements.settingsCustomProviderDeleteButton) elements.settingsCustomProviderDeleteButton.disabled = !exists;
 }
 
-async function fillCustomProviderForm(preferredProviderId) {
-	if (!desktop.providerConfig?.listCustom) return;
+async function updatePreferencesSession(patch, feedbackElement) {
+	if (!state.serverConnected) {
+		setPreferencesFeedback(feedbackElement, uiText("connectServerFirst"), true);
+		return;
+	}
+	setPreferencesFeedback(feedbackElement, uiText("saving"));
 	try {
-		const previousProviderId = preferredProviderId ?? elements.settingsCustomProviderSelect?.value;
-		state.customProviders = await desktop.providerConfig.listCustom();
-		if (elements.settingsCustomProviderSelect) {
-			elements.settingsCustomProviderSelect.replaceChildren(new Option(uiText("newCustomProvider"), ""));
-			for (const provider of state.customProviders) {
-				elements.settingsCustomProviderSelect.append(new Option(`${provider.name} (${provider.provider})`, provider.provider));
-			}
-			const selectedProviderId = state.customProviders.some((provider) => provider.provider === previousProviderId)
-				? previousProviderId
-				: "";
-			elements.settingsCustomProviderSelect.value = selectedProviderId;
-			renderCustomProviderForm(state.customProviders.find((provider) => provider.provider === selectedProviderId));
+		state.session = await requestServer("/session/settings", "PUT", patch);
+		renderPreferencesControls();
+		setPreferencesFeedback(feedbackElement, uiText("savedAndApplied"));
+	} catch (error) {
+		renderPreferencesControls();
+		setPreferencesFeedback(feedbackElement, error.message, true);
+	}
+}
+
+async function runPreferencesCommand(command, feedbackElement, { sync = false } = {}) {
+	if (!state.serverConnected) {
+		setPreferencesFeedback(feedbackElement, uiText("connectServerFirst"), true);
+		return;
+	}
+	setPreferencesFeedback(feedbackElement, uiText("applying"));
+	try {
+		const result = await requestServer("/session/command", "POST", { command });
+		if (sync) {
+			await syncServerSession({ loadModels: true, refreshConversations: false });
+			await refreshPreferencesDetails();
 		}
-	} catch {
-		state.customProviders = [];
-		renderCustomProviderForm(undefined);
+		renderPreferencesControls();
+		setPreferencesFeedback(feedbackElement, result.message || uiText("completed"));
+	} catch (error) {
+		setPreferencesFeedback(feedbackElement, error.message, true);
 	}
 }
 
-function selectSettingsPanel(panelName) {
-	document.querySelectorAll("[data-settings-panel]").forEach((button) => {
-		button.classList.toggle("active", button.dataset.settingsPanel === panelName);
-	});
-	document.querySelectorAll("[data-settings-content]").forEach((panel) => {
-		const active = panel.dataset.settingsContent === panelName;
-		panel.classList.toggle("active", active);
-		panel.hidden = !active;
-	});
+function showPreferencesDialog() {
+	if (!elements.settingsDialog?.open) elements.settingsDialog.showModal();
+	selectPreferencesPanel("general");
+	void refreshPreferencesDetails();
+	elements.settingsDialog.focus();
 }
 
-function updateSettingsConnectionDetails() {
-	if (!elements.settingsServerStatus || !elements.settingsServerAddress) return;
-	elements.settingsServerStatus.classList.toggle("connected", state.serverConnected);
-	elements.settingsServerStatus.lastChild.textContent = uiText(state.serverConnected ? "connected" : "disconnected");
-	elements.settingsServerAddress.textContent = document.querySelector("#serverUrlInput")?.value || "http://127.0.0.1:4096";
-}
-
-async function updateSettingsDetails() {
-	updateSettingsConnectionDetails();
-	renderSettingsAgentControls();
-	void loadVisualSettings();
-	try {
-		const [appInfo, workspace] = await Promise.all([desktop.appInfo(), desktop.workspace.get()]);
-		state.platform = appInfo.platform;
-		document.body.classList.add(`platform-${appInfo.platform}`);
-		elements.settingsAppVersion.textContent = uiText("version", { version: appInfo.version });
-		elements.settingsPlatform.textContent = platformDisplayName(appInfo.platform);
-		elements.settingsWorkspaceName.textContent = workspace.name || uiText("currentWorkspace");
-		elements.settingsWorkspacePath.textContent = workspace.path || uiText("noWorkspace");
-		if (elements.revealFileButton) elements.revealFileButton.textContent = revealInFolderLabel();
-	} catch {
-		elements.settingsWorkspacePath.textContent = uiText("workspaceReadFailed");
-	}
-}
-
-function openSettings() {
-	elements.settingsShell.hidden = false;
-	elements.appShell.hidden = true;
-	document.body.classList.add("settings-open");
-	selectSettingsPanel("agent");
-	elements.settingsSearchInput.value = "";
-	document.querySelectorAll("[data-settings-panel]").forEach((button) => { button.hidden = false; });
-	elements.settingsSearchEmpty.hidden = true;
-	void updateSettingsDetails();
-	window.MetisOnboarding?.notifyEvent("open_settings");
-}
-
-function closeSettings() {
-	elements.settingsShell.hidden = true;
-	elements.appShell.hidden = false;
-	document.body.classList.remove("settings-open");
-	document.querySelector("#sidebarSettingsButton")?.focus();
-}
-
-function filterSettingsNavigation(query) {
-	const normalized = query.trim().toLocaleLowerCase("zh-CN");
-	const visibleButtons = [];
-	document.querySelectorAll("[data-settings-panel]").forEach((button) => {
-		const visible = !normalized || button.textContent.toLocaleLowerCase("zh-CN").includes(normalized);
-		button.hidden = !visible;
-		if (visible) visibleButtons.push(button);
-	});
-	elements.settingsSearchEmpty.hidden = visibleButtons.length > 0;
-	if (visibleButtons.length && !visibleButtons.some((button) => button.classList.contains("active"))) {
-		selectSettingsPanel(visibleButtons[0].dataset.settingsPanel);
-	}
+function hidePreferencesDialog() {
+	if (elements.settingsDialog?.open) elements.settingsDialog.close();
 }
 
 function activeProject() {
 	return state.projects.find((project) => project.id === state.activeProjectId) || state.projects[0];
+}
+
+function projectDisplayName(project) {
+	return String(project?.displayName || project?.name || "").trim();
+}
+
+function defaultProjectHue(project) {
+	let hash = 0;
+	const source = String(project?.id || project?.name || "");
+	for (let index = 0; index < source.length; index += 1) {
+		hash = (hash << 5) - hash + source.charCodeAt(index);
+		hash |= 0;
+	}
+	return ((hash % 360) + 360) % 360;
+}
+
+function projectAccentInk(color) {
+	const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color || "");
+	if (!match) return "#26303a";
+	const [, red, green, blue] = match.map((part, index) => index ? Number.parseInt(part, 16) : part);
+	return (red * 299 + green * 587 + blue * 114) / 1000 > 150 ? "#26303a" : "#ffffff";
+}
+
+function projectAccentFromHue(value) {
+	const hue = ((Number(value) % 360) + 360) % 360;
+	const saturation = 0.68;
+	const lightness = 0.68;
+	const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+	const segment = hue / 60;
+	const offset = chroma * (1 - Math.abs((segment % 2) - 1));
+	const [red, green, blue] = segment < 1 ? [chroma, offset, 0]
+		: segment < 2 ? [offset, chroma, 0]
+			: segment < 3 ? [0, chroma, offset]
+				: segment < 4 ? [0, offset, chroma]
+					: segment < 5 ? [offset, 0, chroma]
+						: [chroma, 0, offset];
+	const match = lightness - chroma / 2;
+	return `#${[red, green, blue].map((channel) => Math.round((channel + match) * 255).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function projectHueFromAccent(color, fallbackHue) {
+	const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color || "");
+	if (!match) return fallbackHue;
+	const [red, green, blue] = match.slice(1).map((channel) => Number.parseInt(channel, 16) / 255);
+	const max = Math.max(red, green, blue);
+	const min = Math.min(red, green, blue);
+	const delta = max - min;
+	if (!delta) return fallbackHue;
+	const hue = max === red ? 60 * (((green - blue) / delta) % 6)
+		: max === green ? 60 * ((blue - red) / delta + 2)
+			: 60 * ((red - green) / delta + 4);
+	return Math.round((hue + 360) % 360);
+}
+
+function updateProjectCustomizePreview(color, nameOverride) {
+	const project = state.projects.find((candidate) => candidate.id === customizingProjectId);
+	const projectButton = customizingProjectButton?.closest(".project-rail-entry")?.querySelector(".project-rail-item");
+	if (!project || !projectButton) return;
+	const customColor = /^#[0-9a-f]{6}$/i.test(color || "") ? color : undefined;
+	const previewColor = customColor || `hsl(${defaultProjectHue(project)} 72% 72%)`;
+	elements.projectColorInput?.style.setProperty("--project-slider-color", previewColor);
+	projectButton.classList.toggle("has-custom-color", Boolean(customColor));
+	if (customColor) {
+		projectButton.style.setProperty("--project-custom-color", customColor);
+		projectButton.style.setProperty("--project-custom-ink", projectAccentInk(customColor));
+	} else {
+		projectButton.style.removeProperty("--project-custom-color");
+		projectButton.style.removeProperty("--project-custom-ink");
+	}
+	const draftName = String(nameOverride ?? (elements.projectDisplayNameInput?.value.trim() || projectDisplayName(project)));
+	projectButton.title = draftName;
+	projectButton.setAttribute("aria-label", draftName);
+	const initial = projectButton.querySelector(".project-rail-initial");
+	if (initial) initial.textContent = draftName.slice(0, 1).toLocaleUpperCase() || "•";
+}
+
+function isProjectCustomizationOpen() {
+	return Boolean(elements.projectCustomizePopover?.matches(":popover-open"));
+}
+
+function positionProjectCustomization(anchor = customizingProjectButton) {
+	const popover = elements.projectCustomizePopover;
+	if (!anchor?.isConnected || !popover || !isProjectCustomizationOpen()) return;
+	const anchorBounds = anchor.closest(".project-rail-entry")?.getBoundingClientRect() || anchor.getBoundingClientRect();
+	const popoverBounds = popover.getBoundingClientRect();
+	const gap = 6;
+	const preferredLeft = anchorBounds.right + gap;
+	const left = Math.max(12, Math.min(preferredLeft, window.innerWidth - popoverBounds.width - 12));
+	const top = Math.max(12, Math.min(anchorBounds.top - 12, window.innerHeight - popoverBounds.height - 12));
+	popover.style.left = `${Math.round(left)}px`;
+	popover.style.top = `${Math.round(top)}px`;
+	popover.style.setProperty("--project-popover-arrow-y", `${Math.round(Math.max(20, Math.min(anchorBounds.top + anchorBounds.height / 2 - top, popoverBounds.height - 20)))}px`);
+}
+
+function openProjectCustomization(project, anchor) {
+	if (!project || !elements.projectCustomizePopover) return;
+	if (isProjectCustomizationOpen() && customizingProjectButton === anchor) {
+		closeProjectCustomization();
+		anchor.focus();
+		return;
+	}
+	if (isProjectCustomizationOpen()) closeProjectCustomization();
+	if (customizingProjectButton && customizingProjectButton !== anchor) customizingProjectButton.setAttribute("aria-expanded", "false");
+	customizingProjectId = project.id;
+	customizingProjectButton = anchor;
+	customizingProjectButton?.setAttribute("aria-expanded", "true");
+	elements.projectDisplayNameInput.value = projectDisplayName(project);
+	elements.projectColorInput.value = String(projectHueFromAccent(project.accentColor, defaultProjectHue(project)));
+	updateProjectCustomizePreview(project.accentColor);
+	if (!isProjectCustomizationOpen()) elements.projectCustomizePopover.showPopover();
+	positionProjectCustomization(anchor);
+	requestAnimationFrame(() => {
+		elements.projectDisplayNameInput.focus();
+		elements.projectDisplayNameInput.select();
+	});
+}
+
+function closeProjectCustomization() {
+	const project = state.projects.find((candidate) => candidate.id === customizingProjectId);
+	if (isProjectCustomizationOpen()) elements.projectCustomizePopover.hidePopover();
+	customizingProjectButton?.setAttribute("aria-expanded", "false");
+	customizingProjectId = undefined;
+	customizingProjectButton = undefined;
+	if (project) applyProjectDetails(project.id === state.activeProjectId ? project : activeProject());
+}
+
+function persistProjectCustomization({ name = false, color = false } = {}) {
+	const project = state.projects.find((candidate) => candidate.id === customizingProjectId);
+	if (!project) return;
+	if (name) {
+		const nextName = elements.projectDisplayNameInput.value.trim().slice(0, 80);
+		project.displayName = nextName && nextName !== project.name ? nextName : undefined;
+	}
+	if (color) project.accentColor = projectAccentFromHue(elements.projectColorInput.value);
+	saveProjectState();
+	updateProjectCustomizePreview(project.accentColor, projectDisplayName(project));
+	if (project.id === state.activeProjectId) {
+		elements.fileRootName.textContent = projectDisplayName(project);
+		elements.conversationSidebarTitle.textContent = projectDisplayName(project);
+		elements.projectSwitchLabel.textContent = projectDisplayName(project);
+		const channelNameEl = document.querySelector("#currentProjectChannelName");
+		if (channelNameEl) channelNameEl.textContent = projectDisplayName(project);
+	}
 }
 
 function projectForPath(projectPath) {
@@ -605,11 +818,11 @@ function saveProjectState() {
 	} catch {}
 }
 
-function initializeProjectState(workspace) {
+function initializeProjectState(fallbackWorkspace) {
 	if (projectStateInitialized) return;
 	const restored = window.metisDesktopConversations.restoreProjectState(
 		localStorage.getItem(PROJECT_STATE_KEY),
-		workspace,
+		fallbackWorkspace,
 	);
 	state.projects = restored.projects;
 	state.activeProjectId = restored.activeProjectId;
@@ -630,7 +843,7 @@ function ensureProject(workspace) {
 
 function applyProjectDetails(project) {
 	if (!project) return;
-	elements.fileRootName.textContent = project.name;
+	elements.fileRootName.textContent = projectDisplayName(project);
 	elements.fileRootPath.textContent = project.path;
 	renderComposerStatusRow();
 	renderConversations();
@@ -647,8 +860,15 @@ function setProjectSwitchMenuOpen(open, { focusSelected = false } = {}) {
 	}
 }
 
+function shortenProjectPath(rawPath) {
+	const value = String(rawPath || "");
+	const home = /^(\/Users\/[^/]+|\/home\/[^/]+)(?=\/|$)/.exec(value);
+	return home ? `~${value.slice(home[1].length)}` : value;
+}
+
 function renderProjectSwitchOptions() {
 	elements.projectSwitchOptions.replaceChildren();
+	if (elements.projectSwitchCount) elements.projectSwitchCount.textContent = String(state.projects.length);
 	for (const project of state.projects) {
 		const selected = project.id === state.activeProjectId;
 		const option = document.createElement("button");
@@ -657,15 +877,35 @@ function renderProjectSwitchOptions() {
 		option.setAttribute("role", "menuitemradio");
 		option.setAttribute("aria-checked", String(selected));
 		option.title = project.path;
-		option.append(icon(selected ? "folder-open" : "folder"));
+
+		const displayName = projectDisplayName(project);
+		const avatar = document.createElement("span");
+		avatar.className = "project-switch-avatar";
+		avatar.setAttribute("aria-hidden", "true");
+		avatar.style.setProperty("--project-rainbow-hue", String(defaultProjectHue(project)));
+		if (project.accentColor) {
+			avatar.classList.add("has-custom-color");
+			avatar.style.setProperty("--project-custom-color", project.accentColor);
+			avatar.style.setProperty("--project-custom-ink", projectAccentInk(project.accentColor));
+		}
+		avatar.textContent = displayName.slice(0, 1).toLocaleUpperCase() || "•";
+		option.append(avatar);
+
 		const copy = document.createElement("span");
 		const name = document.createElement("strong");
-		name.textContent = project.name;
+		name.textContent = displayName;
 		const projectPath = document.createElement("small");
-		projectPath.textContent = project.path;
+		projectPath.textContent = shortenProjectPath(project.path);
+		projectPath.dir = "ltr";
 		copy.append(name, projectPath);
 		option.append(copy);
-		if (selected) option.append(icon("check"));
+
+		const mark = document.createElement("span");
+		mark.className = "project-switch-mark";
+		mark.setAttribute("aria-hidden", "true");
+		if (selected) mark.append(icon("check"));
+		option.append(mark);
+
 		option.addEventListener("click", () => {
 			setProjectSwitchMenuOpen(false);
 			if (!selected) void activateProject(project);
@@ -677,14 +917,63 @@ function renderProjectSwitchOptions() {
 async function loadProjectConversations(project) {
 	if (!state.serverConnected || !project?.path) return;
 	const result = await requestServer(`/sessions?cwd=${encodeURIComponent(project.path)}`);
-	project.conversations = window.metisDesktopConversations.fromSessions(result.sessions, uiText("untitledTask"));
+	if (!Array.isArray(result?.sessions)) throw new Error(uiText("syncFailed"));
+	const sessions = result.sessions;
+	const previousTokenTotals = new Map(project.conversations.map((conversation) => [conversation.sessionPath, conversation.tokenTotal]));
+	project.conversations = window.metisDesktopConversations.fromSessions(sessions, uiText("untitledTask"));
+	for (const conversation of project.conversations) {
+		const tokenTotal = Number(previousTokenTotals.get(conversation.sessionPath));
+		if (Number.isFinite(tokenTotal) && tokenTotal > 0) conversation.tokenTotal = tokenTotal;
+	}
+	project.conversationLoadError = undefined;
+	if (state.session && (window.metisDesktopConversations.normalizeProjectPath(state.session.cwd) === window.metisDesktopConversations.normalizeProjectPath(project.path))) {
+		upsertServerConversation(state.session);
+	}
 	if (project.lastSessionPath && !project.conversations.some((item) => item.sessionPath === project.lastSessionPath)) {
 		project.lastSessionPath = undefined;
+	}
+	saveProjectState();
+	void hydrateProjectConversationTokenTotals(project);
+}
+
+async function hydrateProjectConversationTokenTotals(project) {
+	if ((!desktop.sessionTokens?.activity && !desktop.sessionTokens?.totals) || !project?.conversations?.length) return;
+	const sessionPaths = project.conversations.map((conversation) => conversation.sessionPath).filter(Boolean);
+	if (!sessionPaths.length) return;
+	const generation = (project.tokenTotalsGeneration || 0) + 1;
+	project.tokenTotalsGeneration = generation;
+	try {
+		const activity = desktop.sessionTokens.activity
+			? await desktop.sessionTokens.activity(sessionPaths)
+			: { totals: await desktop.sessionTokens.totals(sessionPaths), dailyTokens: {} };
+		if (project.tokenTotalsGeneration !== generation) return;
+		const totals = activity?.totals || {};
+		let changed = false;
+		for (const conversation of project.conversations) {
+			const tokenTotal = Number(totals?.[conversation.sessionPath]);
+			if (!Number.isFinite(tokenTotal) || tokenTotal < 0 || tokenTotal === conversation.tokenTotal) continue;
+			conversation.tokenTotal = tokenTotal;
+			changed = true;
+		}
+		project.tokenActivity = {
+			tokenTotal: Number(activity?.tokenTotal) || Object.values(totals).reduce((total, value) => total + (Number(value) || 0), 0),
+			dailyTokens: activity?.dailyTokens && typeof activity.dailyTokens === "object" ? activity.dailyTokens : {},
+		};
+		if (changed) saveProjectState();
+		if (project.id === state.activeProjectId) renderConversations();
+	} catch {
+		// Token trails are decorative; conversation loading must not fail when a local file is unavailable.
 	}
 }
 
 async function refreshAllProjectConversations() {
-	await Promise.all(state.projects.map((project) => loadProjectConversations(project)));
+	await Promise.all(state.projects.map(async (project) => {
+		try {
+			await loadProjectConversations(project);
+		} catch (error) {
+			project.conversationLoadError = error.message;
+		}
+	}));
 	renderConversations();
 }
 
@@ -705,109 +994,196 @@ function removeProject(projectToRemove) {
 	renderConversations();
 }
 
-function renderConversations() {
-	elements.conversationList.replaceChildren();
-	if (!state.projects.length) {
-		const empty = document.createElement("div");
-		empty.className = "projects-empty-state";
-		empty.title = uiText("addProject");
-		empty.append(icon("folder"));
-		const text = document.createElement("span");
-		text.textContent = uiText("noProjects");
-		empty.append(text);
-		empty.addEventListener("click", () => {
-			document.querySelector("#chooseWorkspaceButton")?.click();
-		});
-		elements.conversationList.append(empty);
+function updateProjectPanelConnector() {
+	const sidebar = document.querySelector('[data-purpose="icon-sidebar"]');
+	const activeEntry = elements.projectList?.querySelector(".project-rail-entry.active");
+	if (!sidebar || !activeEntry) {
+		sidebar?.classList.remove("has-project-connector");
+		const connector = sidebar?.querySelector(":scope > .project-panel-connector");
+		if (connector) connector.hidden = true;
 		return;
 	}
-	for (const project of state.projects) {
-		const group = document.createElement("section");
-		group.className = `project-group${project.collapsed ? " collapsed" : ""}`;
-
-		const header = document.createElement("div");
-		const isActiveProject = project.id === state.activeProjectId;
-		header.className = `project-header${isActiveProject ? " active" : ""}`;
-
-		const headerMain = document.createElement("button");
-		headerMain.type = "button";
-		headerMain.className = "project-header-main";
-		headerMain.setAttribute("aria-expanded", String(!project.collapsed));
-		headerMain.append(icon(project.collapsed ? "folder" : "folder-open"));
-		const title = document.createElement("span");
-		title.className = "project-header-title";
-		title.textContent = project.name;
-		headerMain.append(title);
-		headerMain.addEventListener("click", () => {
-			if (!isActiveProject) {
-				void activateProject(project);
-				return;
-			}
-			project.collapsed = !project.collapsed;
-			saveProjectState();
-			renderConversations();
-		});
-		header.append(headerMain);
-
-		const removeBtn = document.createElement("button");
-		removeBtn.type = "button";
-		removeBtn.className = "project-remove-button";
-		removeBtn.title = uiText("removeProject");
-		removeBtn.setAttribute("aria-label", uiText("removeProject"));
-		removeBtn.append(icon("x"));
-		removeBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			removeProject(project);
-		});
-		header.append(removeBtn);
-
-		group.append(header);
-
-		const list = document.createElement("div");
-		list.className = "project-conversations";
-		const visibleConversations = window.metisDesktopConversations.visibleProjectConversations(
-			project.conversations,
-			project.conversationsExpanded,
-			DEFAULT_VISIBLE_CONVERSATIONS,
-		);
-		for (const conversation of visibleConversations) {
-			const button = document.createElement("button");
-			const isActive = conversation.id === state.activeConversationId;
-			button.className = `conversation-item${isActive ? " active" : ""}`;
-			const label = document.createElement("span");
-			const isNaming = conversation.title === uiText("namingTitle") || (isActive && Boolean(state.session?.isGeneratingSessionName));
-			label.className = `conversation-label${isNaming ? " working-shimmer" : ""}`;
-			label.textContent = conversation.title;
-			button.append(label);
-
-			if (isActive && state.isStreaming) {
-				const spinner = document.createElement("span");
-				spinner.className = "conversation-spinner";
-				button.append(spinner);
-			} else if (conversation.branch) {
-				button.append(icon("branch"));
-			} else {
-				button.append(document.createElement("i"));
-			}
-
-			button.addEventListener("click", () => selectConversation(project, conversation));
-			list.append(button);
-		}
-		if (project.conversations.length > DEFAULT_VISIBLE_CONVERSATIONS) {
-			const expandButton = document.createElement("button");
-			expandButton.type = "button";
-			expandButton.className = "conversation-expand-button";
-			expandButton.textContent = uiText(project.conversationsExpanded ? "showLessConversations" : "showMoreConversations");
-			expandButton.setAttribute("aria-expanded", String(Boolean(project.conversationsExpanded)));
-			expandButton.addEventListener("click", () => {
-				project.conversationsExpanded = !project.conversationsExpanded;
-				renderConversations();
-			});
-			list.append(expandButton);
-		}
-		group.append(list);
-		elements.conversationList.append(group);
+	let connector = sidebar.querySelector(":scope > .project-panel-connector");
+	if (!connector) {
+		connector = document.createElement("span");
+		connector.className = "project-panel-connector";
+		connector.setAttribute("aria-hidden", "true");
+		sidebar.insertBefore(connector, sidebar.lastElementChild);
 	}
+	const sidebarBounds = sidebar.getBoundingClientRect();
+	const activeBounds = activeEntry.getBoundingClientRect();
+	const connectorY = Math.round(activeBounds.top + activeBounds.height / 2 - sidebarBounds.top);
+	sidebar.style.setProperty("--project-connector-y", `${connectorY}px`);
+	sidebar.classList.add("has-project-connector");
+	connector.hidden = false;
+}
+
+function renderConversations() {
+	const projectRailSignature = JSON.stringify([
+		resolveUiLanguage(),
+		state.activeProjectId,
+		...state.projects.map((project) => [
+			project.id,
+			projectDisplayName(project),
+			project.accentColor || "",
+		]),
+	]);
+	const shouldRenderProjectRail = elements.projectList.dataset.renderSignature !== projectRailSignature;
+	if (shouldRenderProjectRail) {
+		elements.projectList.replaceChildren();
+		elements.projectList.dataset.renderSignature = projectRailSignature;
+	}
+	elements.conversationList.replaceChildren();
+	if (!state.projects.length) {
+		if (shouldRenderProjectRail) {
+			const empty = document.createElement("div");
+			empty.className = "projects-empty-state";
+			empty.title = uiText("addProject");
+			empty.append(icon("folder"));
+			const text = document.createElement("span");
+			text.textContent = uiText("noProjects");
+			empty.append(text);
+			empty.addEventListener("click", () => {
+				document.querySelector("#chooseWorkspaceButton")?.click();
+			});
+			elements.projectList.append(empty);
+		}
+		elements.conversationSidebarTitle.textContent = uiText("conversations");
+		renderDreamTokenActivity();
+		updateProjectPanelConnector();
+		return;
+	}
+
+	if (shouldRenderProjectRail) for (const project of state.projects) {
+		const isActiveProject = project.id === state.activeProjectId;
+		const entry = document.createElement("div");
+		entry.className = `project-rail-entry${isActiveProject ? " active" : ""}`;
+
+		const displayName = projectDisplayName(project);
+		const rainbowHue = defaultProjectHue(project);
+
+		const projectButton = document.createElement("button");
+		projectButton.type = "button";
+		projectButton.className = "project-rail-item";
+		projectButton.title = displayName;
+		projectButton.setAttribute("aria-label", displayName);
+		projectButton.style.setProperty("--project-rainbow-hue", String(rainbowHue));
+		if (project.accentColor) {
+			projectButton.classList.add("has-custom-color");
+			projectButton.style.setProperty("--project-custom-color", project.accentColor);
+			projectButton.style.setProperty("--project-custom-ink", projectAccentInk(project.accentColor));
+		}
+		projectButton.append(icon(isActiveProject ? "folder-open" : "folder"));
+		const projectInitial = document.createElement("span");
+		projectInitial.className = "project-rail-initial";
+		projectInitial.textContent = displayName.slice(0, 1).toLocaleUpperCase() || "•";
+		projectButton.append(projectInitial);
+		projectButton.addEventListener("click", () => {
+			if (!isActiveProject) void activateProject(project);
+		});
+		entry.append(projectButton);
+
+		const customizeButton = document.createElement("button");
+		customizeButton.type = "button";
+		customizeButton.className = "project-rail-customize";
+		customizeButton.title = uiText("customizeProject");
+		customizeButton.setAttribute("aria-label", uiText("customizeProject"));
+		customizeButton.setAttribute("aria-haspopup", "dialog");
+		customizeButton.setAttribute("aria-expanded", "false");
+		customizeButton.setAttribute("aria-controls", "projectCustomizePopover");
+		customizeButton.append(icon("more"));
+		customizeButton.addEventListener("click", (e) => {
+			e.stopPropagation();
+			openProjectCustomization(project, customizeButton);
+		});
+		entry.append(customizeButton);
+		elements.projectList.append(entry);
+	}
+
+	const activeProject = state.projects.find((project) => project.id === state.activeProjectId) || state.projects[0];
+	elements.conversationSidebarTitle.textContent = projectDisplayName(activeProject);
+	const channelNameEl = document.querySelector("#currentProjectChannelName");
+	if (channelNameEl) channelNameEl.textContent = projectDisplayName(activeProject);
+	const visibleConversations = window.metisDesktopConversations.sortConversationsByCreatedAt(activeProject.conversations);
+	if (activeProject.conversationLoadError && state.serverConnected) {
+		const error = document.createElement("div");
+		error.className = "conversations-load-error";
+		error.textContent = activeProject.conversationLoadError;
+		elements.conversationList.append(error);
+	}
+function formatRelativeTime(dateInput) {
+	if (!dateInput) return "";
+	const date = new Date(dateInput);
+	if (isNaN(date.getTime())) return "";
+	const now = new Date();
+	const diffMs = Math.max(0, now.getTime() - date.getTime());
+	const diffSec = Math.floor(diffMs / 1000);
+	if (diffSec < 60) return "1m";
+	const diffMin = Math.floor(diffSec / 60);
+	if (diffMin < 60) return `${diffMin}m`;
+	const diffHour = Math.floor(diffMin / 60);
+	if (diffHour < 24) return `${diffHour}h`;
+	const diffDay = Math.floor(diffHour / 24);
+	if (diffDay < 30) return `${diffDay}d`;
+	const diffWeek = Math.floor(diffDay / 7);
+	if (diffWeek < 52) return `${diffWeek}w`;
+	const diffYear = Math.floor(diffDay / 365);
+	return `${diffYear}y`;
+}
+
+	for (const conversation of visibleConversations) {
+		const button = document.createElement("button");
+		let tokenTrail;
+		const isActive = conversation.id === state.activeConversationId;
+		button.className = `conversation-item${isActive ? " active" : ""}`;
+
+		const label = document.createElement("span");
+		const isNaming = conversation.title === uiText("namingTitle") || (isActive && Boolean(state.session?.isGeneratingSessionName));
+		const isUntitled = conversation.title === uiText("untitledTask") || isNaming;
+		label.className = `conversation-label${isNaming ? " working-shimmer" : ""}`;
+		label.textContent = conversation.title;
+		button.append(label);
+
+		if (conversationTokenComet && !isUntitled) {
+			const activeTokenTotal = isActive ? conversationTokenComet.conversationTokenTotal(state.messages) : 0;
+			if (activeTokenTotal > 0) conversation.tokenTotal = activeTokenTotal;
+			button.classList.add("has-token-trail");
+			tokenTrail = createConversationTokenTrail(conversation.tokenTotal, {
+				conversationId: conversation.id,
+			});
+			button.append(tokenTrail);
+		}
+
+		const right = document.createElement("span");
+		right.className = "conversation-time";
+		if (isActive && state.isStreaming) {
+			const spinner = document.createElement("span");
+			spinner.className = "conversation-spinner";
+			right.append(spinner);
+		} else {
+			const timeStr = formatRelativeTime(conversation.updatedAt);
+			if (timeStr) {
+				right.textContent = timeStr;
+			} else if (conversation.branch) {
+				right.append(icon("branch"));
+			}
+		}
+		button.append(right);
+
+		button.addEventListener("click", () => selectConversation(activeProject, conversation));
+		elements.conversationList.append(button);
+	}
+	if (!activeProject.conversations.length && !activeProject.conversationLoadError) {
+		const empty = document.createElement("div");
+		empty.className = "conversations-empty-state";
+		empty.append(icon("chat"));
+		const text = document.createElement("span");
+		text.textContent = uiText("noConversations");
+		empty.append(text);
+		elements.conversationList.append(empty);
+	}
+	renderDreamTokenActivity(activeProject);
+	updateProjectPanelConnector();
 }
 
 function updateHistoryButtons() {
@@ -846,7 +1222,11 @@ async function navigateHistory(offset) {
 
 async function selectConversation(project, conversation, record = true) {
 	if (project.id !== state.activeProjectId) {
-		await activateProject(project, { targetSessionPath: conversation.sessionPath, record });
+		await activateProject(project, {
+			targetSessionPath: conversation.sessionPath,
+			record,
+			forceNewConversation: false,
+		});
 		return;
 	}
 	state.activeConversationId = conversation.id;
@@ -854,16 +1234,21 @@ async function selectConversation(project, conversation, record = true) {
 	updateHeadingTitle(conversation.title, conversation.title === uiText("namingTitle") || (conversation.id === state.session?.sessionId && Boolean(state.session?.isGeneratingSessionName)));
 	renderConversations();
 	if (state.serverConnected && conversation.sessionPath && conversation.sessionPath !== state.session?.sessionFile) {
-		setStreamingState(true, uiText("switchingSession"));
+		const finishConversationLoading = beginScopedLoading(
+			elements.conversationViewLoading,
+			elements.messageScroll,
+			elements.conversationViewLoadingLabel,
+			uiText("switchingSession"),
+		);
 		try {
 			await requestServer("/session/switch", "POST", { sessionPath: conversation.sessionPath });
-			await syncServerSession({ loadModels: false });
+			await syncServerSession({ loadModels: false, refreshConversations: false });
 			project.lastSessionPath = conversation.sessionPath;
 			saveProjectState();
 		} catch (error) {
 			appendAssistantNotice(error.message, uiText("sessionSwitchFailed"));
 		} finally {
-			setStreamingState(false);
+			finishConversationLoading();
 		}
 	}
 	elements.composerInput.focus();
@@ -874,21 +1259,59 @@ async function createConversation() {
 		elements.serverDialog.showModal();
 		return;
 	}
-	setStreamingState(true, uiText("creatingTask"));
+	// Paint the empty conversation before the round-trip, the way selectConversation() moves the
+	// sidebar highlight before awaiting /session/switch. Without this the previous transcript and
+	// its sidebar row stay on screen for the whole POST + sync, which is why creating a
+	// conversation felt laggy while switching felt instant — the server work is the same 2-4 ms.
+	state.activeConversationId = undefined;
+	state.messages = [];
+	state.messageTimings = {};
+	state.hasSubmittedMessage = false;
+	updateHeadingTitle(uiText("untitledTask"), false);
+	renderServerMessages(state.messages);
+	renderEmptyState(true);
+	renderConversations();
 	try {
-		await requestServer("/session/new", "POST", { cwd: activeProject()?.path });
-		await syncServerSession({ loadModels: false });
+		await requestServer("/session/new", "POST", { cwd: activeProject()?.path, collaborationMode: "plan" });
+		await syncServerSession({ loadModels: false, refreshConversations: false });
 	} catch (error) {
 		appendAssistantNotice(error.message, uiText("createFailed"));
-	} finally {
-		setStreamingState(false);
 	}
 	elements.composerInput.focus();
 }
 
-async function activateProject(project, { targetSessionPath, record = true, loadModels = true, forceNewConversation = false } = {}) {
+async function alignNewConversationWithActiveProject() {
+	const project = activeProject();
+	if (!project?.path) return;
+	const projectPath = window.metisDesktopConversations.normalizeProjectPath(project.path);
+	const sessionPath = window.metisDesktopConversations.normalizeProjectPath(state.session?.cwd);
+	if (sessionPath === projectPath) return;
+
+	// The localhost server owns one active session. If another Desktop client or a stale
+	// connection changed it, never submit this project's first prompt into that foreign session:
+	// the JSONL would be persisted, but under the wrong project and disappear from this list.
+	await requestServer("/session/new", "POST", {
+		cwd: project.path,
+		collaborationMode: "plan",
+	});
+	await syncServerSession({ loadModels: false, refreshConversations: false });
+}
+
+async function activateProject(project, {
+	targetSessionPath,
+	record = true,
+	loadModels = true,
+	forceNewConversation = true,
+	syncSession = true,
+} = {}) {
 	if (!project || projectSwitchInProgress) return;
 	projectSwitchInProgress = true;
+	const finishProjectLoading = beginScopedLoading(
+		elements.conversationListLoading,
+		elements.channelListPane,
+		elements.conversationListLoadingLabel,
+		uiText("switchingProject"),
+	);
 	for (const candidate of state.projects) candidate.collapsed = candidate.id !== project.id;
 	state.activeProjectId = project.id;
 	state.activeConversationId = undefined;
@@ -900,60 +1323,83 @@ async function activateProject(project, { targetSessionPath, record = true, load
 		await refreshFileTree();
 		if (!state.serverConnected) return;
 
-		setStreamingState(true, uiText("switchingProject"));
 		await loadProjectConversations(project);
+		renderConversations();
+		if (!syncSession) return;
+		if (forceNewConversation) {
+			state.messages = [];
+			state.messageTimings = {};
+			state.hasSubmittedMessage = false;
+			updateHeadingTitle(uiText("untitledTask"), false);
+			renderServerMessages(state.messages);
+			renderEmptyState(true);
+			renderConversations();
+		}
 		const currentSession = await requestServer("/session");
 		const currentCwd = window.metisDesktopConversations.normalizeProjectPath(currentSession.cwd);
-		const destination = !forceNewConversation && (targetSessionPath
-			|| project.lastSessionPath
-			|| project.conversations[0]?.sessionPath);
-
 		if (forceNewConversation) {
-			await requestServer("/session/new", "POST", { cwd: project.path });
-		} else if (destination && destination !== currentSession.sessionFile) {
-			await requestServer("/session/switch", "POST", { sessionPath: destination });
-		} else if (currentCwd !== project.path) {
-			await requestServer("/session/new", "POST", { cwd: project.path });
+			await requestServer("/session/new", "POST", { cwd: project.path, collaborationMode: "plan" });
+		} else {
+			const destination = targetSessionPath
+				|| project.lastSessionPath
+				|| project.conversations[0]?.sessionPath;
+
+			if (destination && destination !== currentSession.sessionFile) {
+				await requestServer("/session/switch", "POST", { sessionPath: destination });
+			} else if (!destination || currentCwd !== project.path) {
+				await requestServer("/session/new", "POST", { cwd: project.path, collaborationMode: "plan" });
+			}
 		}
-		await syncServerSession({ loadModels });
+		// loadProjectConversations() above already fetched this project's listing.
+		await syncServerSession({ loadModels, refreshConversations: false });
 		if (record && state.activeConversationId) recordNavigation(state.activeConversationId);
 	} catch (error) {
 		appendAssistantNotice(error.message, uiText("projectSwitchFailed"));
 	} finally {
 		projectSwitchInProgress = false;
-		setStreamingState(Boolean(state.session?.isStreaming), uiText(state.session?.isCompacting ? "compactingContext" : "agentWorking"));
+		setStreamingState(Boolean(state.session?.isStreaming));
 		renderConversations();
+		finishProjectLoading();
 	}
 }
 
 async function loadWorkspace(select = false) {
 	try {
-		const workspace = select ? await desktop.workspace.select() : await desktop.workspace.get();
-		if (!workspace) return;
-		initializeProjectState(workspace);
-		const isNewProject = !projectForPath(workspace.path);
-		const project = ensureProject(workspace);
-		if (!project) return;
 		if (select) {
-			window.MetisOnboarding?.notifyEvent("workspace_changed");
-			await activateProject(project, { forceNewConversation: isNewProject });
+			const workspace = await desktop.workspace.select();
+			if (!workspace) return;
+			initializeProjectState();
+			const project = ensureProject(workspace);
+			if (!project) return;
+
+			await activateProject(project);
 			return;
 		}
-		const selectedProject = activeProject() || project;
+
+		const workspace = await desktop.workspace.get();
+		initializeProjectState(workspace);
+		if (!state.projects.length) {
+			renderConversations();
+			return;
+		}
+
+		const selectedProject = activeProject();
+		if (!selectedProject) return;
 		state.activeProjectId = selectedProject.id;
 		try {
 			await setWorkspaceChecked(selectedProject.path);
 		} catch (error) {
-			// Project paths restored from local state may point to removed folders.
-			// Drop the stale project and fall back to the current workspace.
 			if (!String(error?.message || "").includes("Workspace directory does not exist")) throw error;
 			state.projects = state.projects.filter((item) => item.path !== selectedProject.path);
-			const fallbackProject = ensureProject(workspace) || project;
-			state.activeProjectId = fallbackProject.id;
 			saveProjectState();
-			await desktop.workspace.set(fallbackProject.path);
+			if (state.projects.length) {
+				void activateProject(state.projects[0]);
+			} else {
+				renderConversations();
+			}
+			return;
 		}
-		applyProjectDetails(activeProject() || project);
+		applyProjectDetails(selectedProject);
 		await refreshFileTree();
 	} catch (error) {
 		elements.fileTree.textContent = uiText("workspaceReadError", { message: error.message });
@@ -969,11 +1415,235 @@ async function requestServer(path, method = "GET", body, options = {}) {
 	return result.data;
 }
 
+let skillCatalogRequest;
+
+function skillCatalogKey() {
+	return `${state.session?.sessionId || "session"}:${state.session?.cwd || activeProject()?.path || "workspace"}`;
+}
+
+function closeSkillMenu() {
+	const menu = elements.composerSkillMenu;
+	if (!menu) return;
+	menu.hidden = true;
+	menu.setAttribute("aria-hidden", "true");
+	elements.composerInput.removeAttribute("aria-activedescendant");
+}
+
+function setActiveSkillIndex(index) {
+	const options = [...(elements.composerSkillMenu?.querySelectorAll("[role=option]") || [])];
+	if (options.length === 0) return;
+	state.activeSkillIndex = (index + options.length) % options.length;
+	options.forEach((option, optionIndex) => option.setAttribute("aria-selected", String(optionIndex === state.activeSkillIndex)));
+	const active = options[state.activeSkillIndex];
+	elements.composerInput.setAttribute("aria-activedescendant", active.id);
+	active.scrollIntoView?.({ block: "nearest" });
+}
+
+function selectSkillOption(index = state.activeSkillIndex) {
+	const option = elements.composerSkillMenu?.querySelectorAll("[role=option]")?.[index];
+	const skill = state.skillCommands.find((item) => item.name === option?.dataset.skillName);
+	const trigger = skillComposer.currentTrigger(elements.composerInput);
+	if (!skill || !trigger || !skillComposer.insertSkill(elements.composerInput, skill, trigger)) return false;
+	closeSkillMenu();
+	elements.composerInput.focus();
+	autoSizeComposer();
+	return true;
+}
+
+function renderSkillMenu(skills) {
+	const menu = elements.composerSkillMenu;
+	if (!menu) return;
+	menu.replaceChildren();
+	if (skills.length === 0) {
+		closeSkillMenu();
+		return;
+	}
+
+	for (const [index, skill] of skills.entries()) {
+		const option = document.createElement("button");
+		option.type = "button";
+		option.id = `composerSkillOption-${index}`;
+		option.className = "composer-skill-option";
+		option.dataset.skillName = skill.name;
+		option.setAttribute("role", "option");
+		option.setAttribute("aria-selected", "false");
+		option.append(icon("skill", "composer-skill-option-icon"));
+		const copy = document.createElement("span");
+		copy.className = "composer-skill-option-copy";
+		const label = document.createElement("strong");
+		label.textContent = skill.label;
+		const description = document.createElement("small");
+		description.textContent = skill.description;
+		copy.append(label, description);
+		option.append(copy);
+		option.addEventListener("pointerenter", () => setActiveSkillIndex(index));
+		option.addEventListener("pointerdown", (event) => {
+			event.preventDefault();
+			state.activeSkillIndex = index;
+			selectSkillOption(index);
+		});
+		menu.append(option);
+	}
+	menu.hidden = false;
+	menu.setAttribute("aria-hidden", "false");
+	setActiveSkillIndex(Math.min(state.activeSkillIndex, skills.length - 1));
+}
+
+async function loadSkillCatalog() {
+	if (!state.serverConnected) return [];
+	const key = skillCatalogKey();
+	if (state.skillCommandsLoadedFor === key) return state.skillCommands;
+	if (skillCatalogRequest) return skillCatalogRequest;
+	skillCatalogRequest = requestServer("/commands")
+		.then((result) => {
+			state.skillCommands = skillComposer.normalizeSkills(result?.commands);
+			state.skillCommandsLoadedFor = key;
+			return state.skillCommands;
+		})
+		.catch((error) => {
+			console.warn("Unable to load Desktop skill commands", error);
+			return [];
+		})
+		.finally(() => { skillCatalogRequest = undefined; });
+	return skillCatalogRequest;
+}
+
+async function updateSkillMenu() {
+	let trigger = skillComposer.currentTrigger(elements.composerInput);
+	if (!trigger) {
+		closeSkillMenu();
+		return;
+	}
+	const skills = await loadSkillCatalog();
+	trigger = skillComposer.currentTrigger(elements.composerInput);
+	if (!trigger) {
+		closeSkillMenu();
+		return;
+	}
+	state.activeSkillIndex = 0;
+	renderSkillMenu(skillComposer.filterSkills(skills, trigger.query));
+}
+
+function renderDesktopWorkStats() {
+	workStatsView?.render(state.workStats, {
+		locale: resolveUiLanguage(state.uiLanguage),
+		text: uiText,
+	});
+}
+
+async function refreshDesktopWorkStats({ force = false } = {}) {
+	if (!state.serverConnected) return;
+	if (!force && state.workStats && Date.now() - state.workStatsLoadedAt < 60_000) {
+		renderDesktopWorkStats();
+		return;
+	}
+	if (workStatsRequest) return workStatsRequest;
+	renderDesktopWorkStats();
+	workStatsRequest = requestServer("/desktop/work-stats")
+		.then((stats) => {
+			state.workStats = stats;
+			state.workStatsLoadedAt = Date.now();
+			renderDesktopWorkStats();
+		})
+		.catch(() => {
+			const board = document.querySelector("#workInsights");
+			const status = document.querySelector("#workInsightsStatus");
+			board?.classList.remove("is-loading");
+			if (status) status.textContent = uiText("workStatsUnavailable");
+		})
+		.finally(() => {
+			workStatsRequest = undefined;
+		});
+	return workStatsRequest;
+}
+
 function updateHeadingTitle(title, isGenerating) {
 	if (!elements.headingTitle) return;
 	elements.headingTitle.textContent = title;
 	const isNaming = title === uiText("namingTitle") || Boolean(isGenerating);
 	elements.headingTitle.classList.toggle("working-shimmer", isNaming);
+	updateComposerPlaceholder(title, isNaming);
+}
+
+function updateComposerPlaceholder(title, isGenerating = false) {
+	const untitled = uiText("untitledTask");
+	const naming = uiText("namingTitle");
+	const hasConversationTitle = typeof title === "string"
+		&& title.trim()
+		&& title !== untitled
+		&& title !== naming
+		&& !isGenerating;
+	const placeholder = hasConversationTitle
+		? title.trim()
+		: `${uiText("newTask")} · ${uiText("composerPlaceholder")}`;
+	for (const input of document.querySelectorAll('[data-purpose="message-input"]')) {
+		input.setAttribute("placeholder", placeholder);
+	}
+}
+
+function beginScopedLoading(overlay, host, labelElement, label) {
+	if (!overlay) return () => {};
+	const depth = Number(overlay.dataset.loadingDepth || 0) + 1;
+	overlay.dataset.loadingDepth = String(depth);
+	if (labelElement && label) labelElement.textContent = label;
+	overlay.setAttribute("aria-hidden", "false");
+	host?.setAttribute("aria-busy", "true");
+	let released = false;
+	return () => {
+		if (released) return;
+		released = true;
+		const nextDepth = Math.max(0, Number(overlay.dataset.loadingDepth || 1) - 1);
+		overlay.dataset.loadingDepth = String(nextDepth);
+		if (nextDepth > 0) return;
+		overlay.setAttribute("aria-hidden", "true");
+		host?.removeAttribute("aria-busy");
+	};
+}
+
+function conversationTokenTrailTarget(tokenTotal = 0) {
+	if (!conversationTokenComet) return { band: "short", tokenTotal: 0, width: 24 };
+	const total = Number.isFinite(Number(tokenTotal)) ? Math.max(0, Number(tokenTotal)) : 0;
+	return { ...conversationTokenComet.tokenTrailMetrics(total), tokenTotal: total };
+}
+
+function applyConversationTokenTrailWidth(trail, targetWidth, conversationId) {
+	const target = Math.round(targetWidth);
+	const key = String(conversationId || "unknown");
+	const previous = renderedConversationTokenTrailWidths.get(key);
+	renderedConversationTokenTrailWidths.set(key, target);
+	if (previous === undefined || previous === target) {
+		trail.style.setProperty("--conversation-token-trail-width", `${target}px`);
+		return;
+	}
+	trail.style.setProperty("--conversation-token-trail-width", `${previous}px`);
+	requestAnimationFrame(() => {
+		if (trail.isConnected) trail.style.setProperty("--conversation-token-trail-width", `${target}px`);
+	});
+}
+
+function createConversationTokenTrail(tokenTotal = 0, { conversationId } = {}) {
+	const metrics = conversationTokenTrailTarget(tokenTotal);
+	const trail = document.createElement("span");
+	trail.className = "conversation-token-trail";
+	trail.setAttribute("aria-hidden", "true");
+	trail.dataset.tokenBand = metrics.band;
+	trail.dataset.tokenTotal = String(Math.round(metrics.tokenTotal));
+	trail.dataset.renderer = "css-gradient";
+	applyConversationTokenTrailWidth(trail, metrics.width, conversationId);
+	return trail;
+}
+
+function refreshConversationTokenTrail(messages = state.messages) {
+	const trail = elements.conversationList.querySelector(".conversation-item.active .conversation-token-trail");
+	if (!trail) return;
+	const project = activeProject();
+	const conversation = project?.conversations.find((item) => item.id === state.activeConversationId);
+	const tokenTotal = conversationTokenComet?.conversationTokenTotal(messages) || 0;
+	if (conversation && tokenTotal > 0) conversation.tokenTotal = tokenTotal;
+	const metrics = conversationTokenTrailTarget(conversation?.tokenTotal || tokenTotal);
+	trail.dataset.tokenBand = metrics.band;
+	trail.dataset.tokenTotal = String(Math.round(metrics.tokenTotal));
+	applyConversationTokenTrailWidth(trail, metrics.width, conversation?.id);
 }
 
 function sessionTitle(session) {
@@ -984,7 +1654,13 @@ function sessionTitle(session) {
 function replaceServerConversations(sessions) {
 	const project = activeProject();
 	if (!project) return;
+	const previousTokenTotals = new Map(project.conversations.map((conversation) => [conversation.sessionPath, conversation.tokenTotal]));
 	project.conversations = window.metisDesktopConversations.fromSessions(sessions, uiText("untitledTask"));
+	for (const conversation of project.conversations) {
+		const tokenTotal = Number(previousTokenTotals.get(conversation.sessionPath));
+		if (Number.isFinite(tokenTotal) && tokenTotal > 0) conversation.tokenTotal = tokenTotal;
+	}
+	void hydrateProjectConversationTokenTotals(project);
 }
 
 function upsertServerConversation(session) {
@@ -1001,22 +1677,28 @@ function upsertServerConversation(session) {
 
 	if (!conversation) {
 		const id = sessionFile || sessionId;
-		conversation = { id, title: sessionTitle(session), branch: false, sessionPath: sessionFile };
-		project.conversations.unshift(conversation);
+		conversation = {
+			id,
+			title: sessionTitle(session),
+			branch: false,
+			sessionPath: sessionFile,
+			createdAt: session.created || new Date().toISOString(),
+		};
+		project.conversations.push(conversation);
 	} else {
 		conversation.title = sessionTitle(session);
 		conversation.sessionPath = sessionFile;
 		if (sessionFile) conversation.id = sessionFile;
-		const currentIndex = project.conversations.indexOf(conversation);
-		if (currentIndex > 0) {
-			project.conversations.splice(currentIndex, 1);
-			project.conversations.unshift(conversation);
-		}
+		if (!conversation.createdAt && session.created) conversation.createdAt = session.created;
 	}
+	project.conversations = window.metisDesktopConversations.sortConversationsByCreatedAt(project.conversations);
 
 	project.collapsed = false;
 	project.lastSessionPath = sessionFile;
-	state.activeProjectId = project.id;
+	if (state.activeProjectId !== project.id) {
+		saveProjectState();
+		return;
+	}
 	state.activeConversationId = conversation.id;
 	saveProjectState();
 	recordNavigation(conversation.id);
@@ -1204,20 +1886,42 @@ function renderEmptyState(connected = state.serverConnected) {
 	const empty = document.createElement("div");
 	empty.className = "empty-state";
 	empty.id = "emptyState";
-	const title = document.createElement("strong");
-	title.textContent = connected ? uiText("newTaskReady") : uiText("startTask");
-	const copy = document.createElement("span");
-	copy.textContent = connected ? uiText("newTaskReadyDescription") : uiText("serverSyncDescription");
-	empty.append(title, copy);
+
 	if (!connected) {
+		const title = document.createElement("strong");
+		title.textContent = uiText("startTask");
+		const copy = document.createElement("span");
+		copy.textContent = uiText("serverSyncDescription");
 		const button = document.createElement("button");
 		button.append(document.createElement("span"), uiText("connectServer"));
 		button.firstElementChild.className = "server-dot";
 		button.addEventListener("click", () => elements.serverDialog.showModal());
-		empty.append(button);
+		empty.append(title, copy, button);
 	}
 	elements.emptyState = empty;
 	elements.messageColumn.replaceChildren(empty);
+	elements.conversationPane?.classList.add("is-empty-state");
+	elements.conversationPane?.classList.remove("is-leaving-empty");
+	renderDesktopWorkStats();
+	if (connected) void refreshDesktopWorkStats();
+}
+
+function transitionFromEmptyState() {
+	if (!elements.conversationPane?.classList.contains("is-empty-state")) {
+		if (elements.emptyState?.isConnected) elements.emptyState.remove();
+		return;
+	}
+	elements.conversationPane.classList.add("is-leaving-empty");
+	elements.conversationPane.classList.remove("is-empty-state");
+	const currentEmpty = elements.emptyState;
+	currentEmpty?.classList.add("fade-out");
+	setTimeout(() => {
+		if (currentEmpty && currentEmpty.isConnected && !elements.conversationPane.classList.contains("is-empty-state")) {
+			currentEmpty.remove();
+		}
+		if (state.hasSubmittedMessage) elements.dreamTokenCard?.classList.add("hidden");
+		elements.conversationPane?.classList.remove("is-leaving-empty");
+	}, 360);
 }
 
 function isAssistantTurnActive(turnContext) {
@@ -1252,6 +1956,46 @@ function getThinkingDuration(message, messages = state.messages) {
 		return parseFloat(est.toFixed(1));
 	}
 	return null;
+}
+
+function getThoughtSegmentTimerKey(message, partKey) {
+	const sessionKey = state.session?.sessionId || "session";
+	const messageKey = message?.id || message?.timestamp || "message";
+	return `${sessionKey}:${messageKey}:${partKey}`;
+}
+
+function estimateThoughtSegmentDurationMs(part) {
+	const explicitDuration = Number(part?.durationMs ?? part?.duration_ms ?? part?.metadata?.durationMs);
+	if (Number.isFinite(explicitDuration) && explicitDuration >= 0) return explicitDuration;
+	const characterCount = typeof part?.thinking === "string" ? part.thinking.length : 0;
+	return Math.max(1200, Math.min(30000, (characterCount / 120) * 1000));
+}
+
+function formatThoughtSegmentDuration(durationMs) {
+	const safeDuration = Math.max(0, Number(durationMs) || 0);
+	if (safeDuration < 60000) {
+		return `${Math.max(0.1, safeDuration / 1000).toFixed(1)}s`;
+	}
+	const minutes = Math.floor(safeDuration / 60000);
+	const seconds = Math.floor((safeDuration % 60000) / 1000);
+	return `${minutes}m ${seconds}s`;
+}
+
+function resolveThoughtSegmentTiming(message, part, partKey, isActive) {
+	if (!state.thoughtSegmentTimings) state.thoughtSegmentTimings = {};
+	const timerKey = getThoughtSegmentTimerKey(message, partKey);
+	const now = Date.now();
+	let timing = state.thoughtSegmentTimings[timerKey];
+	if (!timing) {
+		timing = isActive
+			? { startedAt: now }
+			: { durationMs: estimateThoughtSegmentDurationMs(part) };
+		state.thoughtSegmentTimings[timerKey] = timing;
+	} else if (!isActive && timing.durationMs === undefined) {
+		timing.durationMs = Math.max(100, now - timing.startedAt);
+	}
+	const durationMs = timing.durationMs ?? Math.max(0, now - timing.startedAt);
+	return { timerKey, durationText: formatThoughtSegmentDuration(durationMs) };
 }
 
 function getToolIconHref(toolName) {
@@ -1312,12 +2056,6 @@ function formatToolDisplayName(toolName, status) {
 		if (isError) return "Agent Failed";
 		return "Agent Started";
 	}
-	if (name.includes("user_intent")) {
-		if (isRunning) return "Saving Intent...";
-		if (isError) return "Failed Saving Intent";
-		return "Saved Intent";
-	}
-
 	const formatted = (toolName || "Tool")
 		.replaceAll("_", " ")
 		.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -1359,10 +2097,6 @@ function getToolStatus(toolCall, message, messages) {
 	if (state.isStreaming) {
 		const isLastMessage = messages[messages.length - 1] === message;
 		if (isLastMessage) {
-			const runStateText = elements.runState.querySelector("span:last-child").textContent || "";
-			if (runStateText.includes("确认") || runStateText.includes("审批") || runStateText.includes("Approval")) {
-				return "Awaiting Approval";
-			}
 			return "Running";
 		}
 	}
@@ -1370,52 +2104,126 @@ function getToolStatus(toolCall, message, messages) {
 	return "Pending";
 }
 
-function setAssistantTurnCollapsed(article, isCollapsed, isActive = false) {
+function getWorkItemKey(part, index) {
+	if (part.type === "subagentCard") {
+		return part.part?.id || `subagent_${part.progress?.jobId || index}`;
+	}
+	if (part.type === "toolCall") {
+		return part.id || `tool_${part.name}_${index}`;
+	}
+	if (part.type === "thinking") {
+		return part.id || `thinking_${index}`;
+	}
+	if (part.type === "text") {
+		return part.id || `text_${index}`;
+	}
+	return `work_${part.type}_${index}`;
+}
+
+const ASSISTANT_TURN_LAYOUT_CLASSES = [
+	"assistant-turn-segment",
+	"assistant-turn-first",
+	"assistant-turn-last",
+	"assistant-turn-work",
+	"assistant-turn-work-start",
+	"assistant-turn-work-end",
+	"assistant-turn-final",
+	"assistant-turn-collapsed",
+	"assistant-turn-expanded",
+	"turn-intermediate-collapsed",
+];
+
+function getAssistantTurnArticles(article) {
 	let firstArticle = article;
-	while (firstArticle.previousElementSibling && !firstArticle.previousElementSibling.classList.contains("user-message")) {
+	while (firstArticle?.previousElementSibling
+		&& !firstArticle.previousElementSibling.classList.contains("user-message")) {
 		firstArticle = firstArticle.previousElementSibling;
 	}
 
-	const turnDividers = [];
+	const articles = [];
 	let turnArticle = firstArticle;
 	while (turnArticle && !turnArticle.classList.contains("user-message")) {
-		if (turnArticle.classList.contains("assistant-message")) {
-			turnArticle.classList.toggle("assistant-turn-collapsed", isCollapsed);
-			turnArticle.classList.toggle("assistant-turn-active", isActive);
-			const cotContainer = turnArticle.querySelector(".cot-container");
-			if (cotContainer) cotContainer.classList.toggle("collapsed", isCollapsed);
-			turnDividers.push(...turnArticle.querySelectorAll(":scope > .assistant-body > .turn-final-divider"));
-
-			const hidesWithTurn = turnArticle.classList.contains("turn-intermediate-assistant")
-				&& (!cotContainer || cotContainer.classList.contains("cot-continuation"));
-			turnArticle.classList.toggle("turn-intermediate-collapsed", isCollapsed && hidesWithTurn);
-		}
+		if (turnArticle.classList.contains("assistant-message")) articles.push(turnArticle);
 		turnArticle = turnArticle.nextElementSibling;
 	}
+	return articles;
+}
 
-	turnDividers.forEach((divider, index) => {
-		divider.classList.toggle("turn-terminal-divider", index === turnDividers.length - 1);
+function syncAssistantTurnPresentation(turnArticles) {
+	if (!turnArticles.length) return;
+
+	const workArticles = turnArticles.filter((candidate) =>
+		candidate.querySelector(":scope > .assistant-body > .cot-container"));
+	const primaryWorkArticle = workArticles.find((candidate) =>
+		!candidate.querySelector(":scope > .assistant-body > .cot-container")?.classList.contains("cot-continuation"))
+		?? workArticles[0];
+	const finalArticle = [...turnArticles].reverse().find((candidate) =>
+		candidate.querySelector(":scope > .assistant-body > .assistant-text-part"));
+	const primaryContainer = primaryWorkArticle?.querySelector(":scope > .assistant-body > .cot-container");
+	const hasWork = Boolean(primaryContainer);
+	const isCollapsed = hasWork && primaryContainer.classList.contains("collapsed");
+	const isActive = turnArticles.some((candidate) => candidate.classList.contains("assistant-turn-active"));
+
+	turnArticles.forEach((candidate, index) => {
+		candidate.classList.remove(...ASSISTANT_TURN_LAYOUT_CLASSES);
+		candidate.classList.toggle("assistant-turn-active", isActive);
+		if (!hasWork) return;
+
+		const container = candidate.querySelector(":scope > .assistant-body > .cot-container");
+		const isWorkArticle = Boolean(container);
+		const isFinalArticle = candidate === finalArticle;
+		const hidesWhenCollapsed = candidate !== primaryWorkArticle && !isFinalArticle;
+		candidate.classList.add("assistant-turn-segment");
+		candidate.classList.toggle("assistant-turn-first", index === 0);
+		candidate.classList.toggle("assistant-turn-last", index === turnArticles.length - 1);
+		candidate.classList.toggle("assistant-turn-work", isWorkArticle);
+		candidate.classList.toggle("assistant-turn-work-start", candidate === primaryWorkArticle);
+		candidate.classList.toggle("assistant-turn-work-end", candidate === workArticles.at(-1));
+		candidate.classList.toggle("assistant-turn-final", isFinalArticle);
+		candidate.classList.toggle("assistant-turn-collapsed", isCollapsed);
+		candidate.classList.toggle("assistant-turn-expanded", !isCollapsed);
+		candidate.classList.toggle("turn-intermediate-collapsed", isCollapsed && hidesWhenCollapsed);
+
+		if (container) container.classList.toggle("collapsed", isCollapsed);
+		const header = container?.querySelector(":scope > .cot-header-bar");
+		header?.setAttribute("aria-expanded", String(!isCollapsed));
+		for (const divider of candidate.querySelectorAll(":scope > .assistant-body > .turn-final-divider")) {
+			divider.classList.remove("turn-terminal-divider");
+		}
 	});
 }
 
-function refreshAllTurnDividers() {
-	const turnDividers = [];
+function syncAssistantTurnPresentations() {
+	let turnArticles = [];
 	const finishTurn = () => {
-		turnDividers.forEach((divider, index) => {
-			divider.classList.toggle("turn-terminal-divider", index === turnDividers.length - 1);
-		});
-		turnDividers.length = 0;
+		syncAssistantTurnPresentation(turnArticles);
+		turnArticles = [];
 	};
+
 	for (const article of elements.messageColumn.children) {
 		if (article.classList.contains("user-message")) {
 			finishTurn();
 			continue;
 		}
-		if (article.classList.contains("assistant-message")) {
-			turnDividers.push(...article.querySelectorAll(":scope > .assistant-body > .turn-final-divider"));
-		}
+		if (article.classList.contains("assistant-message")) turnArticles.push(article);
 	}
 	finishTurn();
+}
+
+function setAssistantTurnCollapsed(article, isCollapsed, isActive = false) {
+	const turnArticles = getAssistantTurnArticles(article);
+	const primaryContainer = turnArticles
+		.map((candidate) => candidate.querySelector(":scope > .assistant-body > .cot-container"))
+		.find((container) => container && !container.classList.contains("cot-continuation"))
+		?? turnArticles[0]?.querySelector(":scope > .assistant-body > .cot-container");
+	if (primaryContainer) primaryContainer.dataset.turnCollapsedManual = String(isCollapsed);
+
+	for (const turnArticle of turnArticles) {
+		turnArticle.classList.toggle("assistant-turn-active", isActive);
+		const container = turnArticle.querySelector(":scope > .assistant-body > .cot-container");
+		if (container) container.classList.toggle("collapsed", isCollapsed);
+	}
+	syncAssistantTurnPresentation(turnArticles);
 }
 
 function updateOrCreateAssistantMessage(existingArticle, message, messages, index) {
@@ -1438,13 +2246,13 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 			elements.messageColumn.append(article);
 		}
 	}
-
 	const turnContext = analyzeAssistantTurn(message, messages, state.isStreaming);
 	const turnIsActive = isAssistantTurnActive(turnContext);
+	const turnIsStreaming = Boolean(state.isStreaming && turnContext.isCurrentTurn);
 	let turnShouldCollapse = turnContext.shouldCollapse;
-	article.classList.toggle("turn-intermediate-assistant", turnContext.hasCoT && turnContext.isIntermediate);
+	article.classList.toggle("assistant-turn-active", turnIsActive);
 	
-	if (typeof message.content === "string") {
+	if (typeof message.content === "string" && !turnIsStreaming) {
 		let textPart = body.querySelector(":scope > .assistant-text-part");
 		if (body.querySelector(":scope > .cot-container") || !textPart) {
 			body.replaceChildren();
@@ -1452,27 +2260,34 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 			textPart.className = "assistant-text-part animate-entrance";
 			body.append(textPart);
 		}
-		const newHtml = renderMarkdown(message.content);
-		if (textPart.innerHTML !== newHtml) {
-			textPart.innerHTML = newHtml;
-		}
+		renderAssistantText(textPart, message.content);
 		const hasFinalText = Boolean(message.content.trim()) && !isSubagentLaunchNotice(message.content);
 		reconcileAssistantFinalDivider(
 			body,
 			turnContext.hasCoT && turnContext.isFinalAssistant && hasFinalText,
 			textPart,
 		);
-		if (turnContext.hasCoT) setAssistantTurnCollapsed(article, turnShouldCollapse, turnIsActive);
 		return;
 	}
 	
-	if (!Array.isArray(message.content)) {
+	if (!Array.isArray(message.content) && typeof message.content !== "string") {
 		body.replaceChildren();
 		return;
 	}
 	
-	const { workItems, finalResponsePart } = getAssistantWorkLayout(message, messages, turnContext.isFinalAssistant);
-	const hasCoT = workItems.length > 0;
+	const { workItems, finalResponsePart } = getAssistantWorkLayout(
+		message,
+		messages,
+		turnContext.isFinalAssistant,
+		turnIsStreaming,
+	);
+	// update_plan is persisted and rendered by the dedicated Build checklist.
+	// Keep it out of generic tool-card rendering so hidden calls cannot produce
+	// an undefined DOM node during streaming or abort-time resynchronization.
+	const visibleWorkItems = workItems
+		.map((part, sourceIndex) => ({ part, sourceIndex }))
+		.filter(({ part }) => !(part.type === "toolCall" && part.name === "update_plan"));
+	const hasCoT = visibleWorkItems.length > 0;
 
 	if (!hasCoT) {
 		if (body.querySelector(":scope > .cot-container")
@@ -1487,15 +2302,12 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 		const existingTextParts = [...body.children].filter((child) => child.classList.contains("assistant-text-part"));
 		textParts.forEach((part, partIndex) => {
 				const existingTextDiv = existingTextParts[partIndex];
-				const newHtml = renderMarkdown(part.text);
 				if (existingTextDiv && existingTextDiv.classList.contains("assistant-text-part")) {
-					if (existingTextDiv.innerHTML !== newHtml) {
-						existingTextDiv.innerHTML = newHtml;
-					}
+					renderAssistantText(existingTextDiv, part.text);
 				} else {
 					const textDiv = document.createElement("div");
 					textDiv.className = "assistant-text-part animate-entrance";
-					textDiv.innerHTML = newHtml;
+					renderAssistantText(textDiv, part.text);
 					replaceOrAppendPart(body, textDiv, existingTextDiv);
 				}
 		});
@@ -1516,6 +2328,9 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 			
 			const cotHeader = document.createElement("div");
 			cotHeader.className = "cot-header-bar";
+			cotHeader.setAttribute("role", "button");
+			cotHeader.setAttribute("tabindex", "0");
+			cotHeader.setAttribute("aria-expanded", "true");
 
 			const cotTitle = document.createElement("span");
 			cotTitle.className = "cot-title";
@@ -1553,6 +2368,11 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 					article.classList.contains("assistant-turn-active"),
 				);
 			});
+			cotHeader.addEventListener("keydown", (event) => {
+				if (event.key !== "Enter" && event.key !== " ") return;
+				event.preventDefault();
+				cotHeader.click();
+			});
 		}
 
 		// One visible work header per user turn. Plain assistant/status messages and
@@ -1562,27 +2382,11 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 		const cotHeader = cotContainer.querySelector(".cot-header-bar");
 		if (cotHeader) {
 			cotHeader.style.display = hideCotHeader ? "none" : "";
+			cotHeader.setAttribute("aria-expanded", String(!turnShouldCollapse));
 		}
-
-function getWorkItemKey(part, index) {
-	if (part.type === "subagentCard") {
-		return part.part?.id || `subagent_${part.progress?.jobId || index}`;
-	}
-	if (part.type === "toolCall") {
-		return part.id || `tool_${part.name}_${index}`;
-	}
-	if (part.type === "thinking") {
-		return part.id || `thinking_${index}`;
-	}
-	if (part.type === "text") {
-		return part.id || `text_${index}`;
-	}
-	return `work_${part.type}_${index}`;
-}
-
+		const isWorking = isAssistantTurnActive(turnContext);
 		const cotTitle = cotContainer.querySelector(".cot-title");
 		if (cotTitle) {
-			const isWorking = isAssistantTurnActive(turnContext);
 			const duration = getThinkingDuration(message, messages);
 			const newTitleText = isWorking
 				? (duration !== undefined ? `Working for ${duration}s` : "Working...")
@@ -1601,6 +2405,8 @@ function getWorkItemKey(part, index) {
 			}
 		}
 
+		if (cotContainer.dataset.turnCollapsedManual === "true") turnShouldCollapse = true;
+		if (cotContainer.dataset.turnCollapsedManual === "false") turnShouldCollapse = false;
 		cotContainer.classList.toggle("collapsed", turnShouldCollapse);
 		const cotBody = cotContainer.querySelector(".cot-content-inner");
 		cotContainer.classList.toggle("cot-continuation", hideCotHeader);
@@ -1613,23 +2419,67 @@ function getWorkItemKey(part, index) {
 
 		const currentKeys = new Set();
 
-		for (let index = 0; index < workItems.length; index += 1) {
-			const part = workItems[index];
-			const key = getWorkItemKey(part, index);
+		for (let index = 0; index < visibleWorkItems.length; index += 1) {
+			const { part, sourceIndex } = visibleWorkItems[index];
+			const key = getWorkItemKey(part, sourceIndex);
 			currentKeys.add(key);
 
 			let itemEl = existingKeyMap.get(key);
 
 			if (part.type === "thinking" && part.thinking) {
 				const newHtml = renderMarkdown(part.thinking);
-				if (!itemEl) {
+				// A hidden update_plan still ends preceding thoughts. Use the source
+				// position, not filtered index, so Build plan updates do not leave
+				// an already-finished thought segment expanded while the tool runs.
+				const thoughtIsActive = isWorking && sourceIndex === workItems.length - 1;
+				const thoughtTiming = resolveThoughtSegmentTiming(message, part, key, thoughtIsActive);
+				if (!itemEl || !itemEl.classList.contains("cot-thoughts-group")) {
+					const previousItem = itemEl;
 					itemEl = document.createElement("div");
-					itemEl.className = "cot-thinking animate-entrance";
+					itemEl.className = `cot-thoughts-group${thoughtIsActive ? "" : " collapsed"} animate-entrance`;
 					itemEl.dataset.partKey = key;
-					itemEl.innerHTML = newHtml;
+					itemEl.dataset.thoughtTimerKey = thoughtTiming.timerKey;
+
+					const thoughtsToggle = document.createElement("button");
+					thoughtsToggle.type = "button";
+					thoughtsToggle.className = "cot-thoughts-toggle";
+					thoughtsToggle.setAttribute("aria-expanded", String(thoughtIsActive));
+					thoughtsToggle.setAttribute("aria-label", uiText("thoughts"));
+					const thoughtsLabel = document.createElement("span");
+					thoughtsLabel.className = "cot-thoughts-label";
+					thoughtsLabel.textContent = uiText("thoughts");
+					const thoughtsDuration = document.createElement("span");
+					thoughtsDuration.className = "cot-thoughts-duration";
+					thoughtsDuration.textContent = thoughtTiming.durationText;
+					const thoughtsChevron = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+					thoughtsChevron.innerHTML = '<use href="#i-chevron"/>';
+					thoughtsChevron.setAttribute("class", "cot-thoughts-chevron");
+					thoughtsToggle.append(thoughtsLabel, thoughtsDuration, thoughtsChevron);
+
+					const thoughtsBody = document.createElement("div");
+					thoughtsBody.className = "cot-thinking";
+					thoughtsBody.innerHTML = newHtml;
+					itemEl.append(thoughtsToggle, thoughtsBody);
+					thoughtsToggle.addEventListener("click", () => {
+						itemEl.dataset.thoughtsManual = "true";
+						itemEl.classList.toggle("collapsed");
+						thoughtsToggle.setAttribute("aria-expanded", String(!itemEl.classList.contains("collapsed")));
+					});
+					if (previousItem) previousItem.replaceWith(itemEl);
 				} else {
-					if (itemEl.innerHTML !== newHtml) {
-						itemEl.innerHTML = newHtml;
+					itemEl.dataset.thoughtTimerKey = thoughtTiming.timerKey;
+					const thoughtsBody = itemEl.querySelector(":scope > .cot-thinking");
+					if (thoughtsBody && thoughtsBody.innerHTML !== newHtml) {
+						thoughtsBody.innerHTML = newHtml;
+					}
+					if (itemEl.dataset.thoughtsManual !== "true") {
+						itemEl.classList.toggle("collapsed", !thoughtIsActive);
+					}
+					const thoughtsToggle = itemEl.querySelector(":scope > .cot-thoughts-toggle");
+					thoughtsToggle?.setAttribute("aria-expanded", String(!itemEl.classList.contains("collapsed")));
+					const thoughtsDuration = itemEl.querySelector(":scope > .cot-thoughts-toggle > .cot-thoughts-duration");
+					if (thoughtsDuration && thoughtsDuration.textContent !== thoughtTiming.durationText) {
+						thoughtsDuration.textContent = thoughtTiming.durationText;
 					}
 					itemEl.classList.remove("animate-entrance");
 				}
@@ -1747,6 +2597,7 @@ function getWorkItemKey(part, index) {
 					}
 				} else {
 					itemEl = renderToolCallBlock(part, message, messages);
+					if (!itemEl) continue;
 					itemEl.dataset.partKey = key;
 					itemEl.classList.add("animate-entrance");
 				}
@@ -1775,15 +2626,12 @@ function getWorkItemKey(part, index) {
 		if (finalResponsePart) {
 			if (finalResponsePart.text) {
 				const cleanText = (finalResponsePart.text || "").trimStart();
-				const newHtml = renderMarkdown(cleanText);
 				if (finalResponseEl && finalResponseEl.classList.contains("assistant-text-part")) {
-					if (finalResponseEl.innerHTML !== newHtml) {
-						finalResponseEl.innerHTML = newHtml;
-					}
+					renderAssistantText(finalResponseEl, cleanText);
 				} else {
 					const textDiv = document.createElement("div");
 					textDiv.className = "assistant-text-part animate-entrance";
-					textDiv.innerHTML = newHtml;
+					renderAssistantText(textDiv, cleanText);
 					if (finalResponseEl) {
 						body.replaceChild(textDiv, finalResponseEl);
 					} else {
@@ -1807,8 +2655,6 @@ function getWorkItemKey(part, index) {
 			finalResponseEl,
 		);
 	}
-
-	if (turnContext.hasCoT) setAssistantTurnCollapsed(article, turnShouldCollapse, turnIsActive);
 
 	// Render error message if present
 	let errorEl = body.querySelector(".assistant-error-message");
@@ -1837,42 +2683,98 @@ function replaceOrAppendPart(parent, newChild, existingChild) {
 	}
 }
 
+function formatSubagentDuration(durationMs) {
+	if (!Number.isFinite(durationMs) || durationMs < 0) return "";
+	if (durationMs < 1_000) return `${Math.max(1, Math.round(durationMs))}ms`;
+	if (durationMs < 60_000) return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)}s`;
+	const totalSeconds = Math.round(durationMs / 1_000);
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	return `${minutes}m ${seconds}s`;
+}
+
 function renderSubagentCompletionCard(item) {
 	const args = typeof item.part?.arguments === "object" && item.part.arguments !== null ? item.part.arguments : {};
 	const running = item.progress.state === "running";
 	const failed = item.progress.state === "failed";
 	const card = document.createElement("div");
-	card.className = `subagent-completion-card${running ? " running" : ""}${failed ? " failed" : ""}`;
+	card.className = `tool-card subagent-tool-card collapsed${running ? " running" : ""}${failed ? " failed" : ""}`;
 	card.dataset.jobId = item.progress.jobId;
 	card.dataset.state = item.progress.state;
 
-	const iconBox = document.createElement("span");
-	iconBox.className = "subagent-completion-icon";
+	const header = document.createElement("div");
+	header.className = "tool-header-bar subagent-tool-header";
+	header.setAttribute("role", "button");
+	header.setAttribute("tabindex", "0");
+	header.setAttribute("aria-expanded", "false");
+	header.setAttribute("aria-label", `${uiText("subagentTask")}: ${String(args.title || uiText("subagentTask"))}`);
+
 	const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 	icon.innerHTML = '<use href="#i-branch"/>';
-	iconBox.append(icon);
+	icon.setAttribute("class", "tool-icon");
 
-	const copy = document.createElement("span");
-	copy.className = "subagent-completion-copy";
-	const title = document.createElement("strong");
+	const title = document.createElement("span");
+	title.className = "tool-name";
 	title.textContent = String(args.title || uiText("subagentTask"));
-	const meta = document.createElement("small");
-	meta.textContent = `Subagent · ${item.progress.jobId}`;
-	copy.append(title, meta);
+
+	const duration = formatSubagentDuration(item.progress.durationMs);
+	const durationEl = document.createElement("span");
+	durationEl.className = "tool-duration";
+	durationEl.textContent = duration;
 
 	const status = document.createElement("span");
-	status.className = "subagent-completion-status";
+	status.className = "subagent-tool-status";
+	status.setAttribute("aria-live", "polite");
+	if (!running && !failed) {
+		const statusIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+		statusIcon.innerHTML = '<use href="#i-check"/>';
+		status.append(statusIcon);
+	}
 	const statusText = document.createElement("span");
 	statusText.textContent = uiText(running ? "subagentRunning" : failed ? "subagentFailed" : "subagentCompleted");
-	if (running) {
-		status.append(statusText);
-	} else {
-		const statusIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-		statusIcon.innerHTML = `<use href="#${failed ? "i-more" : "i-check"}"/>`;
-		status.append(statusIcon, statusText);
-	}
+	status.append(statusText);
 
-	card.append(iconBox, copy, status);
+	const chevron = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	chevron.innerHTML = '<use href="#i-chevron"/>';
+	chevron.setAttribute("class", "tool-chevron");
+	header.append(icon, title, durationEl, status, chevron);
+
+	const details = document.createElement("div");
+	details.className = "tool-details-body subagent-tool-details";
+	const taskTitle = document.createElement("div");
+	taskTitle.className = "tool-section-title";
+	taskTitle.textContent = uiText("subagentTaskDetail");
+
+	const task = document.createElement("p");
+	task.className = "subagent-tool-task";
+	task.textContent = String(args.task || uiText("subagentTaskDetail"));
+	task.title = String(args.task || "");
+
+	const meta = document.createElement("div");
+	meta.className = "subagent-tool-meta";
+	const mode = document.createElement("span");
+	mode.textContent = uiText("subagentBackground");
+	const job = document.createElement("code");
+	job.textContent = `ID #${item.progress.jobId}`;
+	meta.append(mode, job);
+	if (duration) {
+		const elapsed = document.createElement("span");
+		elapsed.className = "subagent-tool-duration";
+		elapsed.textContent = uiText("subagentDuration", { duration });
+		meta.append(elapsed);
+	}
+	details.append(taskTitle, task, meta);
+	card.append(header, details);
+
+	header.addEventListener("click", () => {
+		card.classList.toggle("collapsed");
+		header.setAttribute("aria-expanded", String(!card.classList.contains("collapsed")));
+	});
+	header.addEventListener("keydown", (event) => {
+		if (event.key !== "Enter" && event.key !== " ") return;
+		event.preventDefault();
+		header.click();
+	});
 	return card;
 }
 
@@ -1880,8 +2782,10 @@ function renderComposerStatusRow(messages = state.messages) {
 	if (!elements.composerStatusRow || !elements.projectSwitchCapsule) return;
 	const hasUserMessage = Array.isArray(messages) && messages.some((message) => message?.role === "user");
 	if (hasUserMessage) state.hasSubmittedMessage = true;
-	const showProjectSwitch = !state.hasSubmittedMessage && !hasUserMessage;
-	elements.composerStatusRow.classList.toggle("new-conversation", showProjectSwitch);
+	const showProjectSwitch = state.projects.length > 0;
+	elements.composerStatusRow.classList.toggle("has-project-switch", showProjectSwitch);
+	elements.composerStatusRow.classList.remove("new-conversation");
+	elements.projectSwitcher.classList.toggle("hidden", !showProjectSwitch);
 	elements.projectSwitchCapsule.disabled = !showProjectSwitch;
 	elements.projectSwitchCapsule.tabIndex = showProjectSwitch ? 0 : -1;
 	elements.projectSwitchCapsule.setAttribute("aria-hidden", String(!showProjectSwitch));
@@ -1891,46 +2795,11 @@ function renderComposerStatusRow(messages = state.messages) {
 	if (!showProjectSwitch) setProjectSwitchMenuOpen(false);
 }
 
-function renderSubagentDock(messages = state.messages) {
-	if (!elements.subagentDock) return;
-	const runningIds = getRunningSubagentIds(messages, state.session?.runningSubagentIds);
-	const previousIds = new Set(state.subagentDockRunningIds || []);
-	const hasNewSubagent = runningIds.some((jobId) => !previousIds.has(jobId));
-	if (hasNewSubagent) state.subagentDockExpanded = true;
-	if (runningIds.length === 0) state.subagentDockExpanded = false;
-	state.subagentDockRunningIds = runningIds;
-
-	elements.subagentDock.classList.toggle("collapsed", !state.subagentDockExpanded);
-	elements.subagentDock.classList.toggle("running", runningIds.length > 0);
-	elements.subagentDockToggle.setAttribute("aria-expanded", String(state.subagentDockExpanded));
-	elements.subagentDockStatus.textContent = runningIds.length > 0
-		? uiText("subagentRunningCount", { count: runningIds.length })
-		: uiText("subagentNone");
-
-	const callsById = new Map(getSubagentToolCalls(messages).map((call) => [call.jobId, call.part]));
-	elements.subagentDockList.replaceChildren();
-	for (const jobId of runningIds) {
-		const part = callsById.get(jobId);
-		const args = typeof part?.arguments === "object" && part.arguments !== null ? part.arguments : {};
-		const item = document.createElement("div");
-		item.className = "subagent-dock-item";
-
-		const itemIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-		itemIcon.innerHTML = '<use href="#i-branch"/>';
-		const copy = document.createElement("span");
-		const title = document.createElement("strong");
-		title.textContent = String(args.title || uiText("subagentTask"));
-		const meta = document.createElement("small");
-		meta.textContent = `Subagent · ${jobId}`;
-		copy.append(title, meta);
-		const status = document.createElement("em");
-		status.textContent = uiText("subagentRunning");
-		item.append(itemIcon, copy, status);
-		elements.subagentDockList.append(item);
-	}
-}
-
 function renderToolCallBlock(part, message, messages) {
+	// Plan state has a dedicated, persistent card near the composer.
+	// Keep nullable return explicit: callers may receive filtered or unsupported tools
+	// during streaming resync and must never dereference an absent DOM node.
+	if (part.name === "update_plan") return null;
 	const container = document.createElement("div");
 	const status = getToolStatus(part, message, messages);
 	const isRunning = status === "Running" || status === "Pending" || status === "Awaiting Approval";
@@ -1939,6 +2808,9 @@ function renderToolCallBlock(part, message, messages) {
 
 	const header = document.createElement("div");
 	header.className = "tool-header-bar";
+	header.setAttribute("role", "button");
+	header.setAttribute("tabindex", "0");
+	header.setAttribute("aria-expanded", "false");
 
 	const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 	icon.innerHTML = `<use href="${getToolIconHref(part.name)}"/>`;
@@ -2017,6 +2889,12 @@ function renderToolCallBlock(part, message, messages) {
 
 	header.addEventListener("click", () => {
 		container.classList.toggle("collapsed");
+		header.setAttribute("aria-expanded", String(!container.classList.contains("collapsed")));
+	});
+	header.addEventListener("keydown", (event) => {
+		if (event.key !== "Enter" && event.key !== " ") return;
+		event.preventDefault();
+		header.click();
 	});
 
 	return container;
@@ -2027,11 +2905,32 @@ function appendAssistantMessage(message, messages, shouldScroll = true) {
 	if (shouldScroll) scrollMessagesToBottom();
 }
 
+function scheduleServerMessageRender() {
+	if (scheduledServerMessageRenderFrame) return;
+	scheduledServerMessageRenderFrame = requestAnimationFrame(() => {
+		scheduledServerMessageRenderFrame = undefined;
+		renderServerMessages(state.messages);
+	});
+}
+
+function flushServerMessageRender() {
+	if (scheduledServerMessageRenderFrame) {
+		cancelAnimationFrame(scheduledServerMessageRenderFrame);
+		scheduledServerMessageRenderFrame = undefined;
+	}
+	renderServerMessages(state.messages);
+}
+
 function renderServerMessages(messages = []) {
+	refreshConversationTokenTrail(messages);
 	renderComposerStatusRow(messages);
-	renderSubagentDock(messages);
 	let visible = 0;
 	const activeMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+	const currentTurnStart = activeMessages.findLastIndex((message) => message.role === "user");
+	const hasActiveWork = state.isStreaming || (Array.isArray(state.session?.runningSubagentIds)
+		&& state.session.runningSubagentIds.length > 0);
+	const stableThroughIndex = hasActiveWork ? currentTurnStart : activeMessages.length - 1;
+	const renderLanguage = resolveUiLanguage();
 	
 	while (elements.messageColumn.children.length > activeMessages.length) {
 		elements.messageColumn.lastElementChild.remove();
@@ -2039,6 +2938,15 @@ function renderServerMessages(messages = []) {
 	
 	activeMessages.forEach((message, index) => {
 		const existingArticle = elements.messageColumn.children[index];
+		const expectedClass = message.role === "user" ? "user-message" : "assistant-message";
+		if (index <= stableThroughIndex
+			&& existingArticle?.classList.contains(expectedClass)
+			&& existingArticle.metisRenderedMessage === message
+			&& existingArticle.metisRenderedLanguage === renderLanguage
+			&& (index < currentTurnStart || existingArticle.metisRenderedStreaming === state.isStreaming)) {
+			visible += 1;
+			return;
+		}
 		
 		if (message.role === "user") {
 			const rawText = extractMessageText(message);
@@ -2122,30 +3030,60 @@ function renderServerMessages(messages = []) {
 			visible += 1;
 			updateOrCreateAssistantMessage(existingArticle, message, messages, index);
 		}
+
+		const renderedArticle = elements.messageColumn.children[index];
+		if (renderedArticle?.classList.contains(expectedClass)) {
+			renderedArticle.metisRenderedMessage = message;
+			renderedArticle.metisRenderedLanguage = renderLanguage;
+			renderedArticle.metisRenderedStreaming = state.isStreaming;
+		}
 	});
 
-	refreshAllTurnDividers();
+	syncAssistantTurnPresentations();
 	
-	if (!visible) renderEmptyState(true);
-	else scrollMessagesToBottom(false);
+	if (!visible) {
+		renderEmptyState(true);
+	} else {
+		const isLeavingEmpty = elements.conversationPane?.classList.contains("is-leaving-empty");
+		elements.conversationPane?.classList.remove("is-empty-state");
+		if (!isLeavingEmpty) {
+			elements.conversationPane?.classList.remove("is-leaving-empty");
+		}
+		if (elements.emptyState?.isConnected) elements.emptyState.remove();
+		scrollMessagesToBottom(false);
+	}
 }
 
 function refreshWorkTimerTitles() {
 	const hasRunningSubagent = Array.isArray(state.session?.runningSubagentIds)
 		&& state.session.runningSubagentIds.length > 0;
-	if (!state.isStreaming && !hasRunningSubagent) return;
+	const isAgentActive = state.isStreaming || hasRunningSubagent;
+	for (const group of document.querySelectorAll(".cot-thoughts-group[data-thought-timer-key]")) {
+		const timing = state.thoughtSegmentTimings?.[group.dataset.thoughtTimerKey];
+		if (!timing || timing.durationMs !== undefined || !Number.isFinite(timing.startedAt)) continue;
+		const elapsedMs = Math.max(0, Date.now() - timing.startedAt);
+		if (!isAgentActive) timing.durationMs = Math.max(100, elapsedMs);
+		const duration = group.querySelector(":scope > .cot-thoughts-toggle > .cot-thoughts-duration");
+		if (!duration) continue;
+		const nextDuration = formatThoughtSegmentDuration(timing.durationMs ?? elapsedMs);
+		if (duration.textContent !== nextDuration) duration.textContent = nextDuration;
+	}
+	if (!isAgentActive) return;
 	const activeMessages = state.messages.filter((message) => message.role === "user" || message.role === "assistant");
-	activeMessages.forEach((message, index) => {
-		if (message.role !== "assistant") return;
+	const currentTurnStart = activeMessages.findLastIndex((message) => message.role === "user");
+	for (let index = currentTurnStart + 1; index < activeMessages.length; index += 1) {
+		const message = activeMessages[index];
+		if (message.role !== "assistant") continue;
 		const article = elements.messageColumn.children[index];
 		const title = article?.querySelector(".cot-title");
-		if (!title) return;
+		if (!title) continue;
 		const turnContext = analyzeAssistantTurn(message, state.messages, state.isStreaming);
-		if (!isAssistantTurnActive(turnContext)) return;
+		if (!isAssistantTurnActive(turnContext)) continue;
 		const duration = getThinkingDuration(message, state.messages);
-		title.textContent = duration !== undefined ? uiText("workingForSeconds", { duration }) : uiText("working");
+		const nextTitle = duration !== undefined ? uiText("workingForSeconds", { duration }) : uiText("working");
+		if (title.textContent !== nextTitle) title.textContent = nextTitle;
 		title.classList.add("working-shimmer");
-	});
+	}
 }
 
 function modelLabel(model) {
@@ -2242,7 +3180,7 @@ function previewThinkingLevel(index) {
 			const colorNoise = (pseudoRandom(cellIndex) - 0.5) * 0.22;
 			const baseFactor = headColumn === 0 ? 1 : Math.min(1, c / headColumn);
 			const factor = Math.max(0, Math.min(1, baseFactor + colorNoise));
-			const bg = interpolateColor("#bbf7d0", "#166534", factor);
+			const bg = interpolateColor("#d8d9d7", "#505456", factor);
 			cell.style.backgroundColor = bg;
 			cell.classList.add("active");
 		} else {
@@ -2268,7 +3206,7 @@ function previewThinkingLevel(index) {
 		const duration = 0.55;
 		const particleCount = 27;
 
-		const colors = ["#86efac", "#4ade80", "#22c55e", "#166534", "#15803d"];
+		const colors = ["#d8d9d7", "#b7b9b7", "#949796", "#707476", "#505456"];
 
 		for (let i = 0; i < particleCount; i += 1) {
 			const p = document.createElement("span");
@@ -2314,19 +3252,226 @@ function nearestThinkingStepIndex(clientX) {
 	return Math.round(ratio * Math.max(0, levels.length - 1));
 }
 
+function positionModelMenu() {
+	if (!elements.modelPicker?.classList.contains("open") || !elements.modelMenu) return;
+	const triggerRect = elements.modelTrigger.getBoundingClientRect();
+	const menuRect = elements.modelMenu.getBoundingClientRect();
+	const viewportPadding = 12;
+	const rightOverflow = Math.max(0, triggerRect.left + menuRect.width - (window.innerWidth - viewportPadding));
+	const leftOverflow = Math.max(0, viewportPadding - (triggerRect.left - rightOverflow));
+	const shiftX = leftOverflow - rightOverflow;
+	elements.modelMenu.style.setProperty("--model-menu-shift-x", `${Math.round(shiftX)}px`);
+}
+
 function setModelMenuOpen(open, { focusSelected = false } = {}) {
 	const nextOpen = Boolean(open && !elements.modelTrigger.disabled);
 	elements.modelPicker.classList.toggle("open", nextOpen);
 	elements.modelTrigger.setAttribute("aria-expanded", String(nextOpen));
 	elements.modelMenu.setAttribute("aria-hidden", String(!nextOpen));
 	if (!nextOpen) elements.modelPicker.classList.remove("advanced-open");
-	if (nextOpen && focusSelected) {
-		requestAnimationFrame(() => elements.modelOptions.querySelector('[aria-selected="true"]')?.focus());
+	if (nextOpen) {
+		requestAnimationFrame(() => {
+			positionModelMenu();
+			if (focusSelected) elements.modelOptions.querySelector('[aria-selected="true"]')?.focus();
+		});
+	}
+}
+
+function workflowModeLabel(mode) {
+	return mode === "plan" ? uiText("workflowPlanMode") : uiText("workflowBuildMode");
+}
+
+function setWorkflowMenuOpen(_open, { focusSelected = false } = {}) {
+	if (!elements.workflowPicker || !elements.workflowTrigger) return;
+	elements.workflowPicker.classList.add("open");
+	elements.workflowTrigger.setAttribute("aria-expanded", "true");
+	elements.workflowMenu?.setAttribute("aria-hidden", "false");
+	if (focusSelected) {
+		requestAnimationFrame(() => elements.workflowMenu?.querySelector('[aria-checked="true"]')?.focus());
+	}
+}
+
+function renderWorkflowControls() {
+	if (!elements.workflowTrigger || !elements.workflowTriggerLabel) return;
+	const mode = state.session?.collaborationMode === "build" ? "build" : "plan";
+	const busy = Boolean(state.session?.isStreaming || state.session?.isCompacting);
+	const connected = Boolean(state.serverConnected && state.session);
+	elements.workflowTriggerLabel.textContent = workflowModeLabel(mode);
+	elements.workflowTrigger.disabled = !connected || busy;
+	const modeDescription = mode === "plan" ? uiText("workflowPlanDescription") : uiText("workflowBuildDescription");
+	const availability = busy ? uiText("workflowBusy") : modeDescription;
+	elements.workflowTrigger.title = availability;
+	elements.workflowTrigger.setAttribute("aria-label", `${workflowModeLabel(mode)}. ${availability}`);
+	elements.workflowPicker.classList.toggle("plan", mode === "plan");
+	elements.workflowMenu?.querySelectorAll("[data-workflow-mode]").forEach((option) => {
+		const optionMode = option.dataset.workflowMode;
+		const selected = optionMode === mode;
+		option.setAttribute("aria-checked", String(selected));
+		option.disabled = !connected || busy;
+		const title = option.querySelector("strong");
+		const description = option.querySelector("small");
+		if (title) title.textContent = workflowModeLabel(optionMode);
+		if (description) description.textContent = optionMode === "plan" ? uiText("workflowPlanDescription") : uiText("workflowBuildDescription");
+	});
+	if (elements.settingsCollaborationModeSelect) {
+		elements.settingsCollaborationModeSelect.value = mode;
+		elements.settingsCollaborationModeSelect.disabled = !connected || busy;
+	}
+	setWorkflowMenuOpen(true);
+	updateProposedPlanControls();
+}
+
+function normalizeWorkflowPlan(raw) {
+	if (!raw || typeof raw !== "object") return undefined;
+	const updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString();
+	if (typeof raw.plan === "string") return { plan: [], legacyMarkdown: raw.plan, updatedAt };
+	if (!Array.isArray(raw.plan)) return undefined;
+	const plan = raw.plan.filter((item) => item && typeof item.step === "string" && ["pending", "in_progress", "completed"].includes(item.status));
+	return {
+		explanation: typeof raw.explanation === "string" ? raw.explanation : undefined,
+		plan,
+		updatedAt,
+		legacyMarkdown: typeof raw.legacyMarkdown === "string" ? raw.legacyMarkdown : undefined,
+		taskId: typeof raw.taskId === "string" ? raw.taskId : undefined,
+		proposalRevision: typeof raw.proposalRevision === "number" ? raw.proposalRevision : undefined,
+		phase: ["reading_proposal", "creating_checklist", "active"].includes(raw.phase) ? raw.phase : undefined,
+	};
+}
+
+function renderWorkflowPlanCard() {
+	if (!elements.workflowPlanCard || !elements.workflowPlanBody || !elements.workflowPlanProgress) return;
+	const workflowPlan = normalizeWorkflowPlan(state.session?.workflowPlan);
+	const isPlanMode = state.session?.collaborationMode === "plan";
+	const lastAssistant = [...(state.messages || [])].reverse().find((message) => message?.role === "assistant");
+	const interrupted = !state.isStreaming && lastAssistant?.stopReason === "aborted";
+	const title = document.querySelector("#workflowPlanTitle");
+	if (title) title.textContent = uiText("workflowPlanTitle");
+	// The persistent checklist belongs to Build execution. Conversational Plan
+	// mode ends with a proposed plan in the assistant response, never a TODO card.
+	if (isPlanMode || !workflowPlan) {
+		elements.workflowPlanCard.classList.add("hidden");
+		elements.workflowPlanCard.classList.remove("empty", "completed", "collapsed", "interrupted");
+		elements.workflowPlanBody.replaceChildren();
+		return;
+	}
+	const completed = workflowPlan?.plan.filter((item) => item.status === "completed").length ?? 0;
+	const done = Boolean(workflowPlan?.plan.length && completed === workflowPlan.plan.length);
+	const completionKey = done ? (workflowPlan.taskId || workflowPlan.updatedAt) : undefined;
+	if (completionKey && state.workflowPlanAutoCollapsedKey !== completionKey) {
+		state.workflowPlanCollapsed = true;
+		state.workflowPlanAutoCollapsedKey = completionKey;
+	} else if (!done) {
+		state.workflowPlanAutoCollapsedKey = undefined;
+	}
+	elements.workflowPlanCard.classList.remove("hidden");
+	elements.workflowPlanCard.classList.toggle("empty", !workflowPlan?.plan.length);
+	elements.workflowPlanCard.classList.toggle("completed", done);
+	elements.workflowPlanCard.classList.toggle("interrupted", interrupted);
+	elements.workflowPlanCard.classList.toggle("collapsed", Boolean(state.workflowPlanCollapsed));
+	elements.workflowPlanToggle?.setAttribute("aria-expanded", String(!state.workflowPlanCollapsed));
+	const progress = workflowPlan?.phase === "reading_proposal"
+		? uiText("workflowPlanReadingProposal")
+		: workflowPlan?.phase === "creating_checklist"
+			? uiText("workflowPlanCreatingChecklist")
+			: workflowPlan?.plan.length
+		? uiText("workflowPlanProgress", { completed, total: workflowPlan.plan.length })
+		: workflowPlan?.legacyMarkdown
+			? uiText("workflowPlanLegacy")
+			: uiText("workflowPlanEmpty");
+	elements.workflowPlanProgress.textContent = interrupted
+		? `${uiText("workflowPlanInterrupted")} · ${progress}`
+		: progress;
+	elements.workflowPlanBody.replaceChildren();
+	if (workflowPlan?.explanation) {
+		const explanation = document.createElement("p");
+		explanation.className = "workflow-plan-explanation";
+		explanation.textContent = workflowPlan.explanation;
+		elements.workflowPlanBody.append(explanation);
+	}
+	if (workflowPlan?.legacyMarkdown) {
+		const legacy = document.createElement("pre");
+		legacy.className = "workflow-plan-legacy";
+		legacy.textContent = workflowPlan.legacyMarkdown;
+		elements.workflowPlanBody.append(legacy);
+	} else if (workflowPlan?.plan.length) {
+		const list = document.createElement("ol");
+		list.className = "workflow-plan-steps";
+		for (const item of workflowPlan.plan) {
+			const row = document.createElement("li");
+			row.dataset.status = item.status;
+			const marker = document.createElement("span");
+			marker.className = "workflow-plan-marker";
+			marker.setAttribute("aria-hidden", "true");
+			const label = document.createElement("span");
+			label.textContent = item.step;
+			row.append(marker, label);
+			list.append(row);
+		}
+		elements.workflowPlanBody.append(list);
+	} else {
+		const empty = document.createElement("p");
+		empty.className = "workflow-plan-empty";
+		empty.textContent = progress;
+		elements.workflowPlanBody.append(empty);
+	}
+}
+
+function renderInstructionSources() {
+	if (!elements.instructionSources) return;
+	elements.instructionSources.replaceChildren();
+	const sources = Array.isArray(state.session?.instructionSources) ? state.session.instructionSources : [];
+	if (!sources.length) {
+		const empty = document.createElement("p");
+		empty.className = "instruction-sources-empty";
+		empty.textContent = uiText("instructionSourcesEmpty");
+		elements.instructionSources.append(empty);
+	} else {
+		for (const source of sources) {
+			const row = document.createElement("div");
+			row.className = "instruction-source-row";
+			const details = document.createElement("span");
+			const title = document.createElement("strong");
+			title.textContent = `${source.channel}: ${source.source}`;
+			const meta = document.createElement("small");
+			meta.textContent = `${source.byteCount.toLocaleString()} B${source.truncated ? ` · ${uiText("instructionTruncated")}` : ""}`;
+			details.append(title, meta);
+			const trust = document.createElement("b");
+			trust.className = "instruction-trust";
+			trust.textContent = source.trust;
+			row.append(details, trust);
+			elements.instructionSources.append(row);
+		}
+	}
+	for (const diagnostic of state.session?.instructionDiagnostics || []) {
+		const warning = document.createElement("p");
+		warning.className = "instruction-source-warning";
+		warning.textContent = diagnostic;
+		elements.instructionSources.append(warning);
+	}
+}
+
+async function changeCollaborationMode(mode, feedbackElement) {
+	if (!state.serverConnected || !state.session || (mode !== "build" && mode !== "plan")) return false;
+	setWorkflowMenuOpen(false);
+	try {
+		state.session = await requestServer("/session/collaboration-mode", "PUT", { mode });
+		state.workflowPlanCollapsed = false;
+		renderWorkflowControls();
+		renderWorkflowPlanCard();
+		updateProposedPlanControls();
+		renderInstructionSources();
+		renderPreferencesControls();
+		if (feedbackElement) setPreferencesFeedback(feedbackElement, uiText("workflowApplied"));
+		return true;
+	} catch (error) {
+		renderWorkflowControls();
+		if (feedbackElement) setPreferencesFeedback(feedbackElement, error.message, true);
+		else appendAssistantNotice(error.message, uiText("workflowChangeFailed"));
+		return false;
 	}
 }
 
 function updateModelSelect() {
-	renderSettingsAgentControls();
 	elements.modelOptions.replaceChildren();
 	if (!state.models.length) {
 		elements.modelTriggerLabel.textContent = state.serverConnected ? uiText("noModels") : uiText("loadModelsAfterConnect");
@@ -2346,10 +3491,10 @@ function updateModelSelect() {
 		option.dataset.index = String(index);
 		option.setAttribute("role", "option");
 		option.setAttribute("aria-selected", String(selected));
+		option.append(icon("cpu", "model-option-icon"));
 		const label = document.createElement("span");
 		label.textContent = modelLabel(model);
 		option.append(label);
-		if (selected) option.append(icon("check"));
 		option.addEventListener("click", () => void changeModel(index));
 		elements.modelOptions.append(option);
 	});
@@ -2385,18 +3530,19 @@ function updateModelSelect() {
 	}
 }
 
-function updateLocalFollowUpQueue(messages) {
+function applyQueueSnapshot(snapshot) {
 	if (!state.session) return;
-	state.session.followUpMessages = [...messages];
-	state.session.pendingMessageCount = (state.session.steeringMessages?.length || 0) + messages.length;
+	if (Array.isArray(snapshot?.steeringMessages)) state.session.steeringMessages = [...snapshot.steeringMessages];
+	if (Array.isArray(snapshot?.followUpMessages)) state.session.followUpMessages = [...snapshot.followUpMessages];
+	state.session.pendingMessageCount = Number.isInteger(snapshot?.pendingMessageCount)
+		? snapshot.pendingMessageCount
+		: (state.session.steeringMessages?.length || 0) + (state.session.followUpMessages?.length || 0);
 	renderMessageQueue();
 }
 
 async function removeFollowUpFromQueue(index, { restore = false } = {}) {
 	const result = await requestServer("/session/queue", "DELETE", { queue: "followUp", index });
-	const current = Array.isArray(state.session?.followUpMessages) ? [...state.session.followUpMessages] : [];
-	current.splice(index, 1);
-	updateLocalFollowUpQueue(current);
+	applyQueueSnapshot(result);
 
 	if (!restore || !result?.message) return;
 	const queued = result.message;
@@ -2418,69 +3564,101 @@ async function removeFollowUpFromQueue(index, { restore = false } = {}) {
 }
 
 async function promoteFollowUp(index) {
-	await requestServer("/session/queue/promote", "POST", { index });
-	const current = Array.isArray(state.session?.followUpMessages) ? [...state.session.followUpMessages] : [];
-	current.splice(index, 1);
-	updateLocalFollowUpQueue(current);
+	const result = await requestServer("/session/queue/promote", "POST", { index });
+	applyQueueSnapshot(result);
+}
+
+async function runQueueOperation(index, operation) {
+	if (state.queueOperation) return;
+	state.queueOperation = { index, operation };
+	state.queueOperationFeedback = "";
+	renderMessageQueue();
+	try {
+		await operation();
+	} catch (error) {
+		state.queueOperationFeedback = `${uiText("queueOperationFailed")}: ${error.message}`;
+	} finally {
+		state.queueOperation = undefined;
+		renderMessageQueue();
+	}
 }
 
 function renderMessageQueue() {
 	if (!elements.messageQueue) return;
 	const messages = Array.isArray(state.session?.followUpMessages) ? state.session.followUpMessages : [];
 	elements.messageQueue.classList.toggle("hidden", messages.length === 0);
+	elements.messageQueue.setAttribute("aria-busy", String(Boolean(state.queueOperation)));
 	elements.messageQueueCount.textContent = String(messages.length);
 	elements.messageQueueList.replaceChildren();
+	if (elements.messageQueueFeedback) {
+		elements.messageQueueFeedback.textContent = state.queueOperationFeedback;
+		elements.messageQueueFeedback.classList.toggle("hidden", !state.queueOperationFeedback);
+	}
 
 	messages.forEach((message, index) => {
 		const item = document.createElement("div");
 		item.className = "message-queue-item";
+		item.setAttribute("role", "listitem");
+		item.classList.toggle("is-busy", state.queueOperation?.index === index);
+
+		const position = document.createElement("span");
+		position.className = "message-queue-position";
+		position.textContent = String(index + 1).padStart(2, "0");
+		position.setAttribute("aria-hidden", "true");
 
 		const text = document.createElement("div");
 		text.className = "message-queue-text";
 		text.textContent = message;
-		text.title = message;
 
 		const actions = document.createElement("div");
 		actions.className = "message-queue-actions";
 		const actionSpecs = [
-			{ name: "arrow-up", label: uiText("queuePromote"), run: () => promoteFollowUp(index) },
+			{ name: "arrow-up", label: uiText("queuePromote"), promote: true, run: () => promoteFollowUp(index) },
 			{ name: "edit", label: uiText("queueEdit"), run: () => removeFollowUpFromQueue(index, { restore: true }) },
-			{ name: "trash", label: uiText("queueDelete"), danger: true, run: () => removeFollowUpFromQueue(index) },
+			{ name: "trash", label: uiText("queueDelete"), destructive: true, run: () => removeFollowUpFromQueue(index) },
 		];
 		for (const spec of actionSpecs) {
 			const button = document.createElement("button");
 			button.type = "button";
-			button.className = `message-queue-action${spec.danger ? " danger" : ""}`;
+			button.className = `message-queue-action${spec.promote ? " promote" : ""}${spec.destructive ? " destructive" : ""}`;
 			button.setAttribute("aria-label", spec.label);
-			button.title = spec.label;
+			button.disabled = Boolean(state.queueOperation);
 			button.append(icon(spec.name));
-			button.addEventListener("click", () => {
-				button.disabled = true;
-				void spec.run().catch((error) => {
-					button.disabled = false;
-					appendAssistantNotice(error.message, uiText("queueOperationFailed"));
-				});
-			});
+			if (spec.promote) {
+				const label = document.createElement("span");
+				label.textContent = spec.label;
+				button.append(label);
+			}
+			button.addEventListener("click", () => void runQueueOperation(index, spec.run));
 			actions.append(button);
 		}
 
-		item.append(text, actions);
+		item.append(position, text, actions);
 		elements.messageQueueList.append(item);
 	});
 }
 
-function setStreamingState(active, label = uiText("agentWorking")) {
+function setStreamingState(active) {
+	const activeChanged = state.isStreaming !== active;
 	state.isStreaming = active;
-	elements.runState.classList.toggle("hidden", !active);
-	elements.runState.classList.toggle("active", active);
-	elements.runState.querySelector("span:last-child").textContent = label;
-	elements.sendButton.classList.toggle("stopping", active);
-	elements.sendButton.setAttribute("aria-label", uiText(active ? "stopGeneration" : "send"));
-	elements.sendButtonIcon.setAttribute("href", active ? "#i-stop" : "#i-send");
-	renderConversations();
-	renderMessageQueue();
-	applySettingsBusyState();
-	refreshAssistantTurnActivityState();
+	if (activeChanged) {
+		elements.sendButton.classList.toggle("stopping", active);
+		elements.sendButton.setAttribute("aria-label", uiText(active ? "stopGeneration" : "send"));
+		if (elements.sendButtonIcon) {
+			elements.sendButtonIcon.setAttribute("href", active ? "#i-stop" : "#i-send");
+		} else {
+			const fontAwesomeIcon = elements.sendButton.querySelector("i");
+			fontAwesomeIcon?.classList.toggle("fa-paper-plane", !active);
+			fontAwesomeIcon?.classList.toggle("fa-stop", active);
+		}
+	}
+	if (activeChanged) {
+		renderConversations();
+		renderMessageQueue();
+		renderWorkflowControls();
+		if (elements.settingsDialog?.open) renderPreferencesControls();
+		refreshAssistantTurnActivityState();
+	}
 }
 
 function refreshAssistantTurnActivityState() {
@@ -2492,16 +3670,185 @@ function refreshAssistantTurnActivityState() {
 	});
 }
 
-function setDreamStatus(statusText) {
-	const text = typeof statusText === "string" ? statusText.trim() : "";
-	state.dreamStatusText = text || undefined;
-	elements.dreamState.classList.toggle("hidden", !text);
-	elements.dreamState.classList.toggle("dreaming", /dreaming/i.test(text));
-	elements.dreamState.classList.toggle("failed", /failed|retry/i.test(text));
-	if (!text) return;
-	const key = /dreaming/i.test(text) ? "dreaming" : /retry/i.test(text) ? "dreamRetry" : /failed/i.test(text) ? "dreamFailed" : /done/i.test(text) ? "dreamDone" : /off/i.test(text) ? "dreamOff" : "dreamPending";
-	elements.dreamState.querySelector("span:last-child").textContent = uiText(key);
-	elements.dreamState.title = text;
+function dreamTokenDateKey(date) {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+}
+
+function dreamTokenCalendarDays(dailyTokens = {}, weekCount = 53, now = new Date()) {
+	const today = new Date(now);
+	today.setHours(12, 0, 0, 0);
+	const start = new Date(today);
+	start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - (weekCount - 1) * 7);
+	const todayKey = dreamTokenDateKey(today);
+	return Array.from({ length: weekCount * 7 }, (_value, index) => {
+		const date = new Date(start);
+		date.setDate(start.getDate() + index);
+		const key = dreamTokenDateKey(date);
+		return {
+			date: key,
+			totalTokens: Number(dailyTokens[key]) || 0,
+			future: key > todayKey,
+		};
+	});
+}
+
+function dreamTokenActivityStats(dailyTokens = {}) {
+	const activeEntries = Object.entries(dailyTokens)
+		.map(([date, tokens]) => [date, Number(tokens) || 0])
+		.filter(([, tokens]) => tokens > 0)
+		.sort(([left], [right]) => left.localeCompare(right));
+	return {
+		activeDays: activeEntries.length,
+		peakTokens: activeEntries.reduce((peak, [, tokens]) => Math.max(peak, tokens), 0),
+	};
+}
+
+function renderDreamTokenMonths(days, locale) {
+	const container = elements.dreamTokenMonths;
+	if (!container) return;
+	const signature = `${locale}|${days[0]?.date || "none"}|${days.at(-1)?.date || "none"}`;
+	if (container.dataset.signature === signature) return;
+	container.dataset.signature = signature;
+	container.replaceChildren();
+	let previousMonth = -1;
+	for (let week = 0; week < Math.ceil(days.length / 7); week += 1) {
+		const date = new Date(`${days[week * 7].date}T12:00:00`);
+		const month = date.getMonth();
+		if (month === previousMonth) continue;
+		previousMonth = month;
+		const label = document.createElement("span");
+		label.style.gridColumn = String(week + 1);
+		label.textContent = new Intl.DateTimeFormat(locale, { month: "short" }).format(date);
+		container.append(label);
+	}
+}
+
+function attachHeatmapProximity(grid) {
+	if (!grid || grid.dataset.hasProximity) return;
+	grid.dataset.hasProximity = "true";
+
+	let activeCells = new Set();
+	let currentCenterIndex = -1;
+
+	const clearScaling = () => {
+		if (activeCells.size === 0) return;
+		for (const cell of activeCells) {
+			cell.style.transform = "";
+			cell.style.zIndex = "";
+			cell.style.boxShadow = "";
+		}
+		activeCells.clear();
+		currentCenterIndex = -1;
+	};
+
+	const onPointerOver = (e) => {
+		const target = e.target;
+		if (!target || !target.classList.contains("dream-token-cell")) {
+			clearScaling();
+			return;
+		}
+
+		const children = grid.children;
+		const total = children.length;
+		if (total === 0) return;
+
+		const centerIndex = Array.prototype.indexOf.call(children, target);
+		if (centerIndex < 0 || centerIndex === currentCenterIndex) return;
+		currentCenterIndex = centerIndex;
+
+		const rows = 7;
+		const cols = Math.ceil(total / rows);
+		const centerCol = Math.floor(centerIndex / rows);
+		const centerRow = centerIndex % rows;
+
+		const nextActive = new Set();
+
+		target.style.transform = "scale(1.22)";
+		target.style.zIndex = "10";
+		target.style.boxShadow = "0 0 0 1px #f6f7f9, 0 2px 5px rgba(15, 23, 42, 0.16)";
+		nextActive.add(target);
+
+		for (let dc = -1; dc <= 1; dc += 1) {
+			for (let dr = -1; dr <= 1; dr += 1) {
+				if (dc === 0 && dr === 0) continue;
+				const c = centerCol + dc;
+				const r = centerRow + dr;
+				if (c < 0 || c >= cols || r < 0 || r >= rows) continue;
+				const idx = c * rows + r;
+				if (idx < 0 || idx >= total) continue;
+				const neighbor = children[idx];
+				if (!neighbor) continue;
+
+				neighbor.style.transform = "scale(1.06)";
+				neighbor.style.zIndex = "5";
+				neighbor.style.boxShadow = "0 0 0 0.8px #f6f7f9, 0 1px 3px rgba(15, 23, 42, 0.08)";
+				nextActive.add(neighbor);
+			}
+		}
+
+		for (const cell of activeCells) {
+			if (!nextActive.has(cell)) {
+				cell.style.transform = "";
+				cell.style.zIndex = "";
+				cell.style.boxShadow = "";
+			}
+		}
+
+		activeCells = nextActive;
+	};
+
+	grid.addEventListener("mouseover", onPointerOver);
+	grid.addEventListener("mouseleave", clearScaling);
+}
+
+function renderDreamTokenActivity(project = activeProject()) {
+	const grid = elements.dreamTokenHeatmap;
+	const totalElement = elements.dreamTokenTotal;
+	if (!grid || !totalElement) return;
+	attachHeatmapProximity(grid);
+	if (state.hasSubmittedMessage) return;
+	const dailyTokens = project?.tokenActivity?.dailyTokens || {};
+	const fallbackTotal = (project?.conversations || []).reduce((total, conversation) => total + (Number(conversation.tokenTotal) || 0), 0);
+	const tokenTotal = Number(project?.tokenActivity?.tokenTotal) || fallbackTotal;
+	const locale = resolveUiLanguage();
+	const formattedTotal = workStatsView?.formatTokens?.(tokenTotal, locale)
+		|| new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(tokenTotal);
+	totalElement.textContent = formattedTotal;
+	totalElement.title = `${new Intl.NumberFormat(locale).format(tokenTotal)} Token`;
+
+	const days = dreamTokenCalendarDays(dailyTokens);
+	const stats = dreamTokenActivityStats(dailyTokens);
+	const formatTokens = (value) => workStatsView?.formatTokens?.(value, locale)
+		|| new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+	if (elements.dreamTokenPeak) elements.dreamTokenPeak.textContent = formatTokens(stats.peakTokens);
+	if (elements.dreamTokenActiveDays) elements.dreamTokenActiveDays.textContent = String(stats.activeDays);
+	const distribution = days.filter((day) => !day.future && day.totalTokens > 0).map((day) => day.totalTokens);
+	const signature = `${locale}|daily|${project?.id || "none"}|${days.map((day) => day.totalTokens).join(",")}`;
+	grid.setAttribute("aria-label", `${uiText("tokenActivity")} · ${formattedTotal}`);
+	renderDreamTokenMonths(days, locale);
+	if (grid.dataset.signature === signature) return;
+	grid.dataset.signature = signature;
+	grid.replaceChildren(...days.map((day) => {
+		const cell = document.createElement("span");
+		const level = day.future ? 0 : (workStatsView?.tokenLevel?.(day.totalTokens, distribution) || 0);
+		const detail = `${day.date} · ${formatTokens(day.totalTokens)} Token`;
+		cell.className = `dream-token-cell${day.future ? " future" : ""}`;
+		cell.dataset.level = String(level);
+		cell.title = detail;
+		cell.setAttribute("role", "gridcell");
+		cell.setAttribute("aria-label", detail);
+		return cell;
+	}));
+}
+
+function setMemoryState(memoryState) {
+	state.memoryState = { enabled: false, phase: "disabled", globalCount: 0, projectCount: 0, pendingJobs: 0, ...(memoryState || {}) };
+	if (elements.settingsMemoryInput) elements.settingsMemoryInput.checked = Boolean(state.memoryState.enabled);
+	renderMemoryStatus();
+	renderDreamTokenActivity();
 }
 
 function applyUiLanguage(language) {
@@ -2509,43 +3856,79 @@ function applyUiLanguage(language) {
 	localStorage.setItem("metis.desktopUiLanguage.v2", state.uiLanguage);
 	document.documentElement.lang = resolveUiLanguage(state.uiLanguage);
 	desktopI18n.translateDocument(state.uiLanguage);
+	updateComposerPlaceholder(elements.headingTitle?.textContent, elements.headingTitle?.classList.contains("working-shimmer"));
 	void desktop.setUiLanguage?.(resolveUiLanguage(state.uiLanguage));
 	if (elements.settingsLanguageSelect) elements.settingsLanguageSelect.value = state.uiLanguage;
 	if (elements.revealFileButton) elements.revealFileButton.textContent = revealInFolderLabel();
-	setDreamStatus(state.dreamStatusText);
-	renderSettingsAgentControls();
-	updateSettingsConnectionDetails();
+	setMemoryState(state.memoryState);
 	updateModelSelect();
+	renderWorkflowControls();
+	renderWorkflowPlanCard();
+	renderInstructionSources();
 	if (!state.messages.length) renderEmptyState(state.serverConnected);
-	setStreamingState(Boolean(state.isStreaming), uiText(state.session?.isCompacting ? "compactingContext" : "agentWorking"));
+	renderDesktopWorkStats();
+	setStreamingState(Boolean(state.isStreaming));
 	renderComposerStatusRow();
-	renderSubagentDock();
 	if (state.session) upsertServerConversation(state.session);
 }
 
-async function syncServerSession({ loadModels = true } = {}) {
+// refreshConversations=false skips the /sessions round-trip. Switching or creating a
+// conversation inside the already-loaded project does not need the whole listing rebuilt —
+// upsertServerConversation() below folds the new/updated session into the sidebar locally.
+async function syncServerSession({ loadModels = true, refreshConversations = true } = {}) {
+	const syncGeneration = ++sessionSyncGeneration;
 	const project = activeProject();
 	const requests = [
 		requestServer("/session"),
 		requestServer("/session/messages"),
-		requestServer(`/sessions${project?.path ? `?cwd=${encodeURIComponent(project.path)}` : ""}`),
+		refreshConversations
+			? requestServer(`/sessions${project?.path ? `?cwd=${encodeURIComponent(project.path)}` : ""}`)
+			: Promise.resolve(undefined),
 	];
 	if (loadModels) requests.push(requestServer("/config/providers"));
 	const [session, messageData, sessionListData, modelData] = await Promise.all(requests);
+	if (syncGeneration !== sessionSyncGeneration) return false;
+	const snapshotInstanceId = session.serverInstanceId || messageData.serverInstanceId;
+	if (state.serverInstanceId && snapshotInstanceId && snapshotInstanceId !== state.serverInstanceId) return false;
+	const snapshotSequences = [session.serverSequence, messageData.serverSequence]
+		.filter((value) => Number.isSafeInteger(value));
+	const snapshotSequence = snapshotSequences.length > 0 ? Math.min(...snapshotSequences) : undefined;
+	if (snapshotSequence !== undefined && snapshotSequence < state.lastServerStateSequence) return false;
 	const currentSessionName = state.session?.sessionId === session.sessionId ? state.session.sessionName : undefined;
+	const previousSessionId = state.session?.sessionId;
 	if (!session.sessionName && currentSessionName) session.sessionName = currentSessionName;
 	state.session = session;
+	if (state.skillCommandsLoadedFor && state.skillCommandsLoadedFor !== skillCatalogKey()) {
+		state.skillCommands = [];
+		state.skillCommandsLoadedFor = undefined;
+		closeSkillMenu();
+	}
+	if (previousSessionId && previousSessionId !== session.sessionId) {
+		state.workflowPlanCollapsed = false;
+		state.workflowPlanAutoCollapsedKey = undefined;
+	}
+	if (snapshotInstanceId) state.serverInstanceId = snapshotInstanceId;
+	if (snapshotSequence !== undefined) state.lastServerSequence = Math.max(state.lastServerSequence, snapshotSequence);
+	if (snapshotSequence !== undefined) state.lastServerStateSequence = Math.max(state.lastServerStateSequence, snapshotSequence);
 	if (modelData) state.models = Array.isArray(modelData.models) ? modelData.models : [];
 	state.messages = Array.isArray(messageData.messages) ? messageData.messages : [];
 	state.messageTimings = Object.fromEntries((Array.isArray(messageData.messageTimings) ? messageData.messageTimings : [])
 		.map((timing) => [String(timing.messageTimestamp), timing]));
 	state.hasSubmittedMessage = state.messages.some((message) => message?.role === "user");
-	replaceServerConversations(sessionListData.sessions);
-	setDreamStatus(session.extensionStatuses?.dream);
+	if (sessionListData) replaceServerConversations(sessionListData.sessions);
+	setMemoryState(session.memoryState);
 	upsertServerConversation(session);
-	setStreamingState(Boolean(session.isStreaming), uiText(session.isCompacting ? "compactingContext" : "agentWorking"));
+	setStreamingState(Boolean(session.isStreaming));
 	renderServerMessages(state.messages);
+	if (session.pendingUserInput) renderUserInputCard(session.pendingUserInput);
+	else clearUserInputComposer();
 	updateModelSelect();
+	renderWorkflowControls();
+	renderWorkflowPlanCard();
+	renderInstructionSources();
+	renderConversations();
+	if (elements.settingsDialog?.open) renderPreferencesControls();
+	return true;
 }
 
 async function changeModel(index) {
@@ -2864,6 +4247,307 @@ function renderMarkdown(md) {
 	return window.metisDesktopMarkdown.render(md);
 }
 
+function appendRenderedMarkdown(parent, markdown, className) {
+	if (!markdown) return;
+	const block = document.createElement("div");
+	block.className = className;
+	block.innerHTML = renderMarkdown(markdown);
+	parent.append(block);
+}
+
+function renderAssistantText(target, text) {
+	const proposal = extractProposedPlan(text);
+	if (!proposal) {
+		target.classList.remove("has-proposed-plan");
+		delete target.dataset.proposedPlanExpanded;
+		const html = renderMarkdown(text);
+		if (target.innerHTML !== html) target.innerHTML = html;
+		return;
+	}
+
+	const isFirstPlanRender = !target.classList.contains("has-proposed-plan");
+	const wasExpanded = target.dataset.proposedPlanExpanded === "true";
+	target.classList.add("has-proposed-plan");
+	target.replaceChildren();
+	appendRenderedMarkdown(target, proposal.before, "proposed-plan-context");
+
+	const card = document.createElement("section");
+	card.className = `proposed-plan-card${wasExpanded ? " expanded" : ""}${isFirstPlanRender ? " is-reformatting" : ""}`;
+	const currentProposal = Boolean(state.session?.workflowProposal?.markdown)
+		&& proposal.plan.trim() === state.session.workflowProposal.markdown.trim();
+	card.dataset.currentProposal = String(currentProposal);
+	const header = document.createElement("div");
+	header.className = "proposed-plan-header";
+	const toggle = document.createElement("button");
+	toggle.type = "button";
+	toggle.className = "proposed-plan-toggle";
+	toggle.setAttribute("aria-expanded", String(wasExpanded));
+	toggle.setAttribute("aria-label", uiText(wasExpanded ? "proposedPlanCollapse" : "proposedPlanExpand"));
+	const title = document.createElement("strong");
+	title.textContent = uiText("proposedPlanReady");
+	const label = document.createElement("span");
+	label.className = "proposed-plan-label";
+	const planIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	planIcon.setAttribute("aria-hidden", "true");
+	planIcon.innerHTML = '<use href="#i-list"/>';
+	const chevron = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	chevron.setAttribute("aria-hidden", "true");
+	chevron.innerHTML = '<use href="#i-chevron"/>';
+	label.append(planIcon, title);
+	toggle.append(label, chevron);
+
+	const processButton = document.createElement("button");
+	processButton.type = "button";
+	processButton.className = "proposed-plan-process";
+	processButton.textContent = uiText("proposedPlanProcess");
+	const processIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	processIcon.setAttribute("aria-hidden", "true");
+	processIcon.innerHTML = '<use href="#i-chevron"/>';
+	processButton.append(processIcon);
+	processButton.title = uiText("proposedPlanProcessDescription");
+	processButton.setAttribute("aria-label", uiText("proposedPlanProcessDescription"));
+	processButton.hidden = !currentProposal || state.session?.collaborationMode !== "plan";
+	processButton.disabled = processButton.hidden
+		|| state.isStreaming
+		|| Boolean(state.session?.isStreaming || state.session?.isCompacting)
+		|| !state.serverConnected;
+	const refineInput = document.createElement("input");
+	refineInput.type = "text";
+	refineInput.className = "proposed-plan-refine";
+	refineInput.placeholder = uiText("proposedPlanRefinePlaceholder");
+	refineInput.setAttribute("aria-label", uiText("proposedPlanRefinePlaceholder"));
+	const refineButton = document.createElement("button");
+	refineButton.type = "button";
+	refineButton.className = "proposed-plan-refine-send";
+	refineButton.setAttribute("aria-label", uiText("proposedPlanRefine"));
+	refineButton.title = uiText("proposedPlanRefine");
+	refineButton.innerHTML = '<svg aria-hidden="true"><use href="#i-send"/></svg>';
+	const refineShell = document.createElement("div");
+	refineShell.className = "proposed-plan-refine-shell";
+	refineShell.append(refineInput, refineButton);
+
+	const body = document.createElement("div");
+	body.className = "proposed-plan-body";
+	body.innerHTML = renderMarkdown(proposal.plan);
+	const actions = document.createElement("div");
+	actions.className = "proposed-plan-actions";
+	toggle.addEventListener("click", () => {
+		const expanded = card.classList.toggle("expanded");
+		target.dataset.proposedPlanExpanded = String(expanded);
+		toggle.setAttribute("aria-expanded", String(expanded));
+		toggle.setAttribute("aria-label", uiText(expanded ? "proposedPlanCollapse" : "proposedPlanExpand"));
+	});
+	processButton.addEventListener("click", () => void processProposedPlan(processButton));
+	const submitRefinement = async () => {
+		const request = refineInput.value.trim();
+		if (!currentProposal || !request || state.isStreaming || state.session?.isCompacting || state.session?.pendingUserInput || !state.serverConnected) return;
+		refineInput.disabled = true; refineButton.disabled = true;
+		elements.composerInput.value = uiText("proposedPlanRefinePrompt", { request });
+		try { await sendMessage(); } finally { refineInput.disabled = false; refineButton.disabled = false; }
+	};
+	refineButton.addEventListener("click", () => void submitRefinement());
+	refineInput.addEventListener("input", updateProposedPlanControls);
+	refineInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); void submitRefinement(); } });
+	header.append(toggle);
+	actions.append(processButton, refineShell);
+	card.append(header, body, actions);
+	target.append(card);
+	appendRenderedMarkdown(target, proposal.after, "proposed-plan-context");
+	if (isFirstPlanRender) {
+		requestAnimationFrame(() => {
+			if (!card.isConnected) return;
+			card.classList.remove("is-reformatting");
+		});
+	}
+	updateProposedPlanControls();
+	queueMicrotask(updateProposedPlanControls);
+}
+
+function updateProposedPlanControls() {
+	const buttons = [...elements.messageColumn.querySelectorAll(".proposed-plan-process")];
+	const mode = state.session?.collaborationMode === "build" ? "build" : "plan";
+	const busy = Boolean(state.isStreaming || state.session?.isStreaming || state.session?.isCompacting || state.session?.pendingUserInput);
+	buttons.forEach((button) => {
+		const card = button.closest(".proposed-plan-card");
+		const current = card?.dataset.currentProposal === "true";
+		const hasDraft = Boolean(card?.querySelector(".proposed-plan-refine")?.value.trim());
+		button.hidden = !current || mode !== "plan";
+		button.disabled = !current || mode !== "plan" || busy || hasDraft || !state.serverConnected;
+		card?.querySelectorAll(".proposed-plan-refine, .proposed-plan-refine-send").forEach((control) => {
+			control.disabled = !current || mode !== "plan" || busy || !state.serverConnected;
+		});
+	});
+}
+
+function clearUserInputComposer({ restoreFocus = false } = {}) {
+	const composerHost = elements.composer?.parentElement;
+	composerHost?.querySelector(":scope > .composer-user-input")?.remove();
+	composerHost?.classList.remove("has-user-input");
+	if (elements.composer) {
+		elements.composer.hidden = false;
+		elements.composer.style.removeProperty("display");
+	}
+	if (elements.composerInput) {
+		elements.composerInput.disabled = false;
+		if (restoreFocus) elements.composerInput.focus();
+	}
+	state.pendingUserInputId = undefined;
+}
+
+function renderUserInputCard(request) {
+	if (!request?.requestId || !Array.isArray(request.questions) || request.questions.length === 0) return;
+	const existing = document.querySelector(`[data-user-input-request-id="${CSS.escape(request.requestId)}"]`);
+	if (existing) return;
+	clearUserInputComposer();
+	state.pendingUserInputId = request.requestId;
+	const composerWidth = elements.composer.getBoundingClientRect().width;
+	elements.composerInput.disabled = true;
+	elements.composer.hidden = true;
+	elements.composer.style.display = "none";
+	const composerHost = elements.composer.parentElement;
+	composerHost?.classList.add("has-user-input");
+	const card = document.createElement("div");
+	card.className = "user-input-request composer-user-input";
+	card.dataset.userInputRequestId = request.requestId;
+	card.dataset.toolCallId = request.toolCallId || "";
+	card.dataset.composerWidth = String(composerWidth);
+	if (composerWidth > 0) card.style.width = `${composerWidth}px`;
+	const form = document.createElement("form");
+	form.className = "user-input-card";
+	form.setAttribute("aria-labelledby", `ask-title-${request.requestId}`);
+	card.append(form);
+	elements.composer.insertAdjacentElement("afterend", card);
+	const answers = new Map();
+	let questionIndex = 0;
+	let submitting = false;
+
+	const respond = async (cancelled) => {
+		if (submitting) return;
+		submitting = true;
+		card.classList.remove("error");
+		card.classList.add("submitting");
+		form.querySelectorAll("button, input").forEach((control) => { control.disabled = true; });
+		form.querySelector(".user-input-status").textContent = uiText("askUserSubmitting");
+		try {
+			await requestServer(`/session/user-input/${encodeURIComponent(request.requestId)}`, "POST", {
+				cancelled,
+				answers: cancelled ? [] : request.questions.map((question) => answers.get(question.id)),
+			});
+			if (state.session?.pendingUserInput?.requestId === request.requestId) state.session.pendingUserInput = undefined;
+			clearUserInputComposer({ restoreFocus: true });
+		} catch (error) {
+			submitting = false;
+			card.classList.remove("submitting");
+			card.classList.add("error");
+			form.querySelectorAll("button, input").forEach((control) => { control.disabled = false; });
+			form.querySelector(".user-input-status").textContent = error.message;
+		}
+	};
+
+	const renderQuestion = () => {
+		const question = request.questions[questionIndex];
+		const saved = answers.get(question.id);
+		form.replaceChildren();
+		const heading = document.createElement("div");
+		heading.className = "user-input-heading";
+		const title = document.createElement("strong");
+		title.id = `ask-title-${request.requestId}`;
+		title.textContent = uiText("askUserTitle");
+		const progress = document.createElement("span");
+		progress.textContent = `${questionIndex + 1}/${request.questions.length}`;
+		heading.append(title, progress);
+		const fieldset = document.createElement("fieldset");
+		fieldset.dataset.questionId = question.id;
+		const legend = document.createElement("legend");
+		legend.textContent = question.header;
+		const copy = document.createElement("p");
+		copy.textContent = question.question;
+		fieldset.append(legend, copy);
+		for (const option of question.options || []) {
+			const label = document.createElement("label");
+			label.className = "user-input-option";
+			const radio = document.createElement("input");
+			radio.type = "radio";
+			radio.name = question.id;
+			radio.value = option.label;
+			radio.checked = saved?.selectedLabel === option.label;
+			const body = document.createElement("span");
+			body.innerHTML = `<b></b><small></small>`;
+			body.querySelector("b").textContent = option.recommended ? `${option.label} · ${uiText("askUserRecommended")}` : option.label;
+			body.querySelector("small").textContent = option.description;
+			label.append(radio, body);
+			fieldset.append(label);
+		}
+		const free = document.createElement("input");
+		free.type = "text";
+		free.className = "user-input-free";
+		free.placeholder = uiText("askUserFreePlaceholder");
+		free.setAttribute("aria-label", uiText("askUserFreePlaceholder"));
+		free.value = saved && !saved.selectedLabel ? saved.value : "";
+		fieldset.append(free);
+		const actions = document.createElement("div");
+		actions.className = "user-input-actions";
+		const status = document.createElement("span");
+		status.className = "user-input-status";
+		status.setAttribute("aria-live", "polite");
+		status.textContent = uiText("askUserPending");
+		const cancel = document.createElement("button");
+		cancel.type = "button";
+		cancel.className = "user-input-cancel";
+		cancel.textContent = uiText("askUserCancel");
+		const submit = document.createElement("button");
+		submit.type = "submit";
+		submit.className = "user-input-confirm";
+		const finalQuestion = questionIndex === request.questions.length - 1;
+		submit.setAttribute("aria-label", uiText(finalQuestion ? "askUserSubmit" : "askUserContinue"));
+		submit.title = uiText(finalQuestion ? "askUserSubmit" : "askUserContinue");
+		submit.innerHTML = `<svg aria-hidden="true"><use href="#${finalQuestion ? "i-check" : "i-chevron"}"/></svg>`;
+		actions.append(status, cancel, submit);
+		form.append(heading, fieldset, actions);
+		cancel.addEventListener("click", () => void respond(true));
+		form.onkeydown = (event) => { if (event.key === "Escape") { event.preventDefault(); void respond(true); } };
+		form.onsubmit = (event) => {
+			event.preventDefault();
+			const selected = fieldset.querySelector(`input[name="${CSS.escape(question.id)}"]:checked`)?.value;
+			const custom = free.value.trim();
+			const value = custom || selected || "";
+			if (!value) {
+				card.classList.add("error");
+				status.textContent = uiText("askUserRequired");
+				(question.options?.length ? fieldset.querySelector("input") : free)?.focus();
+				return;
+			}
+			answers.set(question.id, { id: question.id, value, ...(selected && !custom ? { selectedLabel: selected } : {}) });
+			if (!finalQuestion) {
+				questionIndex += 1;
+				card.classList.remove("error");
+				renderQuestion();
+				return;
+			}
+			void respond(false);
+		};
+		free.addEventListener("input", () => {
+			if (free.value.trim()) fieldset.querySelectorAll('input[type="radio"]').forEach((radio) => { radio.checked = false; });
+		});
+		fieldset.querySelectorAll('input[type="radio"]').forEach((radio) => radio.addEventListener("change", () => { free.value = ""; }));
+		requestAnimationFrame(() => (saved?.selectedLabel ? fieldset.querySelector('input[type="radio"]:checked') : free)?.focus({ preventScroll: true }));
+	};
+
+	renderQuestion();
+}
+
+async function processProposedPlan(button) {
+	if (button.disabled || state.isStreaming || state.session?.isCompacting) return;
+	button.disabled = true;
+	const changed = await changeCollaborationMode("build");
+	if (!changed) {
+		updateProposedPlanControls();
+		return;
+	}
+	elements.composerInput.value = uiText("proposedPlanProcessPrompt");
+	await sendMessage({ workflowAction: "process_proposal" });
+}
+
 function appendAssistantNotice(text, label = "Metis", shouldScroll = true) {
 	const article = document.createElement("article");
 	article.className = "message assistant-message animate-entrance";
@@ -2896,15 +4580,23 @@ function scrollMessagesToBottom(smooth = false, force = false) {
 	});
 }
 
-async function sendMessage() {
+async function sendMessage({ workflowAction } = {}) {
 	const message = elements.composerInput.value.trim();
 	const hasImages = state.attachedImages && state.attachedImages.length > 0;
 	const hasFiles = state.attachedFiles && state.attachedFiles.length > 0;
 	if (!message && !hasImages && !hasFiles) return;
-	window.MetisOnboarding?.notifyEvent("message_sent");
+
 	if (!state.serverConnected) {
 		elements.serverDialog.showModal();
 		return;
+	}
+	if (!state.hasSubmittedMessage) {
+		try {
+			await alignNewConversationWithActiveProject();
+		} catch (error) {
+			appendAssistantNotice(error.message, uiText("syncFailed"));
+			return;
+		}
 	}
 
 	const images = hasImages ? state.attachedImages.map((img) => ({
@@ -2920,6 +4612,7 @@ async function sendMessage() {
 	const hasRunningSubagent = Array.isArray(state.session?.runningSubagentIds)
 		&& state.session.runningSubagentIds.length > 0;
 	const shouldQueue = hasRunningSubagent || shouldQueueDesktopMessage(state.messages, wasStreaming);
+	let optimisticUserMessage;
 
 	let payloadMessage = message;
 	if (hasFiles) {
@@ -2937,18 +4630,48 @@ async function sendMessage() {
 	autoSizeComposer();
 
 	userInterruptedScroll = false;
-	if (elements.emptyState?.isConnected) elements.emptyState.remove();
+	if (elements.conversationPane?.classList.contains("is-empty-state")) {
+		transitionFromEmptyState();
+	}
 	if (!shouldQueue) {
-		appendUserMessage(message, messageImages, messageFiles);
+		const optimisticContent = messageImages.length > 0
+			? [
+				{ type: "text", text: payloadMessage },
+				...messageImages.map((image) => ({
+					type: "image",
+					image: { data: image.data, mimeType: image.mimeType },
+				})),
+			]
+			: payloadMessage;
+		optimisticUserMessage = {
+			role: "user",
+			content: optimisticContent,
+			timestamp: Date.now(),
+			// The server emits its authoritative user entry separately. Keep this
+			// marker local so that event can replace, rather than duplicate, it.
+			_metisOptimistic: true,
+		};
+		state.messages.push(optimisticUserMessage);
+		renderServerMessages(state.messages);
 		scrollMessagesToBottom(false, true);
 	}
 
-	if (!shouldQueue) setStreamingState(true, uiText("agentWorking"));
-	else if (wasStreaming) setStreamingState(true, uiText("messageQueued"));
+	if (!shouldQueue) setStreamingState(true);
+	else if (wasStreaming) setStreamingState(true);
 	try {
 		if (shouldQueue) await requestServer("/session/follow-up", "POST", { message: payloadMessage, images });
-		else await requestServer("/session/prompt", "POST", { message: payloadMessage, images });
+		else await requestServer("/session/prompt", "POST", { message: payloadMessage, images, ...(workflowAction ? { workflowAction } : {}) });
+		if (wasNewConversation && !shouldQueue) {
+			// Persisted sessions exist as soon as preflight accepts the first prompt. Fold that
+			// session into the sidebar immediately instead of waiting for the final Agent event.
+			void syncServerSession({ loadModels: false, refreshConversations: false })
+				.catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
+		}
 	} catch (error) {
+		if (optimisticUserMessage) {
+			const optimisticIndex = state.messages.indexOf(optimisticUserMessage);
+			if (optimisticIndex !== -1) state.messages.splice(optimisticIndex, 1);
+		}
 		if (wasNewConversation && !state.messages.some((item) => item?.role === "user")) {
 			state.hasSubmittedMessage = false;
 			renderComposerStatusRow();
@@ -2958,26 +4681,47 @@ async function sendMessage() {
 		state.attachedFiles = messageFiles;
 		renderAttachmentPreviews();
 		autoSizeComposer();
-		setStreamingState(wasStreaming, wasStreaming ? uiText("agentWorking") : "");
+		setStreamingState(wasStreaming);
+		if (optimisticUserMessage) renderServerMessages(state.messages);
 		appendAssistantNotice(error.message, uiText("sendFailed"));
 	}
 }
 
 async function abortGeneration() {
 	if (!state.serverConnected || !state.isStreaming) return;
-	elements.runState.querySelector("span:last-child").textContent = uiText("stopping");
+	let abortAccepted = false;
 	try {
 		await requestServer("/session/abort", "POST", {});
+		abortAccepted = true;
 	} catch (error) {
 		appendAssistantNotice(error.message, uiText("stopFailed"));
 	} finally {
 		setStreamingState(false);
 	}
+	if (abortAccepted) {
+		// The abort endpoint persists the aborted assistant/checkpoint before it
+		// returns. Reconcile from that snapshot so Working/thoughts/plan state end
+		// together even when the activity event was lost during disconnect.
+		try {
+			await syncServerSession({ loadModels: false, refreshConversations: false });
+		} catch (error) {
+			// Keep the successful abort visible; a transient refresh must not create a
+			// misleading "sync failed" assistant card or resurrect Working state.
+			console.warn("Abort snapshot refresh failed", error);
+		}
+	}
 }
 
 function autoSizeComposer() {
-	// Chromium's field-sizing keeps textarea content-sized without inline styles,
-	// preserving strict Content Security Policy.
+	const input = elements.composerInput;
+	if (!input || (typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content"))) return;
+	const computed = getComputedStyle(input);
+	const minimum = Number.parseFloat(computed.minHeight) || 48;
+	const maximum = Number.parseFloat(computed.maxHeight) || 200;
+	input.style.height = "auto";
+	const height = Math.min(Math.max(input.scrollHeight, minimum), maximum);
+	input.style.height = `${height}px`;
+	input.style.overflowY = input.scrollHeight > maximum ? "auto" : "hidden";
 }
 
 async function connectServer() {
@@ -2993,16 +4737,15 @@ async function connectServer() {
 	button.textContent = uiText("connect");
 	if (result.ok) {
 		state.serverConnected = true;
-		updateSettingsConnectionDetails();
 		try {
 			const project = activeProject();
 			if (project) {
-				await activateProject(project, { record: false, loadModels: true });
+				await activateProject(project, { record: false, loadModels: true, syncSession: true });
 			} else {
+				await requestServer("/session/new", "POST", { collaborationMode: "plan" });
 				await syncServerSession({ loadModels: true });
 			}
 			await refreshAllProjectConversations();
-			await loadVisualSettings();
 			elements.serverDialog.close();
 			finishServerLoading();
 		} catch (error) {
@@ -3016,30 +4759,49 @@ async function connectServer() {
 }
 
 async function autoConnectServer() {
-	for (let attempt = 0; attempt < 40; attempt += 1) {
-		const result = await desktop.metis.connect({
-			baseUrl: "http://127.0.0.1:4096",
-			username: "metis",
-			password: "",
-		});
+	if (state.serverConnected) return true;
+	if (autoConnectServerRequest) return autoConnectServerRequest;
+	autoConnectServerRequest = performAutoConnectServer();
+	try {
+		return await autoConnectServerRequest;
+	} finally {
+		autoConnectServerRequest = undefined;
+	}
+}
+
+async function performAutoConnectServer() {
+	for (let attempt = 0; attempt < 120; attempt += 1) {
+		if (state.serverConnected) return true;
+		let result;
+		try {
+			result = await desktop.metis.connect({
+				baseUrl: "http://127.0.0.1:4096",
+				username: "metis",
+				password: "",
+			});
+		} catch (error) {
+			// IPC 异常不应中断重试循环；记录后按 250ms 节奏继续。
+			console.error("[desktop] autoConnectServer connect error:", error);
+			await new Promise((resolve) => setTimeout(resolve, 250));
+			continue;
+		}
 		if (result.ok) {
 			state.serverConnected = true;
-			updateSettingsConnectionDetails();
 			try {
 				const project = activeProject();
 				if (project) {
-					await activateProject(project, { record: false, loadModels: true });
+					await activateProject(project, { record: false, loadModels: true, syncSession: true });
 				} else {
+					await requestServer("/session/new", "POST", { collaborationMode: "plan" });
 					await syncServerSession({ loadModels: true });
 				}
 				await refreshAllProjectConversations();
-				await loadVisualSettings();
 				finishServerLoading();
-				return true;
 			} catch (err) {
 				console.error("[desktop] autoConnectServer sync error:", err);
-				return false;
+				showServerLoadingFailure();
 			}
+			return true;
 		}
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
@@ -3119,18 +4881,18 @@ function queueExtensionUiDialog(event) {
 
 async function handleExtensionUiRequest(event) {
 	if (event.method === "setStatus") {
-		if (event.statusKey === "dream") setDreamStatus(event.statusText);
-		else if (event.statusText) setSettingsFeedback(elements.settingsSecurityFeedback, event.statusText);
+		if (event.statusKey === "dream") console.warn("Legacy Dream extension status ignored; use MemoryState.");
+		else if (event.statusText) console.info("[desktop extension]", event.statusText);
 		return;
 	}
 	if (event.method === "notify") {
 		const message = event.message;
-		if (message) setSettingsFeedback(elements.settingsSecurityFeedback, message, event.notifyType === "error");
+		if (message) console[event.notifyType === "error" ? "error" : "info"]("[desktop extension]", message);
 		return;
 	}
 	if (event.method === "open_url") {
 		if (event.url) await desktop.openExternal(event.url);
-		if (event.instructions) setSettingsFeedback(elements.settingsSecurityFeedback, event.instructions);
+		if (event.instructions) console.info("[desktop extension]", event.instructions);
 		return;
 	}
 	if (event.method === "set_editor_text") {
@@ -3144,15 +4906,77 @@ async function handleExtensionUiRequest(event) {
 	if (response) await requestServer("/extension/ui-response", "POST", response);
 }
 
+function acceptServerEvent(event) {
+	const instanceId = event?.serverInstanceId;
+	const sequence = event?.serverSequence;
+	if (!instanceId || !Number.isSafeInteger(sequence)) return true;
+
+	if (event.type === "server.connected") {
+		if (state.serverInstanceId !== instanceId) {
+			state.serverInstanceId = instanceId;
+			state.lastServerSequence = 0;
+			state.lastServerStateSequence = 0;
+		}
+		// server.connected 是连接建立信号，不受 sequence 去重约束：
+		// SSE 重连发生在两次 heartbeat 之间时 sequence 可能未前进，若被拒收会导致
+		// state.serverConnected 卡死在 false（模型列表永远显示"连接 Server 后载入模型"）。
+		// 放行并顺带推进 lastServerSequence（若更新），后续事件仍按单调序列过滤。
+		if (sequence > state.lastServerSequence) state.lastServerSequence = sequence;
+		return true;
+	} else {
+		if (state.serverInstanceId && state.serverInstanceId !== instanceId) return false;
+		if (!state.serverInstanceId) state.serverInstanceId = instanceId;
+		if (event.type !== "server.session_changed"
+			&& event.serverSessionId
+			&& state.session?.sessionId
+			&& event.serverSessionId !== state.session.sessionId) {
+			return false;
+		}
+	}
+
+	if (sequence <= state.lastServerSequence) return false;
+	state.lastServerSequence = sequence;
+	if (!["server.connected", "server.heartbeat", "extension_ui_request", "user_input_request", "extension_error"].includes(event.type)) {
+		state.lastServerStateSequence = sequence;
+	}
+	return true;
+}
+
+function upsertStreamMessage(message, mergeStreaming = false) {
+	if (!message) return;
+	const exactIndex = state.messages.findIndex((candidate) =>
+		(candidate.id && message.id && candidate.id === message.id)
+		|| (candidate.role === message.role && candidate.timestamp === message.timestamp));
+	// Only one non-queued prompt can be optimistic at a time. Its timestamp is
+	// client-generated, so it cannot reliably match the server-side timestamp.
+	const optimisticIndex = exactIndex === -1 && message.role === "user"
+		? state.messages.findIndex((candidate) => candidate?.role === "user" && candidate?._metisOptimistic === true)
+		: -1;
+	const index = exactIndex === -1 ? optimisticIndex : exactIndex;
+	if (index === -1) {
+		state.messages.push(message);
+		return;
+	}
+	state.messages[index] = mergeStreaming ? mergeStreamingMessage(state.messages[index], message) : message;
+}
+
 function handleMetisEvent(event) {
+	if (!acceptServerEvent(event)) return;
 	if (event.type === "extension_ui_request") {
-		void handleExtensionUiRequest(event).catch((error) => setSettingsFeedback(elements.settingsSecurityFeedback, error.message, true));
+		void handleExtensionUiRequest(event).catch((error) => console.error("[desktop extension]", error));
+		return;
+	}
+	if (event.type === "user_input_request") {
+		renderUserInputCard(event.request);
 		return;
 	}
 	if (!event?.type || event.type === "server.heartbeat") return;
 	if (event.type === "server.connected") {
+		if (serverDisconnectTimer) {
+			clearTimeout(serverDisconnectTimer);
+			serverDisconnectTimer = undefined;
+		}
 		state.serverConnected = true;
-		updateSettingsConnectionDetails();
 		if (state.session && !projectSwitchInProgress) {
 			void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
 		}
@@ -3160,13 +4984,41 @@ function handleMetisEvent(event) {
 	}
 	if (event.type === "server.session_changed") {
 		if (!projectSwitchInProgress) {
-			void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
+			// A session change cannot alter any *other* session's listing entry, and
+			// upsertServerConversation() inside the sync folds the current one into the sidebar.
+			// Leaving refreshConversations at its default put the /sessions round-trip (822 KB at
+			// ~380 sessions) straight back onto every switch and every new conversation.
+			void syncServerSession({ loadModels: false, refreshConversations: false }).catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
 		}
 		return;
 	}
 	if (event.type === "thinking_level_changed" && state.session) {
 		state.session.thinkingLevel = event.level;
 		updateModelSelect();
+		return;
+	}
+	if (event.type === "collaboration_mode_changed" && state.session) {
+		state.session.collaborationMode = event.mode;
+		renderWorkflowControls();
+		renderWorkflowPlanCard();
+		updateProposedPlanControls();
+		if (elements.settingsDialog?.open) renderPreferencesControls();
+		return;
+	}
+	if (event.type === "memory_state_changed") {
+		setMemoryState(event.state);
+		if (state.session) state.session.memoryState = state.memoryState;
+		if (elements.settingsDialog?.open) renderPreferencesControls();
+		return;
+	}
+	if (event.type === "memory_records_changed") {
+		void syncServerSession({ loadModels: false, refreshConversations: false });
+		return;
+	}
+	if (event.type === "entry_appended" && event.entry?.type === "custom" && ["workflow_plan", "workflow_plan_reset"].includes(event.entry.customType) && state.session) {
+		state.session.workflowPlan = event.entry.customType === "workflow_plan" ? normalizeWorkflowPlan(event.entry.data) : undefined;
+		state.workflowPlanCollapsed = false;
+		renderWorkflowPlanCard();
 		return;
 	}
 	if (event.type === "session_info_changed" && state.session) {
@@ -3177,6 +5029,9 @@ function handleMetisEvent(event) {
 	if (event.type === "session_name_generation" && state.session) {
 		state.session.isGeneratingSessionName = event.status === "started";
 		state.session.sessionTitleError = event.error;
+		if (event.status === "completed" && typeof event.name === "string" && event.name.trim()) {
+			state.session.sessionName = event.name.trim();
+		}
 		upsertServerConversation(state.session);
 		return;
 	}
@@ -3189,14 +5044,19 @@ function handleMetisEvent(event) {
 	}
 	if (event.type === "subagent_status" && state.session) {
 		state.session.runningSubagentIds = Array.isArray(event.runningJobIds) ? [...event.runningJobIds] : [];
-		renderSubagentDock();
 		refreshWorkTimerTitles();
 		refreshAssistantTurnActivityState();
 		return;
 	}
-	const completed = ["message_end", "agent_end", "compaction_end"].includes(event.type);
-	const active = ["agent_start", "message_start", "message_update", "tool_execution_start", "tool_execution_end", "compaction_start"].includes(event.type);
-	if (completed) {
+	if (event.type === "message_end") {
+		if (event.message) {
+			upsertStreamMessage(event.message);
+			flushServerMessageRender();
+		}
+		return;
+	}
+	const activity = classifyDesktopActivityEvent(event);
+	if (activity === "complete") {
 		setStreamingState(false);
 		const lastAssistant = [...state.messages].reverse().find((m) => m.role === "assistant");
 		if (lastAssistant) {
@@ -3207,9 +5067,11 @@ function handleMetisEvent(event) {
 				state.messageDurations[key] = parseFloat(((Date.now() - start) / 1000).toFixed(1));
 			}
 		}
-		void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
-	} else if (active) {
-		setStreamingState(true, humanizeEvent(event.type));
+		// Same reasoning as server.session_changed: a finished turn only changes the current
+		// session, and session_info_changed already pushes its new name through the upsert.
+		void syncServerSession({ loadModels: false, refreshConversations: false }).catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
+	} else if (activity === "active") {
+		setStreamingState(true);
 		
 		if (event.type === "message_start") {
 			if (event.message) {
@@ -3217,11 +5079,8 @@ function handleMetisEvent(event) {
 				if (!state.messageStartTimes) state.messageStartTimes = {};
 				state.messageStartTimes[key] = Date.now();
 
-				const exists = state.messages.some((m) => m.id && event.message.id && m.id === event.message.id);
-				if (!exists) {
-					state.messages.push(event.message);
-					renderServerMessages(state.messages);
-				}
+				upsertStreamMessage(event.message);
+				scheduleServerMessageRender();
 			}
 		} else if (event.type === "message_update") {
 			if (event.message) {
@@ -3231,40 +5090,11 @@ function handleMetisEvent(event) {
 					state.messageStartTimes[key] = Date.now();
 				}
 
-				const index = state.messages.findIndex((m) => 
-					(m.id && event.message.id && m.id === event.message.id) || 
-					(m.role === event.message.role && m.timestamp === event.message.timestamp)
-				);
-				if (index !== -1) {
-					state.messages[index] = event.message;
-				} else {
-					const lastIndex = state.messages.length - 1;
-					if (lastIndex >= 0 && state.messages[lastIndex].role === "assistant" && event.message.role === "assistant") {
-						state.messages[lastIndex] = event.message;
-					} else {
-						state.messages.push(event.message);
-					}
-				}
-				renderServerMessages(state.messages);
+				upsertStreamMessage(event.message, true);
+				scheduleServerMessageRender();
 			}
-		} else if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
-			void syncServerSession({ loadModels: false }).catch((error) => appendAssistantNotice(error.message, uiText("syncFailed")));
 		}
 	}
-}
-
-function humanizeEvent(type) {
-	const labels = {
-		agent_start: uiText("agentWorking"),
-		message_start: uiText("eventMessageStart"),
-		message_update: uiText("eventMessageUpdate"),
-		message_end: uiText("eventMessageEnd"),
-		tool_execution_start: uiText("eventToolStart"),
-		tool_execution_end: uiText("eventToolEnd"),
-		compaction_start: uiText("eventCompactionStart"),
-		compaction_end: uiText("eventCompactionEnd"),
-	};
-	return labels[type] || type.replaceAll("_", " ");
 }
 
 document.querySelectorAll(".inspector-shortcut").forEach((button) => button.addEventListener("click", () => toggleInspectorTab(button.dataset.openInspector)));
@@ -3320,197 +5150,168 @@ document.addEventListener("click", (e) => {
 		menu.classList.add("hidden");
 	}
 });
-document.querySelector("#newChatButton").addEventListener("click", () => void createConversation());
-document.querySelector("#collapsedNewChat").addEventListener("click", () => void createConversation());
-document.querySelector("#sidebarSettingsButton")?.addEventListener("click", openSettings);
-document.querySelector("#settingsBackButton")?.addEventListener("click", closeSettings);
-document.querySelectorAll("[data-settings-panel]").forEach((button) => {
-	button.addEventListener("click", () => selectSettingsPanel(button.dataset.settingsPanel));
+document.querySelector("#newChatButton")?.addEventListener("click", () => void createConversation());
+document.querySelector("#collapsedNewChat")?.addEventListener("click", () => void createConversation());
+document.querySelector("#sidebarSettingsButton")?.addEventListener("click", showPreferencesDialog);
+document.querySelector("#settingsCloseButton")?.addEventListener("click", hidePreferencesDialog);
+document.querySelector("#settingsShowOnboarding")?.addEventListener("click", () => {
+	hidePreferencesDialog();
+	window.MetisOnboarding?.reset();
 });
-elements.settingsSearchInput?.addEventListener("input", () => filterSettingsNavigation(elements.settingsSearchInput.value));
-document.querySelector("#settingsOpenServerDialog")?.addEventListener("click", () => elements.serverDialog.showModal());
-elements.settingsModelSelect?.addEventListener("change", () => void changeModel(Number(elements.settingsModelSelect.value)));
-elements.settingsThinkingSelect?.addEventListener("change", () => void changeThinkingLevel(elements.settingsThinkingSelect.value));
-elements.settingsAutoCompactInput?.addEventListener("change", () => void updateAgentSessionSettings(
-	{ autoCompactionEnabled: elements.settingsAutoCompactInput.checked },
-	elements.settingsAgentFeedback,
-));
-elements.settingsSteeringModeSelect?.addEventListener("change", () => void updateAgentSessionSettings(
-	{ steeringMode: elements.settingsSteeringModeSelect.value },
-	elements.settingsBehaviorFeedback,
-));
-elements.settingsFollowUpModeSelect?.addEventListener("change", () => void updateAgentSessionSettings(
-	{ followUpMode: elements.settingsFollowUpModeSelect.value },
-	elements.settingsBehaviorFeedback,
-));
+elements.settingsDialog?.addEventListener("click", (event) => {
+	if (event.target === elements.settingsDialog) hidePreferencesDialog();
+});
+document.querySelectorAll("[data-settings-panel]").forEach((button) => {
+	button.addEventListener("click", () => selectPreferencesPanel(button.dataset.settingsPanel));
+});
 elements.settingsLanguageSelect?.addEventListener("change", () => {
 	const language = elements.settingsLanguageSelect.value;
 	applyUiLanguage(language);
-	if (!state.serverConnected) {
-		setSettingsFeedback(elements.settingsAgentFeedback, uiText("desktopLanguageSavedOffline"), false);
-		return;
-	}
-	performVisualAction(elements.settingsAgentFeedback, async () => {
-		await runVisualCommand(`/language ${language}`, elements.settingsAgentFeedback);
-		setSettingsFeedback(elements.settingsAgentFeedback, uiText("languageSaved", { language }));
-	});
+	if (state.serverConnected) void runPreferencesCommand(`/language ${language}`, elements.settingsGeneralFeedback);
 });
-document.querySelector("#settingsCompactButton")?.addEventListener("click", () => performVisualAction(elements.settingsBehaviorFeedback, async () => {
-	const instructions = elements.settingsCompactInstructions.value.trim();
-	await runVisualCommand(`/compact${instructions ? ` ${instructions}` : ""}`, elements.settingsBehaviorFeedback, { refresh: true });
-}));
-document.querySelector("#settingsSaveSessionName")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
-	const name = elements.settingsSessionNameInput.value.trim();
-	if (!name) throw new Error(uiText("enterSessionName"));
-	await runVisualCommand(`/name ${name}`, elements.settingsSessionFeedback, { refresh: true });
-}));
-document.querySelector("#settingsCopyReply")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, () => runVisualCommand("/copy", elements.settingsSessionFeedback)));
-document.querySelector("#settingsCloneSession")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, () => runVisualCommand("/clone", elements.settingsSessionFeedback, { refresh: true })));
-document.querySelector("#settingsNewSession")?.addEventListener("click", () => {
-	if (!window.confirm(uiText("confirmNewSession"))) return;
-	performVisualAction(elements.settingsSessionFeedback, () => runVisualCommand("/new", elements.settingsSessionFeedback, { refresh: true }));
+elements.settingsAutoCompactInput?.addEventListener("change", () => void updatePreferencesSession(
+	{ autoCompactionEnabled: elements.settingsAutoCompactInput.checked },
+	elements.settingsGeneralFeedback,
+));
+elements.settingsAutoRetryInput?.addEventListener("change", () => void updatePreferencesSession(
+	{ autoRetryEnabled: elements.settingsAutoRetryInput.checked },
+	elements.settingsGeneralFeedback,
+));
+elements.settingsSteeringModeSelect?.addEventListener("change", () => void updatePreferencesSession(
+	{ steeringMode: elements.settingsSteeringModeSelect.value },
+	elements.settingsGeneralFeedback,
+));
+elements.settingsFollowUpModeSelect?.addEventListener("change", () => void updatePreferencesSession(
+	{ followUpMode: elements.settingsFollowUpModeSelect.value },
+	elements.settingsGeneralFeedback,
+));
+elements.settingsCollaborationModeSelect?.addEventListener("change", () => void changeCollaborationMode(
+	elements.settingsCollaborationModeSelect.value,
+	elements.settingsAgentFeedback,
+));
+elements.settingsModelSelect?.addEventListener("change", async () => {
+	setPreferencesFeedback(elements.settingsModelFeedback, uiText("applying"));
+	await changeModel(Number(elements.settingsModelSelect.value));
+	renderPreferencesControls();
+	setPreferencesFeedback(elements.settingsModelFeedback, uiText("settingsModelSwitched"));
 });
-document.querySelector("#settingsResumeButton")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
-	if (!elements.settingsResumeSelect.value) throw new Error(uiText("noResumableSession"));
-	await runVisualCommand(`/resume ${elements.settingsResumeSelect.value}`, elements.settingsSessionFeedback, { refresh: true });
-}));
-document.querySelector("#settingsForkButton")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
-	if (!elements.settingsForkSelect.value) throw new Error(uiText("noForkableMessage"));
-	const result = await runVisualCommand(`/fork ${elements.settingsForkSelect.value}`, elements.settingsSessionFeedback, { refresh: true });
-	if (result.selectedText) {
-		elements.composerInput.value = result.selectedText;
-		autoSizeComposer();
-		setSettingsFeedback(elements.settingsSessionFeedback, uiText("forkCreated"));
-	}
-}));
-document.querySelector("#settingsTreeButton")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
-	if (!elements.settingsTreeSelect.value) throw new Error(uiText("noBranchNodes"));
-	await runVisualCommand(`/tree ${elements.settingsTreeSelect.value}`, elements.settingsSessionFeedback, { refresh: true });
-}));
-document.querySelector("#settingsExportHtml")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
-	const filePath = await desktop.sessionFile.save("html");
-	if (filePath) await runVisualCommand(`/export ${filePath}`, elements.settingsSessionFeedback);
-}));
-document.querySelector("#settingsExportJsonl")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
-	const filePath = await desktop.sessionFile.save("jsonl");
-	if (filePath) await runVisualCommand(`/export ${filePath}`, elements.settingsSessionFeedback);
-}));
-document.querySelector("#settingsImportSession")?.addEventListener("click", () => performVisualAction(elements.settingsSessionFeedback, async () => {
-	const filePath = await desktop.sessionFile.open();
-	if (filePath && window.confirm(uiText("confirmImportSession"))) {
-		await runVisualCommand(`/import ${filePath}`, elements.settingsSessionFeedback, { refresh: true });
-	}
-}));
-document.querySelector("#settingsShareSession")?.addEventListener("click", () => {
-	if (!window.confirm(uiText("confirmShareSession"))) return;
-	performVisualAction(elements.settingsSessionFeedback, () => runVisualCommand("/share", elements.settingsSessionFeedback));
+elements.settingsThinkingSelect?.addEventListener("change", async () => {
+	setPreferencesFeedback(elements.settingsModelFeedback, uiText("applying"));
+	await changeThinkingLevel(elements.settingsThinkingSelect.value);
+	renderPreferencesControls();
+	setPreferencesFeedback(elements.settingsModelFeedback, uiText("settingsThinkingSwitched"));
 });
-elements.settingsTrustSelect?.addEventListener("change", () => performVisualAction(elements.settingsSecurityFeedback, () => runVisualCommand(`/trust ${elements.settingsTrustSelect.value}`, elements.settingsSecurityFeedback)));
-document.querySelector("#settingsOauthLoginButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
-	const provider = elements.settingsOauthProvider.value;
-	if (!provider) throw new Error(uiText("noOauthProviders"));
-	await runVisualCommand(`/login ${provider}`, elements.settingsSecurityFeedback, { refresh: true, timeoutMs: 10 * 60_000 });
-	window.MetisOnboarding?.notifyEvent("provider_saved");
-}));
-document.querySelector("#settingsApiKeySaveButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
-	const provider = elements.settingsApiKeyProvider.value;
-	if (!provider) throw new Error(uiText("noProviders"));
-	const apiKey = elements.settingsApiKeyInput.value.trim();
-	if (!apiKey) throw new Error(uiText("enterApiKey"));
-	await runVisualCommand(`/login ${provider} ${apiKey}`, elements.settingsSecurityFeedback, { refresh: true });
+elements.settingsDefaultModelSelect?.addEventListener("change", async () => {
+	const value = elements.settingsDefaultModelSelect.value;
+	const model = value === "" ? undefined : state.models[Number(value)];
+	try {
+		state.defaults = await requestServer("/settings/defaults", "PUT", model
+			? { provider: model.provider, modelId: model.id }
+			: { provider: null, modelId: null });
+		renderPreferencesControls();
+		setPreferencesFeedback(elements.settingsModelFeedback, uiText("settingsDefaultModelSaved"));
+	} catch (error) { setPreferencesFeedback(elements.settingsModelFeedback, error.message || String(error), true); }
+});
+elements.settingsDefaultThinkingSelect?.addEventListener("change", async () => {
+	try {
+		state.defaults = await requestServer("/settings/defaults", "PUT", {
+			thinkingLevel: elements.settingsDefaultThinkingSelect.value || null,
+		});
+		renderPreferencesControls();
+		setPreferencesFeedback(elements.settingsModelFeedback, uiText("settingsDefaultThinkingSaved"));
+	} catch (error) { setPreferencesFeedback(elements.settingsModelFeedback, error.message || String(error), true); }
+});
+elements.settingsTrustSelect?.addEventListener("change", () => void runPreferencesCommand(`/trust ${elements.settingsTrustSelect.value}`, elements.settingsSecurityFeedback, { sync: true }));
+elements.settingsOauthLoginButton?.addEventListener("click", () => {
+	const provider = elements.settingsOauthProvider?.value;
+	if (provider) void runPreferencesCommand(`/login ${provider}`, elements.settingsSecurityFeedback, { sync: true });
+});
+elements.settingsApiKeySaveButton?.addEventListener("click", () => {
+	const provider = elements.settingsApiKeyProvider?.value;
+	const key = elements.settingsApiKeyInput?.value.trim();
+	if (!provider || !key) return setPreferencesFeedback(elements.settingsSecurityFeedback, uiText("enterApiKey"), true);
+	void runPreferencesCommand(`/login ${provider} ${key}`, elements.settingsSecurityFeedback, { sync: true });
 	elements.settingsApiKeyInput.value = "";
-	window.MetisOnboarding?.notifyEvent("provider_saved");
-}));
-elements.settingsCustomProviderSelect?.addEventListener("change", () => {
-	const provider = state.customProviders.find((item) => item.provider === elements.settingsCustomProviderSelect.value);
-	renderCustomProviderForm(provider);
 });
-document.querySelector("#settingsCustomProviderNewButton")?.addEventListener("click", () => {
-	if (elements.settingsCustomProviderSelect) elements.settingsCustomProviderSelect.value = "";
-	renderCustomProviderForm(undefined);
+elements.settingsLogoutButton?.addEventListener("click", () => {
+	const provider = elements.settingsLogoutProvider?.value;
+	if (provider && window.confirm(uiText("confirmRemoveCredentials", { provider }))) void runPreferencesCommand(`/logout ${provider}`, elements.settingsSecurityFeedback, { sync: true });
 });
-document.querySelector("#settingsCustomModelsRefreshButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
-	const baseUrl = elements.settingsCustomBaseUrl.value.trim();
-	const apiKey = elements.settingsCustomApiKey.value.trim();
-	if (!baseUrl) throw new Error(uiText("enterBaseUrl"));
-	if (!apiKey) throw new Error(uiText("enterApiKeyToDiscoverModels"));
-	const modelIds = await desktop.providerConfig.discoverModels({ baseUrl, apiKey });
-	if (!modelIds.length) throw new Error(uiText("noModelsDiscovered"));
-	setCustomModelOptions(modelIds);
-	setSettingsFeedback(elements.settingsSecurityFeedback, uiText("modelsDiscovered", { count: modelIds.length }));
-}));
-document.querySelector("#settingsCustomProviderSaveButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
+elements.settingsCustomProviderSelect?.addEventListener("change", refreshCustomProviderForm);
+document.querySelector("#settingsCustomProviderSave")?.addEventListener("click", async () => {
+	const name = elements.settingsCustomProviderName?.value.trim(); const baseUrl = elements.settingsCustomBaseUrl?.value.trim(); const apiKey = elements.settingsCustomApiKey?.value.trim();
 	const providerId = elements.settingsCustomProviderSelect?.value || undefined;
-	const providerName = elements.settingsCustomProviderName.value.trim();
-	const baseUrl = elements.settingsCustomBaseUrl.value.trim();
-	const apiKey = elements.settingsCustomApiKey.value.trim();
-	const modelIds = selectedCustomModelIds();
-	const reasoning = Boolean(elements.settingsCustomProviderReasoning?.checked);
-	if (!providerName) throw new Error(uiText("enterProviderName"));
-	if (!baseUrl) throw new Error(uiText("enterBaseUrl"));
-	if (!providerId && !apiKey) throw new Error(uiText("enterApiKey"));
-	const previousModel = state.session?.model;
-	const saved = await desktop.providerConfig.saveCustom({ providerId, name: providerName, baseUrl, apiKey, modelIds, reasoning });
-	await runVisualCommand("/reload", elements.settingsSecurityFeedback, { refresh: true });
-	if (apiKey) await runVisualCommand(`/login ${saved.provider} ${apiKey}`, elements.settingsSecurityFeedback, { refresh: true });
-	// Re-apply the active model so thinking capability updates without a manual switch.
-	const model = resolveCustomProviderModel(previousModel, state.models, saved.provider);
-	if (model) {
-		await requestServer("/session/model", "PUT", { provider: model.provider, modelId: model.id });
-	}
-	await syncServerSession({ loadModels: true });
-	await fillCustomProviderForm(saved.provider);
-	if (reasoning && state.session?.model?.provider === saved.provider && !state.session?.supportsThinking) {
-		throw new Error(uiText("reasoningRestartRequired"));
-	}
-	elements.settingsCustomApiKey.value = "";
-	setSettingsFeedback(
-		elements.settingsSecurityFeedback,
-		reasoning
-			? uiText("customProviderReasoningEnabled", { levels: state.session?.thinkingLevels?.join(" / ") || uiText("available") })
-			: uiText("customProviderNoReasoning"),
-	);
-	window.MetisOnboarding?.notifyEvent("provider_saved");
-}));
-elements.settingsCustomProviderDeleteButton?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
-	const providerId = elements.settingsCustomProviderSelect?.value;
-	if (!providerId) throw new Error(uiText("selectCustomProvider"));
-	await desktop.providerConfig.deleteCustom(providerId);
-	await syncServerSession({ loadModels: true });
-	await fillCustomProviderForm();
-	setSettingsFeedback(elements.settingsSecurityFeedback, uiText("customProviderDeleted"));
-}));
-document.querySelector("#settingsLogoutButton")?.addEventListener("click", () => performVisualAction(elements.settingsSecurityFeedback, async () => {
-	const provider = elements.settingsLogoutProvider.value;
-	if (!provider) throw new Error(uiText("noSavedCredentials"));
-	if (!window.confirm(uiText("confirmRemoveCredentials", { provider }))) return;
-	await runVisualCommand(`/logout ${provider}`, elements.settingsSecurityFeedback, { refresh: true });
-}));
-document.querySelector("#settingsShowOnboarding")?.addEventListener("click", () => {
-	closeSettings();
-	window.MetisOnboarding?.reset();
+	if (!name || !baseUrl || (!providerId && !apiKey)) return setPreferencesFeedback(elements.settingsSecurityFeedback, uiText("enterApiKey"), true);
+	try { const saved = await desktop.providerConfig.saveCustom({ providerId, name, baseUrl, apiKey, modelIds: (elements.settingsCustomModelIds?.value || "").split(",").map((value) => value.trim()).filter(Boolean), reasoning: Boolean(elements.settingsCustomProviderReasoning?.checked) }); await runPreferencesCommand("/reload", elements.settingsSecurityFeedback, { sync: true }); if (apiKey) await runPreferencesCommand(`/login ${saved.provider} ${apiKey}`, elements.settingsSecurityFeedback, { sync: true }); elements.settingsCustomApiKey.value = ""; await refreshPreferencesDetails(); }
+	catch (error) { setPreferencesFeedback(elements.settingsSecurityFeedback, error.message || String(error), true); }
 });
-document.querySelector("#settingsShowChangelog")?.addEventListener("click", () => performVisualAction(elements.settingsAgentFeedback, async () => {
-	const result = await runVisualCommand("/changelog", elements.settingsAgentFeedback);
-	showFileContentModal(uiText("changelogTitle"), result.changelog || uiText("noChangelog"));
-}));
-document.querySelector("#settingsShowHotkeys")?.addEventListener("click", () => performVisualAction(elements.settingsAgentFeedback, async () => {
-	const result = await runVisualCommand("/hotkeys", elements.settingsAgentFeedback);
-	showFileContentModal(uiText("hotkeysTitle"), uiText("hotkeysIntro", { hotkeys: (result.hotkeys || []).join("\n") }));
-}));
-document.querySelector("#settingsReloadResources")?.addEventListener("click", () => performVisualAction(elements.settingsAgentFeedback, () => runVisualCommand("/reload", elements.settingsAgentFeedback, { refresh: true })));
-document.querySelector("#settingsQuitApp")?.addEventListener("click", () => {
-	if (window.confirm(uiText("confirmQuitDesktop"))) performVisualAction(elements.settingsAgentFeedback, () => runVisualCommand("/quit", elements.settingsAgentFeedback));
+document.querySelector("#settingsCustomProviderDelete")?.addEventListener("click", async () => { const provider = elements.settingsCustomProviderSelect?.value; if (!provider) return; try { await desktop.providerConfig.deleteCustom(provider); await refreshPreferencesDetails(); } catch (error) { setPreferencesFeedback(elements.settingsSecurityFeedback, error.message || String(error), true); } });
+document.querySelector("#settingsSaveSessionName")?.addEventListener("click", async () => {
+	const name = elements.settingsSessionNameInput?.value.trim();
+	if (!name) return setPreferencesFeedback(elements.settingsSessionFeedback, uiText("enterSessionName"), true);
+	try { await requestServer("/session/name", "PUT", { name }); await syncServerSession({ loadModels: false, refreshConversations: true }); setPreferencesFeedback(elements.settingsSessionFeedback, uiText("completed")); }
+	catch (error) { setPreferencesFeedback(elements.settingsSessionFeedback, error.message || String(error), true); }
+});
+document.querySelector("#settingsCompactButton")?.addEventListener("click", () => void runPreferencesCommand("/compact", elements.settingsSessionFeedback, { sync: true }));
+document.querySelector("#settingsNewSessionButton")?.addEventListener("click", () => {
+	if (window.confirm(uiText("confirmNewSession"))) void requestServer("/session/new", "POST", { cwd: activeProject()?.path, collaborationMode: "plan" }).then(() => syncServerSession({ loadModels: true, refreshConversations: true })).catch((error) => setPreferencesFeedback(elements.settingsSessionFeedback, error.message || String(error), true));
+});
+document.querySelector("#settingsExportHtml")?.addEventListener("click", async () => { const path = await desktop.sessionFile.save("html"); if (path) void runPreferencesCommand(`/export ${path}`, elements.settingsSessionFeedback); });
+document.querySelector("#settingsExportJsonl")?.addEventListener("click", async () => { const path = await desktop.sessionFile.save("jsonl"); if (path) void runPreferencesCommand(`/export ${path}`, elements.settingsSessionFeedback); });
+document.querySelector("#settingsImportSession")?.addEventListener("click", async () => { const path = await desktop.sessionFile.open(); if (path && window.confirm(uiText("confirmImportSession"))) void runPreferencesCommand(`/import ${path}`, elements.settingsSessionFeedback, { sync: true }); });
+document.querySelector("#settingsShareSession")?.addEventListener("click", () => { if (window.confirm(uiText("confirmShareSession"))) void runPreferencesCommand("/share", elements.settingsSessionFeedback); });
+elements.settingsMemoryInput?.addEventListener("change", async () => {
+	try {
+		const result = await requestServer("/memory/settings", "PUT", { enabled: elements.settingsMemoryInput.checked });
+		setMemoryState(result);
+		setPreferencesFeedback(elements.settingsAgentFeedback, uiText("settingsMemorySaved"));
+	} catch (error) { setPreferencesFeedback(elements.settingsAgentFeedback, error.message || String(error)); }
+});
+elements.settingsMemoryRun?.addEventListener("click", async () => {
+	try {
+		setPreferencesFeedback(elements.settingsAgentFeedback, uiText("settingsMemoryRunStarted"));
+		const memory = await requestServer("/memory/run", "POST");
+		setMemoryState(memory);
+		setPreferencesFeedback(elements.settingsAgentFeedback, uiText("settingsMemoryRunCompleted", { processed: memory.lastRunProcessed || 0, added: memory.lastRunAdded || 0, skipped: memory.lastRunSkipped || 0, fallback: memory.fallbackUsed ? uiText("settingsMemoryFallbackSuffix") : "" }));
+	}
+	catch (error) { setPreferencesFeedback(elements.settingsAgentFeedback, error.message || String(error)); }
+});
+elements.settingsMemorySearch?.addEventListener("click", async () => {
+	const query = globalThis.prompt?.(uiText("settingsMemorySearchPrompt"));
+	if (!query?.trim()) return;
+	try {
+		const records = await requestServer(`/memory/search?q=${encodeURIComponent(query)}`);
+		const record = Array.isArray(records) ? records[0] : undefined;
+		if (!record) return setPreferencesFeedback(elements.settingsAgentFeedback, uiText("settingsMemoryNoMatch"));
+		const forget = window.confirm(`${record.content}\n\n${uiText("settingsMemoryForgetPrompt")}`);
+		if (forget) await requestServer(`/memory/${encodeURIComponent(record.id)}`, "DELETE");
+		setPreferencesFeedback(elements.settingsAgentFeedback, forget ? uiText("settingsMemoryForgotten") : record.content);
+	} catch (error) { setPreferencesFeedback(elements.settingsAgentFeedback, error.message || String(error)); }
+});
+elements.settingsMemoryReset?.addEventListener("click", async () => {
+	if (!window.confirm(uiText("settingsMemoryResetPrompt"))) return;
+	try { await requestServer("/memory/reset", "POST", { confirm: "RESET_MEMORY" }); setPreferencesFeedback(elements.settingsAgentFeedback, uiText("settingsMemoryResetDone")); }
+	catch (error) { setPreferencesFeedback(elements.settingsAgentFeedback, error.message || String(error)); }
+});
+document.querySelector("#settingsOpenServerDialog")?.addEventListener("click", () => {
+	hidePreferencesDialog();
+	elements.serverDialog.showModal();
 });
 document.querySelector("#settingsChooseWorkspaceButton")?.addEventListener("click", async () => {
 	await loadWorkspace(true);
-	await updateSettingsDetails();
+	await refreshPreferencesDetails();
 });
-elements.historyBack.addEventListener("click", () => void navigateHistory(-1));
-elements.historyForward.addEventListener("click", () => void navigateHistory(1));
-document.querySelector("#chooseWorkspaceButton").addEventListener("click", () => void loadWorkspace(true));
-document.querySelector("#refreshFilesButton").addEventListener("click", () => void refreshFileTree());
-elements.fileFilterInput.addEventListener("input", () => renderFileTree(elements.fileFilterInput.value));
+
+document.querySelector("#settingsReloadResources")?.addEventListener("click", () => void runPreferencesCommand(
+	"/reload",
+	elements.settingsAboutFeedback,
+	{ sync: true },
+));
+elements.historyBack?.addEventListener("click", () => void navigateHistory(-1));
+elements.historyForward?.addEventListener("click", () => void navigateHistory(1));
+document.querySelector("#chooseWorkspaceButton")?.addEventListener("click", () => void loadWorkspace(true));
+document.querySelector("#refreshFilesButton")?.addEventListener("click", () => void refreshFileTree());
+elements.fileFilterInput?.addEventListener("input", () => renderFileTree(elements.fileFilterInput.value));
 document.querySelector("#revealFileButton")?.addEventListener("click", () => state.activeFile && desktop.workspace.reveal(state.activeFile));
 
 document.querySelector("#browserBack")?.addEventListener("click", () => elements.browserView?.canGoBack() && elements.browserView?.goBack());
@@ -3527,19 +5328,53 @@ elements.browserView?.addEventListener("did-stop-loading", () => {
 });
 elements.browserView?.addEventListener("did-fail-load", () => { if (elements.browserStatus) elements.browserStatus.textContent = uiText("pageLoadFailed"); });
 
-elements.composerInput.addEventListener("input", autoSizeComposer);
+elements.composerInput.addEventListener("input", () => {
+	autoSizeComposer();
+	void updateSkillMenu();
+});
 elements.composerInput.addEventListener("keydown", (event) => {
+	const skillMenuOpen = !elements.composerSkillMenu?.hidden;
+	if (skillMenuOpen && !event.isComposing && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+		event.preventDefault();
+		setActiveSkillIndex(state.activeSkillIndex + (event.key === "ArrowDown" ? 1 : -1));
+		return;
+	}
+	if (skillMenuOpen && (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) && !event.isComposing) {
+		event.preventDefault();
+		selectSkillOption();
+		return;
+	}
+	if (skillMenuOpen && event.key === "Escape") {
+		event.preventDefault();
+		closeSkillMenu();
+		return;
+	}
+	if ((event.key === "Backspace" || event.key === "Delete") && skillComposer.removeAdjacentSkill(elements.composerInput, event.key === "Backspace" ? "backward" : "forward")) {
+		event.preventDefault();
+		return;
+	}
 	if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
 		event.preventDefault();
 		void sendMessage();
 	}
 });
+elements.composerInput.addEventListener("focus", () => void updateSkillMenu());
+elements.composer.addEventListener("focusout", () => {
+	requestAnimationFrame(() => {
+		if (!elements.composer.contains(document.activeElement)) closeSkillMenu();
+	});
+});
 elements.composerInput.addEventListener("paste", (event) => {
 	const files = attachmentTools.filesFromTransfer(event.clipboardData);
-	if (files.length === 0) return;
-	event.preventDefault();
 	const text = event.clipboardData?.getData("text/plain");
-	if (text) attachmentTools.insertTextAtSelection(elements.composerInput, text);
+	if (files.length === 0) {
+		if (!text) return;
+		event.preventDefault();
+		skillComposer.insertPlainText(elements.composerInput, text);
+		return;
+	}
+	event.preventDefault();
+	if (text) skillComposer.insertPlainText(elements.composerInput, text);
 	void handleAttachments(files, "paste");
 });
 elements.attachButton.addEventListener("click", () => elements.attachInput.click());
@@ -3572,14 +5407,10 @@ document.addEventListener("drop", (event) => {
 	elements.composer.classList.remove("is-dragging-attachments");
 	void handleAttachments(attachmentTools.filesFromTransfer(event.dataTransfer), "drop");
 });
-elements.sendButton.addEventListener("click", () => void (state.isStreaming ? abortGeneration() : sendMessage()));
+elements.sendButton?.addEventListener("click", () => void (state.isStreaming ? abortGeneration() : sendMessage()));
 elements.messageQueueToggle?.addEventListener("click", () => {
 	const collapsed = elements.messageQueue.classList.toggle("collapsed");
 	elements.messageQueueToggle.setAttribute("aria-expanded", String(!collapsed));
-});
-elements.subagentDockToggle?.addEventListener("click", () => {
-	state.subagentDockExpanded = !state.subagentDockExpanded;
-	renderSubagentDock();
 });
 elements.projectSwitchCapsule?.addEventListener("click", (event) => {
 	event.stopPropagation();
@@ -3590,8 +5421,26 @@ elements.projectSwitchAdd?.addEventListener("click", (event) => {
 	setProjectSwitchMenuOpen(false);
 	void loadWorkspace(true);
 });
+document.querySelector("#iconSidebarAddProject")?.addEventListener("click", (event) => {
+	event.stopPropagation();
+	void loadWorkspace(true);
+});
+elements.projectCustomizeForm?.addEventListener("submit", (event) => {
+	event.preventDefault();
+});
+elements.projectDisplayNameInput?.addEventListener("input", () => persistProjectCustomization({ name: true }));
+elements.projectColorInput?.addEventListener("input", () => {
+	persistProjectCustomization({ color: true });
+});
+elements.projectCustomizePopover?.addEventListener("keydown", (event) => {
+	if (event.key !== "Escape") return;
+	event.preventDefault();
+	const returnFocus = customizingProjectButton;
+	closeProjectCustomization();
+	returnFocus?.focus();
+});
 elements.projectSwitchMenu?.addEventListener("keydown", (event) => {
-	const options = [...elements.projectSwitchOptions.querySelectorAll(".project-switch-option"), elements.projectSwitchAdd];
+	const options = [...elements.projectSwitchOptions.querySelectorAll(".project-switch-option"), elements.projectSwitchAdd].filter(Boolean);
 	const currentIndex = options.indexOf(document.activeElement);
 	if (event.key === "Escape") {
 		event.preventDefault();
@@ -3606,6 +5455,44 @@ elements.projectSwitchMenu?.addEventListener("keydown", (event) => {
 elements.modelTrigger.addEventListener("click", (event) => {
 	event.stopPropagation();
 	setModelMenuOpen(!elements.modelPicker.classList.contains("open"), { focusSelected: true });
+});
+elements.workflowPicker?.addEventListener("mousedown", (event) => {
+	event.preventDefault();
+});
+elements.workflowTrigger?.addEventListener("click", (event) => {
+	event.stopPropagation();
+	setWorkflowMenuOpen(!elements.workflowPicker.classList.contains("open"), { focusSelected: true });
+});
+elements.workflowTrigger?.addEventListener("keydown", (event) => {
+	if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+		event.preventDefault();
+		setWorkflowMenuOpen(true, { focusSelected: true });
+	}
+});
+elements.workflowMenu?.addEventListener("click", (event) => {
+	const option = event.target.closest("[data-workflow-mode]");
+	if (option) {
+		void changeCollaborationMode(option.dataset.workflowMode);
+		if (document.activeElement && typeof document.activeElement.blur === "function") {
+			document.activeElement.blur();
+		}
+	}
+});
+elements.workflowMenu?.addEventListener("keydown", (event) => {
+	const options = [...elements.workflowMenu.querySelectorAll("[data-workflow-mode]")];
+	const currentIndex = options.indexOf(document.activeElement);
+	if (event.key === "Escape") {
+		event.preventDefault();
+		elements.composerInput.focus();
+	} else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) && options.length) {
+		event.preventDefault();
+		const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : event.key === "ArrowDown" ? (currentIndex + 1) % options.length : (currentIndex - 1 + options.length) % options.length;
+		options[nextIndex]?.focus();
+	}
+});
+elements.workflowPlanToggle?.addEventListener("click", () => {
+	state.workflowPlanCollapsed = !state.workflowPlanCollapsed;
+	renderWorkflowPlanCard();
 });
 elements.modelTrigger.addEventListener("keydown", (event) => {
 	if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -3636,11 +5523,13 @@ elements.modelMenu.addEventListener("keydown", (event) => {
 elements.advancedEntry.addEventListener("click", (event) => {
 	event.stopPropagation();
 	elements.modelPicker.classList.add("advanced-open");
+	requestAnimationFrame(positionModelMenu);
 });
 elements.thinkingBack.addEventListener("click", (event) => {
 	event.stopPropagation();
 	elements.modelPicker.classList.remove("advanced-open");
 	elements.advancedEntry.focus();
+	requestAnimationFrame(positionModelMenu);
 });
 elements.thinkingScale.addEventListener("keydown", (event) => {
 	if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -3686,33 +5575,41 @@ elements.thinkingScale.addEventListener("pointercancel", (event) => {
 	renderThinkingControl();
 });
 document.addEventListener("click", (event) => {
+	if (isProjectCustomizationOpen()
+		&& !elements.projectCustomizePopover.contains(event.target)
+		&& !event.target.closest(".project-rail-customize")) closeProjectCustomization();
 	if (!elements.projectSwitcher.contains(event.target)) setProjectSwitchMenuOpen(false);
 	if (!elements.modelPicker.contains(event.target)) setModelMenuOpen(false);
+	if (elements.workflowPicker) setWorkflowMenuOpen(true);
 });
 
-document.querySelector("#emptyConnectButton").addEventListener("click", () => elements.serverDialog.showModal());
+document.querySelector("#emptyConnectButton")?.addEventListener("click", () => elements.serverDialog.showModal());
 document.querySelector("#connectServerButton").addEventListener("click", () => void connectServer());
 elements.serverLoadingConnect?.addEventListener("click", () => elements.serverDialog.showModal());
 desktop.metis.onEvent(handleMetisEvent);
 desktop.metis.onDisconnect(() => {
-	state.serverConnected = false;
-	state.isStreaming = false;
-	state.models = [];
-	setStreamingState(false);
-	updateModelSelect();
-	updateSettingsConnectionDetails();
-	void loadVisualSettings();
-	if (!elements.serverLoading?.classList.contains("hidden")) showServerLoadingFailure();
+	if (serverDisconnectTimer) clearTimeout(serverDisconnectTimer);
+	serverDisconnectTimer = setTimeout(() => {
+		serverDisconnectTimer = undefined;
+		state.serverConnected = false;
+		state.isStreaming = false;
+		state.models = [];
+		setStreamingState(false);
+		updateModelSelect();
+		if (elements.settingsDialog?.open) renderPreferencesControls();
+		if (!elements.serverLoading?.classList.contains("hidden")) showServerLoadingFailure();
+	}, 1_500);
 });
 
 document.addEventListener("keydown", (event) => {
-	if (event.key === "Escape" && !elements.settingsShell.hidden && !elements.serverDialog.open) {
+	if (event.key === "Escape" && isProjectCustomizationOpen()) {
 		event.preventDefault();
-		closeSettings();
+		const returnFocus = customizingProjectButton;
+		closeProjectCustomization();
+		returnFocus?.focus();
 		return;
 	}
 	if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
-		if (!elements.settingsShell.hidden) return;
 		event.preventDefault();
 		void createConversation();
 	}
@@ -3749,10 +5646,36 @@ elements.messageScroll.addEventListener("scroll", () => {
 	}
 });
 
+elements.projectList?.addEventListener("scroll", updateProjectPanelConnector, { passive: true });
+window.addEventListener("resize", updateProjectPanelConnector);
+window.addEventListener("resize", () => positionProjectCustomization());
+window.addEventListener("resize", positionModelMenu);
+
 desktopI18n.observeDocument();
 applyUiLanguage(state.uiLanguage);
 renderConversations();
 window.setInterval(refreshWorkTimerTitles, 100);
+desktop.metis?.onServerReady?.(() => {
+	if (!state.serverConnected) {
+		void autoConnectServer();
+	}
+});
+window.setInterval(() => {
+	if (!state.serverConnected) {
+		void autoConnectServer();
+	}
+}, 3000);
+
+window.state = state;
+window.ensureProject = (pathOrObj) => ensureProject(typeof pathOrObj === "string" ? { path: pathOrObj } : pathOrObj);
+window.activateProject = activateProject;
+window.loadWorkspace = loadWorkspace;
+window.runPreferencesCommand = runPreferencesCommand;
+window.setUiLanguage = applyUiLanguage;
+window.focusComposer = () => elements.composerInput?.focus();
+
+
+
 void (async () => {
 	try {
 		const appInfo = await desktop.appInfo();
@@ -3762,10 +5685,12 @@ void (async () => {
 	} catch {}
 	await loadWorkspace();
 	const connected = await autoConnectServer();
-	if (!connected) showServerLoadingFailure();
-	if (window.MetisOnboarding && !window.MetisOnboarding.isCompleted()) {
-		setTimeout(() => {
-			window.MetisOnboarding.start();
-		}, 800);
+	if (!connected) {
+		showServerLoadingFailure();
+		setTimeout(() => finishServerLoading(), 1500);
 	}
 })();
+
+if (!window.MetisOnboarding?.isCompleted()) {
+	window.requestAnimationFrame(() => window.MetisOnboarding.start());
+}

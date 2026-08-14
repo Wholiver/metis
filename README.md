@@ -111,19 +111,37 @@ Metis used about 57% less time in this comparison. This is one user test, not a 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/metis-capabilities.dark.png" />
-    <img src="docs/images/metis-capabilities.png" width="100%" alt="Metis memory, Dream, search, and verification features" />
+    <img src="docs/images/metis-capabilities.png" width="100%" alt="Metis workflow, memory, search, and verification features" />
   </picture>
 </p>
 
-### Memory and Lessons
+### Deterministic workflow runtime
 
-Metis checks its brain map before starting technical work. It can reuse relevant decisions, project knowledge, and technical lessons from earlier sessions instead of rediscovering them every time.
+Metis freezes a `StepSnapshot` before every model sample: model, reasoning level, Build/Plan mode, instruction stack, messages, visible tools, dispatcher, and context window. A tool call always executes against the snapshot that exposed it; a later step is the first point where a model, tool, extension, instruction, or mode change can take effect.
 
-During long tasks, Metis keeps an append-only working log with compact checkpoints, diagnosed errors, verification state, and next steps. It restores the latest state after resume, interruption, or context compaction; Dream later consolidates the complete history.
+The local dispatcher runs explicitly safe read tools in parallel and serializes write or mixed tools. Steering is consumed only after current tool results persist; follow-ups wait until the turn is otherwise complete. This preserves assistant/tool-result pairing through retry, compaction, abort, and resume.
 
-### Dream
+### Build and Plan
 
-Dream reviews completed work and consolidates useful notes into structured memories and lessons. Temporary task context becomes reusable knowledge, while low-value details can be cleaned up.
+New CLI, TUI, and Desktop conversations start in Plan. Restored, switched, and forked sessions retain their saved mode; explicit Build selection wins. SDK callers keep its compatible default unless they pass `collaborationMode`. In Build, non-trivial work initializes `update_plan` before mutation, keeps one active step, and updates the checklist through verification. Build also emits concise ordinary progress text in the user's language around meaningful tool batches.
+
+Plan is a read-only collaboration mode, not an OS sandbox. It hides and rejects write, mixed, shell, edit, and unclassified tools—including `update_plan`. It first grounds itself in repository evidence, uses `ask_user` only for material unresolved decisions, then returns a decision-complete `<proposed_plan>`. The latest proposal is a branch artifact: `read_plan` retrieves it after reload or context compaction. Switching back to Build restores the saved Build tool set. In Desktop, the latest proposal appears as a compact, expandable preview; **Process** switches to Build and immediately starts implementation and verification.
+
+Use `/mode build` or `/mode plan` in CLI. Desktop exposes the same idle-only choice next to the model selector. Desktop replaces its composer with one `ask_user` question at a time, then restores the editor after submit or cancel. The TUI renders proposals without protocol tags, limits the preview to 12 source lines, and replaces the idle composer with terminal-native **Process** and **Submit changes** actions. Process first reads the durable proposal and current execution progress, then creates the Build checklist before any other tool. CLI, Desktop, JSON, RPC, Server, and SDK share the same mode, context-window, plan, and instruction-source state. Hosts with an interactive handler can answer `ask_user`; print/JSON and unattended SDK runs receive a recoverable unsupported result instead of hanging.
+
+### Execution plans
+
+Build persists a task-scoped execution checklist with one active step at most. Desktop and TUI show one live “Execution plan” surface above the composer and update it in place, so progress remains visible while tools run, after abort, after compaction, and after session reload. During Process, the surface first shows proposal-reading and checklist-creation states; runtime blocks every other tool until `read_plan` and then `update_plan` succeed. The surface intentionally shows only execution status and checklist items; the complete approved proposal remains available through its conversational preview and `read_plan`. Raw `update_plan` tool cards stay hidden to avoid duplicate UI. Completed state clears when a later independent Build prompt starts, while interrupted work remains resumable. `read_plan` returns both the latest proposal and current execution checklist.
+
+### Memory
+
+Metis automatically checkpoints active task state after prompts, complete steps, compaction, errors, aborts, and completion. It never requires model bookkeeping calls or adds a foreground model round trip.
+
+The durable memory coordinator stores jobs, records, provenance, and a search index in `~/.metis/memories/state.sqlite`, with inspectable `MEMORY.md`, project views, and a summary index. It separates global preferences, project knowledge, and checkout-only facts. Metis exposes `search_memory` in Plan and Build so the model can search on demand, refine queries, and search again without a call-count limit; memory is no longer queried and injected automatically on every prompt. Results remain advisory evidence and cannot override current user, developer, or AGENTS instructions.
+
+Background extraction can use only `search_memory`, with no Metis-specific output-token cap or search-round cap. Reasoning-capable models run extraction at `low`; models without reasoning support receive no reasoning parameter. Provider and model limits, aborts, timeouts, per-search result limits, and the six-candidate checkpoint limit still apply.
+
+Use `/memory status|on|off|run|search|forget|reset`. `reset` requires explicit confirmation. `/memory status` and Desktop show why record count is zero, pending work, eligibility time, latest run counts, and fallback state. Proposal artifacts and long-term Memory are separate: no draft is automatically promoted to memory. Legacy Dream extensions, brain maps, and `.temp` memory logs are removed.
 
 ### Search before action
 
@@ -131,7 +149,7 @@ Metis investigates before making changes. It searches the repository first and u
 
 ### Logs and verification
 
-Metis records meaningful errors and completion summaries. Before it says a task is finished, it compares the result with the user's original prompt and checks every requirement, constraint, and later clarification. It also runs relevant builds, tests, and functional checks when available.
+Metis records meaningful errors and completion summaries automatically. Before it says a task is finished, it compares the result with the user's original prompt and checks every requirement, constraint, and later clarification. It also runs relevant builds, tests, and functional checks when available.
 
 Together, these behaviors help the same coding model work with better context, fewer assumptions, and a stronger completion loop.
 
@@ -144,9 +162,10 @@ Together, these behaviors help the same coding model work with better context, f
   </picture>
 </p>
 
-1. **Understand** — read the request, recall relevant lessons, and investigate the codebase.
-2. **Build** — make focused changes and keep a useful work record.
-3. **Verify** — test the result and compare it with the original request.
+1. **Freeze context** — assemble trusted base/developer instructions, untrusted runtime context, and the real user request; the model retrieves durable memory explicitly when useful.
+2. **Investigate or build** — Plan reads and proposes; Build changes only what evidence supports.
+3. **Persist and recover** — retain message/tool pairs, workflow checkpoints, structured plan state, and compaction summaries.
+4. **Verify and deliver** — run risk-proportionate checks, report evidence, and name remaining risk.
 
 <details>
 <summary><strong>Developer information</strong></summary>

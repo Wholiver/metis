@@ -1,5 +1,6 @@
 // UI Components for extensions
 export { ArminComponent } from "./armin.ts";
+export { AskUserComponent } from "./ask-user.ts";
 export { AssistantMessageComponent } from "./assistant-message.ts";
 export { BashExecutionComponent } from "./bash-execution.ts";
 export { BorderedLoader } from "./bordered-loader.ts";
@@ -23,6 +24,7 @@ export { keyHint, keyText, rawKeyHint } from "./keybinding-hints.ts";
 export { LoginDialogComponent } from "./login-dialog.ts";
 export { LanguageSelectorComponent } from "./language-selector.ts";
 export { ModelSelectorComponent } from "./model-selector.ts";
+export { PlanActionsComponent } from "./plan-actions.ts";
 export { OAuthSelectorComponent } from "./oauth-selector.ts";
 export { type ModelsCallbacks, type ModelsConfig, ScopedModelsSelectorComponent } from "./scoped-models-selector.ts";
 export { SessionSelectorComponent } from "./session-selector.ts";
@@ -37,3 +39,4 @@ export { TrustSelectorComponent } from "./trust-selector.ts";
 export { UserMessageComponent } from "./user-message.ts";
 export { UserMessageSelectorComponent } from "./user-message-selector.ts";
 export { truncateToVisualLines, type VisualTruncateResult } from "./visual-truncate.ts";
+export { WorkflowPlanComponent } from "./workflow-plan.ts";

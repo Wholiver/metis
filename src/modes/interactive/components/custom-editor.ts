@@ -1,4 +1,10 @@
-import { Editor, type EditorOptions, type EditorTheme, type TUI } from "@earendil-works/metis-tui";
+import {
+	type AutocompleteProvider,
+	Editor,
+	type EditorOptions,
+	type EditorTheme,
+	type TUI,
+} from "@earendil-works/metis-tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.ts";
 
 /**
@@ -6,6 +12,7 @@ import type { AppKeybinding, KeybindingsManager } from "../../../core/keybinding
  */
 export class CustomEditor extends Editor {
 	private keybindings: KeybindingsManager;
+	private appAutocompleteProvider?: AutocompleteProvider;
 	public actionHandlers: Map<AppKeybinding, () => void> = new Map();
 
 	// Special handlers that can be dynamically replaced
@@ -25,6 +32,32 @@ export class CustomEditor extends Editor {
 	 */
 	onAction(action: AppKeybinding, handler: () => void): void {
 		this.actionHandlers.set(action, handler);
+	}
+
+	override setAutocompleteProvider(provider: AutocompleteProvider): void {
+		this.appAutocompleteProvider = provider;
+		super.setAutocompleteProvider(provider);
+	}
+
+	private shouldHandleTabAsAutocomplete(): boolean {
+		if (this.isShowingAutocomplete()) return true;
+		if (this.getText().trim().length === 0) return false;
+
+		const lines = this.getLines();
+		const cursor = this.getCursor();
+		const textBeforeCursor = (lines[cursor.line] ?? "").slice(0, cursor.col);
+		if (cursor.line === 0 && textBeforeCursor.trimStart().startsWith("/")) return true;
+		const currentToken = textBeforeCursor.match(/\S+$/)?.[0] ?? "";
+		const isExplicitFileReference =
+			currentToken.startsWith("@")
+			|| currentToken.startsWith("./")
+			|| currentToken.startsWith("../")
+			|| currentToken.startsWith("~/")
+			|| currentToken.startsWith("/")
+			|| currentToken.includes("/");
+		if (!isExplicitFileReference) return false;
+
+		return this.appAutocompleteProvider?.shouldTriggerFileCompletion?.(lines, cursor.line, cursor.col) ?? false;
 	}
 
 	handleInput(data: string): void {
@@ -69,6 +102,14 @@ export class CustomEditor extends Editor {
 		// Check all other app actions
 		for (const [action, handler] of this.actionHandlers) {
 			if (action !== "app.interrupt" && action !== "app.exit" && this.keybindings.matches(data, action)) {
+				if (
+					action === "app.workflow.toggle"
+					&& this.keybindings.matches(data, "tui.input.tab")
+					&& this.shouldHandleTabAsAutocomplete()
+				) {
+					super.handleInput(data);
+					return;
+				}
 				handler();
 				return;
 			}

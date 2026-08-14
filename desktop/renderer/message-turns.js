@@ -86,19 +86,24 @@
 			.slice(turnStart, turnEnd)
 			.filter((candidate) => candidate.role === "assistant");
 		const trailingAssistant = assistantMessages.at(-1);
-		const lastAssistant = isStreaming
+		const lastUserIndex = messages.findLastIndex((candidate) => candidate.role === "user");
+		const isCurrentTurn = messageIndex > lastUserIndex;
+		const turnIsStreaming = Boolean(isStreaming && isCurrentTurn);
+		const lastAssistant = turnIsStreaming
 			? trailingAssistant
 			: [...assistantMessages].reverse().find((assistantMessage) => messageHasText(assistantMessage)
 				|| messageHasCoT(assistantMessage, messages)
 				|| Boolean(assistantMessage?.errorMessage)) ?? trailingAssistant;
 		const hasCoT = assistantMessages.some((assistantMessage) => messageHasCoT(assistantMessage, messages));
-		const hasFinalResponse = messageHasText(lastAssistant);
+		// A streaming text delta can still become an intermediate status update or
+		// precede a tool call. Do not present it as a final answer until the agent
+		// finishes the turn, otherwise the renderer has to move it from the answer
+		// surface into Thoughts on the next update.
+		const hasFinalResponse = !turnIsStreaming && messageHasText(lastAssistant);
 		const hasRunningSubagent = assistantMessages.some((assistantMessage) => Array.isArray(assistantMessage.content)
 			&& assistantMessage.content.some((part) => part.type === "toolCall"
 				&& String(part.name || "").toLowerCase() === "subagent"
 				&& getSubagentProgress(part, messages).state === "running"));
-		const lastUserIndex = messages.findLastIndex((candidate) => candidate.role === "user");
-		const isCurrentTurn = messageIndex > lastUserIndex;
 		const isFinalAssistant = message === lastAssistant;
 
 		return {
@@ -108,7 +113,7 @@
 			isCurrentTurn,
 			isFinalAssistant,
 			isIntermediate: !isFinalAssistant,
-			shouldCollapse: hasCoT && hasFinalResponse && !isStreaming && !hasRunningSubagent,
+			shouldCollapse: hasCoT && hasFinalResponse && !turnIsStreaming && !hasRunningSubagent,
 		};
 	}
 
@@ -121,20 +126,46 @@
 			.join("\n");
 	}
 
+	function extractProposedPlan(text) {
+		const source = String(text || "");
+		const match = /<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>/i.exec(source);
+		if (!match) return undefined;
+		return {
+			before: source.slice(0, match.index).trim(),
+			plan: match[1].trim(),
+			after: source.slice(match.index + match[0].length).trim(),
+		};
+	}
+
 	function getSubagentProgress(part, messages) {
 		const jobId = String(part?.id || "").slice(-6);
 		const toolResult = messages.find((message) => message.role === "toolResult" && message.toolCallId === part?.id);
+		const launchMessage = messages.find((message) => Array.isArray(message?.content)
+			&& message.content.some((contentPart) => contentPart === part || contentPart?.id === part?.id));
 		if (toolResult?.isError) {
-			return { jobId, state: "failed" };
+			const startedAt = toTimestamp(launchMessage?.timestamp);
+			const finishedAt = toTimestamp(toolResult.timestamp);
+			const durationMs = startedAt !== undefined && finishedAt !== undefined && finishedAt >= startedAt
+				? finishedAt - startedAt
+				: undefined;
+			return durationMs === undefined ? { jobId, state: "failed" } : { jobId, state: "failed", durationMs };
 		}
 
 		const completionMarker = `[Subagent Job ${jobId} finished]`;
-		const completed = messages.some((message) => {
+		const completionMessage = messages.find((message) => {
 			if (message.customType === "subagent_result" && messageText(message).includes(completionMarker)) return true;
 			return messageText(message).includes(completionMarker);
 		});
+		const completed = Boolean(completionMessage);
+		const startedAt = toTimestamp(launchMessage?.timestamp);
+		const finishedAt = toTimestamp(completionMessage?.timestamp);
+		const durationMs = startedAt !== undefined && finishedAt !== undefined && finishedAt >= startedAt
+			? finishedAt - startedAt
+			: undefined;
 
-		return { jobId, state: completed ? "completed" : "running" };
+		return durationMs === undefined
+			? { jobId, state: completed ? "completed" : "running" }
+			: { jobId, state: completed ? "completed" : "running", durationMs };
 	}
 
 	function getRunningSubagentCount(messages) {
@@ -182,10 +213,41 @@
 		return Boolean(isStreaming) || getRunningSubagentCount(messages) > 0;
 	}
 
-	function getAssistantContentLayout(message, isFinalAssistant) {
-		const content = Array.isArray(message?.content) ? message.content : [];
+	function mergeStreamingMessage(previous, incoming) {
+		if (previous?.role !== "assistant" || incoming?.role !== "assistant") return incoming;
+		if (!Array.isArray(previous.content) || !Array.isArray(incoming.content)) return incoming;
+
+		const content = [...incoming.content];
+		const incomingToolCallIds = new Set(content
+			.filter((part) => part?.type === "toolCall" && part.id)
+			.map((part) => part.id));
+
+		for (let index = 0; index < previous.content.length; index += 1) {
+			const part = previous.content[index];
+			if (part?.type !== "toolCall" || !part.id || incomingToolCallIds.has(part.id)) continue;
+			content.splice(Math.min(index, content.length), 0, part);
+			incomingToolCallIds.add(part.id);
+		}
+
+		return { ...previous, ...incoming, content };
+	}
+
+	function classifyDesktopActivityEvent(event) {
+		if (event?.type === "agent_end") return event.willRetry ? "active" : "complete";
+		if (event?.type === "compaction_end") return "complete";
+		if (["agent_start", "message_start", "message_update", "tool_execution_start", "tool_execution_end", "compaction_start"]
+			.includes(event?.type)) return "active";
+		return "unchanged";
+	}
+
+	function getAssistantContentLayout(message, isFinalAssistant, isStreaming = false) {
+		const content = Array.isArray(message?.content)
+			? message.content
+			: typeof message?.content === "string"
+				? [{ type: "text", text: message.content }]
+				: [];
 		let finalResponseIndex = -1;
-		if (isFinalAssistant) {
+		if (isFinalAssistant && !isStreaming) {
 			const lastToolCallIndex = content.findLastIndex((part) => part?.type === "toolCall");
 			for (let index = content.length - 1; index > lastToolCallIndex; index -= 1) {
 				const part = content[index];
@@ -210,8 +272,11 @@
 		};
 	}
 
-	function getAssistantWorkLayout(message, messages, isFinalAssistant) {
-		const { cotParts, finalResponsePart } = getAssistantContentLayout(message, isFinalAssistant);
+	function getAssistantWorkLayout(message, messages, isFinalAssistant, isStreaming = false) {
+		const { cotParts, finalResponsePart } = getAssistantContentLayout(message, isFinalAssistant, isStreaming);
+		if (typeof message?.content === "string") {
+			return { workItems: cotParts, finalResponsePart };
+		}
 		const cotPartSet = new Set(cotParts);
 		const workItems = [];
 		for (const part of Array.isArray(message?.content) ? message.content : []) {
@@ -262,8 +327,11 @@
 		shouldHideAssistantWorkHeader,
 		getAssistantTurnDuration,
 		shouldQueueDesktopMessage,
+		mergeStreamingMessage,
+		classifyDesktopActivityEvent,
 		getAssistantContentLayout,
 		getAssistantWorkLayout,
+		extractProposedPlan,
 		reconcileAssistantFinalDivider,
 		isSubagentLaunchNotice,
 	};

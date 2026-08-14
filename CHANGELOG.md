@@ -4,7 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
-## [1.6.4-rc.1] - 2026-08-03
+## [1.0.0] - 2026-08-14
+
+### Official 1.0.0 Release
+
+- First official stable release of Metis across CLI, TUI, Desktop, and Server modes.
+- Production-grade memory coordinator and search memory tools.
+- Full cross-platform support with macOS DMG and Windows installers.
+- Desktop UI optimizations, custom Provider management, and seamless OAuth authentication.
+- Enhanced subagent workflows, plan management, and interactive session controls.
 
 ### Cross-platform video evidence
 

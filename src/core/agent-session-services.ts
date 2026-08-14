@@ -13,7 +13,6 @@ import {
 	type ResourceLoaderReloadOptions,
 } from "./resource-loader.ts";
 import { type CreateAgentSessionOptions, type CreateAgentSessionResult, createAgentSession } from "./sdk.ts";
-import { withBuiltinDreamModeFactories } from "./builtins/dream-mode.ts";
 import type { SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
 
@@ -64,6 +63,8 @@ export interface CreateAgentSessionFromServicesOptions {
 	excludeTools?: CreateAgentSessionOptions["excludeTools"];
 	noTools?: CreateAgentSessionOptions["noTools"];
 	customTools?: ToolDefinition[];
+	autoSessionName?: CreateAgentSessionOptions["autoSessionName"];
+	collaborationMode?: CreateAgentSessionOptions["collaborationMode"];
 }
 
 /**
@@ -148,7 +149,7 @@ export async function createAgentSessionServices(
 		cwd,
 		agentDir,
 		settingsManager,
-		extensionFactories: withBuiltinDreamModeFactories(options.resourceLoaderOptions?.extensionFactories),
+		extensionFactories: options.resourceLoaderOptions?.extensionFactories ?? [],
 	});
 	await resourceLoader.reload(options.resourceLoaderReloadOptions);
 
@@ -204,6 +205,8 @@ export async function createAgentSessionFromServices(
 		excludeTools: options.excludeTools,
 		noTools: options.noTools,
 		customTools: options.customTools,
+		autoSessionName: options.autoSessionName,
+		collaborationMode: options.collaborationMode,
 		sessionStartEvent: options.sessionStartEvent,
 	});
 }

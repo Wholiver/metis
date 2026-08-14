@@ -226,7 +226,7 @@ describe("AgentSession queue characterization", () => {
 		releaseToolExecution();
 		await promptPromise;
 
-		expect(batchedUserMessages).toEqual(["start", "steer 1", "steer 2"]);
+		expect(batchedUserMessages.filter((message) => !message.startsWith("[Runtime context"))).toEqual(["start", "steer 1", "steer 2"]);
 		expect(getAssistantTexts(harness)).toEqual(["", "batched steer response"]);
 	});
 
@@ -254,7 +254,7 @@ describe("AgentSession queue characterization", () => {
 		releaseToolExecution();
 		await promptPromise;
 
-		expect(batchedUserMessages).toEqual(["start", "follow-up 1", "follow-up 2"]);
+		expect(batchedUserMessages.filter((message) => !message.startsWith("[Runtime context"))).toEqual(["start", "follow-up 1", "follow-up 2"]);
 		expect(getAssistantTexts(harness)).toEqual(["", "original turn complete", "batched follow-up response"]);
 	});
 
@@ -350,7 +350,7 @@ describe("AgentSession queue characterization", () => {
 		await harness.session.prompt("normal prompt");
 
 		expect(sawCustomMessage).toBe(true);
-		expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "custom", "assistant"]);
+		expect(harness.session.messages.map((message) => message.role)).toEqual(["custom", "user", "assistant"]);
 	});
 
 	it("updates pendingMessageCount and removes queued text before message_start is emitted", async () => {
@@ -418,6 +418,50 @@ describe("AgentSession queue characterization", () => {
 		await expect(harness.session.followUp("/testcmd queued")).rejects.toThrow(
 			'Extension command "/testcmd" cannot be queued. Use prompt() or execute the command when not streaming.',
 		);
+	});
+
+	it("removes a specific follow-up from the real agent queue", async () => {
+		const waiting = await createWaitingHarness();
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("original turn complete"),
+			fauxAssistantMessage("remaining follow-up complete"),
+		]);
+
+		await waitForToolStart;
+		await harness.session.followUp("remove me");
+		await harness.session.followUp("keep me");
+		const removed = harness.session.removeQueuedMessage("followUp", 0);
+
+		expect(removed.text).toBe("remove me");
+		expect(harness.session.getFollowUpMessages()).toEqual(["keep me"]);
+		releaseToolExecution();
+		await promptPromise;
+		expect(getUserTexts(harness)).toEqual(["start", "keep me"]);
+	});
+
+	it("preserves images when editing or promoting a queued message", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		const image = { type: "image" as const, mimeType: "image/png", data: "aW1hZ2U=" };
+
+		await harness.session.followUp("with image", [image]);
+		const promoted = harness.session.promoteFollowUpMessage(0);
+
+		expect(promoted).toMatchObject({ text: "with image", images: [image] });
+		expect(harness.session.getFollowUpMessages()).toEqual([]);
+		expect(harness.session.getSteeringMessages()).toEqual(["with image"]);
+		expect(harness.session.pendingMessageCount).toBe(1);
+		harness.session.clearQueue();
+	});
+
+	it("rejects stale queue indexes", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		expect(() => harness.session.removeQueuedMessage("followUp", 0)).toThrow("was not found");
+		expect(() => harness.session.promoteFollowUpMessage(0)).toThrow("was not found");
 	});
 
 	it("delivers follow-ups queued during agent_end", async () => {

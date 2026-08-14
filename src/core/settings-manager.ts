@@ -19,6 +19,15 @@ export interface WorkingMemorySettings {
 	checkpointInterval?: number; // default: 8 non-log tool calls
 }
 
+/** Durable, advisory memory. `workingMemory` remains read-only compatibility. */
+export interface MemorySettings {
+	enabled?: boolean;
+	maxUnusedDays?: number;
+	maxRolloutAgeDays?: number;
+	minRolloutIdleHours?: number;
+	maxRolloutsPerSweep?: number;
+}
+
 export interface BranchSummarySettings {
 	reserveTokens?: number; // default: 16384 (tokens reserved for prompt + LLM response)
 	skipPrompt?: boolean; // default: false - when true, skips "Summarize branch?" prompt and defaults to no summary
@@ -95,6 +104,7 @@ export interface Settings {
 	uiLanguage?: UiLanguage; // global-only TUI language preference; default: "auto"
 	compaction?: CompactionSettings;
 	workingMemory?: WorkingMemorySettings;
+	memory?: MemorySettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
@@ -704,6 +714,14 @@ export class SettingsManager {
 		this.save();
 	}
 
+	clearDefaultModelAndProvider(): void {
+		delete this.globalSettings.defaultProvider;
+		delete this.globalSettings.defaultModel;
+		this.markModified("defaultProvider");
+		this.markModified("defaultModel");
+		this.save();
+	}
+
 	getSteeringMode(): "all" | "one-at-a-time" {
 		return this.settings.steeringMode || "one-at-a-time";
 	}
@@ -762,6 +780,12 @@ export class SettingsManager {
 		this.save();
 	}
 
+	clearDefaultThinkingLevel(): void {
+		delete this.globalSettings.defaultThinkingLevel;
+		this.markModified("defaultThinkingLevel");
+		this.save();
+	}
+
 	getTransport(): TransportSetting {
 		return this.settings.transport ?? "auto";
 	}
@@ -815,6 +839,26 @@ export class SettingsManager {
 			enabled: this.getWorkingMemoryEnabled(),
 			checkpointInterval: this.getWorkingMemoryCheckpointInterval(),
 		};
+	}
+
+	getMemorySettings(): Required<MemorySettings> {
+		const memory = this.settings.memory ?? {};
+		const positive = (value: unknown, fallback: number) =>
+			typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+		return {
+			enabled: memory.enabled ?? true,
+			maxUnusedDays: positive(memory.maxUnusedDays, 30),
+			maxRolloutAgeDays: positive(memory.maxRolloutAgeDays, 10),
+			minRolloutIdleHours: positive(memory.minRolloutIdleHours, 6),
+			maxRolloutsPerSweep: positive(memory.maxRolloutsPerSweep, 2),
+		};
+	}
+
+	setMemoryEnabled(enabled: boolean): void {
+		if (!this.globalSettings.memory) this.globalSettings.memory = {};
+		this.globalSettings.memory.enabled = enabled;
+		this.markModified("memory", "enabled");
+		this.save();
 	}
 
 	getBranchSummarySettings(): { reserveTokens: number; skipPrompt: boolean } {

@@ -2,17 +2,15 @@
 
 Electron 框架，连接 Metis Server。开发模式使用仓库中的 CLI；安装包内置完整 CLI/Server，无需用户预装 Node.js 或 Metis CLI。
 
+修改 Desktop 前端前，必须先阅读 [`../docs/desktop-frontend-development.md`](../docs/desktop-frontend-development.md)。其中包含真实加载链、渲染生命周期、CSS 层叠、构建产物和验证要求。
+
 ```bash
 cd desktop
 npm install
 npm run dev
 ```
 
-首次运行前，从仓库根目录构建 CLI：
-
-```bash
-npm run build
-```
+`npm run dev` 和 `npm start` 会先构建仓库 CLI，再启动 Desktop；无需另行执行根目录构建命令。
 
 Desktop 启动时会检查 `http://127.0.0.1:4096`：已有 Metis Server 时直接复用，否则自动启动仓库中已构建的 CLI Server，并在应用退出时关闭自己启动的进程。设置 `METIS_DESKTOP_NO_AUTO_SERVER=1` 可关闭自动启动。项目信任检查保持启用。
 

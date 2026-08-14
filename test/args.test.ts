@@ -100,19 +100,14 @@ describe("parseArgs", () => {
 			expect(result.apiKey).toBe("sk-test-key");
 		});
 
-		test("parses --system-prompt", () => {
+		test("rejects removed --system-prompt", () => {
 			const result = parseArgs(["--system-prompt", "You are a helpful assistant"]);
-			expect(result.systemPrompt).toBe("You are a helpful assistant");
+			expect(result.diagnostics).toContainEqual(expect.objectContaining({ type: "error", message: expect.stringContaining("--base-instructions") }));
 		});
 
-		test("parses --append-system-prompt", () => {
+		test("rejects removed --append-system-prompt", () => {
 			const result = parseArgs(["--append-system-prompt", "Additional context"]);
-			expect(result.appendSystemPrompt).toEqual(["Additional context"]);
-		});
-
-		test("parses multiple --append-system-prompt flags", () => {
-			const result = parseArgs(["--append-system-prompt", "Context A", "--append-system-prompt", "Context B"]);
-			expect(result.appendSystemPrompt).toEqual(["Context A", "Context B"]);
+			expect(result.diagnostics).toContainEqual(expect.objectContaining({ type: "error", message: expect.stringContaining("--developer-instructions") }));
 		});
 
 		test("parses --mode", () => {

@@ -199,7 +199,7 @@ describe("AgentSession model and extension characterization", () => {
 		let providerUserText = "";
 		harness.setResponses([
 			(context) => {
-				const user = context.messages.find((message) => message.role === "user");
+				const user = [...context.messages].reverse().find((message) => message.role === "user");
 				providerUserText =
 					user && typeof user.content !== "string"
 						? user.content
@@ -240,7 +240,7 @@ describe("AgentSession model and extension characterization", () => {
 		let providerUserText = "";
 		transformedHarness.setResponses([
 			(context) => {
-				const user = context.messages.find((message) => message.role === "user");
+				const user = [...context.messages].reverse().find((message) => message.role === "user");
 				providerUserText =
 					user && typeof user.content !== "string"
 						? user.content
@@ -288,33 +288,37 @@ describe("AgentSession model and extension characterization", () => {
 		expect(seenOptions[1]?.selectedTools).toContain("mutated_tool");
 	});
 
-	it("allows before_agent_start handlers to inject custom messages and modify the system prompt", async () => {
+	it("allows before_step handlers to declare trusted step instructions and context", async () => {
 		const harness = await createHarness({
 			extensionFactories: [
 				(metis) => {
-					metis.on("before_agent_start", async (event) => ({
-						message: {
-							customType: "before-start",
+					metis.on("before_step", async () => ({
+						developerInstructions: [{
+							id: "test-extension-instruction",
+							channel: "developer",
+							content: "extra instructions",
+							source: "test extension",
+							trust: "extension",
+						}],
+						context: [{
+							id: "test-extension-context",
+							channel: "context",
 							content: "injected",
-							display: true,
-							details: { injected: true },
-						},
-						systemPrompt: `${event.systemPrompt}\n\nextra instructions`,
+							source: "test extension",
+							trust: "extension",
+						}],
 					}));
 				},
 			],
 		});
 		harnesses.push(harness);
 		let providerSystemPrompt = "";
-		let sawInjectedUserMessage = false;
+		let sawInjectedContext = false;
 		harness.setResponses([
 			(context) => {
 				providerSystemPrompt = context.systemPrompt ?? "";
-				sawInjectedUserMessage = context.messages.some(
-					(message) =>
-						message.role === "user" &&
-						typeof message.content !== "string" &&
-						message.content.some((part) => part.type === "text" && part.text === "injected"),
+				sawInjectedContext = context.messages.some(
+					(message) => message.role === "user" && typeof message.content !== "string" && message.content.some((part) => part.type === "text" && part.text.includes("injected")),
 				);
 				return fauxAssistantMessage("done");
 			},
@@ -323,10 +327,7 @@ describe("AgentSession model and extension characterization", () => {
 		await harness.session.prompt("hello");
 
 		expect(providerSystemPrompt).toContain("extra instructions");
-		expect(sawInjectedUserMessage).toBe(true);
-		expect(
-			harness.session.messages.some((message) => message.role === "custom" && message.customType === "before-start"),
-		).toBe(true);
+		expect(sawInjectedContext).toBe(true);
 	});
 
 	it("bindExtensions emits session_start and reload emits session_shutdown then session_start", async () => {

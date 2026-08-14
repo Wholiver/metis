@@ -95,6 +95,17 @@ describe("ModelRegistry", () => {
 		messages: [],
 	};
 
+	test("exposes GPT-5.6 Luna through the local Codex subscription registry", () => {
+		const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+		const luna = registry.getAll().find((model) => model.provider === "openai-codex" && model.id === "gpt-5.6-luna");
+		expect(luna).toMatchObject({
+			name: "GPT-5.6-Luna",
+			contextWindow: 272_000,
+			maxTokens: 128_000,
+			reasoning: true,
+		});
+	});
+
 	describe("baseUrl override (no custom models)", () => {
 		test("overriding baseUrl keeps all built-in models", () => {
 			writeRawModelsJson({

@@ -13,6 +13,7 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type {
@@ -92,11 +93,31 @@ import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader }
 import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
-import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
+import { type AskUserHandler, type AskUserRequest, type AskUserResponse, validateAskUserResponse } from "./ask-user.ts";
+import {
+	type BuildSystemPromptOptions,
+	buildInstructionStack,
+	buildSystemPrompt,
+	summarizeInstructionStack,
+	type InstructionSourceSummary,
+	type InstructionStack,
+} from "./system-prompt.ts";
+import {
+	extractProposedPlan,
+	resolveWorkflowProposal,
+	resolveWorkflowPlan,
+	type CollaborationMode,
+	getToolCapabilities,
+	type StepSnapshot,
+	type WorkflowPlanState,
+	type WorkflowProposalState,
+	WorkflowToolError,
+	WorkflowRuntime,
+} from "./workflow-runtime.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
-import { readWorkingMemorySync } from "./tools/log.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
+import { type MemoryCoordinator, type MemoryRecordSummary, type MemoryState } from "./memory-coordinator.ts";
 
 // ============================================================================
 // Skill Block Parsing
@@ -148,6 +169,10 @@ export type AgentSessionEvent =
 			error?: string;
 	  }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
+	| { type: "collaboration_mode_changed"; mode: CollaborationMode }
+	| { type: "memory_state_changed"; state: MemoryState }
+	| { type: "memory_records_changed" }
+	| { type: "user_input_request"; request: AskUserRequest }
 	| { type: "subagent_status"; runningCount: number; runningJobIds: readonly string[] }
 	| {
 			type: "compaction_end";
@@ -162,6 +187,13 @@ export type AgentSessionEvent =
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
+
+/** Complete queued user message retained for queue editing and reordering. */
+export interface QueuedSessionMessage {
+	text: string;
+	images?: ImageContent[];
+	timestamp: number;
+}
 
 // ============================================================================
 // Types
@@ -180,7 +212,7 @@ export interface AgentSessionConfig {
 	customTools?: ToolDefinition[];
 	/** Model registry for API key resolution and model discovery */
 	modelRegistry: ModelRegistry;
-		/** Initial active built-in tool names. Default: [read, bash, edit, write, log] */
+	/** Initial active built-in tool names. Default includes update_plan for Build progress. */
 	initialActiveToolNames?: string[];
 	/** Optional allowlist of tool names. When provided, only these tool names are exposed. */
 	allowedToolNames?: string[];
@@ -199,6 +231,12 @@ export interface AgentSessionConfig {
 	sessionStartEvent?: SessionStartEvent;
 	/** Whether to automatically generate an AI-summarized session title. Default: true */
 	autoSessionName?: boolean;
+	/** Build permits all configured tools; Plan exposes read-only tools only. */
+	collaborationMode?: CollaborationMode;
+	/** Host-provided interactive bridge for built-in ask_user. */
+	askUserHandler?: AskUserHandler;
+	/** Durable advisory memory; omitted for ephemeral and subagent sessions. */
+	memoryCoordinator?: MemoryCoordinator;
 }
 
 export interface ExtensionBindings {
@@ -222,6 +260,8 @@ export interface PromptOptions {
 	source?: InputSource;
 	/** Internal hook used by RPC mode to observe prompt preflight acceptance or rejection. */
 	preflightResult?: (success: boolean) => void;
+	/** Explicit host action used to enforce proposal execution setup at runtime. */
+	workflowAction?: "process_proposal";
 }
 
 /** Result from cycleModel() */
@@ -271,9 +311,6 @@ function estimateMessagesTokens(messages: AgentMessage[]): number {
 
 /** Standard thinking levels */
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
-const WORKING_MEMORY_CONTEXT_TYPE = "working_memory";
-const WORKING_MEMORY_REMINDER_TYPE = "working_memory_reminder";
-
 // ============================================================================
 // AgentSession Class
 // ============================================================================
@@ -293,6 +330,9 @@ export class AgentSession {
 	private _steeringMessages: string[] = [];
 	/** Tracks pending follow-up messages for UI display. Removed when delivered. */
 	private _followUpMessages: string[] = [];
+	/** Complete queue entries used to preserve images when removing or reordering. */
+	private _steeringQueueEntries: QueuedSessionMessage[] = [];
+	private _followUpQueueEntries: QueuedSessionMessage[] = [];
 	/** Messages queued to be included with the next user prompt as context ("asides"). */
 	private _pendingNextTurnMessages: CustomMessage[] = [];
 
@@ -315,6 +355,8 @@ export class AgentSession {
 	// Extension system
 	private _extensionRunner!: ExtensionRunner;
 	private _turnIndex = 0;
+	private _activeWorkflowTaskId?: string;
+	private _activeWorkflowProposalRevision?: number;
 
 	private _resourceLoader: ResourceLoader;
 	private _customTools: ToolDefinition[];
@@ -335,6 +377,7 @@ export class AgentSession {
 	private _extensionErrorUnsubscriber?: () => void;
 
 	private _isGeneratingSessionName = false;
+	private _sessionNameGenerationPromise?: Promise<string | undefined>;
 	private _sessionNameError?: string;
 	private _autoSessionName = true;
 
@@ -351,16 +394,22 @@ export class AgentSession {
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 	private _systemPromptOverride?: string;
+	private _instructionStack!: InstructionStack;
+	private _activeRunInstructionStack: InstructionStack | undefined;
+	private readonly _workflowRuntime = new WorkflowRuntime();
+	private _collaborationMode: CollaborationMode = "build";
+	/** Configured Build tool set. Plan mode derives a read-only view without replacing it. */
+	private _buildToolNames: string[] | undefined;
 
-	// Working-memory refresh and checkpoint cadence
-	private _workingMemoryToolCallsSinceCheckpoint = 0;
-	private _workingMemoryLastCheckpointReminderAt = 0;
-	private _workingMemoryCheckpointDue = false;
-	private _workingMemoryErrorDue = false;
-	private _workingMemoryNeedsRefresh = true;
+	private _memoryCoordinator?: MemoryCoordinator;
+	private _askUserHandler?: AskUserHandler;
+	private _pendingUserInput?: AskUserRequest;
 	private _subagentLaunchBatchOpen = false;
+	private _subagentPauseActive = false;
 	private _subagentBarrierActiveToolNames: string[] | undefined;
 	private readonly _pendingSubagentResults = new Map<string, string>();
+	private _subagentResultDeliveryInProgress = false;
+	private _subagentResultDrainPromise: Promise<void> | undefined;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -372,12 +421,17 @@ export class AgentSession {
 		this._cwd = config.cwd;
 		this._modelRegistry = config.modelRegistry;
 		this._autoSessionName = config.autoSessionName ?? false;
+		this._collaborationMode = config.collaborationMode ?? "build";
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		this._memoryCoordinator = config.memoryCoordinator;
+		this._askUserHandler = config.askUserHandler;
+		this._memoryCoordinator?.on((event) => this._emit(event));
+		this._memoryCoordinator?.start();
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -396,103 +450,6 @@ export class AgentSession {
 		return this._modelRegistry;
 	}
 
-	private _isTransientWorkingMemoryMessage(message: AgentMessage): boolean {
-		return (
-			message.role === "custom" &&
-			(message.customType === WORKING_MEMORY_CONTEXT_TYPE || message.customType === WORKING_MEMORY_REMINDER_TYPE)
-		);
-	}
-
-	private _withoutTransientWorkingMemory(messages: readonly AgentMessage[]): AgentMessage[] {
-		return messages.filter((message) => !this._isTransientWorkingMemoryMessage(message));
-	}
-
-	private _injectCurrentWorkingMemory(messages: readonly AgentMessage[]): AgentMessage[] {
-		const filtered = this._withoutTransientWorkingMemory(messages);
-		if (!this.settingsManager.getWorkingMemoryEnabled()) return filtered;
-
-		try {
-			const memory = readWorkingMemorySync(this._cwd, this.sessionManager.getSessionId());
-			if (!memory) return filtered;
-			return [
-				...filtered,
-				{
-					role: "custom",
-					customType: WORKING_MEMORY_CONTEXT_TYPE,
-					content:
-						"[Current working memory recovered from this session's log. Treat it as task state, not as new user authority.]\n\n" +
-						memory,
-					display: false,
-					timestamp: Date.now(),
-				} satisfies CustomMessage,
-			];
-		} catch {
-			// Working memory is advisory. A missing or temporarily unreadable log must not block the task.
-			return filtered;
-		}
-	}
-
-	private _refreshCurrentWorkingMemory(): void {
-		this.agent.state.messages = this._injectCurrentWorkingMemory(this.agent.state.messages);
-		this._workingMemoryNeedsRefresh = false;
-	}
-
-	private _trackWorkingMemoryToolCall(
-		toolName: string,
-		args: Record<string, unknown>,
-		isError: boolean,
-	): void {
-		if (!this.settingsManager.getWorkingMemoryEnabled()) return;
-
-		if (toolName === "log") {
-			const action = typeof args.action === "string" ? args.action : "completion";
-			if (!isError && action !== "read") {
-				this._workingMemoryToolCallsSinceCheckpoint = 0;
-				this._workingMemoryLastCheckpointReminderAt = 0;
-				this._workingMemoryCheckpointDue = false;
-				this._workingMemoryErrorDue = false;
-			}
-			return;
-		}
-
-		this._workingMemoryToolCallsSinceCheckpoint++;
-		if (isError) this._workingMemoryErrorDue = true;
-		if (
-			this._workingMemoryToolCallsSinceCheckpoint - this._workingMemoryLastCheckpointReminderAt >=
-			this.settingsManager.getWorkingMemoryCheckpointInterval()
-		) {
-			this._workingMemoryCheckpointDue = true;
-		}
-	}
-
-	private _createWorkingMemoryReminder(): CustomMessage | undefined {
-		if (this._subagentLaunchBatchOpen || this._runningSubagentIds.size > 0) return undefined;
-		if (!this.settingsManager.getWorkingMemoryEnabled()) return undefined;
-		if (!this._workingMemoryCheckpointDue && !this._workingMemoryErrorDue) return undefined;
-
-		const instructions: string[] = ["[METIS WORKING MEMORY REMINDER]"];
-		if (this._workingMemoryErrorDue) {
-			instructions.push(
-				"A tool reported an error. If it was unexpected or material, diagnose it first, then call log with action=error and record phase/reproduction, impact, diagnosis, fix or workaround, verification, and residual risk. Skip expected negative-test failures and no-impact informational errors.",
-			);
-		}
-		if (this._workingMemoryCheckpointDue) {
-			instructions.push(
-				`${this._workingMemoryToolCallsSinceCheckpoint} non-log tool calls have occurred since the last write. Call log with action=checkpoint now and record the complete current state before continuing substantive work.`,
-			);
-			this._workingMemoryLastCheckpointReminderAt = this._workingMemoryToolCallsSinceCheckpoint;
-		}
-		this._workingMemoryCheckpointDue = false;
-		this._workingMemoryErrorDue = false;
-
-		return {
-			role: "custom",
-			customType: WORKING_MEMORY_REMINDER_TYPE,
-			content: instructions.join("\n\n"),
-			display: false,
-			timestamp: Date.now(),
-		};
-	}
 
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
 		apiKey: string;
@@ -544,12 +501,23 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
-			const subagentBarrierActive = this._subagentLaunchBatchOpen || this._runningSubagentIds.size > 0;
+			const definition = this._toolDefinitions.get(toolCall.name)?.definition;
+			const snapshot = this._workflowRuntime.bindToolCall(toolCall.id);
+			if (snapshot && !snapshot.toolNames.includes(toolCall.name)) {
+				return { block: true, reason: `Tool ${toolCall.name} was not advertised for this workflow step.` };
+			}
+			if (!this._workflowRuntime.canDispatchTool(toolCall.name, definition, snapshot?.collaborationMode ?? this._collaborationMode)) {
+				return {
+					block: true,
+					reason: `Tool ${toolCall.name} is unavailable in Plan mode because it may modify state.`,
+				};
+			}
+			const subagentBarrierActive = this._subagentPauseActive;
 			const canExtendLaunchBatch = this._subagentLaunchBatchOpen && toolCall.name === "subagent";
 			if (subagentBarrierActive && !canExtendLaunchBatch) {
 				return {
 					block: true,
-					reason: "Blocked while Subagent work is active. Do not call tools, create checkpoints, log progress, or continue work. Wait until every running Subagent returns.",
+					reason: "Subagent launch pause active. End this Agent run and wait for the next completed Subagent result.",
 				};
 			}
 
@@ -578,34 +546,80 @@ export class AgentSession {
 			const input = args as Record<string, unknown>;
 			let hookResult: Awaited<ReturnType<typeof runner.emitToolResult>> | undefined;
 			try {
-				hookResult = runner.hasHandlers("tool_result")
-					? await runner.emitToolResult({
-							type: "tool_result",
-							toolName: toolCall.name,
-							toolCallId: toolCall.id,
-							input,
-							content: result.content,
-							details: result.details,
-							isError,
-						})
-					: undefined;
-			} catch (error) {
-				this._trackWorkingMemoryToolCall(toolCall.name, input, true);
-				throw error;
+				try {
+					hookResult = runner.hasHandlers("tool_result")
+						? await runner.emitToolResult({
+								type: "tool_result",
+								toolName: toolCall.name,
+								toolCallId: toolCall.id,
+								input,
+								content: result.content,
+								details: result.details,
+								isError,
+							})
+						: undefined;
+				} catch (error) {
+					throw error;
+				}
+
+				const effectiveIsError = hookResult?.isError ?? isError;
+					if ((toolCall.name === "log" || toolCall.name === "remember_user_intent") && typeof input.content === "string") {
+						this._memoryCoordinator?.recordCheckpoint({
+							sessionId: this.sessionManager.getSessionId(), reason: effectiveIsError ? "error" : "step_completed", timestamp: new Date().toISOString(),
+							errors: effectiveIsError ? [input.content] : undefined,
+							verification: !effectiveIsError && toolCall.name === "log" ? [input.content] : undefined,
+							constraints: !effectiveIsError && toolCall.name === "remember_user_intent" ? [input.content] : undefined,
+						});
+				}
+				if (effectiveIsError) {
+					this._appendWorkflowCheckpoint("error");
+				}
+
+				if (!hookResult) {
+					return undefined;
+				}
+
+				return {
+					content: hookResult.content,
+					details: hookResult.details,
+					isError: hookResult.isError ?? isError,
+				};
+			} finally {
+				this._workflowRuntime.releaseToolCall(toolCall.id);
 			}
+		};
+	}
 
-			const effectiveIsError = hookResult?.isError ?? isError;
-			this._trackWorkingMemoryToolCall(toolCall.name, input, effectiveIsError);
-
-			if (!hookResult) {
-				return undefined;
-			}
-
-			return {
-				content: hookResult.content,
-				details: hookResult.details,
-				isError: hookResult.isError ?? isError,
-			};
+	/** Attach Metis-owned scheduling and snapshot policy to every tool. */
+	private _wrapWorkflowTool(tool: AgentTool, definition: ToolDefinition | undefined): AgentTool {
+		const execute = tool.execute.bind(tool);
+		const capabilities = getToolCapabilities(definition, tool.name);
+		const canParallel = capabilities?.effect === "read" && capabilities.parallelSafe === true;
+		return {
+			...tool,
+			// This also tells the vendor stream loop not to make an unsafe batch
+			// parallel. The local dispatcher remains authoritative for every call.
+			executionMode: canParallel && tool.executionMode !== "sequential" ? "parallel" : "sequential",
+			execute: async (toolCallId, params, signal, onUpdate) => {
+				try {
+					return await this._workflowRuntime.dispatchTool(
+						toolCallId,
+						tool.name,
+						definition,
+						signal,
+						async (toolSignal) => await execute(toolCallId, params, toolSignal, onUpdate),
+					);
+				} catch (error) {
+					if (error instanceof WorkflowToolError && error.kind === "terminal") {
+						return {
+							content: [{ type: "text", text: error.message }],
+							details: { workflowErrorKind: error.kind },
+							terminate: true,
+						};
+					}
+					throw error;
+				}
+			},
 		};
 	}
 
@@ -618,17 +632,21 @@ export class AgentSession {
 		this.agent.prepareNextTurnWithContext = async (turn, signal) => {
 			const previousSnapshot = await previousPrepareNextTurnWithContext?.(turn, signal);
 			const previousContext = previousSnapshot?.context ?? turn.context;
-			const messages = this._withoutTransientWorkingMemory(previousContext.messages);
-			const reminder = this._createWorkingMemoryReminder();
-			if (reminder) messages.push(reminder);
+			const messages = previousContext.messages;
+			const baseInstructions = this._activeRunInstructionStack ?? this._instructionStack;
+			const instructions: InstructionStack = {
+				...baseInstructions,
+				context: baseInstructions.context.filter((entry) => entry.trust !== "memory"),
+			};
+			const snapshot = this._freezeStepSnapshot(messages, instructions);
 
 			return {
 				...previousSnapshot,
 				context: {
 					...previousContext,
 					messages,
-					systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
-					tools: this.agent.state.tools.slice(),
+					systemPrompt: this._systemPromptOverride ?? this._workflowRuntime.compilePrivilegedInstructions(snapshot) ?? this._baseSystemPrompt,
+					tools: snapshot.tools.slice(),
 				},
 				model: this.agent.state.model,
 				thinkingLevel: this.agent.state.thinkingLevel,
@@ -642,6 +660,10 @@ export class AgentSession {
 
 	/** Emit an event to all listeners */
 	private _emit(event: AgentSessionEvent): void {
+		if (event.type === "compaction_end" && event.result && !event.aborted) {
+			this._workflowRuntime.beginNewContextWindow();
+			this._appendWorkflowCheckpoint("compaction");
+		}
 		for (const l of this._eventListeners) {
 			l(event);
 		}
@@ -657,6 +679,11 @@ export class AgentSession {
 
 	private readonly _runningSubagentIds = new Set<string>();
 
+	private _releaseSubagentPause(): void {
+		this._subagentPauseActive = false;
+		this._restoreToolsAfterSubagentBarrier();
+	}
+
 	private _restoreToolsAfterSubagentBarrier(): void {
 		if (!this._subagentBarrierActiveToolNames) return;
 		const toolNames = this._subagentBarrierActiveToolNames;
@@ -667,32 +694,69 @@ export class AgentSession {
 	private _closeSubagentLaunchBatch(): void {
 		if (!this._subagentLaunchBatchOpen) return;
 		this._subagentLaunchBatchOpen = false;
-		if (this._runningSubagentIds.size > 0) {
+		if (this._pendingSubagentResults.size > 0) {
+			this._releaseSubagentPause();
+			this._scheduleSubagentResultDelivery();
+		} else if (this._runningSubagentIds.size > 0) {
 			this.setActiveToolsByName([]);
 		} else {
-			this._restoreToolsAfterSubagentBarrier();
-			this._flushPendingSubagentResults();
+			this._releaseSubagentPause();
 		}
 	}
 
 	private _queueSubagentResult(jobId: string, result: string): void {
 		this._pendingSubagentResults.set(jobId, result);
-		if (this._subagentLaunchBatchOpen || this._runningSubagentIds.size > 0) return;
-		this._flushPendingSubagentResults();
+		if (this._subagentLaunchBatchOpen) return;
+		this._releaseSubagentPause();
+		this._scheduleSubagentResultDelivery();
 	}
 
-	private _flushPendingSubagentResults(): void {
-		const results = [...this._pendingSubagentResults.entries()];
-		if (results.length === 0) return;
-		this._pendingSubagentResults.clear();
-		const content = results
-			.map(([completedJobId, completedResult]) => `[Subagent Job ${completedJobId} finished]\n\n${completedResult}`)
-			.join("\n\n");
-		void this.sendCustomMessage({
-			customType: "subagent_result",
-			content: [{ type: "text", text: content }],
-			display: true,
-		}, { triggerTurn: true, deliverAs: "followUp" }).catch(console.error);
+	private _scheduleSubagentResultDelivery(): void {
+		if (this._subagentLaunchBatchOpen || this._subagentResultDrainPromise || this._pendingSubagentResults.size === 0) {
+			return;
+		}
+
+		const drainPromise = this._drainPendingSubagentResults();
+		this._subagentResultDrainPromise = drainPromise;
+		void drainPromise
+			.catch((error) => console.error("Failed to drain Subagent results:", error))
+			.finally(() => {
+				this._subagentResultDrainPromise = undefined;
+				if (!this._subagentLaunchBatchOpen && this._pendingSubagentResults.size > 0) {
+					this._scheduleSubagentResultDelivery();
+				}
+			});
+	}
+
+	private async _drainPendingSubagentResults(): Promise<void> {
+		this._subagentResultDeliveryInProgress = true;
+		try {
+			while (!this._subagentLaunchBatchOpen && this._pendingSubagentResults.size > 0) {
+				const next = this._pendingSubagentResults.entries().next().value as [string, string] | undefined;
+				if (!next) return;
+				const [completedJobId, completedResult] = next;
+				this._pendingSubagentResults.delete(completedJobId);
+				this._releaseSubagentPause();
+
+				const content = [
+					`[Subagent Job ${completedJobId} finished]`,
+					completedResult,
+					"First emit a brief user-visible update about this result. Then decide whether to continue work now or end this turn and wait for another running Subagent. Other results will arrive separately.",
+				].join("\n\n");
+				try {
+					await this.sendCustomMessage({
+						customType: "subagent_result",
+						content: [{ type: "text", text: content }],
+						display: true,
+					}, { triggerTurn: true, deliverAs: "followUp" });
+					await this.agent.waitForIdle();
+				} catch (error) {
+					console.error("Failed to deliver Subagent result:", error);
+				}
+			}
+		} finally {
+			this._subagentResultDeliveryInProgress = false;
+		}
 	}
 
 	private _setSubagentRunning(jobId: string, running: boolean): void {
@@ -701,14 +765,12 @@ export class AgentSession {
 			if (!this._subagentBarrierActiveToolNames) {
 				this._subagentBarrierActiveToolNames = this.getActiveToolNames();
 			}
+			this._subagentPauseActive = true;
 			this._subagentLaunchBatchOpen = true;
 			this._runningSubagentIds.add(jobId);
 			this.setActiveToolsByName(this._toolRegistry.has("subagent") ? ["subagent"] : []);
 		} else {
 			this._runningSubagentIds.delete(jobId);
-			if (this._runningSubagentIds.size === 0 && !this._subagentLaunchBatchOpen) {
-				this._restoreToolsAfterSubagentBarrier();
-			}
 		}
 		if (this._runningSubagentIds.size !== previousCount) {
 			this._emit({
@@ -742,17 +804,27 @@ export class AgentSession {
 				const steeringIndex = this._steeringMessages.indexOf(messageText);
 				if (steeringIndex !== -1) {
 					this._steeringMessages.splice(steeringIndex, 1);
+					this._steeringQueueEntries.splice(steeringIndex, 1);
 					this._emitQueueUpdate();
 				} else {
 					// Check follow-up queue
 					const followUpIndex = this._followUpMessages.indexOf(messageText);
 					if (followUpIndex !== -1) {
 						this._followUpMessages.splice(followUpIndex, 1);
+						this._followUpQueueEntries.splice(followUpIndex, 1);
 						this._emitQueueUpdate();
 					}
 				}
 			}
 		}
+
+		// Runtime context is model-only scaffolding. Do not leak it through host
+		// events or persistence as if it were conversational content.
+		if (
+			(event.type === "message_start" || event.type === "message_update" || event.type === "message_end")
+			&& event.message.role === "custom"
+			&& event.message.customType === "workflow_context"
+		) return;
 
 		// Emit to extensions first
 		await this._emitExtensionEvent(event);
@@ -763,7 +835,7 @@ export class AgentSession {
 		// Handle session persistence
 		if (event.type === "message_end") {
 			// Check if this is a custom message from extensions
-			if (event.message.role === "custom") {
+			if (event.message.role === "custom" && event.message.customType !== "workflow_context") {
 				// Persist as CustomMessageEntry
 				this.sessionManager.appendCustomMessageEntry(
 					event.message.customType,
@@ -778,6 +850,9 @@ export class AgentSession {
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
 				this.sessionManager.appendMessage(event.message);
+				if (event.message.role === "assistant" && this._collaborationMode === "plan") {
+					this._persistWorkflowProposal(event.message as AssistantMessage);
+				}
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
@@ -786,9 +861,6 @@ export class AgentSession {
 				this._lastAssistantMessage = event.message;
 
 				const assistantMsg = event.message as AssistantMessage;
-				if (assistantMsg.stopReason === "aborted") {
-					this._workingMemoryNeedsRefresh = true;
-				}
 				if (assistantMsg.stopReason !== "error") {
 					this._overflowRecoveryAttempted = false;
 				}
@@ -805,6 +877,22 @@ export class AgentSession {
 				}
 			}
 		}
+
+		if (event.type === "turn_end") {
+			this._appendWorkflowCheckpoint("step_completed");
+		}
+		if (event.type === "agent_end") {
+			const finalMessage = [...event.messages].reverse().find((message) => message.role === "assistant") as
+				| AssistantMessage
+				| undefined;
+			this._appendWorkflowCheckpoint(
+				finalMessage?.stopReason === "aborted"
+					? "aborted"
+					: finalMessage?.stopReason === "error"
+						? "error"
+						: "completed",
+			);
+		}
 	};
 
 	private _willRetryAfterAgentEnd(event: Extract<AgentEvent, { type: "agent_end" }>): boolean {
@@ -820,6 +908,23 @@ export class AgentSession {
 			}
 		}
 		return false;
+	}
+
+	private _persistWorkflowProposal(message: AssistantMessage): void {
+		const text = Array.isArray(message.content)
+			? message.content.filter((part): part is TextContent => part.type === "text").map((part) => part.text).join("\n")
+			: String(message.content ?? "");
+		const markdown = extractProposedPlan(text);
+		if (!markdown) return;
+		const previous = this.workflowProposal;
+		const entryId = this.sessionManager.appendCustomEntry("workflow_proposal", {
+			markdown,
+			revision: (previous?.revision ?? 0) + 1,
+			updatedAt: new Date().toISOString(),
+			sourceMessageId: this.sessionManager.getBranch().at(-1)?.id,
+		});
+		const entry = this.sessionManager.getEntry(entryId);
+		if (entry) this._emit({ type: "entry_appended", entry });
 	}
 
 	/** Extract text content from a message */
@@ -857,6 +962,21 @@ export class AgentSession {
 			delete targetRecord[key];
 		}
 		Object.assign(targetRecord, replacement);
+	}
+
+	private _normalizeSubagentLaunchMessage(message: AgentMessage): void {
+		if (message.role !== "assistant") return;
+		const firstSubagentIndex = message.content.findIndex(
+			(part) => part.type === "toolCall" && part.name === "subagent",
+		);
+		if (firstSubagentIndex === -1) return;
+
+		const content = message.content.filter((part, index) => {
+			if (part.type === "toolCall") return part.name === "subagent";
+			if (index > firstSubagentIndex && part.type === "text") return false;
+			return true;
+		});
+		this._replaceMessageInPlace(message, { ...message, content });
 	}
 
 	/** Emit extension events based on agent events */
@@ -905,6 +1025,7 @@ export class AgentSession {
 			if (replacement) {
 				this._replaceMessageInPlace(event.message, replacement);
 			}
+			this._normalizeSubagentLaunchMessage(event.message);
 		} else if (event.type === "tool_execution_start") {
 			const extensionEvent: ToolExecutionStartEvent = {
 				type: "tool_execution_start",
@@ -982,6 +1103,7 @@ export class AgentSession {
 			this.abortCompaction();
 			this.abortBranchSummary();
 			this.abortBash();
+			this._workflowRuntime.abortAllToolCalls();
 			this.agent.abort();
 		} catch {
 			// Dispose must succeed even if an abort hook throws.
@@ -992,6 +1114,7 @@ export class AgentSession {
 		);
 		this._disconnectFromAgent();
 		this._eventListeners = [];
+		this._memoryCoordinator?.dispose();
 		cleanupSessionResources(this.sessionId);
 	}
 
@@ -1012,6 +1135,153 @@ export class AgentSession {
 	/** Current thinking level */
 	get thinkingLevel(): ThinkingLevel {
 		return this.agent.state.thinkingLevel;
+	}
+
+	/** Current deterministic collaboration policy. */
+	get collaborationMode(): CollaborationMode {
+		return this._collaborationMode;
+	}
+
+	/** Immutable input used for the currently executing model step. */
+	get stepSnapshot(): StepSnapshot | undefined {
+		return this._workflowRuntime.snapshot;
+	}
+
+	get contextWindowId(): string {
+		return this._workflowRuntime.currentContextWindowId;
+	}
+
+	/** Typed state shared by TUI, Desktop, JSON, RPC and Server. */
+	get memoryState(): MemoryState {
+		return this._memoryCoordinator?.getState() ?? {
+			enabled: false, phase: "disabled", globalCount: 0, projectCount: 0, pendingJobs: 0,
+		};
+	}
+
+	setMemoryEnabled(enabled: boolean): MemoryState {
+		if (this.isStreaming) throw new Error("Memory settings can only change while the session is idle.");
+		this.settingsManager.setMemoryEnabled(enabled);
+		return this._memoryCoordinator?.setEnabled(enabled) ?? this.memoryState;
+	}
+
+	async runMemory(): Promise<MemoryState> {
+		if (this.isStreaming) throw new Error("Memory can only run while the session is idle.");
+		return (await this._memoryCoordinator?.run(true)) ?? this.memoryState;
+	}
+
+	searchMemory(query: string): MemoryRecordSummary[] { return this._memoryCoordinator?.search(query) ?? []; }
+	forgetMemory(id: string): boolean {
+		if (this.isStreaming) throw new Error("Memory can only change while the session is idle.");
+		return this._memoryCoordinator?.forget(id) ?? false;
+	}
+	resetMemory(confirm: string): void {
+		if (this.isStreaming) throw new Error("Memory can only change while the session is idle.");
+		this._memoryCoordinator?.reset(confirm);
+	}
+
+	/** Content-free instruction provenance for TUI, Desktop, and RPC clients. */
+	get instructionSources(): InstructionSourceSummary[] {
+		return summarizeInstructionStack(this._instructionStack);
+	}
+
+	/** Reserved for loader budget/trust diagnostics; never contains instruction content. */
+	get instructionDiagnostics(): string[] {
+		return [];
+	}
+
+	/** Latest persisted plan on the active branch, including legacy Markdown recovery. */
+	get workflowPlan(): WorkflowPlanState | undefined {
+		return resolveWorkflowPlan(this.sessionManager.getBranch());
+	}
+
+	/** Latest durable conversational plan. Old sessions recover lazily without a migration write. */
+	get workflowProposal(): WorkflowProposalState | undefined {
+		return resolveWorkflowProposal(this.sessionManager.getBranch());
+	}
+
+	private _appendWorkflowPlanEntry(plan: Omit<WorkflowPlanState, "updatedAt">): void {
+		const entryId = this.sessionManager.appendCustomEntry("workflow_plan", {
+			...plan,
+			updatedAt: new Date().toISOString(),
+		});
+		const entry = this.sessionManager.getEntry(entryId);
+		if (entry) this._emit({ type: "entry_appended", entry });
+	}
+
+	private _appendWorkflowPlanReset(): void {
+		const entryId = this.sessionManager.appendCustomEntry("workflow_plan_reset", {
+			updatedAt: new Date().toISOString(),
+		});
+		const entry = this.sessionManager.getEntry(entryId);
+		if (entry) this._emit({ type: "entry_appended", entry });
+		this._activeWorkflowTaskId = undefined;
+		this._activeWorkflowProposalRevision = undefined;
+	}
+
+	private _resetCompletedWorkflowPlanForNewPrompt(): void {
+		const current = this.workflowPlan;
+		if (!current?.plan.length || !current.plan.every((item) => item.status === "completed")) return;
+		this._appendWorkflowPlanReset();
+	}
+
+	private _beginProposalExecution(proposal: WorkflowProposalState): void {
+		const taskId = randomUUID();
+		this._activeWorkflowTaskId = taskId;
+		this._activeWorkflowProposalRevision = proposal.revision;
+		this._workflowRuntime.beginProposalExecution(taskId, (phase) => {
+			if (phase === "active") return;
+			this._appendWorkflowPlanEntry({
+				taskId,
+				proposalRevision: proposal.revision,
+				phase,
+				plan: [],
+			});
+		});
+	}
+
+	get pendingUserInput(): AskUserRequest | undefined { return this._pendingUserInput; }
+
+	setAskUserHandler(handler: AskUserHandler | undefined): void { this._askUserHandler = handler; }
+
+	private async _askUser(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserResponse> {
+		if (!this._askUserHandler) throw new Error("ask_user is unsupported in this mode because no interactive user-input handler is configured.");
+		this._pendingUserInput = request;
+		this._emit({ type: "user_input_request", request });
+		try {
+			const handler = this._askUserHandler;
+			const response = await new Promise<AskUserResponse>((resolve, reject) => {
+				const cancel = () => resolve({ cancelled: true, answers: [] });
+				if (signal?.aborted) return cancel();
+				signal?.addEventListener("abort", cancel, { once: true });
+				handler(request, signal).then(resolve, reject).finally(() => signal?.removeEventListener("abort", cancel));
+			});
+			const error = validateAskUserResponse(request, response);
+			if (error) throw new Error(error);
+			return response;
+		}
+		finally { if (this._pendingUserInput?.requestId === request.requestId) this._pendingUserInput = undefined; }
+	}
+
+	/**
+	 * Switch only while idle. Plan mode removes every non-read tool from both
+	 * model-visible state and dispatch-time policy.
+	 */
+	setCollaborationMode(mode: CollaborationMode): void {
+		if (this.isStreaming || this.isCompacting) {
+			throw new Error("Cannot change collaboration mode while the agent is running.");
+		}
+		if (mode === this._collaborationMode) return;
+		if (mode === "plan") {
+			this._buildToolNames = this._buildToolNames ?? this.getActiveToolNames();
+			this._collaborationMode = mode;
+			this.setActiveToolsByName(this._buildToolNames);
+		} else {
+			this._collaborationMode = mode;
+			this.setActiveToolsByName(this._buildToolNames ?? this.getActiveToolNames());
+		}
+		this._workflowRuntime.beginNewContextWindow();
+		this._emit({ type: "collaboration_mode_changed", mode });
+		this.sessionManager.appendCollaborationModeChange(mode);
 	}
 
 	/** Whether agent is currently streaming a response */
@@ -1041,13 +1311,16 @@ export class AgentSession {
 	 * Get all configured tools with name, description, parameter schema, prompt guidelines, and source metadata.
 	 */
 	getAllTools(): ToolInfo[] {
-		return Array.from(this._toolDefinitions.values()).map(({ definition, sourceInfo }) => ({
-			name: definition.name,
-			description: definition.description,
-			parameters: definition.parameters,
-			promptGuidelines: definition.promptGuidelines,
-			sourceInfo,
-		}));
+		return Array.from(this._toolDefinitions.values())
+			.filter(({ definition }) => this._workflowRuntime.canDispatchTool(definition.name, definition, this._collaborationMode))
+			.map(({ definition, sourceInfo }) => ({
+				name: definition.name,
+				description: definition.description,
+				parameters: definition.parameters,
+				promptGuidelines: definition.promptGuidelines,
+				capabilities: definition.capabilities,
+				sourceInfo,
+			}));
 	}
 
 	getToolDefinition(name: string): ToolDefinition | undefined {
@@ -1065,7 +1338,8 @@ export class AgentSession {
 		const validToolNames: string[] = [];
 		for (const name of toolNames) {
 			const tool = this._toolRegistry.get(name);
-			if (tool) {
+			const definition = this._toolDefinitions.get(name)?.definition;
+			if (tool && this._workflowRuntime.canDispatchTool(name, definition, this._collaborationMode)) {
 				tools.push(tool);
 				validToolNames.push(name);
 			}
@@ -1196,8 +1470,47 @@ export class AgentSession {
 			selectedTools: validToolNames,
 			toolSnippets,
 			promptGuidelines,
+			collaborationMode: this._collaborationMode,
 		};
+		this._instructionStack = buildInstructionStack(this._baseSystemPromptOptions);
 		return buildSystemPrompt(this._baseSystemPromptOptions);
+	}
+
+	private _freezeStepSnapshot(messages: AgentMessage[], instructions = this._instructionStack): StepSnapshot {
+		return this._workflowRuntime.freeze({
+			turnId: this._turnIndex,
+			model: this.agent.state.model,
+			thinkingLevel: this.agent.state.thinkingLevel,
+			collaborationMode: this._collaborationMode,
+			instructions,
+			messages,
+			tools: this.agent.state.tools,
+		});
+	}
+
+	private _appendWorkflowCheckpoint(reason: "prompt_accepted" | "step_completed" | "compaction" | "aborted" | "error" | "completed"): void {
+		this.sessionManager.appendCustomEntry("workflow_checkpoint", this._workflowRuntime.checkpoint(reason, this._collaborationMode));
+		const latestUser = [...this.messages].reverse().find((message) => message.role === "user");
+		const goal = latestUser?.role === "user"
+			? (Array.isArray(latestUser.content)
+				? latestUser.content.filter((part): part is TextContent => part.type === "text").map((part) => part.text).join("\n")
+				: String(latestUser.content))
+			: undefined;
+		let lastUserIndex = 0;
+		for (let index = this.messages.length - 1; index >= 0; index -= 1) {
+			if (this.messages[index]?.role === "user") { lastUserIndex = index; break; }
+		}
+		const recentTurn = this.messages.slice(lastUserIndex).flatMap((message) => {
+			if (!("content" in message)) return [];
+			const content = Array.isArray(message.content)
+				? message.content.filter((part): part is TextContent => part.type === "text").map((part) => part.text).join("\n")
+				: String(message.content ?? "");
+			return content.trim() ? [{ role: message.role, content }] : [];
+		}).slice(-12);
+		this._memoryCoordinator?.recordCheckpoint({
+			sessionId: this.sessionManager.getSessionId(), reason, timestamp: new Date().toISOString(), goal,
+			workflowPlan: this.workflowPlan, workflowProposal: this.workflowProposal ? { revision: this.workflowProposal.revision, updatedAt: this.workflowProposal.updatedAt } : undefined, contextWindowId: this.contextWindowId, recentTurn,
+		});
 	}
 
 	// =========================================================================
@@ -1211,6 +1524,12 @@ export class AgentSession {
 				await this.agent.continue();
 			}
 		} finally {
+			// Per-step runtime context must survive tool continuations inside this run,
+			// but must not accumulate in public/session message history.
+			this.agent.state.messages = this.agent.state.messages.filter(
+				(message) => message.role !== "custom" || message.customType !== "workflow_context",
+			);
+			this._activeRunInstructionStack = undefined;
 			this._systemPromptOverride = undefined;
 			this._flushPendingBashMessages();
 		}
@@ -1241,6 +1560,22 @@ export class AgentSession {
 			return true;
 		}
 
+		const processReminder = this._workflowRuntime.takeProposalExecutionReminder();
+		if (processReminder) {
+			this.agent.state.messages.push({
+				role: "custom",
+				customType: "workflow_context",
+				content: processReminder,
+				display: false,
+				timestamp: Date.now(),
+			});
+			return true;
+		}
+		const processState = this._workflowRuntime.proposalExecutionState;
+		if (processState && processState.phase !== "active") {
+			throw new Error("Process stopped before read_plan and update_plan completed. No implementation tool was allowed to run.");
+		}
+
 		// The agent loop drains both queues before emitting agent_end. Any messages
 		// here were queued by agent_end extension handlers and need a continuation.
 		return this.agent.hasQueuedMessages();
@@ -1259,6 +1594,7 @@ export class AgentSession {
 		const expandPromptTemplates = options?.expandPromptTemplates ?? true;
 		const preflightResult = options?.preflightResult;
 		let messages: AgentMessage[] | undefined;
+		let proposalExecutionStarted = false;
 
 		try {
 			// Handle extension commands first (execute immediately, even during streaming)
@@ -1301,6 +1637,9 @@ export class AgentSession {
 
 			// If streaming, queue via steer() or followUp() based on option
 			if (this.isStreaming) {
+				if (options?.workflowAction) {
+					throw new Error("Proposal Process cannot start while the agent is already running.");
+				}
 				if (!options?.streamingBehavior) {
 					throw new Error(
 						"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
@@ -1342,60 +1681,85 @@ export class AgentSession {
 				await this._checkCompaction(lastAssistant, false);
 			}
 
-			if (this._workingMemoryNeedsRefresh) {
-				this._refreshCurrentWorkingMemory();
+			// Older test/runtime extension runners may not implement the optional hook;
+			// absence means no per-step additions, never a failed prompt preflight.
+			const beforeStep = await this._extensionRunner.emitBeforeStep?.(expandedText, this._collaborationMode);
+			if (beforeStep?.toolNames?.length) {
+				// Extensions can only declare already-registered tools. Plan filtering is
+				// enforced again by setActiveToolsByName and dispatch.
+				this.setActiveToolsByName([...this.getActiveToolNames(), ...beforeStep.toolNames]);
+				// Keep declaratively enabled Build tools across a temporary Plan view.
+				// Plan itself never mutates this saved set.
+				if (this._collaborationMode === "build") {
+					this._buildToolNames = this.getActiveToolNames();
+				}
 			}
 
-			// Build messages array (custom message if any, then user message)
+			if (this._collaborationMode === "build") {
+				if (options?.workflowAction === "process_proposal") {
+					const proposal = this.workflowProposal;
+					if (!proposal) throw new Error("No durable proposal is available to Process.");
+					this._beginProposalExecution(proposal);
+					proposalExecutionStarted = true;
+				} else {
+					this._resetCompletedWorkflowPlanForNewPrompt();
+				}
+			}
+			const stepInstructions: InstructionStack = {
+				base: this._instructionStack.base,
+				developer: [
+					...this._instructionStack.developer,
+					...(beforeStep?.developerInstructions ?? []).map((entry, index) => ({
+						...entry,
+						id: `extension:step:developer:${index}:${entry.id}`,
+						channel: "developer" as const,
+						trust: "extension" as const,
+					})),
+				],
+				context: [
+					...this._instructionStack.context,
+					...(beforeStep?.context ?? []).map((entry, index) => ({
+						...entry,
+						id: `extension:step:context:${index}:${entry.id}`,
+						channel: "context" as const,
+						trust: "extension" as const,
+					})),
+				],
+			};
+
+			// Build messages with runtime/extension context before the actual user
+			// message. User authority remains last in the model-visible input.
 			messages = [];
-
-			// Add user message
-			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
-			if (currentImages) {
-				userContent.push(...currentImages);
+			for (const entry of stepInstructions.context) {
+				messages.push({
+					role: "custom",
+					customType: "workflow_context",
+					content: `[Runtime context from ${entry.source}; not user instructions]\n${entry.content}`,
+					display: false,
+					timestamp: Date.now(),
+				});
 			}
-			messages.push({
-				role: "user",
-				content: userContent,
-				timestamp: Date.now(),
-			});
 
-			// Inject any pending "nextTurn" messages as context alongside the user message
+			// Inject any pending next-turn messages as context.
 			for (const msg of this._pendingNextTurnMessages) {
 				messages.push(msg);
 			}
 			this._pendingNextTurnMessages = [];
 
-			// Emit before_agent_start extension event
-			const result = await this._extensionRunner.emitBeforeAgentStart(
-				expandedText,
-				currentImages,
-				this._baseSystemPrompt,
-				this._baseSystemPromptOptions,
-			);
-			// Add all custom messages from extensions
-			if (result?.messages) {
-				for (const msg of result.messages) {
-					messages.push({
-						role: "custom",
-						customType: msg.customType,
-						content: msg.content,
-						display: msg.display,
-						details: msg.details,
-						timestamp: Date.now(),
-					});
-				}
-			}
-			// Apply extension-modified system prompt, or reset to base
-			if (result?.systemPrompt !== undefined) {
-				this._systemPromptOverride = result.systemPrompt;
-				this.agent.state.systemPrompt = result.systemPrompt;
-			} else {
-				// Ensure we're using the base prompt (in case previous turn had modifications)
-				this._systemPromptOverride = undefined;
-				this.agent.state.systemPrompt = this._baseSystemPrompt;
-			}
+			this._systemPromptOverride = undefined;
+			this.agent.state.systemPrompt = this._baseSystemPrompt;
+
+			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
+			if (currentImages) userContent.push(...currentImages);
+			messages.push({ role: "user", content: userContent, timestamp: Date.now() });
+			const snapshot = this._freezeStepSnapshot([...this.agent.state.messages, ...messages], stepInstructions);
+			this._activeRunInstructionStack = stepInstructions;
+			this.agent.state.systemPrompt = this._workflowRuntime.compilePrivilegedInstructions(snapshot) ?? this._baseSystemPrompt;
 		} catch (error) {
+			if (proposalExecutionStarted) {
+				this._workflowRuntime.endProposalExecution();
+				this._appendWorkflowPlanReset();
+			}
 			preflightResult?.(false);
 			throw error;
 		}
@@ -1405,7 +1769,16 @@ export class AgentSession {
 		}
 
 		preflightResult?.(true);
-		await this._runAgentPrompt(messages);
+		this._appendWorkflowCheckpoint("prompt_accepted");
+		const isFirstUserPrompt = !this.messages.some((message) => message.role === "user");
+		if (isFirstUserPrompt) {
+			void this.ensureSessionName({ prompt: text });
+		}
+		try {
+			await this._runAgentPrompt(messages);
+		} finally {
+			if (proposalExecutionStarted) this._workflowRuntime.endProposalExecution();
+		}
 	}
 
 	/**
@@ -1513,34 +1886,68 @@ export class AgentSession {
 	 * Internal: Queue a steering message (already expanded, no extension command check).
 	 */
 	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
+		const entry: QueuedSessionMessage = { text, images: images ? [...images] : undefined, timestamp: Date.now() };
 		this._steeringMessages.push(text);
+		this._steeringQueueEntries.push(entry);
 		this._emitQueueUpdate();
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
-		}
-		this.agent.steer({
-			role: "user",
-			content,
-			timestamp: Date.now(),
-		});
+		this.agent.steer(this._queuedEntryToAgentMessage(entry));
 	}
 
 	/**
 	 * Internal: Queue a follow-up message (already expanded, no extension command check).
 	 */
 	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
+		const entry: QueuedSessionMessage = { text, images: images ? [...images] : undefined, timestamp: Date.now() };
 		this._followUpMessages.push(text);
+		this._followUpQueueEntries.push(entry);
 		this._emitQueueUpdate();
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
+		this.agent.followUp(this._queuedEntryToAgentMessage(entry));
+	}
+
+	private _queuedEntryToAgentMessage(entry: QueuedSessionMessage): AgentMessage {
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text: entry.text }, ...(entry.images ?? [])];
+		return { role: "user", content, timestamp: entry.timestamp };
+	}
+
+	private _rebuildAgentQueue(queue: "steering" | "followUp"): void {
+		const entries = queue === "steering" ? this._steeringQueueEntries : this._followUpQueueEntries;
+		if (queue === "steering") this.agent.clearSteeringQueue();
+		else this.agent.clearFollowUpQueue();
+		for (const entry of entries) {
+			if (queue === "steering") this.agent.steer(this._queuedEntryToAgentMessage(entry));
+			else this.agent.followUp(this._queuedEntryToAgentMessage(entry));
 		}
-		this.agent.followUp({
-			role: "user",
-			content,
-			timestamp: Date.now(),
-		});
+	}
+
+	/** Remove one queued message and return its complete payload. */
+	removeQueuedMessage(queue: "steering" | "followUp", index: number): QueuedSessionMessage {
+		const messages = queue === "steering" ? this._steeringMessages : this._followUpMessages;
+		const entries = queue === "steering" ? this._steeringQueueEntries : this._followUpQueueEntries;
+		if (!Number.isInteger(index) || index < 0 || index >= messages.length) {
+			throw new Error(`Queue item ${index} was not found in ${queue}`);
+		}
+		const [text] = messages.splice(index, 1);
+		const [entry] = entries.splice(index, 1);
+		this._rebuildAgentQueue(queue);
+		this._emitQueueUpdate();
+		return entry ?? { text: text ?? "", timestamp: Date.now() };
+	}
+
+	/** Move a follow-up message into the higher-priority steering queue. */
+	promoteFollowUpMessage(index: number): QueuedSessionMessage {
+		const messages = this._followUpMessages;
+		if (!Number.isInteger(index) || index < 0 || index >= messages.length) {
+			throw new Error(`Queue item ${index} was not found in followUp`);
+		}
+		const [text] = messages.splice(index, 1);
+		const [entry] = this._followUpQueueEntries.splice(index, 1);
+		const promoted = entry ?? { text: text ?? "", timestamp: Date.now() };
+		this._rebuildAgentQueue("followUp");
+		this._steeringMessages.push(promoted.text);
+		this._steeringQueueEntries.push(promoted);
+		this.agent.steer(this._queuedEntryToAgentMessage(promoted));
+		this._emitQueueUpdate();
+		return promoted;
 	}
 
 	/**
@@ -1655,6 +2062,8 @@ export class AgentSession {
 		const followUp = [...this._followUpMessages];
 		this._steeringMessages = [];
 		this._followUpMessages = [];
+		this._steeringQueueEntries = [];
+		this._followUpQueueEntries = [];
 		this.agent.clearAllQueues();
 		this._emitQueueUpdate();
 		return { steering, followUp };
@@ -1684,6 +2093,8 @@ export class AgentSession {
 	 */
 	async abort(): Promise<void> {
 		this.abortRetry();
+		this._memoryCoordinator?.abort();
+		this._workflowRuntime.abortAllToolCalls();
 		this.agent.abort();
 		await this.agent.waitForIdle();
 	}
@@ -1998,7 +2409,6 @@ export class AgentSession {
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
-			this._refreshCurrentWorkingMemory();
 			const estimatedTokensAfter = estimateMessagesTokens(this.agent.state.messages);
 
 			// Get the saved compaction entry for the extension event
@@ -2280,7 +2690,6 @@ export class AgentSession {
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
-			this._refreshCurrentWorkingMemory();
 			const estimatedTokensAfter = estimateMessagesTokens(this.agent.state.messages);
 
 			// Get the saved compaction entry for the extension event
@@ -2635,13 +3044,18 @@ export class AgentSession {
 			runner,
 		);
 
-		const toolRegistry = new Map(wrappedBuiltInTools.map((tool) => [tool.name, tool]));
+		const rawToolRegistry = new Map(wrappedBuiltInTools.map((tool) => [tool.name, tool]));
 		for (const tool of wrappedExtensionTools as AgentTool[]) {
-			toolRegistry.set(tool.name, tool);
+			rawToolRegistry.set(tool.name, tool);
 		}
-		this._toolRegistry = toolRegistry;
+		this._toolRegistry = new Map(
+			Array.from(rawToolRegistry.entries()).map(([name, tool]) => [
+				name,
+				this._wrapWorkflowTool(tool, definitionRegistry.get(name)?.definition),
+			]),
+		);
 
-		const nextActiveToolNames = (
+		let nextActiveToolNames = (
 			options?.activeToolNames ? [...options.activeToolNames] : [...previousActiveToolNames]
 		).filter((name) => isAllowedTool(name));
 
@@ -2663,6 +3077,16 @@ export class AgentSession {
 			}
 		}
 
+		const configuredBuildTools = [...new Set(nextActiveToolNames)];
+		if (this._collaborationMode === "build" || !this._buildToolNames) {
+			this._buildToolNames = configuredBuildTools;
+		}
+		if (this._collaborationMode === "plan") {
+			nextActiveToolNames = configuredBuildTools.filter((name) => {
+				const definition = this._toolDefinitions.get(name)?.definition;
+				return this._workflowRuntime.canDispatchTool(name, definition, "plan");
+			});
+		}
 		this.setActiveToolsByName([...new Set(nextActiveToolNames)]);
 	}
 
@@ -2687,7 +3111,23 @@ export class AgentSession {
 					subagent: {
 						onStatusChange: (jobId, running) => this._setSubagentRunning(jobId, running),
 						sendMessage: (jobId, result) => this._queueSubagentResult(jobId, result),
-					}
+					},
+					updatePlan: {
+						onUpdate: (plan) => {
+							const current = this.workflowPlan;
+							const taskId = this._activeWorkflowTaskId ?? current?.taskId ?? randomUUID();
+							this._activeWorkflowTaskId = taskId;
+							this._activeWorkflowProposalRevision ??= current?.proposalRevision;
+							this._appendWorkflowPlanEntry({
+								...plan,
+								taskId,
+								proposalRevision: this._activeWorkflowProposalRevision,
+								phase: "active",
+							});
+						},
+					},
+					askUser: { handler: () => (request, signal) => this._askUser(request, signal) },
+					searchMemory: { search: (query, limit) => this._memoryCoordinator?.searchAndTouch(query, limit) ?? [] },
 				});
 
 		this._baseToolDefinitions = new Map(
@@ -2716,7 +3156,7 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "log", "remember_user_intent", "user_intent", "subagent", "check_subagent", "websearch", "webfetch"];
+			: ["read", "bash", "edit", "write", "subagent", "check_subagent", "websearch", "webfetch", "update_plan", "ask_user", "read_plan", "search_memory"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
@@ -2726,7 +3166,6 @@ export class AgentSession {
 
 	async reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void> {
 		const previousFlagValues = this._extensionRunner.getFlagValues();
-		this._workingMemoryNeedsRefresh = true;
 		await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
 		await this.settingsManager.reload();
 		this.syncQueueModesFromSettings();
@@ -2984,14 +3423,19 @@ export class AgentSession {
 	/**
 	 * Ensure the session has a display name. If none is set, generate an AI summary title asynchronously.
 	 */
-	async ensureSessionName(options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<string | undefined> {
-		if (!this._autoSessionName || this.sessionName || this._isGeneratingSessionName || this._sessionNameError) {
+	async ensureSessionName(
+		options: { prompt?: string; signal?: AbortSignal; timeoutMs?: number } = {},
+	): Promise<string | undefined> {
+		if (this._sessionNameGenerationPromise) {
+			return this._sessionNameGenerationPromise;
+		}
+		if (!this._autoSessionName || this.sessionName || this._sessionNameError) {
 			return this.sessionName;
 		}
 
-		const hasUser = this.messages.some((m) => m.role === "user");
-		const hasAssistant = this.messages.some((m) => m.role === "assistant");
-		if (!hasUser || !hasAssistant) {
+		const firstUserMessage = this.messages.find((message) => message.role === "user");
+		const prompt = options.prompt?.trim() || (firstUserMessage ? this._getUserMessageText(firstUserMessage).trim() : "");
+		if (!prompt) {
 			return undefined;
 		}
 
@@ -2999,41 +3443,56 @@ export class AgentSession {
 		this._sessionNameError = undefined;
 		this._emit({ type: "session_name_generation", status: "started" });
 
+		const generation = (async (): Promise<string | undefined> => {
+			try {
+				if (!this.model) {
+					const fallbackName = generateFallbackSessionName([
+						{ role: "user", content: prompt, timestamp: Date.now() },
+					]);
+					this.setSessionName(fallbackName);
+					this._emit({ type: "session_name_generation", status: "completed", name: fallbackName });
+					return fallbackName;
+				}
+
+				const name = await generateSessionName({
+					model: this.model,
+					modelRegistry: this._modelRegistry,
+					prompt,
+					signal: options.signal,
+					timeoutMs: options.timeoutMs,
+				});
+
+				const resolvedName =
+					name ?? generateFallbackSessionName([{ role: "user", content: prompt, timestamp: Date.now() }]);
+				if (resolvedName && !this.sessionName) this.setSessionName(resolvedName);
+				this._emit({ type: "session_name_generation", status: "completed", name: resolvedName });
+				return this.sessionName ?? resolvedName;
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const fallbackName = options.signal?.aborted
+					? undefined
+					: generateFallbackSessionName([{ role: "user", content: prompt, timestamp: Date.now() }]);
+				if (fallbackName && !this.sessionName) {
+					this.setSessionName(fallbackName);
+					this._emit({ type: "session_name_generation", status: "completed", name: fallbackName });
+					return fallbackName;
+				}
+				if (this.sessionName) return this.sessionName;
+				this._sessionNameError = message;
+				this._emit({ type: "session_name_generation", status: "failed", error: message });
+				return undefined;
+			}
+		})();
+
+		this._sessionNameGenerationPromise = generation;
 		try {
-			if (!this.model) {
-				const fallbackName = generateFallbackSessionName(this.messages);
-				this.setSessionName(fallbackName);
-				this._emit({ type: "session_name_generation", status: "completed", name: fallbackName });
-				return fallbackName;
-			}
-
-			const name = await generateSessionName({
-				model: this.model,
-				modelRegistry: this._modelRegistry,
-				messages: this.messages,
-				signal: options.signal,
-				timeoutMs: options.timeoutMs,
-			});
-
-			const resolvedName = name ?? generateFallbackSessionName(this.messages);
-			if (resolvedName) this.setSessionName(resolvedName);
-			this._emit({ type: "session_name_generation", status: "completed", name: resolvedName });
-			return resolvedName;
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			const fallbackName = options.signal?.aborted ? undefined : generateFallbackSessionName(this.messages);
-			if (fallbackName) {
-				this.setSessionName(fallbackName);
-				this._emit({ type: "session_name_generation", status: "completed", name: fallbackName });
-				return fallbackName;
-			}
-			this._sessionNameError = message;
-			this._emit({ type: "session_name_generation", status: "failed", error: message });
+			return await generation;
 		} finally {
 			this._isGeneratingSessionName = false;
+			if (this._sessionNameGenerationPromise === generation) {
+				this._sessionNameGenerationPromise = undefined;
+			}
 		}
-
-		return this.sessionName;
 	}
 
 	// =========================================================================

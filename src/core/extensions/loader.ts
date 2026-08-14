@@ -206,6 +206,11 @@ function createExtensionAPI(
 		// Registration methods - write to extension
 		on(event: string, handler: HandlerFn): void {
 			runtime.assertActive();
+			if (event === "before_agent_start" || event === "before_provider_request") {
+				throw new Error(
+					`${event} was removed by workflow schema v2. Use before_step for declarative instructions/context/tools or before_transport_request for headers, timeout, and provider tuning.`,
+				);
+			}
 			const list = extension.handlers.get(event) ?? [];
 			list.push(handler);
 			extension.handlers.set(event, list);

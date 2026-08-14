@@ -130,25 +130,17 @@ Set `METIS_SKIP_VERSION_CHECK=1` to disable the Metis version update check. Use 
 }
 ```
 
-### Working Memory
+### Memory
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `workingMemory.enabled` | boolean | `true` | Enable live log checkpoints, recovery injection, and checkpoint reminders |
-| `workingMemory.checkpointInterval` | number | `8` | Non-`log` tool calls allowed between working-memory writes before a reminder |
+| `memory.enabled` | boolean | `true` | Enable durable checkpoint extraction and model-directed `search_memory` |
+| `memory.maxUnusedDays` | number | `30` | Exclude records not used within this many days |
+| `memory.maxRolloutAgeDays` | number | `10` | Ignore older unprocessed checkpoint jobs during automatic sweeps |
+| `memory.minRolloutIdleHours` | number | `6` | Delay automatic extraction after a checkpoint |
+| `memory.maxRolloutsPerSweep` | number | `2` | Maximum jobs processed by each automatic sweep; manual Run processes all pending jobs |
 
-```json
-{
-  "workingMemory": {
-    "enabled": true,
-    "checkpointInterval": 8
-  }
-}
-```
-
-The append-only log remains at `.temp/<sessionId>_log.md`. `log` reads return the latest checkpoint plus later error and completion events, capped at 12 KiB. Dream continues to consolidate the complete file using its existing schedule and cleanup rules.
-
-To disable live working memory and its transient reminders, set `workingMemory.enabled` to `false`.
+Memory checkpoints and records live under `~/.metis/memories`. Models retrieve relevant records explicitly through the read-only `search_memory` tool; prompts do not receive automatic memory injection. The deprecated `workingMemory` settings remain accepted for compatibility but no longer control `.temp` logs, reminders, or Dream consolidation.
 
 ### Branch Summary
 

@@ -20,9 +20,26 @@ export {
 	type ModelCycleResult,
 	type ParsedSkillBlock,
 	type PromptOptions,
+	type QueuedSessionMessage,
 	parseSkillBlock,
 	type SessionStats,
 } from "./core/agent-session.ts";
+export {
+	MemoryCoordinator,
+	type MemoryCandidate,
+	type MemoryCoordinatorOptions,
+	type MemoryExtractionResult,
+	type MemoryKind,
+	type MemoryRecordStatus,
+	type MemoryRecordSummary,
+	type MemoryScope,
+	type MemorySettings,
+	type MemoryState,
+	type SessionMemoryCheckpoint,
+	resolveMemoryProjectIdentity,
+} from "./core/memory-coordinator.ts";
+export { validateAskUserRequest, validateAskUserResponse, type AskUserAnswer, type AskUserHandler, type AskUserOption, type AskUserQuestion, type AskUserRequest, type AskUserResponse } from "./core/ask-user.ts";
+export { extractProposedPlan, getLatestWorkflowProposal, resolveWorkflowPlan, resolveWorkflowProposal, type WorkflowPlanPhase, type WorkflowPlanState, type WorkflowPlanStep, type WorkflowProposalState } from "./core/workflow-runtime.ts";
 // Auth and model registry
 export {
 	type ApiKeyCredential,
@@ -67,11 +84,10 @@ export type {
 	AppKeybinding,
 	AutocompleteProviderFactory,
 	BashToolCallEvent,
-	BeforeAgentStartEvent,
-	BeforeAgentStartEventResult,
-	BeforeProviderRequestEvent,
-	BeforeProviderRequestEventResult,
-	BuildSystemPromptOptions,
+	BeforeStepEvent,
+	BeforeStepEventResult,
+	BeforeTransportRequestEvent,
+	BeforeTransportRequestResult,
 	CompactOptions,
 	ContextEvent,
 	ContextUsage,
@@ -134,6 +150,8 @@ export type {
 	TerminalInputHandler,
 	ToolCallEvent,
 	ToolCallEventResult,
+	ToolCapabilities,
+	ToolEffect,
 	ToolDefinition,
 	ToolExecutionMode,
 	ToolInfo,
@@ -186,6 +204,25 @@ export type {
 export { DefaultPackageManager } from "./core/package-manager.ts";
 export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.ts";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
+export {
+	type CollaborationMode,
+	type StepSnapshot,
+	type WorkflowCheckpoint,
+	type WorkflowToolErrorKind,
+	WorkflowToolDispatcher,
+	WorkflowToolError,
+	WorkflowRuntime,
+} from "./core/workflow-runtime.ts";
+export {
+	type InstructionBlock,
+	type InstructionChannel,
+	type InstructionSourceSummary,
+	type InstructionStack,
+	type InstructionTrust,
+	buildInstructionStack,
+	compileInstructionStack,
+	instructionStackHash,
+} from "./core/system-prompt.ts";
 // SDK for programmatic usage
 export {
 	AgentSessionRuntime,
@@ -221,6 +258,7 @@ export {
 } from "./core/sdk.ts";
 export {
 	type BranchSummaryEntry,
+	type CollaborationModeChangeEntry,
 	buildContextEntries,
 	buildSessionContext,
 	type CompactionEntry,
@@ -291,6 +329,8 @@ export {
 	createLocalBashOperations,
 	createLsToolDefinition,
 	createReadToolDefinition,
+	createSearchMemoryTool,
+	createSearchMemoryToolDefinition,
 	createVideoToolDefinition,
 	createWriteToolDefinition,
 	DEFAULT_MAX_BYTES,
@@ -316,6 +356,8 @@ export {
 	type ReadToolDetails,
 	type ReadToolInput,
 	type ReadToolOptions,
+	type SearchMemoryToolInput,
+	type SearchMemoryToolOptions,
 	type VideoAction,
 	type VideoCrop,
 	type VideoMetadata,

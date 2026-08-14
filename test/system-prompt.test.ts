@@ -1,166 +1,76 @@
 import { describe, expect, test } from "vitest";
-import { buildSystemPrompt } from "../src/core/system-prompt.ts";
+import { buildInstructionStack, buildSystemPrompt, compileInstructionStack } from "../src/core/system-prompt.ts";
 
-describe("buildSystemPrompt", () => {
-	describe("empty tools", () => {
-		test("shows (none) for empty tools list", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: [],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("Available tools:\n(none)");
+describe("instruction stack", () => {
+	test("renders trusted base and developer instructions in deterministic order", () => {
+		const stack = buildInstructionStack({
+			baseInstructions: "Base profile.",
+			developerInstructions: ["Global rule."],
+			contextFiles: [{ path: "/repo/AGENTS.md", content: "Project rule." }],
+			selectedTools: ["read", "write"],
+			toolSnippets: { read: "Read files", write: "Write files" },
+			cwd: "/repo",
 		});
 
-		test("shows file paths guideline even with no tools", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: [],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("Show file paths clearly");
-		});
+		expect(stack.base.content).toBe("Base profile.");
+		expect(stack.developer.map((entry) => entry.content)).toEqual(
+			expect.arrayContaining(["Global rule.", "Project rule."]),
+		);
+		const rendered = compileInstructionStack(stack);
+		expect(rendered.indexOf("Base profile.")).toBeLessThan(rendered.indexOf("Global rule."));
+		expect(rendered).toContain('<developer_instructions source="/repo/AGENTS.md">');
 	});
 
-	describe("default tools", () => {
-		test("includes all default tools when snippets are provided", () => {
-			const prompt = buildSystemPrompt({
-				toolSnippets: {
-					read: "Read file contents",
-					bash: "Execute bash commands",
-					edit: "Make surgical edits",
-					write: "Create or overwrite files",
-				},
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("- read:");
-			expect(prompt).toContain("- bash:");
-			expect(prompt).toContain("- edit:");
-			expect(prompt).toContain("- write:");
-		});
-
-		test("instructs models to resolve metis docs and examples under absolute base paths", () => {
-			const prompt = buildSystemPrompt({
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain(
-				"- When reading metis docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory",
-			);
-		});
+	test("keeps runtime context out of privileged instructions", () => {
+		const stack = buildInstructionStack({ selectedTools: [], cwd: "/workspace", sessionId: "session" });
+		expect(stack.context[0]?.content).toContain("Current working directory: /workspace");
+		expect(compileInstructionStack(stack)).not.toContain("Current working directory");
 	});
 
-	describe("custom tool snippets", () => {
-		test("includes custom tools in available tools section when promptSnippet is provided", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: ["read", "dynamic_tool"],
-				toolSnippets: {
-					dynamic_tool: "Run dynamic test behavior",
-				},
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("- dynamic_tool: Run dynamic test behavior");
-		});
-
-		test("omits custom tools from available tools section when promptSnippet is not provided", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: ["read", "dynamic_tool"],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).not.toContain("dynamic_tool");
-		});
+	test("renders no visible tools when no snippets are supplied", () => {
+		const prompt = buildSystemPrompt({ selectedTools: [], cwd: process.cwd() });
+		expect(prompt).toContain("Available tools for this step:\n(none)");
 	});
 
-	describe("prompt guidelines", () => {
-		test("does not require web research for every task and cleans disposable research scratch", () => {
-			const prompt = buildSystemPrompt({
-				contextFiles: [],
-				skills: [],
-				cwd: "/Users/test/project",
-				sessionId: "research123",
-			});
+	test("does not leak custom tool names without a prompt snippet", () => {
+		const prompt = buildSystemPrompt({ selectedTools: ["read", "dynamic_tool"], cwd: process.cwd() });
+		expect(prompt).not.toContain("dynamic_tool");
+	});
 
-			expect(prompt).not.toContain("For EVERY task, before any substantive planning");
-			expect(prompt).not.toContain("NO simple, trivial, familiar-task, or typo exception");
-			expect(prompt).not.toContain("you MUST successfully call websearch");
-			expect(prompt).toContain("When web research is used");
-			expect(prompt).toContain("Do NOT cite, list, link, or otherwise mention investigation sources in user-facing output");
-			expect(prompt).toContain("/Users/test/project/.temp/research123_research.md");
-			expect(prompt).toContain("Delete /Users/test/project/.temp/research123_research.md immediately when no longer needed");
-			expect(prompt).toContain("not the append-only working log at /Users/test/project/.temp/research123_log.md");
+	test("preserves configured base instructions and deduplicates tool guidance", () => {
+		const prompt = buildSystemPrompt({
+			baseInstructions: "Custom base.",
+			promptGuidelines: ["Use scoped validation.", " Use scoped validation. "],
+			cwd: process.cwd(),
 		});
+		expect(prompt).toContain("Custom base.");
+		expect(prompt.match(/Use scoped validation\./g)).toHaveLength(1);
+	});
 
-		test("requires risk-based comprehensive testing and exact user prompt fidelity", () => {
-			const prompt = buildSystemPrompt({
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
+	test("does not encode legacy memory and plan-file mandates", () => {
+		const prompt = buildSystemPrompt({ cwd: "/workspace", sessionId: "session" });
+		expect(prompt).not.toContain("LIVE WORKING MEMORY");
+		expect(prompt).not.toContain("remember_user_intent exactly once");
+		expect(prompt).not.toContain("after 8 non-log tool calls");
+		expect(prompt).toContain("active workflow provides a checklist");
+	});
 
-			expect(prompt).toContain("CRITICAL - User Prompt Fidelity");
-			expect(prompt).toContain("Do NOT omit, reinterpret, weaken, substitute, or expand any requirement");
-			expect(prompt).toContain("risk-based test matrix");
-			expect(prompt).toContain("boundary, empty, invalid, and error inputs");
-			expect(prompt).toContain("integration, API/schema/dependency/configuration contracts");
-			expect(prompt).toContain("concurrency, race conditions, and recovery");
-			expect(prompt).toContain("authentication, authorization, input validation");
-			expect(prompt).toContain("load, stress, and endurance");
-			expect(prompt).toContain("accessibility, responsive behavior, localization, and platform/browser compatibility");
-			expect(prompt).toContain("canary rollout, and rollback");
-			expect(prompt).toContain("use web research when useful");
-			expect(prompt).toContain("never use search as a substitute for testing");
-		});
+	test("keeps Plan conversational and Build execution-oriented", () => {
+		const planPrompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "plan" });
+		const buildPrompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "build" });
 
-		test("does not inject default requirements into a custom prompt", () => {
-			const prompt = buildSystemPrompt({
-				customPrompt: "Custom instructions only.",
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("Custom instructions only.");
-			expect(prompt).not.toContain("CRITICAL - User Prompt Fidelity");
-			expect(prompt).not.toContain("risk-based test matrix");
-		});
-
-		test("appends promptGuidelines to default guidelines", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: ["read", "dynamic_tool"],
-				promptGuidelines: ["Use dynamic_tool for project summaries."],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("- Use dynamic_tool for project summaries.");
-		});
-
-		test("deduplicates and trims promptGuidelines", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: ["read", "dynamic_tool"],
-				promptGuidelines: ["Use dynamic_tool for summaries.", "  Use dynamic_tool for summaries.  ", "   "],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt.match(/- Use dynamic_tool for summaries\./g)).toHaveLength(1);
-		});
+		expect(planPrompt).toContain("Plan Mode is conversational and read-only");
+		expect(planPrompt).toContain("<proposed_plan>");
+		expect(planPrompt).toContain("Do not edit files, run mutating tools, or call update_plan");
+		expect(planPrompt).toContain("before each meaningful batch of read-only tool calls");
+		expect(planPrompt).toContain("Use the user's language");
+		expect(planPrompt).toContain("Do not narrate every file read");
+		expect(planPrompt).toContain("MUST call ask_user");
+		expect(planPrompt).toContain("Never present clarification questions as ordinary assistant text");
+		expect(buildPrompt).toContain("Plan Mode is ended");
+		expect(buildPrompt).toContain("before each meaningful batch of tool calls");
+		expect(buildPrompt).toContain("Use the user's language");
+		expect(buildPrompt).toContain("call update_plan before the first mutating tool");
+		expect(buildPrompt).toContain("call read_plan whenever its exact contents or current execution progress are not present");
 	});
 });

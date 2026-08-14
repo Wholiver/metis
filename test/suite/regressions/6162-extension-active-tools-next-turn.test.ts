@@ -66,11 +66,17 @@ describe("extension active tools next-turn refresh", () => {
 		}
 	});
 
-	it("preserves before_agent_start system prompt overrides when tools change mid-run", async () => {
+	it("preserves before_step instructions when tools change mid-run", async () => {
 		const extensionFactories: ExtensionFactory[] = [
 			(metis) => {
-				metis.on("before_agent_start", async (event) => ({
-					systemPrompt: `${event.systemPrompt}\n\nkeep this run override`,
+				metis.on("before_step", async () => ({
+					developerInstructions: [{
+						id: "keep-run-instruction",
+						channel: "developer",
+						content: "keep this run instruction",
+						source: "test extension",
+						trust: "extension",
+					}],
 				}));
 
 				metis.registerTool({
@@ -127,8 +133,8 @@ describe("extension active tools next-turn refresh", () => {
 
 			expect(providerToolNames).toEqual([["switch_tools"], ["after_switch"]]);
 			expect(providerSystemPrompts).toHaveLength(2);
-			expect(providerSystemPrompts[0]).toContain("keep this run override");
-			expect(providerSystemPrompts[1]).toContain("keep this run override");
+			expect(providerSystemPrompts[0]).toContain("keep this run instruction");
+			expect(providerSystemPrompts[1]).toContain("keep this run instruction");
 		} finally {
 			harness.cleanup();
 		}

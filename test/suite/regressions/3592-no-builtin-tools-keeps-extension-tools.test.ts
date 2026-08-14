@@ -78,7 +78,8 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 				.getAllTools()
 				.map((tool) => tool.name)
 				.sort(),
-	).toEqual([
+		).toEqual([
+		"ask_user",
 		"bash",
 		"dynamic_tool",
 		"edit",
@@ -87,8 +88,11 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 		"log",
 		"ls",
 		"read",
+		"read_plan",
 		"remember_user_intent",
+		"search_memory",
 		"subagent",
+		"update_plan",
 		"user_intent",
 		"video",
 		"webfetch",
@@ -107,7 +111,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 
 		expect(session.getAllTools()).toEqual([]);
 		expect(session.getActiveToolNames()).toEqual([]);
-		expect(session.systemPrompt).toContain("Available tools:\n(none)");
+		expect(session.systemPrompt).toContain("Available tools for this step:\n(none)");
 		session.dispose();
 	});
 
@@ -128,7 +132,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 		});
 
 		expect(session.getActiveToolNames()).toEqual([]);
-		expect(session.systemPrompt).toContain("Available tools:\n(none)");
+		expect(session.systemPrompt).toContain("Available tools for this step:\n(none)");
 		expect(session.systemPrompt).not.toContain("- read:");
 		session.dispose();
 	});

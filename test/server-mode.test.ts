@@ -14,17 +14,26 @@ function createRuntimeFixture() {
 		isCompacting: false,
 		steeringMode: "all",
 		followUpMode: "all",
+		collaborationMode: "build",
+		contextWindowId: "window-1",
+		workflowPlan: { plan: [{ step: "Inspect", status: "in_progress" }], updatedAt: "2026-07-26T16:00:00.000Z" },
+		instructionSources: [{ id: "base", channel: "base", source: "metis", trust: "builtin", byteCount: 12, truncated: false }],
+		instructionDiagnostics: [],
 		sessionFile: "/tmp/session.jsonl",
 		sessionId: "session-1",
 		sessionName: "Server test",
 		autoCompactionEnabled: true,
-		pendingMessageCount: 0,
+		autoRetryEnabled: true,
+		get pendingMessageCount() {
+			return session.steeringMessages.length + session.followUpMessages.length;
+		},
 		steeringMessages: ["steer queued"],
 		followUpMessages: ["follow-up queued"],
 		getRunningSubagentIds: vi.fn(() => ["job-1"]),
 		messages: [{ role: "user", content: "hello" }],
 		agent: { waitForIdle: vi.fn(async () => {}) },
 		modelRegistry: { getAvailable: vi.fn(async () => [model]) },
+		extensionRunner: { getRegisteredCommands: vi.fn(() => [{ name: "dream", description: "Dream mode" }]) },
 		sessionManager: {
 			getCwd: vi.fn(() => "/tmp"),
 			getSessionDir: vi.fn(() => "/tmp/metis-server-test-sessions"),
@@ -61,6 +70,7 @@ function createRuntimeFixture() {
 			const [text] = session.followUpMessages.splice(index, 1);
 			if (!text) throw new Error("queue item not found");
 			session.steeringMessages.push(text);
+			return { text, timestamp: Date.now() };
 		}),
 		abort: vi.fn(async () => {}),
 		compact: vi.fn(async () => ({ summary: "done" })),
@@ -68,9 +78,24 @@ function createRuntimeFixture() {
 		getAvailableThinkingLevels: vi.fn(() => ["off", "low", "medium", "high"]),
 		supportsThinking: vi.fn(() => true),
 		setThinkingLevel: vi.fn(),
+		setCollaborationMode: vi.fn((mode: "build" | "plan") => {
+			session.collaborationMode = mode;
+		}),
 		setAutoCompactionEnabled: vi.fn((enabled: boolean) => {
 			session.autoCompactionEnabled = enabled;
 		}),
+		setAutoRetryEnabled: vi.fn((enabled: boolean) => {
+			session.autoRetryEnabled = enabled;
+		}),
+		settingsManager: {
+			getDefaultProvider: vi.fn(() => undefined),
+			getDefaultModel: vi.fn(() => undefined),
+			getDefaultThinkingLevel: vi.fn(() => undefined),
+			setDefaultModelAndProvider: vi.fn(),
+			clearDefaultModelAndProvider: vi.fn(),
+			setDefaultThinkingLevel: vi.fn(),
+			clearDefaultThinkingLevel: vi.fn(),
+		},
 		setSteeringMode: vi.fn((mode: "all" | "one-at-a-time") => {
 			session.steeringMode = mode;
 		}),
@@ -78,16 +103,36 @@ function createRuntimeFixture() {
 			session.followUpMode = mode;
 		}),
 		setSessionName: vi.fn(),
+		ensureSessionName: vi.fn(async () => undefined),
 		navigateTree: vi.fn(async () => ({ cancelled: false })),
 		reload: vi.fn(async () => {}),
+	};
+	// The real AgentSessionRuntime invokes the rebindSession hook exactly once per session
+	// replacement, from finishSessionReplacement(). Model that here: server-mode relies on it
+	// instead of re-binding from each route, so a stub that swallowed the hook would let a
+	// missing bind (and its server.session_changed broadcast) pass unnoticed.
+	let rebindSession: (() => Promise<void>) | undefined;
+	const replaceSession = async () => {
+		await rebindSession?.();
 	};
 	const runtime = {
 		cwd: "/tmp",
 		session,
-		setRebindSession: vi.fn(),
-		newSession: vi.fn(async () => ({ cancelled: false })),
-		switchSession: vi.fn(async () => ({ cancelled: false })),
-		fork: vi.fn(async () => ({ cancelled: false, selectedText: undefined })),
+		setRebindSession: vi.fn((hook: () => Promise<void>) => {
+			rebindSession = hook;
+		}),
+		newSession: vi.fn(async () => {
+			await replaceSession();
+			return { cancelled: false };
+		}),
+		switchSession: vi.fn(async () => {
+			await replaceSession();
+			return { cancelled: false };
+		}),
+		fork: vi.fn(async () => {
+			await replaceSession();
+			return { cancelled: false, selectedText: undefined };
+		}),
 		dispose: vi.fn(async () => {}),
 	};
 	return {
@@ -146,17 +191,35 @@ describe("server mode", () => {
 		expect(spec.paths).toHaveProperty("/event");
 		expect(spec.paths).toHaveProperty("/session/prompt");
 		expect(spec.paths).toHaveProperty("/sessions");
+		expect(spec.paths).toHaveProperty("/desktop/work-stats");
 		expect(spec.paths).toHaveProperty("/session/queue");
 		expect(spec.paths).toHaveProperty("/session/queue/promote");
 		expect(spec.paths).toHaveProperty("/session/settings");
 		expect(spec.paths).toHaveProperty("/commands");
 		expect(spec.paths).toHaveProperty("/session/command");
+		expect(spec.paths).toHaveProperty("/session/user-input/{requestId}");
+
+		const expiredInput = await fetch(`${handle.address.url}/session/user-input/missing`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ cancelled: true, answers: [] }),
+		});
+		expect(expiredInput.status).toBe(404);
+
+		const workStats = (await fetch(`${handle.address.url}/desktop/work-stats`).then((response) => response.json())) as {
+			rangeStart: string;
+			rangeEnd: string;
+			days: unknown[];
+		};
+		expect(workStats.rangeStart).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+		expect(workStats.rangeEnd).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+		expect(workStats.days).toEqual([]);
 
 		const commandData = (await fetch(`${handle.address.url}/commands`).then((response) => response.json())) as {
 			commands: Array<{ name: string; source: string }>;
 		};
-		expect(commandData.commands.filter((command) => command.source === "builtin")).toHaveLength(23);
-		expect(commandData.commands.map((command) => command.name)).toEqual(expect.arrayContaining(["settings", "model", "compact", "quit"]));
+		expect(commandData.commands.filter((command) => command.source === "builtin")).toHaveLength(26);
+		expect(commandData.commands.map((command) => command.name)).toEqual(expect.arrayContaining(["settings", "model", "compact", "memory", "quit"]));
 
 		const settingsCommandResponse = await fetch(`${handle.address.url}/session/command`, {
 			method: "POST",
@@ -173,6 +236,9 @@ describe("server mode", () => {
 			supportsThinking: boolean;
 			followUpMessages: string[];
 			runningSubagentIds: string[];
+			collaborationMode: string;
+			contextWindowId: string;
+			autoRetryEnabled: boolean;
 		};
 		expect(state.sessionId).toBe("session-1");
 		expect(state.cwd).toBe("/tmp");
@@ -180,10 +246,21 @@ describe("server mode", () => {
 		expect(state.supportsThinking).toBe(true);
 		expect(state.followUpMessages).toEqual(["follow-up queued"]);
 		expect(state.runningSubagentIds).toEqual(["job-1"]);
+		expect(state.collaborationMode).toBe("build");
+		expect(state.contextWindowId).toBe("window-1");
+		expect(state.autoRetryEnabled).toBe(true);
+
+		const initialDefaultsResponse = await fetch(`${handle.address.url}/settings/defaults`);
+		expect(initialDefaultsResponse.status).toBe(200);
+		expect(await initialDefaultsResponse.json()).toEqual({});
 
 		const messageData = (await fetch(`${handle.address.url}/session/messages`).then((response) => response.json())) as {
+			serverInstanceId: string;
+			serverSequence: number;
 			messageTimings: Array<{ messageTimestamp: number; completedAt: number }>;
 		};
+		expect(messageData.serverInstanceId).toBeTypeOf("string");
+		expect(messageData.serverSequence).toBeGreaterThan(0);
 		expect(messageData.messageTimings).toEqual([{
 			messageTimestamp: 1785081600000,
 			completedAt: Date.parse("2026-07-26T16:00:05.000Z"),
@@ -196,6 +273,12 @@ describe("server mode", () => {
 		});
 		expect(promoteResponse.status).toBe(200);
 		expect(fixture.session.promoteFollowUpMessage).toHaveBeenCalledWith(0);
+		expect(await promoteResponse.json()).toMatchObject({
+			message: { text: "follow-up queued" },
+			pendingMessageCount: 2,
+			steeringMessages: ["steer queued", "follow-up queued"],
+			followUpMessages: [],
+		});
 
 		const removeResponse = await fetch(`${handle.address.url}/session/queue`, {
 			method: "DELETE",
@@ -203,7 +286,12 @@ describe("server mode", () => {
 			body: JSON.stringify({ queue: "steering", index: 1 }),
 		});
 		expect(removeResponse.status).toBe(200);
-		expect(await removeResponse.json()).toMatchObject({ message: { text: "follow-up queued" } });
+		expect(await removeResponse.json()).toMatchObject({
+			message: { text: "follow-up queued" },
+			pendingMessageCount: 1,
+			steeringMessages: ["steer queued"],
+			followUpMessages: [],
+		});
 
 		const thinkingResponse = await fetch(`${handle.address.url}/session/thinking`, {
 			method: "PUT",
@@ -220,24 +308,69 @@ describe("server mode", () => {
 		});
 		expect(unsupportedThinkingResponse.status).toBe(400);
 
+		const workflowResponse = await fetch(`${handle.address.url}/session/collaboration-mode`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ mode: "plan" }),
+		});
+		expect(workflowResponse.status).toBe(200);
+		expect(fixture.session.setCollaborationMode).toHaveBeenCalledWith("plan");
+
+		fixture.session.isStreaming = true;
+		const busyWorkflowResponse = await fetch(`${handle.address.url}/session/collaboration-mode`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ mode: "build" }),
+		});
+		expect(busyWorkflowResponse.status).toBe(409);
+		fixture.session.isStreaming = false;
+
 		const settingsResponse = await fetch(`${handle.address.url}/session/settings`, {
 			method: "PUT",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				autoCompactionEnabled: false,
+				autoRetryEnabled: false,
 				steeringMode: "one-at-a-time",
 				followUpMode: "one-at-a-time",
 			}),
 		});
 		expect(settingsResponse.status).toBe(200);
 		expect(fixture.session.setAutoCompactionEnabled).toHaveBeenCalledWith(false);
+		expect(fixture.session.setAutoRetryEnabled).toHaveBeenCalledWith(false);
 		expect(fixture.session.setSteeringMode).toHaveBeenCalledWith("one-at-a-time");
 		expect(fixture.session.setFollowUpMode).toHaveBeenCalledWith("one-at-a-time");
 		expect(await settingsResponse.json()).toMatchObject({
 			autoCompactionEnabled: false,
+			autoRetryEnabled: false,
 			steeringMode: "one-at-a-time",
 			followUpMode: "one-at-a-time",
 		});
+
+		const defaultsResponse = await fetch(`${handle.address.url}/settings/defaults`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ provider: "test", modelId: "model-1", thinkingLevel: "low" }),
+		});
+		expect(defaultsResponse.status).toBe(200);
+		expect(fixture.session.settingsManager.setDefaultModelAndProvider).toHaveBeenCalledWith("test", "model-1");
+		expect(fixture.session.settingsManager.setDefaultThinkingLevel).toHaveBeenCalledWith("low");
+
+		const clearDefaultsResponse = await fetch(`${handle.address.url}/settings/defaults`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ provider: null, modelId: null, thinkingLevel: null }),
+		});
+		expect(clearDefaultsResponse.status).toBe(200);
+		expect(fixture.session.settingsManager.clearDefaultModelAndProvider).toHaveBeenCalledOnce();
+		expect(fixture.session.settingsManager.clearDefaultThinkingLevel).toHaveBeenCalledOnce();
+
+		const invalidDefaultsResponse = await fetch(`${handle.address.url}/settings/defaults`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ provider: "test" }),
+		});
+		expect(invalidDefaultsResponse.status).toBe(400);
 
 		const invalidSettingsResponse = await fetch(`${handle.address.url}/session/settings`, {
 			method: "PUT",
@@ -253,6 +386,21 @@ describe("server mode", () => {
 		});
 		expect(promptResponse.status).toBe(202);
 		expect(fixture.session.prompt).toHaveBeenCalledWith("do work", expect.objectContaining({ source: "rpc" }));
+
+		const processResponse = await fetch(`${handle.address.url}/session/prompt`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ message: "process it", workflowAction: "process_proposal" }),
+		});
+		expect(processResponse.status).toBe(202);
+		expect(fixture.session.prompt).toHaveBeenLastCalledWith("process it", expect.objectContaining({ workflowAction: "process_proposal" }));
+
+		const invalidProcessResponse = await fetch(`${handle.address.url}/session/prompt`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ message: "process it", workflowAction: "unknown" }),
+		});
+		expect(invalidProcessResponse.status).toBe(400);
 
 		const imageResponse = await fetch(`${handle.address.url}/session/prompt`, {
 			method: "POST",
@@ -287,10 +435,57 @@ describe("server mode", () => {
 		const newWorkspaceResponse = await fetch(`${handle.address.url}/session/new`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ cwd: "/tmp" }),
+			body: JSON.stringify({ cwd: "/tmp", collaborationMode: "plan" }),
 		});
 		expect(newWorkspaceResponse.status).toBe(200);
-		expect(fixture.runtime.newSession).toHaveBeenLastCalledWith({ cwd: "/tmp", parentSession: undefined });
+		expect(fixture.runtime.newSession).toHaveBeenLastCalledWith({
+			cwd: "/tmp",
+			parentSession: undefined,
+			collaborationMode: "plan",
+		});
+	});
+
+	test("starts title generation before dispatching the first Desktop prompt", async () => {
+		const fixture = createRuntimeFixture();
+		fixture.session.sessionName = undefined as unknown as string;
+		fixture.session.messages = [];
+		const order: string[] = [];
+		fixture.session.ensureSessionName.mockImplementation(async (options?: { prompt?: string }) => {
+			order.push(`title:${options?.prompt}`);
+			return undefined;
+		});
+		fixture.session.prompt.mockImplementation(async (_message, options) => {
+			order.push("prompt");
+			options.preflightResult?.(true);
+		});
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+
+		const response = await fetch(`${handle.address.url}/session/prompt`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ message: "首个用户 prompt" }),
+		});
+
+		expect(response.status).toBe(202);
+		expect(fixture.session.ensureSessionName).toHaveBeenCalledWith({ prompt: "首个用户 prompt" });
+		expect(order).toEqual(["title:首个用户 prompt", "prompt"]);
+	});
+
+	test("returns Dream migration guidance without generating a title", async () => {
+		const fixture = createRuntimeFixture();
+		fixture.session.sessionName = undefined as unknown as string;
+		fixture.session.messages = [];
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+
+		const response = await fetch(`${handle.address.url}/session/command`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ command: "/dream on" }),
+		});
+
+		expect(response.status).toBe(200);
+		expect(fixture.session.prompt).not.toHaveBeenCalled();
+		expect(fixture.session.ensureSessionName).not.toHaveBeenCalled();
 	});
 
 	test("waits for the localhost OAuth callback before showing fallback input", async () => {
@@ -335,14 +530,41 @@ describe("server mode", () => {
 		const decoder = new TextDecoder();
 		const connected = decoder.decode((await reader.read()).value);
 		expect(connected).toContain('"type":"server.connected"');
+		const connectedPayload = JSON.parse(connected.split("\n").find((line) => line.startsWith("data: "))!.slice(6)) as {
+			serverInstanceId: string;
+			serverSequence: number;
+			serverSessionId: string;
+		};
+		expect(connected).toContain(`id: ${connectedPayload.serverInstanceId}:${connectedPayload.serverSequence}`);
+		expect(connectedPayload.serverSessionId).toBe("session-1");
 		fixture.emit({ type: "message_start", message: { role: "assistant" } });
 		const event = decoder.decode((await reader.read()).value);
 		expect(event).toContain('"type":"message_start"');
+		const eventPayload = JSON.parse(event.split("\n").find((line) => line.startsWith("data: "))!.slice(6)) as {
+			serverInstanceId: string;
+			serverSequence: number;
+		};
+		expect(eventPayload.serverInstanceId).toBe(connectedPayload.serverInstanceId);
+		expect(eventPayload.serverSequence).toBeGreaterThan(connectedPayload.serverSequence);
 		const newSessionResponse = await fetch(`${handle.address.url}/session/new`, { method: "POST" });
 		expect(newSessionResponse.status).toBe(200);
 		const sessionChanged = decoder.decode((await reader.read()).value);
 		expect(sessionChanged).toContain('"type":"server.session_changed"');
 		expect(sessionChanged).toContain('"sessionId":"session-1"');
+		// Replacing a session must bind exactly once. While the routes re-bound on top of the
+		// runtime's rebindSession hook, /session/new broadcast server.session_changed twice, and
+		// each broadcast costs the renderer a full session sync. The next event's sequence proves
+		// nothing was emitted in between.
+		const changedPayload = JSON.parse(sessionChanged.split("\n").find((line) => line.startsWith("data: "))!.slice(6)) as {
+			serverSequence: number;
+		};
+		fixture.emit({ type: "message_start", message: { role: "assistant" } });
+		const afterChange = decoder.decode((await reader.read()).value);
+		expect(afterChange).toContain('"type":"message_start"');
+		const afterPayload = JSON.parse(afterChange.split("\n").find((line) => line.startsWith("data: "))!.slice(6)) as {
+			serverSequence: number;
+		};
+		expect(afterPayload.serverSequence).toBe(changedPayload.serverSequence + 1);
 		await reader.cancel();
 	});
 

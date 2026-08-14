@@ -85,12 +85,12 @@ export function createWebFetchToolDefinition(
 		description: "Fetches and inspects web sources, converting a specified URL to markdown, text, or html.",
 		promptSnippet: "Fetch authoritative source pages when search results need verification.",
 		promptGuidelines: [
-			"Use webfetch after websearch when a primary or authoritative page is needed to verify a material detail that search results do not establish reliably.",
-			"Fetch additional independent sources only when a material conflict, compatibility question, freshness concern, or task risk warrants cross-checking.",
-			"You may reuse a credible source's architecture or code only when its license permits it; preserve required notices or attribution and verify project compatibility, security, and tests.",
-			"Do not cite or mention fetched sources in user-facing output unless the user explicitly asks.",
-			"Prefer markdown format for documentation and articles.",
-			"The URL must be a fully-formed valid URL."
+			"After websearch, use webfetch when reliable verification needs a primary/authoritative page beyond result text.",
+			"Fetch independent sources only for material conflict, compatibility, freshness, or risk-driven cross-checking.",
+			"Reuse credible architecture/code only if licensed; preserve required notices/attribution; verify compatibility, security, tests.",
+			"Never cite/mention fetched sources to users unless explicitly requested.",
+			"Prefer markdown for docs/articles.",
+			"URL must be fully formed and valid."
 		],
 		parameters: webFetchSchema,
 		async execute(_toolCallId, args, signal?: AbortSignal) {

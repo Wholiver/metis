@@ -457,77 +457,63 @@ export function findCutPoint(
 // Summarization
 // ============================================================================
 
-const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
-
-Use this EXACT format:
+export const SUMMARIZATION_PROMPT = `Summarize the conversation above as a continuation checkpoint for another LLM. Use EXACTLY:
 
 ## Goal
-[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+[User goal(s).]
 
 ## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned by user]
-- [Or "(none)" if none were mentioned]
+- [User constraints/preferences/requirements, or "(none)"]
 
 ## Progress
 ### Done
-- [x] [Completed tasks/changes]
+- [x] [Completed work]
 
 ### In Progress
 - [ ] [Current work]
 
 ### Blocked
-- [Issues preventing progress, if any]
+- [Blockers, if any]
 
 ## Key Decisions
 - **[Decision]**: [Brief rationale]
 
 ## Next Steps
-1. [Ordered list of what should happen next]
+1. [Ordered next actions]
 
 ## Critical Context
-- [Any data, examples, or references needed to continue]
-- [Or "(none)" if not applicable]
+- [Continuation-critical data/examples/references, or "(none)"]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Be concise; preserve exact paths, function names, error messages.`;
 
-const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
-
-Update the existing structured summary with new information. RULES:
-- PRESERVE all existing information from the previous summary
-- ADD new progress, decisions, and context from the new messages
-- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
-- UPDATE "Next Steps" based on what was accomplished
-- PRESERVE exact file paths, function names, and error messages
-- If something is no longer relevant, you may remove it
-
-Use this EXACT format:
+export const UPDATE_SUMMARIZATION_PROMPT = `Merge the NEW messages above into <previous-summary>. Preserve all existing relevant information; add new progress/decisions/context; move completed In Progress items to Done; update Next Steps; remove only irrelevant items; preserve exact paths, function names, error messages. Use EXACTLY:
 
 ## Goal
-[Preserve existing goals, add new ones if the task expanded]
+[Existing goals plus expansions]
 
 ## Constraints & Preferences
-- [Preserve existing, add new ones discovered]
+- [Existing plus newly discovered constraints/preferences]
 
 ## Progress
 ### Done
-- [x] [Include previously done items AND newly completed items]
+- [x] [Previously and newly completed work]
 
 ### In Progress
-- [ ] [Current work - update based on progress]
+- [ ] [Updated current work]
 
 ### Blocked
-- [Current blockers - remove if resolved]
+- [Current blockers; remove resolved ones]
 
 ## Key Decisions
-- **[Decision]**: [Brief rationale] (preserve all previous, add new)
+- **[Decision]**: [Brief rationale; preserve prior, add new]
 
 ## Next Steps
-1. [Update based on current state]
+1. [Updated ordered actions]
 
 ## Critical Context
-- [Preserve important context, add new if needed]
+- [Preserved and new continuation-critical context]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Be concise.`;
 
 function createSummarizationOptions(
 	model: Model<any>,
@@ -734,20 +720,18 @@ export function prepareCompaction(
 // Main compaction function
 // ============================================================================
 
-const TURN_PREFIX_SUMMARIZATION_PROMPT = `This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.
-
-Summarize the prefix to provide context for the retained suffix:
+export const TURN_PREFIX_SUMMARIZATION_PROMPT = `Summarize this oversized turn's PREFIX for its retained recent SUFFIX. Use EXACTLY:
 
 ## Original Request
-[What did the user ask for in this turn?]
+[User request]
 
 ## Early Progress
-- [Key decisions and work done in the prefix]
+- [Prefix decisions/work]
 
 ## Context for Suffix
-- [Information needed to understand the retained recent work]
+- [Information needed to understand retained work]
 
-Be concise. Focus on what's needed to understand the kept suffix.`;
+Be concise; include only context needed for the suffix.`;
 
 /**
  * Generate summaries for compaction using prepared data.

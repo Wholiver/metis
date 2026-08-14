@@ -94,7 +94,7 @@ describe("AgentSession dynamic tool registration", () => {
 		session.dispose();
 	});
 
-	it("initializes the plan directory and includes log in default builtin tools", async () => {
+	it("keeps legacy memory tools available but inactive", async () => {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.inMemory();
 		const resourceLoader = new DefaultResourceLoader({
@@ -113,14 +113,16 @@ describe("AgentSession dynamic tool registration", () => {
 			resourceLoader,
 		});
 
-		expect(session.getActiveToolNames()).toContain("log");
+		expect(session.getActiveToolNames()).not.toContain("log");
 		expect(session.getAllTools().map((tool) => tool.name)).toContain("log");
-		expect(session.getActiveToolNames()).toContain("user_intent");
+		expect(session.getActiveToolNames()).not.toContain("user_intent");
 		expect(session.getAllTools().map((tool) => tool.name)).toContain("user_intent");
-		expect(session.getActiveToolNames()).toContain("remember_user_intent");
+		expect(session.getActiveToolNames()).not.toContain("remember_user_intent");
+		expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["ask_user", "read_plan", "search_memory", "update_plan"]));
 		expect(session.getAllTools().map((tool) => tool.name)).toContain("remember_user_intent");
-		expect(existsSync(join(tempDir, ".metis", "plan"))).toBe(true);
-
+		expect(session.systemPrompt).toContain("Use search_memory proactively when prior durable knowledge may affect the task.");
+		session.setCollaborationMode("plan");
+		expect(session.getActiveToolNames()).toContain("search_memory");
 		session.dispose();
 	});
 

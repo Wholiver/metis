@@ -41,7 +41,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/scoped-models` | Enable/disable models for Ctrl+P cycling |
 | `/settings` | Thinking level, theme, message delivery, transport |
 | `/resume` | Pick from previous sessions |
-| `/new` | Start a new session |
+| `/new` | Start a new session in Plan mode |
 | `/name <name>` | Set session display name |
 | `/session` | Show session file, ID, messages, tokens, and cost |
 | `/tree` | Jump to any point in the session and continue from there |
@@ -108,10 +108,10 @@ Use context files for project conventions, commands, safety rules, and preferenc
 
 Replace the default system prompt with:
 
-- `.metis/SYSTEM.md` for a project
-- `~/.metis/agent/SYSTEM.md` globally
+- `.metis/BASE_INSTRUCTIONS.md` for a project
+- `~/.metis/agent/BASE_INSTRUCTIONS.md` globally
 
-Append to the default prompt without replacing it with `APPEND_SYSTEM.md` in either location.
+Add trusted developer instructions with `INSTRUCTIONS.md` in either location. Runtime context and user input remain separate from these privileged instructions.
 
 ### Project Trust
 
@@ -235,8 +235,9 @@ metis --no-extensions -e ./my-extension.ts
 
 | Option | Description |
 |--------|-------------|
-| `--system-prompt <text>` | Replace default prompt; context files and skills are still appended |
-| `--append-system-prompt <text>` | Append to system prompt |
+| `--base-instructions <text>` | Replace built-in base instruction profile |
+| `--developer-instructions <text>` | Add trusted developer instructions; repeatable |
+| `--collaboration-mode <build\|plan>` | Use full Build mode or read-only Plan mode; new CLI/TUI sessions default to Plan |
 | `--verbose` | Force verbose startup |
 | `-a`, `--approve` | Trust project-local files for this run |
 | `-na`, `--no-approve` | Ignore project-local files for this run |

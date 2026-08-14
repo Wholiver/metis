@@ -10,7 +10,7 @@ Metis considers a project to have resources that require trust when it finds any
 
 - `.metis/settings.json`
 - `.metis/extensions`, `.metis/skills`, `.metis/prompts`, or `.metis/themes`
-- `.metis/SYSTEM.md` or `.metis/APPEND_SYSTEM.md`
+- `.metis/BASE_INSTRUCTIONS.md` or `.metis/INSTRUCTIONS.md`
 - project `.agents/skills` in the current directory or an ancestor directory
 
 A bare `.Metis` directory does not count as a project resource that requires trust.
@@ -24,13 +24,15 @@ Trusting a project allows Metis to load project resources that require trust, in
 - missing project packages configured through project settings
 - project-local extensions and project package-managed extensions
 
-Declining trust skips protected resources. `AGENTS.md` and `CLAUDE.md` context files are loaded regardless of project trust unless context loading is disabled. Before trust is resolved, Metis only loads context files, user/global extensions, and CLI `-e` extensions. User/global and CLI extensions can handle the `project_trust` event; the first extension that returns a yes/no decision owns the decision.
+Declining trust skips protected resources, including project `AGENTS.md` and `CLAUDE.md`; only global agent instructions remain available unless context loading is disabled. Before trust is resolved, Metis only loads global context files, user/global extensions, and CLI `-e` extensions. User/global and CLI extensions can handle the `project_trust` event; the first extension that returns a yes/no decision owns the decision.
 
 Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, `defaultProjectTrust: "ask"` and `"never"` ignore such resources, while `"always"` trusts them. Use `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
 
 ## No Built-in Sandbox
 
 Metis does not include a built-in sandbox. Built-in tools can read files, write files, edit files, and run shell commands with the permissions of the Metis process. Extensions are TypeScript modules that run with the same permissions. Package installs, shell commands, language servers, test commands, and other developer tools behave as ordinary local processes.
+
+`--collaboration-mode plan` is a workflow guard, not an OS security boundary: Metis hides and rejects tools classified as write or mixed, but Build mode remains full-permission and untrusted extensions should not be treated as sandboxed.
 
 This is intentional. Metis is designed to operate on local source trees, invoke project toolchains, and integrate with the user's existing development environment. A partial in-process sandbox would be easy to misunderstand as a security boundary while still depending on the host shell, filesystem, package managers, credentials, and extension code. Real isolation needs to come from the operating system or a virtualization/container boundary.
 

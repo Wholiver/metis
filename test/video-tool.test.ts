@@ -168,9 +168,9 @@ describe("video tool", () => {
 		const guidelines = definition.promptGuidelines?.join("\n") ?? "";
 		expect(guidelines).toContain("frames at explicit timestamps");
 		expect(guidelines).toContain("1–4 source frames apart");
-		expect(guidelines).toContain("left-to-right, top-to-bottom");
-		expect(guidelines).toContain("sparse samples show broad phases");
-		expect(guidelines).toContain("cannot by itself distinguish subject motion from camera movement");
+		expect(guidelines).toContain("left-to-right/top-to-bottom");
+		expect(guidelines).toContain("sparse=broad phases/may miss intermediate motion");
+		expect(guidelines).toContain("cannot distinguish subject/camera motion");
 		expect(guidelines).not.toContain("4D Universal");
 	});
 

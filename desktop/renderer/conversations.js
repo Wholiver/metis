@@ -1,8 +1,8 @@
 (function attachDesktopConversations(global) {
-	const DREAM_TASK_PATTERN = /^\[BACKGROUND DREAM PHASE(?: TASK)?\]/;
+	const DREAM_TASK_PATTERN = /^\[BACKGROUND DREAM (?:PHASE(?: TASK)?|TASK)\]/;
 	const SUBAGENT_TASK_PATTERN = /(?:^|\n)\[SUBAGENT TASK\](?:\r?\n|$)/;
 	const SUBAGENT_FILE_PATTERN = /^<file name="[^"]*[\\/]\.metis-subagent-[^"]+\.txt">/;
-	const PROJECT_STATE_VERSION = 1;
+	const PROJECT_STATE_VERSION = 2;
 
 	function normalizeProjectPath(value) {
 		const path = typeof value === "string" ? value.trim() : "";
@@ -39,10 +39,64 @@
 			name: String(workspace?.name || projectNameFromPath(projectPath)),
 			path: projectPath,
 			collapsed: false,
-			conversationsExpanded: false,
 			conversations: [],
 			lastSessionPath: undefined,
 		};
+	}
+
+	function normalizeProjectDisplayName(value) {
+		return typeof value === "string" ? value.trim().slice(0, 80) : "";
+	}
+
+	function normalizeProjectAccentColor(value) {
+		const color = typeof value === "string" ? value.trim().toLowerCase() : "";
+		return /^#[0-9a-f]{6}$/.test(color) ? color : "";
+	}
+
+	function timestampValue(value) {
+		const timestamp = new Date(value).getTime();
+		return Number.isFinite(timestamp) ? timestamp : undefined;
+	}
+
+	function sortConversationsByCreatedAt(value) {
+		return (Array.isArray(value) ? value : [])
+			.map((conversation, index) => ({ conversation, index, createdAt: timestampValue(conversation?.createdAt) }))
+			.sort((left, right) => {
+				if (left.createdAt !== undefined && right.createdAt !== undefined) return right.createdAt - left.createdAt;
+				if (left.createdAt !== undefined) return -1;
+				if (right.createdAt !== undefined) return 1;
+				return left.index - right.index;
+			})
+			.map(({ conversation }) => conversation);
+	}
+
+	function restoreConversationSummaries(value) {
+		const conversations = [];
+		const seen = new Set();
+		for (const candidate of Array.isArray(value) ? value : []) {
+			const id = typeof candidate?.id === "string" ? candidate.id.trim() : "";
+			const title = typeof candidate?.title === "string" ? candidate.title.trim() : "";
+			const sessionPath = typeof candidate?.sessionPath === "string" ? candidate.sessionPath.trim() : "";
+			const identity = id || sessionPath;
+			if (!identity || !title || seen.has(identity)) continue;
+			seen.add(identity);
+			const item = {
+				id: identity,
+				title,
+				branch: Boolean(candidate.branch),
+				sessionPath: sessionPath || undefined,
+			};
+			if (candidate.updatedAt || candidate.modified) {
+				item.updatedAt = candidate.updatedAt || candidate.modified;
+			}
+			if (candidate.createdAt || candidate.created) {
+				item.createdAt = candidate.createdAt || candidate.created;
+			}
+			const tokenTotal = Number(candidate.tokenTotal);
+			if (Number.isFinite(tokenTotal) && tokenTotal > 0) item.tokenTotal = tokenTotal;
+			conversations.push(item);
+		}
+		return sortConversationsByCreatedAt(conversations);
 	}
 
 	function restoreProjectState(serialized, fallbackWorkspace) {
@@ -60,16 +114,20 @@
 			if (!project || seenPaths.has(project.path)) continue;
 			seenPaths.add(project.path);
 			project.id = typeof candidate.id === "string" && candidate.id ? candidate.id : project.id;
+			const displayName = normalizeProjectDisplayName(candidate.displayName);
+			const accentColor = normalizeProjectAccentColor(candidate.accentColor);
+			if (displayName) project.displayName = displayName;
+			if (accentColor) project.accentColor = accentColor;
 			project.collapsed = Boolean(candidate.collapsed);
+			project.conversations = restoreConversationSummaries(candidate.conversations);
 			project.lastSessionPath = typeof candidate.lastSessionPath === "string" && candidate.lastSessionPath
 				? candidate.lastSessionPath
 				: undefined;
 			projects.push(project);
 		}
-
-		if (value === undefined && fallbackWorkspace?.isProjectRepo) {
-			const fallback = createProject(fallbackWorkspace);
-			if (fallback && !seenPaths.has(fallback.path)) projects.push(fallback);
+		const fallbackProject = createProject(fallbackWorkspace);
+		if (fallbackProject && !seenPaths.has(fallbackProject.path)) {
+			projects.push(fallbackProject);
 		}
 
 		const requestedActiveId = typeof value?.activeProjectId === "string" ? value.activeProjectId : undefined;
@@ -86,8 +144,11 @@
 			projects: (Array.isArray(projects) ? projects : []).map((project) => ({
 				id: project.id,
 				name: project.name,
+				displayName: normalizeProjectDisplayName(project.displayName) || undefined,
+				accentColor: normalizeProjectAccentColor(project.accentColor) || undefined,
 				path: normalizeProjectPath(project.path),
 				collapsed: Boolean(project.collapsed),
+				conversations: restoreConversationSummaries(project.conversations),
 				lastSessionPath: project.lastSessionPath,
 			})),
 		});
@@ -123,20 +184,21 @@
 			const id = sessionPath || sessionId;
 			if (!id || seen.has(id)) continue;
 			seen.add(id);
-			conversations.push({
+			const item = {
 				id,
 				title: firstTitleLine(session.name) || firstTitleLine(session.firstMessage) || untitledTitle,
 				branch: Boolean(session.parentSessionPath),
 				sessionPath: sessionPath || undefined,
-			});
+			};
+			if (session.modified || session.updatedAt || session.created) {
+				item.updatedAt = session.modified || session.updatedAt || session.created;
+			}
+			if (session.created) item.createdAt = session.created;
+			const tokenTotal = Number(session.tokenTotal);
+			if (Number.isFinite(tokenTotal) && tokenTotal > 0) item.tokenTotal = tokenTotal;
+			conversations.push(item);
 		}
-		return conversations;
-	}
-
-	function visibleProjectConversations(conversations, expanded = false, limit = 5) {
-		const items = Array.isArray(conversations) ? conversations : [];
-		if (expanded) return items;
-		return items.slice(0, Math.max(0, limit));
+		return sortConversationsByCreatedAt(conversations);
 	}
 
 	const helpers = Object.freeze({
@@ -148,7 +210,7 @@
 		projectIdFromPath,
 		restoreProjectState,
 		serializeProjectState,
-		visibleProjectConversations,
+		sortConversationsByCreatedAt,
 		visibleSessions,
 	});
 	if (typeof module === "object" && module.exports) module.exports = helpers;

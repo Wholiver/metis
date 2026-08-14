@@ -9,6 +9,7 @@ export {
 	type AgentSessionEventListener,
 	type ModelCycleResult,
 	type PromptOptions,
+	type QueuedSessionMessage,
 	type SessionStats,
 } from "./agent-session.ts";
 export {
@@ -29,15 +30,30 @@ export { type BashExecutorOptions, type BashResult, executeBashWithOperations } 
 export type { CompactionResult } from "./compaction/index.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.ts";
 export { areExperimentalFeaturesEnabled } from "./experimental.ts";
+export {
+	MemoryCoordinator,
+	type MemoryCandidate,
+	type MemoryCoordinatorOptions,
+	type MemoryExtractionResult,
+	type MemoryKind,
+	type MemoryRecordStatus,
+	type MemoryRecordSummary,
+	type MemoryScope,
+	type MemorySettings,
+	type MemoryState,
+	type SessionMemoryCheckpoint,
+	resolveMemoryProjectIdentity,
+} from "./memory-coordinator.ts";
 // Extensions system
 export {
 	type AgentEndEvent,
 	type AgentStartEvent,
 	type AgentToolResult,
 	type AgentToolUpdateCallback,
-	type BeforeAgentStartEvent,
-	type BeforeAgentStartEventResult,
-	type BuildSystemPromptOptions,
+	type BeforeStepEvent,
+	type BeforeStepEventResult,
+	type BeforeTransportRequestEvent,
+	type BeforeTransportRequestResult,
 	type ContextEvent,
 	defineTool,
 	discoverAndLoadExtensions,
@@ -76,3 +92,6 @@ export {
 	type WorkingIndicatorOptions,
 } from "./extensions/index.ts";
 export { createSyntheticSourceInfo } from "./source-info.ts";
+export { validateAskUserRequest, validateAskUserResponse, type AskUserAnswer, type AskUserHandler, type AskUserOption, type AskUserQuestion, type AskUserRequest, type AskUserResponse } from "./ask-user.ts";
+export { extractProposedPlan, getLatestWorkflowProposal, resolveWorkflowPlan, resolveWorkflowProposal, type WorkflowPlanPhase, type WorkflowPlanState, type WorkflowPlanStep, type WorkflowProposalState } from "./workflow-runtime.ts";
+export { createSearchMemoryTool, createSearchMemoryToolDefinition, normalizeSearchMemoryInput, searchMemorySchema, type SearchMemoryToolInput, type SearchMemoryToolOptions } from "./tools/search-memory.ts";

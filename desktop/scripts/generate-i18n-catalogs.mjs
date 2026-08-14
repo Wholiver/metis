@@ -22,6 +22,38 @@ const localeTargets = {
 	it: { source: "en", target: "it" },
 };
 
+const localeOverrides = {
+	fr: { conversations: "Discussions" },
+	"zh-TW": { languageEnglish: "英語" },
+	es: {
+		proposedPlanRefine: "Revisar",
+		proposedPlanRefinePlaceholder: "Solicitar un cambio de plan",
+		proposedPlanRefinePrompt: "Llama primero a read_plan y luego revisa el plan propuesto más reciente con estos comentarios: {request}",
+		askUserTitle: "Necesito tu respuesta",
+		askUserHint: "Tu respuesta permitirá continuar esta tarea.",
+		askUserRecommended: "Recomendado",
+		askUserFreePlaceholder: "O escribe tu respuesta",
+		askUserCancel: "Cancelar",
+		askUserContinue: "Continuar",
+		askUserPending: "Esperando tu respuesta",
+		askUserSubmitting: "Enviando respuesta…",
+		askUserAnswered: "Respuesta enviada",
+		askUserCancelled: "Pregunta cancelada",
+		askUserRequired: "Responde todas las preguntas antes de continuar.",
+	},
+};
+
+// Re-translate workflow copy even when a generated catalog already has an older value.
+const refreshKeys = new Set([
+	"workflowBuildMode", "workflowPlanMode", "workflowBuildDescription", "workflowPlanDescription",
+	"workflowBusy", "workflowApplied", "workflowChangeFailed", "workflowPlanProgress",
+	"workflowPlanTitle", "workflowPlanEmpty", "workflowPlanLegacy", "workflowPlanInterrupted", "instructionSourcesEmpty", "instructionTruncated",
+	"proposedPlanReady", "proposedPlanExpand", "proposedPlanCollapse", "proposedPlanProcess",
+	"proposedPlanProcessDescription", "proposedPlanProcessPrompt",
+	"workflowSettingsNav", "workflowSettingsTitle", "workflowSettingsDescription", "workflowModeSetting",
+	"workflowModeSettingDescription", "instructionSourcesTitle",
+]);
+
 const extra = {
 	automatic: ["Automatic", "自动"],
 	saving: ["Saving…", "正在保存…"],
@@ -39,6 +71,57 @@ const extra = {
 	output: ["Output:", "输出："],
 	workingForSeconds: ["Working for {duration}s", "已运行 {duration} 秒"],
 	working: ["Working…", "正在运行…"],
+	tokenActivity: ["Token activity", "Token 活动"],
+	workOverview: ["Work overview", "工作概览"],
+	pastYearDaily: ["Past year · Daily", "过去一年 · 每日"],
+	daily: ["Daily", "每日"],
+	workStatsLoading: ["Calculating…", "正在统计…"],
+	workStatsUnavailable: ["Statistics unavailable", "暂时无法读取统计"],
+	otherWorkData: ["Other work data", "其他工作数据"],
+	currentStreak: ["Current streak", "连续工作天数"],
+	todayTokens: ["Tokens today", "今日 Token"],
+	yearTokens: ["Tokens this year", "年度 Token"],
+	activeDays: ["Active days", "活跃天数"],
+	workRhythmLoading: ["Reading your work rhythm…", "正在感受工作节奏…"],
+	workRhythmStreak: ["Day {streak} in a row — momentum locked", "连续第 {streak} 天，节奏拉满"],
+	workRhythmPeak: ["High-energy day — a new 7-day peak", "今日高能，刷新近 7 日峰值"],
+	workRhythmRising: ["Warming up — the last three days are climbing", "渐入佳境，最近三天持续升温"],
+	workRhythmSteady: ["Steady progress at a comfortable pace", "稳定推进，保持舒服的工作节奏"],
+	workRhythmWarming: ["Warming up — today's square is lit", "正在热身，今天这一格已经点亮"],
+	workRhythmQuiet: ["A blank day is part of the rhythm too", "今天留白，也是一种节奏"],
+	yearTasks: ["Tasks this year", "年度任务"],
+	yearPrompts: ["User prompts", "用户 Prompt"],
+	modelCalls: ["Model calls", "模型调用"],
+	toolCalls: ["Tool calls", "工具调用"],
+	memory: ["Memory", "记忆"],
+	dreamMode: ["Dream mode", "Dream 模式"],
+	dreamModeDescription: ["Consolidates work logs, long-term memory, and lessons in the background. Runs once when enabled, then on schedule.", "后台自动整理工作日志、长期记忆和经验；开启后立即运行一次，之后按计划运行。"],
+	proposedPlanReady: ["Proposed plan", "方案已就绪"],
+	proposedPlanExpand: ["Expand proposed plan", "展开方案"],
+	proposedPlanCollapse: ["Collapse proposed plan", "收起方案"],
+	proposedPlanProcess: ["Process", "Process"],
+	proposedPlanProcessDescription: ["Switch to Build and start implementing this plan", "切换到构建模式并开始执行此方案"],
+	proposedPlanProcessPrompt: ["Call read_plan first to load the latest proposal and execution progress. Then MUST call update_plan to create or refresh a concise implementation and verification checklist before any other tool. Keep the checklist current through completion, provide concise visible progress updates in my language, and continue until every step is verified.", "先调用 read_plan 读取最新版方案和执行进度；随后必须先调用 update_plan 创建或刷新精简的实施与验证清单，再使用任何其他工具。持续更新清单直到全部完成，用我的语言提供简短可见的进度说明，并继续工作直到每一步都完成验证。"],
+	settingsModelMemory: ["Models & memory", "模型与记忆"],
+	settingsMessageContext: ["Messages & context", "消息与上下文"],
+	settingsSessionData: ["Sessions & data", "会话与数据"],
+	settingsAppearanceLanguage: ["Appearance & language", "外观与语言"],
+	settingsPermissionsCredentials: ["Permissions & credentials", "权限与凭据"],
+	settingsConnectionWorkspace: ["Connection & workspace", "连接与工作区"],
+	settingsAboutMaintenance: ["About & maintenance", "关于与维护"],
+	modelMemoryDescription: ["Set the model, reasoning depth, and background memory for the current and future sessions.", "设置当前及后续会话使用的模型、推理深度和后台记忆。"],
+	messageContextDescription: ["Control how messages are handled while busy and how context is compacted.", "控制忙碌时的消息处理方式，以及上下文压缩策略。"],
+	autoCompactShort: ["Automatic compaction", "自动压缩"],
+	autoCompactShortDescription: ["Automatically summarize context near the model limit for the current and future sessions.", "上下文接近模型上限时自动生成摘要，持续对当前及后续会话生效。"],
+	compactNowShortDescription: ["Summarize the current session now without changing automatic compaction.", "马上生成一次当前会话摘要，不改变自动压缩开关。"],
+	sessionDataDescription: ["Manage the current task, history branches, and session import, export, and sharing.", "管理当前任务、历史分支，以及会话数据的导入、导出与分享。"],
+	appearanceLanguageDescription: ["Manage the Desktop display language and the language defaults used by Agent and TUI.", "管理 Desktop 显示语言，以及 Agent 和 TUI 使用的语言默认值。"],
+	languageSection: ["Language", "语言"],
+	interfaceLanguageShortDescription: ["Desktop updates immediately; Agent and TUI use the new language after reload.", "Desktop 状态立即更新；Agent 与 TUI 重载后使用新语言。"],
+	permissionsCredentialsDescription: ["Manage project resource permissions and Provider credentials used by Agent.", "管理项目资源载入权限，以及 Agent 调用模型时使用的 Provider 凭据。"],
+	connectionWorkspaceDescription: ["Manage the Desktop connection to Metis Server and the current workspace.", "管理 Desktop 与 Metis Server 的连接，以及当前工作区。"],
+	aboutMaintenanceDescription: ["View application information, help, and maintenance actions.", "查看应用信息、帮助入口和维护操作。"],
+	tokenDayDetail: ["{date}: {total} tokens · input {input} · output {output} · cache {cache}", "{date}：{total} Token · 输入 {input} · 输出 {output} · 缓存 {cache}"],
 	connectServerFirst: ["Connect to Metis Server first", "请先连接 Metis Server"],
 	applying: ["Applying…", "正在应用…"],
 	completed: ["Completed.", "已完成。"],
@@ -195,6 +278,8 @@ const extra = {
 	apiKey: ["API Key", "API Key"],
 };
 
+const obsoleteKeys = ["longestStreak", "last7DaysTokens"];
+
 const protectedTerms = [
 	/\n+\{[a-zA-Z][a-zA-Z0-9]*\}/g,
 	/\n+/g,
@@ -239,9 +324,9 @@ async function translateBatch(entries, sourceLanguage, targetLanguage) {
 	url.searchParams.set("dt", "t");
 	url.searchParams.set("q", body);
 	let lastError;
-	for (let attempt = 1; attempt <= 4; attempt += 1) {
+	for (let attempt = 1; attempt <= 2; attempt += 1) {
 		try {
-			const response = await fetch(url);
+			const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
 			const payload = await response.json();
 			const translated = payload[0].map((part) => part[0]).join("").split("\n");
@@ -252,7 +337,7 @@ async function translateBatch(entries, sourceLanguage, targetLanguage) {
 			}));
 		} catch (error) {
 			lastError = error;
-			await new Promise((resolve) => setTimeout(resolve, attempt * 800));
+			if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 200));
 		}
 	}
 	throw lastError;
@@ -285,19 +370,204 @@ for (const [key, [english, chinese]] of Object.entries(extra)) {
 	canonical.en[key] = english;
 	canonical["zh-CN"][key] = chinese;
 }
+for (const key of obsoleteKeys) {
+	delete canonical.en[key];
+	delete canonical["zh-CN"][key];
+}
+
+const staticTranslations = {
+	"zh-TW": {
+		onboardingWelcomeTitle: "歡迎使用 Metis",
+		onboardingWelcomeSubtitle: "你的全專案級智慧 AI 程式設計工作台",
+		onboardingGetStarted: "開始使用",
+		onboardingLanguageTitle: "選擇介面語言",
+		onboardingLanguageSubtitle: "選擇你偏好的 Metis Desktop 顯示語言",
+		onboardingProviderTabApiKey: "API Key",
+		onboardingProviderTabOAuth: "OAuth 授權",
+		onboardingProviderTabCustom: "自訂 Base URL",
+		onboardingSaveAndConnect: "儲存並繼續",
+		onboardingSkipForNow: "稍後在設定中配置",
+		onboardingWorkspaceTitle: "選取專案工作區",
+		onboardingWorkspaceSubtitle: "選擇本機程式碼資料夾或倉庫開啟 AI 協作",
+		onboardingChooseFolder: "選擇本機專案資料夾",
+		onboardingRecentProjects: "最近專案",
+		onboardingSelectedProject: "已選專案",
+		onboardingStartCoding: "完成並開始對話",
+		onboardingNoWorkspaceSelected: "請選擇一個專案資料夾以開始。",
+	},
+	ja: {
+		onboardingWelcomeTitle: "Metis へようこそ",
+		onboardingWelcomeSubtitle: "インテリジェントな AI ペアプログラミング ワークスペース",
+		onboardingGetStarted: "始める",
+		onboardingLanguageTitle: "言語を選択",
+		onboardingLanguageSubtitle: "Metis Desktop の表示言語を選択してください",
+		onboardingProviderTabApiKey: "API キー",
+		onboardingProviderTabOAuth: "OAuth 認証",
+		onboardingProviderTabCustom: "カスタム Base URL",
+		onboardingSaveAndConnect: "保存して続行",
+		onboardingSkipForNow: "後で設定で構成する",
+		onboardingWorkspaceTitle: "プロジェクトワークスペースを選択",
+		onboardingWorkspaceSubtitle: "ローカルフォルダまたはリポジトリを選択してコラボレーションを開始",
+		onboardingChooseFolder: "プロジェクトフォルダを選択",
+		onboardingRecentProjects: "最近のプロジェクト",
+		onboardingSelectedProject: "選択されたプロジェクト",
+		onboardingStartCoding: "完了してコーディングを開始",
+		onboardingNoWorkspaceSelected: "開始するにはプロジェクトフォルダを選択してください。",
+	},
+	ko: {
+		onboardingWelcomeTitle: "Metis에 오신 것을 환영합니다",
+		onboardingWelcomeSubtitle: "지능형 AI 페어 프로그래밍 작업 공간",
+		onboardingGetStarted: "시작하기",
+		onboardingLanguageTitle: "언어 선택",
+		onboardingLanguageSubtitle: "Metis Desktop에 표시할 언어를 선택하세요",
+		onboardingProviderTabApiKey: "API 키",
+		onboardingProviderTabOAuth: "OAuth 인증",
+		onboardingProviderTabCustom: "사용자 지정 Base URL",
+		onboardingSaveAndConnect: "저장 후 계속",
+		onboardingSkipForNow: "나중에 설정에서 구성",
+		onboardingWorkspaceTitle: "프로젝트 작업 공간 선택",
+		onboardingWorkspaceSubtitle: "공동 작업을 시작할 로컬 폴더 또는 저장소 선택",
+		onboardingChooseFolder: "프로젝트 폴더 선택",
+		onboardingRecentProjects: "최근 프로젝트",
+		onboardingSelectedProject: "선택된 프로젝트",
+		onboardingStartCoding: "완료 및 코딩 시작",
+		onboardingNoWorkspaceSelected: "시작하려면 프로젝트 폴더를 선택하세요.",
+	},
+	es: {
+		onboardingWelcomeTitle: "Bienvenido a Metis",
+		onboardingWelcomeSubtitle: "Tu espacio de trabajo inteligente de programación en pareja con IA",
+		onboardingGetStarted: "Comenzar",
+		onboardingLanguageTitle: "Elige tu idioma",
+		onboardingLanguageSubtitle: "Selecciona tu idioma preferido para Metis Desktop",
+		onboardingProviderTabApiKey: "Clave API",
+		onboardingProviderTabOAuth: "Autorización OAuth",
+		onboardingProviderTabCustom: "Base URL personalizada",
+		onboardingSaveAndConnect: "Guardar y continuar",
+		onboardingSkipForNow: "Configurar más tarde en ajustes",
+		onboardingWorkspaceTitle: "Seleccionar espacio de trabajo del proyecto",
+		onboardingWorkspaceSubtitle: "Elige una carpeta o repositorio local para empezar a colaborar",
+		onboardingChooseFolder: "Elegir carpeta del proyecto",
+		onboardingRecentProjects: "Proyectos recientes",
+		onboardingSelectedProject: "Proyecto seleccionado",
+		onboardingStartCoding: "Finalizar y empezar a programar",
+		onboardingNoWorkspaceSelected: "Por favor, selecciona una carpeta de proyecto para comenzar.",
+	},
+	fr: {
+		onboardingWelcomeTitle: "Bienvenue sur Metis",
+		onboardingWelcomeSubtitle: "Votre espace de travail de programmation en binôme IA intelligent",
+		onboardingGetStarted: "Commencer",
+		onboardingLanguageTitle: "Choisissez votre langue",
+		onboardingLanguageSubtitle: "Sélectionnez votre langue d'affichage préférée pour Metis Desktop",
+		onboardingProviderTabApiKey: "Clé API",
+		onboardingProviderTabOAuth: "Autorisation OAuth",
+		onboardingProviderTabCustom: "Base URL personnalisée",
+		onboardingSaveAndConnect: "Enregistrer et continuer",
+		onboardingSkipForNow: "Configurer plus tard dans les paramètres",
+		onboardingWorkspaceTitle: "Sélectionner un espace de travail de projet",
+		onboardingWorkspaceSubtitle: "Choisissez un dossier ou un dépôt local pour commencer à collaborer",
+		onboardingChooseFolder: "Choisir le dossier du projet",
+		onboardingRecentProjects: "Projets récents",
+		onboardingSelectedProject: "Projet sélectionné",
+		onboardingStartCoding: "Terminer et commencer à coder",
+		onboardingNoWorkspaceSelected: "Veuillez sélectionner un dossier de projet pour commencer.",
+	},
+	de: {
+		onboardingWelcomeTitle: "Willkommen bei Metis",
+		onboardingWelcomeSubtitle: "Ihr intelligenter KI-Pair-Programming-Arbeitsbereich",
+		onboardingGetStarted: "Loslegen",
+		onboardingLanguageTitle: "Wählen Sie Ihre Sprache",
+		onboardingLanguageSubtitle: "Wählen Sie Ihre bevorzugte Anzeigesprache für Metis Desktop",
+		onboardingProviderTabApiKey: "API-Schlüssel",
+		onboardingProviderTabOAuth: "OAuth-Autorisierung",
+		onboardingProviderTabCustom: "Benutzerdefinierte Base-URL",
+		onboardingSaveAndConnect: "Speichern & Weiter",
+		onboardingSkipForNow: "Später in den Einstellungen konfigurieren",
+		onboardingWorkspaceTitle: "Projektarbeitsbereich auswählen",
+		onboardingWorkspaceSubtitle: "Wählen Sie einen lokalen Ordner oder ein Repository, um die Zusammenarbeit zu starten",
+		onboardingChooseFolder: "Projektordner auswählen",
+		onboardingRecentProjects: "Zuletzt verwendete Projekte",
+		onboardingSelectedProject: "Ausgewähltes Projekt",
+		onboardingStartCoding: "Fertigstellen & Coden starten",
+		onboardingNoWorkspaceSelected: "Bitte wählen Sie einen Projektordner, um zu beginnen.",
+	},
+	pt: {
+		onboardingWelcomeTitle: "Bem-vindo ao Metis",
+		onboardingWelcomeSubtitle: "Seu espaço de trabalho inteligente de programação em par com IA",
+		onboardingGetStarted: "Começar",
+		onboardingLanguageTitle: "Escolha seu idioma",
+		onboardingLanguageSubtitle: "Selecione o idioma de exibição de sua preferência para o Metis Desktop",
+		onboardingProviderTabApiKey: "Chave de API",
+		onboardingProviderTabOAuth: "Autorização OAuth",
+		onboardingProviderTabCustom: "Base URL personalizada",
+		onboardingSaveAndConnect: "Salvar e continuar",
+		onboardingSkipForNow: "Configurar mais tarde nas configurações",
+		onboardingWorkspaceTitle: "Selecionar espaço de trabalho do projeto",
+		onboardingWorkspaceSubtitle: "Escolha uma pasta ou repositório local para começar a colaborar",
+		onboardingChooseFolder: "Escolher pasta do projeto",
+		onboardingRecentProjects: "Projetos recentes",
+		onboardingSelectedProject: "Projeto selecionado",
+		onboardingStartCoding: "Concluir e começar a programar",
+		onboardingNoWorkspaceSelected: "Selecione uma pasta de projeto para começar.",
+	},
+	ru: {
+		onboardingWelcomeTitle: "Добро пожаловать в Metis",
+		onboardingWelcomeSubtitle: "Ваше интеллектуальное рабочее пространство для парного программирования с ИИ",
+		onboardingGetStarted: "Начать",
+		onboardingLanguageTitle: "Выберите язык",
+		onboardingLanguageSubtitle: "Выберите язык интерфейса Metis Desktop",
+		onboardingProviderTabApiKey: "API-ключ",
+		onboardingProviderTabOAuth: "Авторизация OAuth",
+		onboardingProviderTabCustom: "Пользовательский Base URL",
+		onboardingSaveAndConnect: "Сохранить и продолжить",
+		onboardingSkipForNow: "Настроить позже в параметрах",
+		onboardingWorkspaceTitle: "Выбрать рабочее пространство проекта",
+		onboardingWorkspaceSubtitle: "Выберите локальную папку или репозиторий для начала совместной работы",
+		onboardingChooseFolder: "Выбрать папку проекта",
+		onboardingRecentProjects: "Недавние проекты",
+		onboardingSelectedProject: "Выбранный проект",
+		onboardingStartCoding: "Завершить и начать кодить",
+		onboardingNoWorkspaceSelected: "Пожалуйста, выберите папку проекта для начала.",
+	},
+	it: {
+		onboardingWelcomeTitle: "Benvenuto in Metis",
+		onboardingWelcomeSubtitle: "Il tuo spazio di lavoro intelligente per la programmazione in coppia con IA",
+		onboardingGetStarted: "Inizia",
+		onboardingLanguageTitle: "Scegli la tua lingua",
+		onboardingLanguageSubtitle: "Seleziona la lingua di visualizzazione preferita per Metis Desktop",
+		onboardingProviderTabApiKey: "Chiave API",
+		onboardingProviderTabOAuth: "Autorizzazione OAuth",
+		onboardingProviderTabCustom: "Base URL personalizzato",
+		onboardingSaveAndConnect: "Salva e continua",
+		onboardingSkipForNow: "Configura più tardi nelle impostazioni",
+		onboardingWorkspaceTitle: "Seleziona uno spazio di lavoro del progetto",
+		onboardingWorkspaceSubtitle: "Scegli una cartella o repository locale per iniziare a collaborare",
+		onboardingChooseFolder: "Scegli cartella progetto",
+		onboardingRecentProjects: "Progetti recenti",
+		onboardingSelectedProject: "Progetto selezionato",
+		onboardingStartCoding: "Completa e inizia a programmare",
+		onboardingNoWorkspaceSelected: "Seleziona una cartella di progetto per iniziare.",
+	},
+};
 
 const catalogs = { en: canonical.en, "zh-CN": canonical["zh-CN"] };
 for (const [locale, { source, target }] of Object.entries(localeTargets)) {
 	const existing = existingCatalogs[locale] || {};
 	const base = canonical[source];
-	const translated = {};
-	const pending = Object.entries(base).filter(([key]) => !(key in existing));
-	const batches = [];
-	for (let index = 0; index < pending.length; index += 20) batches.push(pending.slice(index, index + 20));
-	const results = await Promise.all(batches.map((batch) => translateBatch(batch, source, target)));
-	for (const result of results) Object.assign(translated, result);
-	console.log(`${locale}: ${pending.length}/${pending.length}`);
-	catalogs[locale] = Object.fromEntries(Object.keys(canonical.en).map((key) => [key, existing[key] || translated[key]]));
+	const translated = { ...(staticTranslations[locale] || {}) };
+	const pending = Object.entries(base).filter(([key]) => !(key in existing) && !(key in translated) || refreshKeys.has(key) || key.startsWith("settingsMemory"));
+	if (pending.length > 0) {
+		const batches = [];
+		for (let index = 0; index < pending.length; index += 20) batches.push(pending.slice(index, index + 20));
+		try {
+			const results = await Promise.all(batches.map((batch) => translateBatch(batch, source, target)));
+			for (const result of results) Object.assign(translated, result);
+		} catch (error) {
+			console.warn(`Online translation fallback for ${locale}:`, error.message);
+		}
+	}
+	console.log(`${locale}: processed`);
+	catalogs[locale] = Object.fromEntries(Object.keys(canonical.en).map((key) => [key, translated[key] || existing[key] || canonical.en[key]]));
+	Object.assign(catalogs[locale], localeOverrides[locale]);
 }
 
 assertCatalogs(catalogs);

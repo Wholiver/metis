@@ -59,7 +59,8 @@ import type {
 } from "../session-manager.ts";
 import type { SlashCommandInfo } from "../slash-commands.ts";
 import type { SourceInfo } from "../source-info.ts";
-import type { BuildSystemPromptOptions } from "../system-prompt.ts";
+import type { BuildSystemPromptOptions, InstructionBlock } from "../system-prompt.ts";
+import type { CollaborationMode } from "../workflow-runtime.ts";
 import type { BashOperations } from "../tools/bash.ts";
 import type { EditToolDetails } from "../tools/edit.ts";
 import type {
@@ -78,7 +79,6 @@ import type {
 } from "../tools/index.ts";
 
 export type { ExecOptions, ExecResult } from "../exec.ts";
-export type { BuildSystemPromptOptions } from "../system-prompt.ts";
 export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
 export type { AppKeybinding, KeybindingsManager } from "../keybindings.ts";
 
@@ -444,6 +444,12 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	promptSnippet?: string;
 	/** Optional guideline bullets appended to the default system prompt Guidelines section when this tool is active. */
 	promptGuidelines?: string[];
+	/**
+	 * Execution semantics consumed by WorkflowRuntime. Unclassified extension
+	 * tools are treated as mixed-effect and are therefore unavailable in Plan
+	 * mode.
+	 */
+	capabilities?: ToolCapabilities;
 	/** Parameter schema (TypeBox) */
 	parameters: TParams;
 	/** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
@@ -480,6 +486,14 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 		theme: Theme,
 		context: ToolRenderContext<TState, Static<TParams>>,
 	) => Component;
+}
+
+export type ToolEffect = "read" | "write" | "mixed";
+
+export interface ToolCapabilities {
+	effect: ToolEffect;
+	/** True only when concurrent execution cannot race shared state. */
+	parallelSafe?: boolean;
 }
 
 type AnyToolDefinition = ToolDefinition<any, any, any>;
@@ -681,6 +695,39 @@ export interface BeforeAgentStartEvent {
 	systemPrompt: string;
 	/** Structured options used to build the system prompt. Extensions can inspect this to understand what Metis loaded without re-discovering resources. */
 	systemPromptOptions: BuildSystemPromptOptions;
+}
+
+/**
+ * Declarative pre-step extension hook. It cannot replace the transcript,
+ * instruction stack, or tool implementation; Metis freezes those values only
+ * after every handler has returned.
+ */
+export interface BeforeStepEvent {
+	type: "before_step";
+	prompt: string;
+	collaborationMode: CollaborationMode;
+}
+
+export interface BeforeStepEventResult {
+	developerInstructions?: InstructionBlock[];
+	context?: InstructionBlock[];
+	/** Existing registered tools to expose for the next step. */
+	toolNames?: string[];
+}
+
+/** Provider request metadata only. Model-visible state is fingerprinted and immutable. */
+export interface BeforeTransportRequestEvent {
+	type: "before_transport_request";
+	semanticFingerprint: string;
+	headers: Record<string, string>;
+	timeoutMs?: number;
+	providerTuning?: Record<string, unknown>;
+}
+
+export interface BeforeTransportRequestResult {
+	headers?: Record<string, string>;
+	timeoutMs?: number;
+	providerTuning?: Record<string, unknown>;
 }
 
 /** Fired when an agent loop starts */
@@ -1004,6 +1051,8 @@ export type ExtensionEvent =
 	| ResourcesDiscoverEvent
 	| SessionEvent
 	| ContextEvent
+	| BeforeStepEvent
+	| BeforeTransportRequestEvent
 	| BeforeProviderRequestEvent
 	| AfterProviderResponseEvent
 	| BeforeAgentStartEvent
@@ -1167,6 +1216,11 @@ export interface ExtensionAPI {
 	on(event: "session_before_tree", handler: ExtensionHandler<SessionBeforeTreeEvent, SessionBeforeTreeResult>): void;
 	on(event: "session_tree", handler: ExtensionHandler<SessionTreeEvent>): void;
 	on(event: "context", handler: ExtensionHandler<ContextEvent, ContextEventResult>): void;
+	on(event: "before_step", handler: ExtensionHandler<BeforeStepEvent, BeforeStepEventResult>): void;
+	on(
+		event: "before_transport_request",
+		handler: ExtensionHandler<BeforeTransportRequestEvent, BeforeTransportRequestResult>,
+	): void;
 	on(
 		event: "before_provider_request",
 		handler: ExtensionHandler<BeforeProviderRequestEvent, BeforeProviderRequestEventResult>,
@@ -1491,7 +1545,7 @@ export type GetSessionNameHandler = () => string | undefined;
 export type GetActiveToolsHandler = () => string[];
 
 /** Tool info with name, description, parameter schema, prompt guidelines, and source metadata. */
-export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters" | "promptGuidelines"> & {
+export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters" | "promptGuidelines" | "capabilities"> & {
 	sourceInfo: SourceInfo;
 };
 

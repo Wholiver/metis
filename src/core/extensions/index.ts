@@ -33,11 +33,10 @@ export type {
 	// Events - Tool (ToolCallEvent types)
 	BashToolCallEvent,
 	BashToolResultEvent,
-	BeforeAgentStartEvent,
-	BeforeAgentStartEventResult,
-	BeforeProviderRequestEvent,
-	BeforeProviderRequestEventResult,
-	BuildSystemPromptOptions,
+	BeforeStepEvent,
+	BeforeStepEventResult,
+	BeforeTransportRequestEvent,
+	BeforeTransportRequestResult,
 	// Context
 	CompactOptions,
 	// Events - Agent
@@ -143,6 +142,8 @@ export type {
 	// Events - Tool
 	ToolCallEvent,
 	ToolCallEventResult,
+	ToolCapabilities,
+	ToolEffect,
 	// Tools
 	ToolDefinition,
 	// Events - Tool Execution

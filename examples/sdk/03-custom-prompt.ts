@@ -14,14 +14,13 @@ import {
 const cwd = process.cwd();
 const agentDir = getAgentDir();
 
-// Option 1: Replace prompt entirely
+	// Option 1: Replace the base instruction profile.
 const loader1 = new DefaultResourceLoader({
 	cwd,
 	agentDir,
-	systemPromptOverride: () => `You are a helpful assistant that speaks like a pirate.
+	baseInstructions: `You are a helpful assistant that speaks like a pirate.
 Always end responses with "Arrr!"`,
-	// Needed to avoid DefaultResourceLoader appending APPEND_SYSTEM.md from ~/.metis/agent or <cwd>/.metis.
-	appendSystemPromptOverride: () => [],
+	developerInstructions: [],
 });
 await loader1.reload();
 
@@ -44,12 +43,11 @@ try {
 	session1.dispose();
 }
 
-// Option 2: Append instructions to the default prompt
+	// Option 2: Add trusted developer instructions to the default profile.
 const loader2 = new DefaultResourceLoader({
 	cwd,
 	agentDir,
-	appendSystemPromptOverride: (base) => [
-		...base,
+	developerInstructions: [
 		"## Additional Instructions\n- Always be concise\n- Use bullet points when listing things",
 	],
 });

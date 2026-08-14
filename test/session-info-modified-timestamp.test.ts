@@ -80,4 +80,35 @@ describe("SessionInfo.modified", () => {
 		expect(s!.modified.getTime()).toBe(msgTime);
 		expect(s!.modified.getTime()).not.toBe(before.mtime.getTime());
 	});
+
+	it("collects daily user activity and assistant token usage in one listing pass", async () => {
+		const filePath = join(tmpdir(), `metis-session-${Date.now()}-daily-activity.jsonl`);
+		const timestamp = new Date(2026, 7, 4, 12).getTime();
+		const date = "2026-08-04";
+		writeFileSync(filePath, `${[
+			{ type: "session", id: "daily-session", version: 3, timestamp: new Date(timestamp).toISOString(), cwd: "/tmp" },
+			{ type: "message", id: "user", parentId: null, timestamp: new Date(timestamp).toISOString(), message: { role: "user", content: [{ type: "text", text: "hello" }], timestamp } },
+			{ type: "message", id: "assistant", parentId: "user", timestamp: new Date(timestamp).toISOString(), message: {
+				role: "assistant", content: [{ type: "text", text: "done" }, { type: "toolCall", id: "call-1", name: "read", arguments: {} }], api: "openai-completions", provider: "openai", model: "test",
+				usage: { input: 10, output: 20, cacheRead: 5, cacheWrite: 1, totalTokens: 36, cost: { total: 0.25 } },
+				stopReason: "stop", timestamp,
+			} },
+		].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+
+		const sessions = await SessionManager.list("/tmp", dirname(filePath));
+		const activity = sessions.find((item) => item.path === filePath)?.dailyActivity;
+
+		expect(activity).toEqual([{
+			date,
+			userMessages: 1,
+			modelCalls: 1,
+			toolCalls: 1,
+			inputTokens: 10,
+			outputTokens: 20,
+			cacheReadTokens: 5,
+			cacheWriteTokens: 1,
+			totalTokens: 36,
+			cost: 0.25,
+		}]);
+	});
 });

@@ -15,10 +15,15 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		open: () => ipcRenderer.invoke("session-file:open"),
 		save: (format) => ipcRenderer.invoke("session-file:save", format),
 	},
+	sessionTokens: {
+		totals: (sessionPaths) => ipcRenderer.invoke("session-tokens:totals", sessionPaths),
+		activity: (sessionPaths) => ipcRenderer.invoke("session-tokens:activity", sessionPaths),
+	},
 	workspace: {
 		get: () => ipcRenderer.invoke("workspace:get"),
 		set: (workspacePath) => ipcRenderer.invoke("workspace:set", workspacePath),
 		select: () => ipcRenderer.invoke("workspace:select"),
+		selectMany: () => ipcRenderer.invoke("workspace:select-many"),
 		tree: () => ipcRenderer.invoke("workspace:tree"),
 		diff: (relativePath) => ipcRenderer.invoke("workspace:diff", relativePath),
 		reveal: (relativePath) => ipcRenderer.invoke("workspace:reveal", relativePath),
@@ -43,6 +48,11 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 			const handler = (_event, message) => listener(message);
 			ipcRenderer.on("metis:disconnected", handler);
 			return () => ipcRenderer.removeListener("metis:disconnected", handler);
+		},
+		onServerReady: (listener) => {
+			const handler = () => listener();
+			ipcRenderer.on("metis:server-ready", handler);
+			return () => ipcRenderer.removeListener("metis:server-ready", handler);
 		},
 	},
 	openExternal: (url) => ipcRenderer.invoke("external:open", url),

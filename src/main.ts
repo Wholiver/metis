@@ -5,8 +5,7 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import { existsSync, mkdirSync, rmSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, rmSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@earendil-works/metis-ai";
@@ -327,8 +326,8 @@ async function createSessionManager(
 	if (parsed.resume) {
 		try {
 			const selectedPath = await selectSession(
-				(onProgress) => SessionManager.list(cwd, sessionDir, onProgress),
-				(onProgress) => SessionManager.listAll(sessionDir, onProgress),
+				(onProgress) => SessionManager.list(cwd, sessionDir, onProgress, { includeMessageText: true }),
+				(onProgress) => SessionManager.listAll(sessionDir, onProgress, { includeMessageText: true }),
 				settingsManager,
 			);
 			if (!selectedPath) {
@@ -423,6 +422,9 @@ function buildSessionOptions(
 	if (parsed.thinking) {
 		options.thinkingLevel = parsed.thinking;
 	}
+	if (parsed.collaborationMode) {
+		options.collaborationMode = parsed.collaborationMode;
+	}
 
 	// Scoped models for Ctrl+P cycling
 	// Keep thinking level undefined when not explicitly set in the model pattern.
@@ -484,32 +486,6 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	const cwd = process.cwd();
-	
-	const configDir = join(homedir(), CONFIG_DIR_NAME);
-	try {
-		mkdirSync(join(configDir, "memory"), { recursive: true });
-		mkdirSync(join(configDir, "lessons"), { recursive: true });
-		const brainMapPath = join(configDir, "brain-map.md");
-		if (!existsSync(brainMapPath)) {
-			const brainTemplate = `<!--
-MAINTENANCE RULES:
-1. Unified Map: This file contains both Episodic/Semantic Memories and Technical Lessons.
-2. Unique IDs: Every node must have a unique ID (e.g., #M001 for memory, #L001 for lesson).
-3. Neuron Structure: Every node MUST start with: \`- **[ID: #XXX]** [Weight: 5] [Last-Accessed: YYYY-MM-DD] [Tags: #tag1]\`
-4. Inline Synapses: When creating a connection between nodes, you MUST use the format \`[Related: #ID - Brief Summary]\`.
-5. Bi-directional Updates: When you add a new node that relates to an existing node, you MUST update BOTH nodes to contain mutual inline references.
--->
-# Brain Map
-
-## Episodic & Semantic Memories (日常记忆)
-
-## Core Technical Lessons (核心教训)
-`;
-			writeFileSync(brainMapPath, brainTemplate);
-		}
-	} catch (err) {
-		console.warn("Failed to create config directories or files:", err);
-	}
 	
 	const tempDir = join(cwd, ".temp");
 	if (!existsSync(tempDir)) {
@@ -670,6 +646,7 @@ MAINTENANCE RULES:
 		sessionManager,
 		sessionStartEvent,
 		projectTrustContext,
+		collaborationMode,
 	}) => {
 		const isInitialRuntime = sessionStartEvent === undefined;
 		const projectTrustDiagnostics: AgentSessionRuntimeDiagnostic[] = [];
@@ -723,8 +700,8 @@ MAINTENANCE RULES:
 				noPromptTemplates: parsed.noPromptTemplates,
 				noThemes: parsed.noThemes,
 				noContextFiles: parsed.noContextFiles,
-				systemPrompt: parsed.systemPrompt,
-				appendSystemPrompt: parsed.appendSystemPrompt,
+				baseInstructions: parsed.baseInstructions,
+				developerInstructions: parsed.developerInstructions,
 				extensionFactories: options?.extensionFactories,
 			},
 		});
@@ -766,12 +743,15 @@ MAINTENANCE RULES:
 			}
 		}
 
+		const hasSessionHistory = sessionManager.getBranch().some((entry) => entry.type === "message" || entry.type === "collaboration_mode_change");
+		const effectiveCollaborationMode = collaborationMode ?? sessionOptions.collaborationMode ?? (hasSessionHistory ? undefined : "plan");
 		const created = await createAgentSessionFromServices({
 			services,
 			sessionManager,
 			sessionStartEvent,
 			model: sessionOptions.model,
 			thinkingLevel: sessionOptions.thinkingLevel,
+			collaborationMode: effectiveCollaborationMode,
 			scopedModels: sessionOptions.scopedModels,
 			tools: sessionOptions.tools,
 			excludeTools: sessionOptions.excludeTools,

@@ -6,7 +6,7 @@ import {
   FooterComponent,
   formatCwdForFooter,
 } from "../src/modes/interactive/components/footer.ts";
-import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 type AssistantUsage = {
@@ -23,6 +23,7 @@ function createSession(options: {
   provider?: string;
   reasoning?: boolean;
   thinkingLevel?: string;
+  collaborationMode?: "build" | "plan";
   runningSubagents?: number;
   usage?: AssistantUsage;
 }): AgentSession {
@@ -41,6 +42,7 @@ function createSession(options: {
         ];
 
   const session = {
+    collaborationMode: options.collaborationMode ?? "build",
     state: {
       model: {
         id: options.modelId ?? "test-model",
@@ -184,14 +186,23 @@ describe("FooterComponent width handling", () => {
     expect(statsLine).toContain("CH25.0%");
   });
 
-  it("keeps dream status on stats line and other statuses below", () => {
+  it("renders Plan as a high-contrast labelled mode badge", () => {
+    const session = createSession({ sessionName: "", collaborationMode: "plan" });
+    const footer = new FooterComponent(session, createFooterData(1));
+    const statsLine = footer.render(120)[1];
+
+    expect(stripAnsi(statsLine)).toContain("PLAN");
+    expect(statsLine).toContain(theme.getBgAnsi("toolPendingBg"));
+  });
+
+  it("keeps workflow stats on the main line and other statuses below", () => {
     const session = createSession({ sessionName: "" });
     const footer = new FooterComponent(
       session,
       createFooterDataWithStatuses(
         1,
         new Map([
-          ["dream", "Dream: Done"],
+			  ["dream", "Dream: Done"], // Legacy extension status is intentionally ignored.
           ["lint", "Lint: 3 warnings"],
         ]),
       ),
@@ -199,7 +210,8 @@ describe("FooterComponent width handling", () => {
 
     const lines = footer.render(120);
     expect(lines).toHaveLength(3);
-    expect(stripAnsi(lines[1])).toContain("12.3%/200k (auto) • Dream: Done");
+		expect(stripAnsi(lines[1])).toContain("12.3%/200k (auto)");
+		expect(stripAnsi(lines[1])).not.toContain("Dream");
     expect(stripAnsi(lines[2])).toContain("Lint: 3 warnings");
   });
 });

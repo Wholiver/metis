@@ -1,5 +1,10 @@
 import type { ImageContent } from "@earendil-works/metis-ai";
 import type { AgentSessionEvent } from "../../core/agent-session.ts";
+import type { InstructionSourceSummary } from "../../core/system-prompt.ts";
+import type { CollaborationMode, WorkflowPlanState } from "../../core/workflow-runtime.ts";
+import type { WorkflowProposalState } from "../../core/workflow-runtime.ts";
+import type { AskUserRequest } from "../../core/ask-user.ts";
+import type { MemoryState } from "../../core/memory-coordinator.ts";
 import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "../rpc/rpc-types.ts";
 
 export interface ServerModeOptions {
@@ -23,6 +28,8 @@ export interface ServerHandle {
 }
 
 export interface ServerSessionState {
+	serverInstanceId: string;
+	serverSequence: number;
 	cwd: string;
 	model: unknown;
 	thinkingLevel: string;
@@ -32,12 +39,21 @@ export interface ServerSessionState {
 	isCompacting: boolean;
 	steeringMode: string;
 	followUpMode: string;
+	collaborationMode: CollaborationMode;
+	contextWindowId: string;
+	workflowPlan?: WorkflowPlanState;
+	workflowProposal?: WorkflowProposalState;
+	pendingUserInput?: AskUserRequest;
+	instructionSources: InstructionSourceSummary[];
+	instructionDiagnostics: string[];
+	memoryState: MemoryState;
 	sessionFile: string | undefined;
 	sessionId: string;
 	sessionName: string | undefined;
 	isGeneratingSessionName: boolean;
 	sessionTitleError?: string;
 	autoCompactionEnabled: boolean;
+	autoRetryEnabled: boolean;
 	messageCount: number;
 	pendingMessageCount: number;
 	steeringMessages: readonly string[];
@@ -51,6 +67,12 @@ export interface ServerSessionState {
 	};
 }
 
+export interface ServerDefaultsState {
+	provider?: string;
+	modelId?: string;
+	thinkingLevel?: string;
+}
+
 export interface ServerMessageTiming {
 	messageTimestamp: number;
 	completedAt: number;
@@ -60,15 +82,23 @@ export interface ServerPromptRequest {
 	message: string;
 	images?: ImageContent[];
 	streamingBehavior?: "steer" | "followUp";
+	workflowAction?: "process_proposal";
 }
 
-export type ServerEvent =
+export interface ServerEventMetadata {
+	serverInstanceId: string;
+	serverSequence: number;
+	serverSessionId: string;
+}
+
+export type ServerEvent = (
 	| { type: "server.connected"; properties: { version: string } }
 	| { type: "server.session_changed"; properties: { sessionId: string } }
 	| { type: "server.heartbeat"; properties: { timestamp: number } }
 	| AgentSessionEvent
 	| RpcExtensionUIRequest
-	| { type: "extension_error"; extensionPath: string; event: string; error: string };
+	| { type: "extension_error"; extensionPath: string; event: string; error: string }
+) & ServerEventMetadata;
 
 export type ServerExtensionUIResponse = RpcExtensionUIResponse;
 

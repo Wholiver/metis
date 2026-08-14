@@ -13,6 +13,13 @@ test-subagent.log
 *.bun-build
 .temp
 desktop/release/
+.agents
+.claude
+.workbuddy
+skills-lock.json
+*.bak
+dist */
+* 2.*
 
 # metis-ai is distributed as compiled vendor code; track the OAuth callback page override.
 !vendor/metis-ai/dist/

@@ -5,13 +5,15 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<meta
 		http-equiv="Content-Security-Policy"
-		content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-src https: http:;"
+		content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; script-src 'self'; connect-src 'self' http: https:; frame-src http: https:;"
 	/>
 	<title>Metis</title>
+	<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap">
 	<link rel="stylesheet" href="styles.css" />
 </head>
-<body>
-	<svg class="icon-sprite" aria-hidden="true">
+<body class="flex box-border h-screen text-gray-800">
+	<svg class="icon-sprite" aria-hidden="true" style="display: none;">
 		<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
 		<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></symbol>
 		<symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2.5h9a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2Z"/></symbol>
@@ -30,79 +32,315 @@
 		<symbol id="i-forward" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
 		<symbol id="i-reload" viewBox="0 0 24 24"><path d="M19 8a8 8 0 1 0 .5 7"/><path d="M19 3v5h-5"/></symbol>
 		<symbol id="i-external" viewBox="0 0 24 24"><path d="M13 5h6v6M19 5l-8 8"/><path d="M18 14v5H5V6h5"/></symbol>
-		<symbol id="i-send" viewBox="0 0 24 24"><path d="m4 5 17 7-17 7 3-7Z"/><path d="M7 12h14"/></symbol>
+		<symbol id="i-send" viewBox="0 0 24 24"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></symbol>
 		<symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></symbol>
-		<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></symbol>
-		<symbol id="i-edit" viewBox="0 0 24 24"><path d="m4 20 4.5-1 10-10-3.5-3.5-10 10ZM13.5 6.5 17 10"/></symbol>
+		<symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></symbol>
+		<symbol id="i-edit" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3Z"/><path d="m15 5 4 4"/></symbol>
 		<symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 20V5M6 11l6-6 6 6"/></symbol>
 		<symbol id="i-clip" viewBox="0 0 24 24"><path d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l8-8"/></symbol>
 		<symbol id="i-code" viewBox="0 0 24 24"><path d="m16 18 5-6-5-6M8 6l-5 6 5 6"/></symbol>
 		<symbol id="i-compose" viewBox="0 0 24 24"><path d="M13.5 5.5H6a2 2 0 0 0-2 2V18a2 2 0 0 0 2 2h10.5a2 2 0 0 0 2-2v-7.5"/><path d="m10 14 1-4 7-7 3 3-7 7Z"/></symbol>
 		<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
 		<symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13.5 2.8-7 10.1h5.3l-1.3 8.3 7-10.1h-5.3Z"/></symbol>
+		<symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="19" height="13" rx="2"/><path d="M6 9h.01M9 9h.01M12 9h.01M15 9h.01M18 9h.01M6 13h.01M9 13h.01M12 13h6"/></symbol>
+		<symbol id="i-server" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="6" rx="1.5"/><rect x="3.5" y="14.5" width="17" height="6" rx="1.5"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h5M11 17.5h5"/></symbol>
+		<symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/><path d="M9 1.5v3M12 1.5v3M15 1.5v3M9 19.5v3M12 19.5v3M15 19.5v3M1.5 9h3M1.5 12h3M1.5 15h3M19.5 9h3M19.5 12h3M19.5 15h3"/></symbol>
 		<symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5H5v11h3"/></symbol>
 		<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></symbol>
 		<symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/></symbol>
 		<symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.77 3.77Z"/></symbol>
 		<symbol id="i-brain" viewBox="0 0 24 24"><path d="M12 4.5a3 3 0 0 0-3 3v9a3 3 0 0 0 6 0v-9a3 3 0 0 0-3-3Z"/><path d="M6 9a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3h3M18 9a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3h-3"/></symbol>
 		<symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+		<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 20 6v5c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V6Z"/><path d="m9 12 2 2 4-4"/></symbol>
+		<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></symbol>
 		<symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+		<symbol id="i-skill" viewBox="0 0 24 24"><path d="m12 2.8 8 4.6v9.2l-8 4.6-8-4.6V7.4Z"/><path d="m4.4 7.6 7.6 4.3 7.6-4.3M12 11.9v8.8"/></symbol>
 	</svg>
 
-	<div class="server-loading" id="serverLoading" role="status" aria-live="polite">
-		<div class="server-loading-orbit"><span></span><img src="assets/metis-pixel-mark.svg" alt="" /></div>
-		<strong>正在启动 Metis</strong>
-		<p id="serverLoadingText">正在连接本地 Server…</p>
-		<button class="server-loading-connect hidden" id="serverLoadingConnect" type="button">连接设置</button>
+	<div class="server-loading" id="serverLoading" role="status" aria-live="polite" aria-atomic="true">
+		<div class="server-loading-stage">
+			<div class="server-loading-mark" aria-hidden="true">
+				<img src="assets/metis-pixel-mark.svg" alt="" />
+			</div>
+			<div class="server-loading-copy">
+				<strong>Metis</strong>
+				<p id="serverLoadingText" data-i18n="serverLoadingPreparingTask">正在准备新任务…</p>
+			</div>
+			<div class="server-loading-progress" aria-hidden="true"><span></span></div>
+			<button class="server-loading-connect hidden" id="serverLoadingConnect" type="button">连接设置</button>
+		</div>
 	</div>
 
-	<div class="app-shell inspector-collapsed" id="appShell">
-		<aside class="sidebar">
-			<header class="sidebar-top drag-region">
-				<div class="brand no-drag">
-					<strong>Metis</strong>
-				</div>
-			</header>
+	<div class="app-shell inspector-collapsed w-full h-full flex overflow-hidden" id="appShell">
 
-			<nav class="primary-nav" aria-label="主导航">
-				<button id="newChatButton"><svg><use href="#i-compose"/></svg><span>新建任务</span></button>
-			</nav>
 
-			<div class="sidebar-section-label"><span>项目</span><button class="tiny-button" id="chooseWorkspaceButton">添加项目</button></div>
-			<nav class="conversation-list" id="conversationList" aria-label="按项目分组的对话"></nav>
-
-			<footer class="sidebar-footer">
-				<button class="sidebar-footer-button" id="sidebarSettingsButton" aria-label="设置">
-					<svg><use href="#i-settings"/></svg>
-					<span>设置</span>
+		<!-- BEGIN: Stitch Chat Interface Active View -->
+		<!-- BEGIN: Far Left Icon Sidebar -->
+		<aside class="w-16 flex flex-col items-center rounded-xl flex-shrink-0 relative overflow-hidden bg-transparent" data-purpose="icon-sidebar">
+			<div class="h-14 w-full flex items-center justify-center flex-shrink-0 drag-region">
+				<button class="w-10 h-10 flex items-center justify-center text-gray-800 hover:text-black transition-colors no-drag" id="iconSidebarWorkspace" type="button" title="项目" aria-label="项目">
+			<svg class="w-8 h-8" viewBox="160 151 192 193" role="img" aria-label="Metis Logo"><path fill="currentColor" d="M180 171h40v37h24v38h24v-38h24v-37h40v153h-40v-78h-24v39h-24v-39h-24v78h-40z"/></svg>
+		</button>
+			</div>
+			<div class="w-8 h-px bg-gray-300 mx-auto flex-shrink-0"></div>
+			<div class="flex-1 flex flex-col items-center py-3 gap-2.5 w-full overflow-y-auto project-rail" id="projectList"></div>
+			<div class="icon-sidebar-footer">
+				<button class="icon-sidebar-utility-button" id="iconSidebarAddProject" type="button" title="添加项目" aria-label="添加项目">
+					<i class="fa-solid fa-plus text-base" aria-hidden="true"></i>
 				</button>
-			</footer>
+				<div class="icon-sidebar-footer-divider" aria-hidden="true"></div>
+				<button class="icon-sidebar-utility-button" id="sidebarSettingsButton" type="button" title="设置" aria-label="设置">
+					<svg aria-hidden="true"><use href="#i-settings"/></svg>
+				</button>
+			</div>
 		</aside>
+		<!-- END: Far Left Icon Sidebar -->
 
-		<main class="conversation-pane">
-			<header class="topbar drag-region">
-				<div class="conversation-heading no-drag">
-					<svg class="heading-folder"><use href="#i-folder"/></svg>
-					<div class="heading-copy"><strong id="headingTitle">未连接 Server</strong></div>
+		<!-- BEGIN: Middle Channel/Thread List -->
+		<section class="w-[300px] bg-white shadow-sm flex flex-col flex-shrink-0 border border-gray-100 rounded-t-xl" data-purpose="channel-list">
+			<div class="h-14 px-4 flex items-center justify-between border-b border-gray-100 flex-shrink-0 drag-region">
+				<div class="flex items-center gap-2 no-drag">
+					<i class="fa-solid fa-comments text-gray-500 text-sm" aria-hidden="true"></i>
+					<strong id="conversationSidebarTitle" class="font-medium text-sm text-gray-800">对话</strong>
+				</div>
+				<button class="w-6 h-6 rounded flex items-center justify-center bg-gray-100 text-gray-400 hover:bg-gray-200 no-drag" id="newChatButton" type="button" aria-label="新建任务" title="新建任务">
+					<i class="fa-solid fa-pen-to-square text-xs" aria-hidden="true"></i>
+				</button>
+			</div>
+			<div class="conversation-list flex-1 overflow-y-auto p-3" id="conversationList" aria-label="当前项目的对话"></div>
+			<div class="scoped-loading scoped-loading-conversations" id="conversationListLoading" role="status" aria-live="polite" aria-hidden="true">
+				<div class="scoped-loading-content">
+					<img src="assets/metis-pixel-mark.svg" alt="" aria-hidden="true">
+					<span id="conversationListLoadingLabel" data-i18n="switchingProject"></span>
+					<div class="scoped-loading-progress" aria-hidden="true"><span></span></div>
+				</div>
+			</div>
+		</section>
+		<!-- END: Middle Channel/Thread List -->
+
+		<!-- BEGIN: Main Chat Area -->
+		<main class="flex-1 bg-white shadow-sm flex flex-col min-w-0 border border-gray-100 rounded-t-xl" data-purpose="main-chat" style="margin-left: 8px;">
+			<header class="h-14 px-6 flex items-center justify-between border-b border-gray-100 flex-shrink-0 drag-region">
+				<div class="flex items-center gap-2 no-drag">
+					<i class="fa-solid fa-hashtag text-gray-500 text-sm" aria-hidden="true"></i>
+					<h1 class="font-medium text-sm text-gray-800" id="headingTitle" data-i18n="general">general</h1>
+				</div>
+				<div class="w-8 h-6 bg-gray-100 rounded flex items-center justify-center text-gray-400 no-drag"></div>
+			</header>
+			<section class="flex-1 overflow-y-auto px-6 py-4 flex flex-col" id="messageScroll">
+				<div class="message-column" id="messageColumn">
+					<div class="empty-state" id="emptyState"></div>
+				</div>
+			</section>
+			<div class="scoped-loading scoped-loading-conversation-view" id="conversationViewLoading" role="status" aria-live="polite" aria-hidden="true">
+				<div class="scoped-loading-content">
+					<img src="assets/metis-pixel-mark.svg" alt="" aria-hidden="true">
+					<span id="conversationViewLoadingLabel" data-i18n="switchingSession"></span>
+					<div class="scoped-loading-progress" aria-hidden="true"><span></span></div>
+				</div>
+			</div>
+			<div class="p-4 flex-shrink-0" data-purpose="composer-stack">
+				<section class="work-insights mt-0 mb-2" id="workInsights" aria-labelledby="workInsightsTitle">
+					<header class="work-insights-header">
+						<div>
+							<strong id="workInsightsTitle" data-i18n="workOverview">工作概览</strong>
+							<span data-i18n="pastYearDaily">过去一年 · 每日</span>
+						</div>
+						<div class="work-insights-meta">
+							<span class="work-insights-status" id="workInsightsStatus" role="status" aria-live="polite" data-i18n="workStatsLoading">正在统计…</span>
+							<div class="work-rhythm hidden" id="workRhythm" role="status" aria-live="polite">
+								<span class="work-rhythm-mark" aria-hidden="true"></span>
+								<span class="work-rhythm-text" id="workRhythmText" data-i18n="workRhythmLoading">正在感受工作节奏…</span>
+								<span class="work-rhythm-bars" id="workRhythmBars" aria-hidden="true"></span>
+							</div>
+						</div>
+					</header>
+					<div class="work-summary">
+						<div><strong id="workStreakValue">—</strong><span data-i18n="currentStreak">连续工作天数</span></div>
+						<div><strong id="workTodayTokensValue">—</strong><span data-i18n="todayTokens">今日 Token</span></div>
+						<div><strong id="workYearTokensValue">—</strong><span data-i18n="yearTokens">年度 Token</span></div>
+						<div><strong id="workActiveDaysValue">—</strong><span data-i18n="activeDays">活跃天数</span></div>
+					</div>
+					<div class="token-heatmap-heading"><strong data-i18n="tokenActivity">Token 活动</strong><span data-i18n="daily">每日</span></div>
+					<div class="token-heatmap" aria-label="Token 活动" data-i18n-aria-label="tokenActivity">
+						<div class="token-heatmap-grid" id="tokenHeatmapGrid" role="grid"></div>
+						<div class="token-month-labels" id="tokenMonthLabels" aria-hidden="true"></div>
+					</div>
+				</section>
+				<div class="empty-hero-logo hidden" id="emptyHeroLogo" aria-hidden="true">
+					<img src="assets/metis-pixel-mark.svg" alt="" />
+				</div>
+				<div class="composer-status-row has-project-switch mb-2 flex items-center justify-between" id="composerStatusRow">
+					<div class="project-switcher" id="projectSwitcher">
+						<button class="project-switch-capsule" id="projectSwitchCapsule" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="projectSwitchMenu">
+							<svg><use href="#i-folder-open"/></svg>
+							<span id="projectSwitchLabel">metis_v2</span>
+							<svg><use href="#i-chevron"/></svg>
+						</button>
+						<div class="project-switch-menu" id="projectSwitchMenu" role="menu" aria-hidden="true" aria-label="工作区">
+							<div class="project-switch-menu-head">
+								<span class="project-switch-menu-label" data-i18n="projects">项目</span>
+								<b class="project-switch-menu-count" id="projectSwitchCount" aria-hidden="true"></b>
+							</div>
+							<div class="project-switch-options" id="projectSwitchOptions"></div>
+						</div>
+					</div>
+				</div>
+				<section class="message-queue hidden" id="messageQueue" aria-label="排队消息" data-i18n-aria-label="queuedMessages">
+					<button class="message-queue-header" id="messageQueueToggle" type="button" aria-expanded="true" aria-controls="messageQueueList">
+						<span><strong data-i18n="queuedMessages">排队消息</strong><b id="messageQueueCount">0</b><small data-i18n="queueAfterAgent">Agent 完成后自动发送</small></span>
+						<svg><use href="#i-chevron"/></svg>
+					</button>
+					<div class="message-queue-list" id="messageQueueList" role="list"></div>
+					<div class="message-queue-feedback hidden" id="messageQueueFeedback" role="status" aria-live="polite"></div>
+				</section>
+				<section class="workflow-plan-card hidden" id="workflowPlanCard" aria-labelledby="workflowPlanTitle">
+					<button class="workflow-plan-header" id="workflowPlanToggle" type="button" aria-expanded="true">
+						<span><strong id="workflowPlanTitle" data-i18n="workflowPlanTitle">计划</strong><small id="workflowPlanProgress"></small></span>
+						<svg><use href="#i-chevron"/></svg>
+					</button>
+					<div class="workflow-plan-body" id="workflowPlanBody"></div>
+				</section>
+				<div class="border border-gray-200 rounded-xl overflow-hidden focus-within:border-gray-300 focus-within:ring-1 focus-within:ring-gray-300 transition-shadow bg-white" id="composer">
+					<div class="composer-drop-feedback" id="composerDropFeedback" role="status" aria-live="polite">
+						<svg><use href="#i-plus"/></svg><strong data-i18n="dropAttachments">松开即可添加图片、视频或文件</strong>
+					</div>
+					<div class="composer-attachments" id="composerAttachments"></div>
+					<div class="composer-skill-menu" id="composerSkillMenu" role="listbox" aria-label="Skills" data-i18n-aria-label="skillMenuLabel" aria-hidden="true" hidden></div>
+					<div id="composerInput" class="w-full border-0 p-4 text-[15px] text-gray-800 leading-relaxed bg-transparent" data-purpose="message-input" contenteditable="true" role="textbox" aria-multiline="true" aria-autocomplete="list" aria-controls="composerSkillMenu" placeholder="Ask anything" data-i18n-placeholder="composerPlaceholder"></div>
+					<div class="flex items-center justify-between px-3 pb-3 pt-1" data-purpose="composer-controls">
+						<div class="composer-leading flex items-center gap-2 text-gray-500">
+							<button class="w-8 h-8 rounded hover:bg-gray-100 flex items-center justify-center transition-colors" id="attachButton" type="button" aria-label="添加图片、视频或文件" data-i18n-aria-label="uploadFile">
+								<i class="fa-solid fa-paperclip text-sm" aria-hidden="true"></i>
+							</button>
+							<div class="model-picker" id="modelPicker">
+								<button class="model-trigger" id="modelTrigger" type="button" aria-label="选择模型" aria-haspopup="listbox" aria-expanded="false" disabled>
+									<span id="modelTriggerLabel">连接 Server 后载入模型</span>
+									<svg><use href="#i-chevron"/></svg>
+								</button>
+								<div class="model-menu" id="modelMenu" aria-hidden="true">
+									<div class="model-menu-page model-list-page">
+										<div class="model-menu-title">模型</div>
+										<div class="model-options" id="modelOptions" role="listbox" aria-label="模型"></div>
+										<button class="advanced-entry" id="advancedEntry" type="button" hidden>
+											<span>高级</span><b id="advancedValue">高</b><svg><use href="#i-chevron"/></svg>
+										</button>
+									</div>
+									<div class="model-menu-page thinking-page">
+										<div class="thinking-header">
+											<button id="thinkingBack" type="button"><svg><use href="#i-chevron"/></svg><span>高级</span></button>
+											<svg class="thinking-bolt"><use href="#i-bolt"/></svg>
+										</div>
+										<div class="thinking-scale" id="thinkingScale" role="slider" tabindex="0" aria-label="思考等级"></div>
+									</div>
+								</div>
+							</div>
+							<div class="workflow-picker open plan" id="workflowPicker">
+								<button class="workflow-trigger" id="workflowTrigger" type="button" aria-haspopup="menu" aria-expanded="true" aria-controls="workflowMenu">
+									<span id="workflowTriggerLabel" data-i18n="workflowPlanMode">规划模式</span><svg><use href="#i-chevron"/></svg>
+								</button>
+								<div class="workflow-menu" id="workflowMenu" role="menu" aria-hidden="false">
+									<button type="button" role="menuitemradio" data-workflow-mode="plan"><svg aria-hidden="true"><use href="#i-list"/></svg><strong data-i18n="workflowPlanMode">规划模式</strong><small data-i18n="workflowPlanDescription">仅只读工具；不能执行 shell、编辑或写入。这不是 OS 沙箱。</small></button>
+									<button type="button" role="menuitemradio" data-workflow-mode="build"><svg aria-hidden="true"><use href="#i-terminal"/></svg><strong data-i18n="workflowBuildMode">构建模式</strong><small data-i18n="workflowBuildDescription">使用全部已配置工具。</small></button>
+								</div>
+							</div>
+							</div>
+						<input type="file" id="attachInput" multiple style="display: none;">
+						<span class="attachment-feedback" id="attachmentFeedback" role="status" aria-live="polite"></span>
+						<div class="flex items-center gap-2" data-purpose="composer-submit">
+							<div class="context-indicator hidden" id="contextIndicator">
+								<svg class="context-ring" viewBox="0 0 16 16">
+									<circle class="context-ring-bg" cx="8" cy="8" r="6.1" />
+									<circle class="context-ring-fg" cx="8" cy="8" r="6.1" id="contextPercentRing" />
+								</svg>
+							</div>
+							<button class="send-button w-8 h-8 rounded hover:bg-gray-100 flex items-center justify-center text-gray-800 transition-colors" id="sendButton" type="button" aria-label="发送">
+								<svg class="w-4 h-4"><use id="sendButtonIcon" href="#i-send"/></svg>
+							</button>
+						</div>
+					</div>
+				</div>
+				<section class="dream-token-card" id="dreamTokenCard" aria-labelledby="dreamTokenActivityLabel">
+					<header class="dream-token-overview">
+						<div class="dream-token-primary">
+							<span id="dreamTokenActivityLabel" data-i18n="tokenActivity">Token 活动</span>
+							<strong id="dreamTokenTotal">0</strong>
+							<small data-i18n="totalTokens">累计 Token</small>
+						</div>
+						<dl class="dream-token-secondary" aria-label="Token 统计" data-i18n-aria-label="tokenStatistics">
+							<div><dt data-i18n="peakTokens">峰值 Token</dt><dd id="dreamTokenPeak">0</dd></div>
+							<div><dt>活跃天数</dt><dd id="dreamTokenActiveDays">0</dd></div>
+						</dl>
+					</header>
+					<div class="dream-token-calendar">
+						<div class="dream-token-calendar-header">
+							<span class="dream-token-period"><i aria-hidden="true"></i><span data-i18n="daily">每日</span></span>
+							<span class="dream-token-legend" aria-hidden="true">
+								<i data-level="0"></i><i data-level="1"></i><i data-level="2"></i><i data-level="3"></i><i data-level="4"></i>
+							</span>
+						</div>
+						<div class="dream-token-heatmap" id="dreamTokenHeatmap" role="grid" aria-rowcount="7" aria-colcount="53"></div>
+						<div class="dream-token-months" id="dreamTokenMonths" aria-hidden="true"></div>
+					</div>
+				</section>
+			</div>
+		</main>
+		<!-- END: Main Chat Area -->
+
+
+		<!-- END: Stitch Chat Interface Active View -->
+		<!-- END: Main Chat Area (Stitch Overwrite) -->
+
+		<!-- OLD_MAIN_CONTAINER_PRESERVED_START
+		<main class="flex-1 bg-white shadow-sm flex flex-col min-w-0 border border-gray-100 rounded-t-xl conversation-pane is-empty-state" data-purpose="main-chat-old" style="margin-left: 4.5px; display: none;">
+			<header class="h-14 px-6 flex items-center justify-between border-b border-gray-100 flex-shrink-0 topbar drag-region">
+				<div class="flex items-center gap-2 no-drag">
+					<i class="fa-solid fa-hashtag text-gray-500"></i>
+					<div class="conversation-heading"><strong id="headingTitle" class="font-semibold text-gray-800">未连接 Server</strong></div>
 				</div>
 				<div class="topbar-actions no-drag">
 					<button class="icon-button compact" id="inspectorToggle" aria-label="收起侧栏" title="收起侧栏"><svg style="transform: scaleX(-1);"><use href="#i-panel"/></svg></button>
 				</div>
 			</header>
 
-			<section class="message-scroll" id="messageScroll">
+			<section class="message-scroll flex-1 overflow-y-auto px-6 py-4 flex flex-col" id="messageScroll">
 				<div class="message-column" id="messageColumn">
-					<div class="empty-state" id="emptyState">
-						<strong>连接 Metis Server 开始任务</strong>
-						<span>会话消息、模型和运行状态会从本地 Server 同步。</span>
-						<button id="emptyConnectButton"><span class="server-dot"></span>连接 Server</button>
-					</div>
+					<div class="empty-state" id="emptyState"></div>
 				</div>
+				<section class="work-insights mt-4" id="workInsights" aria-labelledby="workInsightsTitle">
+					<header class="work-insights-header">
+						<div>
+							<strong id="workInsightsTitle" data-i18n="workOverview">工作概览</strong>
+							<span data-i18n="pastYearDaily">过去一年 · 每日</span>
+						</div>
+						<div class="work-insights-meta">
+							<span class="work-insights-status" id="workInsightsStatus" role="status" aria-live="polite" data-i18n="workStatsLoading">正在统计…</span>
+							<div class="work-rhythm hidden" id="workRhythm" role="status" aria-live="polite">
+								<span class="work-rhythm-mark" aria-hidden="true"></span>
+								<span class="work-rhythm-text" id="workRhythmText" data-i18n="workRhythmLoading">正在感受工作节奏…</span>
+								<span class="work-rhythm-bars" id="workRhythmBars" aria-hidden="true"></span>
+							</div>
+						</div>
+					</header>
+					<div class="work-summary">
+						<div><strong id="workStreakValue">—</strong><span data-i18n="currentStreak">连续工作天数</span></div>
+						<div><strong id="workTodayTokensValue">—</strong><span data-i18n="todayTokens">今日 Token</span></div>
+						<div><strong id="workYearTokensValue">—</strong><span data-i18n="yearTokens">年度 Token</span></div>
+						<div><strong id="workActiveDaysValue">—</strong><span data-i18n="activeDays">活跃天数</span></div>
+					</div>
+					<div class="token-heatmap-heading"><strong data-i18n="tokenActivity">Token 活动</strong><span data-i18n="daily">每日</span></div>
+					<div class="token-heatmap" aria-label="Token 活动" data-i18n-aria-label="tokenActivity">
+						<div class="token-heatmap-grid" id="tokenHeatmapGrid" role="grid"></div>
+						<div class="token-month-labels" id="tokenMonthLabels" aria-hidden="true"></div>
+					</div>
+				</section>
 			</section>
 
-			<div class="composer-wrap">
-				<div class="run-state hidden" id="runState"><span class="pulse-dot"></span><span>Agent 正在处理</span></div>
-				<div class="composer-status-row new-conversation" id="composerStatusRow">
+			<div class="composer-wrap p-4 bg-white flex-shrink-0">
+				<div class="empty-hero-logo" id="emptyHeroLogo">
+					<svg viewBox="160 151 192 193" role="img" aria-label="Metis Logo"><path fill="currentColor" d="M180 171h40v37h24v38h24v-38h24v-37h40v153h-40v-78h-24v39h-24v-39h-24v78h-40z"/></svg>
+				</div>
+				<div class="composer-status-row new-conversation mb-2 flex items-center justify-between" id="composerStatusRow">
 					<div class="project-switcher" id="projectSwitcher">
 						<button class="project-switch-capsule" id="projectSwitchCapsule" type="button" aria-haspopup="menu" aria-expanded="false">
 							<svg><use href="#i-folder-open"/></svg>
@@ -111,19 +349,8 @@
 						</button>
 						<div class="project-switch-menu" id="projectSwitchMenu" role="menu" aria-hidden="true" aria-label="工作区">
 							<div class="project-switch-options" id="projectSwitchOptions"></div>
-							<button class="project-switch-add" id="projectSwitchAdd" type="button" role="menuitem">
-								<svg><use href="#i-plus"/></svg>
-								<span data-i18n="addProject">添加项目</span>
-							</button>
 						</div>
 					</div>
-					<section class="subagent-dock collapsed" id="subagentDock" aria-label="Subagent 运行状态">
-						<button class="subagent-dock-toggle" id="subagentDockToggle" type="button" aria-expanded="false">
-							<span><svg><use href="#i-branch"/></svg><strong>Subagent</strong><small id="subagentDockStatus">无</small></span>
-							<svg class="subagent-dock-chevron"><use href="#i-chevron"/></svg>
-						</button>
-						<div class="subagent-dock-list" id="subagentDockList"></div>
-					</section>
 				</div>
 				<section class="message-queue hidden" id="messageQueue" aria-label="排队消息">
 					<button class="message-queue-header" id="messageQueueToggle" type="button" aria-expanded="true">
@@ -132,22 +359,22 @@
 					</button>
 					<div class="message-queue-list" id="messageQueueList"></div>
 				</section>
-				<div class="composer" id="composer">
+
+				<div class="composer border border-gray-200 rounded-xl overflow-hidden focus-within:border-gray-300 focus-within:ring-1 focus-within:ring-gray-300 transition-shadow bg-white" id="composer">
 					<div class="composer-drop-feedback" id="composerDropFeedback" role="status" aria-live="polite">
 						<svg><use href="#i-plus"/></svg><strong data-i18n="dropAttachments">松开即可添加图片、视频或文件</strong>
 					</div>
 					<div class="composer-attachments" id="composerAttachments"></div>
-					<textarea id="composerInput" rows="1" placeholder="随心输入"></textarea>
-					<div class="composer-bottom">
-						<div class="composer-leading">
-							<button class="attach-button" id="attachButton" type="button" aria-label="添加图片、视频或文件" data-i18n-aria-label="uploadFile">
-								<svg><use href="#i-plus"/></svg>
+					<textarea id="composerInput" rows="1" class="w-full border-0 p-4 text-[15px] text-gray-800 placeholder-gray-400 focus:ring-0 resize-none leading-relaxed bg-transparent" placeholder="Ask anything" data-purpose="message-input" data-i18n-placeholder="composerPlaceholder"></textarea>
+					<div class="composer-bottom flex items-center justify-between px-3 pb-3 pt-1">
+						<div class="composer-leading flex items-center gap-1 text-gray-500">
+							<button class="attach-button w-8 h-8 rounded hover:bg-gray-100 flex items-center justify-center transition-colors" id="attachButton" type="button" aria-label="添加图片、视频或文件" data-i18n-aria-label="uploadFile">
+								<i class="fa-solid fa-paperclip text-sm"></i>
 							</button>
-							<div class="dream-state hidden" id="dreamState" role="status" aria-live="polite"><span>Dream: Pending</span></div>
 						</div>
 						<input type="file" id="attachInput" multiple style="display: none;">
 						<span class="attachment-feedback" id="attachmentFeedback" role="status" aria-live="polite"></span>
-						<div class="composer-submit">
+						<div class="composer-submit flex items-center gap-2">
 							<div class="context-indicator hidden" id="contextIndicator">
 								<svg class="context-ring" viewBox="0 0 16 16">
 									<circle class="context-ring-bg" cx="8" cy="8" r="6.1" />
@@ -176,12 +403,16 @@
 									</div>
 								</div>
 							</div>
-							<button class="send-button" id="sendButton" aria-label="发送"><svg><use id="sendButtonIcon" href="#i-send"/></svg></button>
+							<button class="send-button w-8 h-8 rounded hover:bg-gray-100 flex items-center justify-center text-gray-800 transition-colors" id="sendButton" aria-label="发送">
+								<svg class="w-4 h-4"><use id="sendButtonIcon" href="#i-send"/></svg>
+							</button>
 						</div>
 					</div>
 				</div>
 			</div>
 		</main>
+		OLD_MAIN_CONTAINER_PRESERVED_END -->
+		<!-- END: Main Chat Area -->
 
 		<aside class="inspector" id="inspector">
 			<header class="inspector-topbar drag-region">
@@ -264,347 +495,252 @@
 		</aside>
 	</div>
 
-	<section class="settings-shell" id="settingsShell" aria-label="设置" hidden>
-		<aside class="settings-sidebar">
-			<div class="settings-sidebar-drag drag-region"></div>
-			<button class="settings-back-button no-drag" id="settingsBackButton" type="button">
-				<svg><use href="#i-arrow-left"/></svg>
-				<span>返回 Metis</span>
-			</button>
-			<label class="settings-search no-drag" for="settingsSearchInput">
-				<svg><use href="#i-search"/></svg>
-				<input id="settingsSearchInput" type="search" placeholder="搜索设置…" autocomplete="off" />
-			</label>
-			<div class="settings-nav-label">Metis</div>
-			<nav class="settings-nav no-drag" aria-label="设置分类">
-				<button class="settings-nav-item active" type="button" data-settings-panel="agent">
-					<svg><use href="#i-brain"/></svg><span>Agent</span>
-				</button>
-				<button class="settings-nav-item" type="button" data-settings-panel="behavior">
-					<svg><use href="#i-sliders"/></svg><span>交互</span>
-				</button>
-				<button class="settings-nav-item" type="button" data-settings-panel="session">
-					<svg><use href="#i-compose"/></svg><span>会话</span>
-				</button>
-				<button class="settings-nav-item" type="button" data-settings-panel="security">
-					<svg><use href="#i-globe"/></svg><span>账户与安全</span>
-				</button>
-				<button class="settings-nav-item" type="button" data-settings-panel="connection">
-					<svg><use href="#i-globe"/></svg><span data-i18n="connection">连接</span>
-				</button>
-				<button class="settings-nav-item" type="button" data-settings-panel="about">
-					<svg><use href="#i-brain"/></svg><span>关于</span>
-				</button>
-			</nav>
-			<p class="settings-search-empty" id="settingsSearchEmpty" hidden>没有匹配的设置</p>
-		</aside>
+	<dialog class="settings-dialog" id="settingsDialog" aria-labelledby="settingsDialogTitle" tabindex="-1">
+		<div class="settings-dialog-layout">
+			<aside class="settings-dialog-sidebar">
+				<div class="settings-dialog-brand">
+					<strong id="settingsDialogTitle">设置</strong>
+				</div>
+				<nav class="settings-dialog-nav" aria-label="设置分类">
+					<span class="settings-dialog-nav-label" data-i18n="settingsDesktopSection">桌面</span>
+					<button class="settings-dialog-nav-item active" type="button" data-settings-panel="general" aria-current="page">
+						<svg><use href="#i-sliders"/></svg><span data-i18n="general">通用</span>
+					</button>
+					<button class="settings-dialog-nav-item" type="button" data-settings-panel="shortcuts">
+						<svg><use href="#i-keyboard"/></svg><span data-i18n="desktopHotkeys">快捷键</span>
+					</button>
+					<span class="settings-dialog-nav-label">Agent</span>
+					<button class="settings-dialog-nav-item" type="button" data-settings-panel="server">
+						<svg><use href="#i-server"/></svg><span data-i18n="serverConfiguration">Server</span>
+					</button>
+					<button class="settings-dialog-nav-item" type="button" data-settings-panel="model">
+						<svg><use href="#i-cpu"/></svg><span data-i18n="model">模型</span>
+					</button>
+					<button class="settings-dialog-nav-item" type="button" data-settings-panel="agent">
+						<svg><use href="#i-sliders"/></svg><span data-i18n="workflowSettingsNav">工作流</span>
+					</button>
+					<button class="settings-dialog-nav-item" type="button" data-settings-panel="security">
+						<svg><use href="#i-shield"/></svg><span data-i18n="accountSecurity">账户与安全</span>
+					</button>
+					<button class="settings-dialog-nav-item" type="button" data-settings-panel="session">
+						<svg><use href="#i-branch"/></svg><span data-i18n="session">会话与数据</span>
+					</button>
+					<button class="settings-dialog-nav-item" type="button" data-settings-panel="about">
+						<svg><use href="#i-info"/></svg><span data-i18n="about">关于</span>
+					</button>
+				</nav>
+				<div class="settings-dialog-sidebar-footer">
+					<span>Metis Desktop</span>
+					<small id="settingsAppVersion">—</small>
+				</div>
+			</aside>
 
-		<main class="settings-main">
-			<div class="settings-main-drag drag-region"></div>
-			<div class="settings-content">
-				<section class="settings-panel active" data-settings-content="agent">
-					<header class="settings-page-heading">
-						<h1>Agent</h1>
-						<p>管理当前 Agent 会话及后续新会话使用的模型、推理和上下文默认值。</p>
-					</header>
+			<main class="settings-dialog-main">
+				<button class="settings-dialog-close" id="settingsCloseButton" type="button" aria-label="关闭设置" data-i18n-aria-label="close">
+					<svg><use href="#i-plus"/></svg>
+				</button>
 
-					<p class="settings-sync-note" id="settingsAgentFeedback">连接 Server 后可修改 Agent 设置。</p>
-
-					<div class="settings-group">
-						<h2>模型</h2>
-						<div class="settings-card">
-							<div class="settings-row">
-								<div><strong>当前模型</strong><span>立即切换当前会话，并保存为后续新会话的默认模型。</span></div>
-								<select class="settings-select" id="settingsModelSelect" aria-label="当前模型" disabled>
-									<option>连接 Server 后载入</option>
-								</select>
-							</div>
-							<div class="settings-row">
-								<div><strong>思考等级</strong><span>控制推理深度并保存为默认值。可选等级由当前模型决定；切换模型时会自动调整到新模型支持的最近等级。</span></div>
-								<select class="settings-select" id="settingsThinkingSelect" aria-label="思考等级" disabled>
-									<option>不可用</option>
-								</select>
-							</div>
+				<section class="settings-dialog-panel active" data-settings-content="general">
+					<header class="settings-dialog-heading"><h1 data-i18n="general">通用</h1><p data-i18n="settingsGeneralDescription">调整 Desktop 语言和 Agent 的默认交互方式。</p></header>
+					<div class="settings-dialog-card">
+						<label class="settings-dialog-row" for="settingsLanguageSelect">
+							<span><strong data-i18n="interfaceLanguage">语言</strong><small data-i18n="interfaceLanguageDescription">更改 Metis Desktop 和 Agent 的显示语言</small></span>
+							<select id="settingsLanguageSelect" translate="no">
+								<option value="auto" data-i18n="automatic">自动</option>
+							</select>
+						</label>
+						<div class="settings-dialog-row">
+							<span><strong data-i18n="onboardingSetting">Onboarding</strong><small data-i18n="onboardingSettingDescription">Reopen the welcome and setup spotlight shown on first launch.</small></span>
+							<button class="settings-secondary-button" id="settingsShowOnboarding" type="button" data-i18n="onboardingGetStarted">Get Started</button>
 						</div>
+						<label class="settings-dialog-row">
+							<span><strong data-i18n="autoCompact">自动压缩上下文</strong><small data-i18n="autoCompactDescription">接近上下文限制时自动整理当前会话</small></span>
+							<span class="settings-switch"><input id="settingsAutoCompactInput" type="checkbox" /><i aria-hidden="true"></i></span>
+						</label>
+						<label class="settings-dialog-row">
+							<span><strong data-i18n="settingsAutoRetry">自动重试</strong><small data-i18n="settingsAutoRetryDescription">暂时性模型或传输失败时自动重试。</small></span>
+							<span class="settings-switch"><input id="settingsAutoRetryInput" type="checkbox" /><i aria-hidden="true"></i></span>
+						</label>
+						<label class="settings-dialog-row" for="settingsSteeringModeSelect">
+							<span><strong data-i18n="steeringMode">Steering 消息</strong><small data-i18n="steeringDescription">Agent 忙碌时如何接收中途指令</small></span>
+							<select id="settingsSteeringModeSelect"><option value="one-at-a-time" data-i18n="oneAtATime">逐条处理</option><option value="all" data-i18n="all">一次处理全部</option></select>
+						</label>
+						<label class="settings-dialog-row" for="settingsFollowUpModeSelect">
+							<span><strong data-i18n="followUpMode">Follow-up 消息</strong><small data-i18n="followUpDescription">Agent 完成后如何处理排队消息</small></span>
+							<select id="settingsFollowUpModeSelect"><option value="one-at-a-time" data-i18n="oneAtATime">逐条处理</option><option value="all" data-i18n="all">一次处理全部</option></select>
+						</label>
 					</div>
+					<p class="settings-dialog-feedback" id="settingsGeneralFeedback" role="status" aria-live="polite"></p>
+				</section>
 
-					<div class="settings-group">
-						<h2>上下文</h2>
-						<div class="settings-card">
-							<div class="settings-row">
-								<div><strong>自动压缩（持续策略）</strong><span>上下文接近模型上限时自动生成摘要。它是持续生效的默认策略，不会立即压缩；立即执行请用“交互 → 手动压缩”。</span></div>
-								<label class="settings-switch">
-									<input id="settingsAutoCompactInput" type="checkbox" disabled />
-									<span aria-hidden="true"></span>
-								</label>
-							</div>
-						</div>
-					</div>
-
-					<div class="settings-group">
-						<h2>常规</h2>
-						<div class="settings-card">
-							<div class="settings-row">
-								<div><strong>界面语言</strong><span>统一设置 Desktop 动态状态与 Agent / TUI 语言；Desktop 状态立即生效，Agent / TUI 重载后生效。</span></div>
-								<select class="settings-select" id="settingsLanguageSelect">
-									<option value="auto" data-i18n="automatic">Automatic</option><option value="en">English</option><option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="ru">Русский</option><option value="it">Italiano</option>
-								</select>
-							</div>
-						</div>
+				<section class="settings-dialog-panel" data-settings-content="shortcuts" hidden>
+					<header class="settings-dialog-heading"><h1 data-i18n="desktopHotkeys">快捷键</h1><p data-i18n="settingsShortcutsDescription">常用 Desktop 操作。输入框聚焦时仍遵循原生文本快捷键。</p></header>
+					<div class="settings-dialog-card settings-shortcuts">
+						<div class="settings-dialog-row"><span><strong data-i18n="newTask">新建任务</strong><small data-i18n="settingsNewTaskDescription">在当前项目中创建新会话。</small></span><kbd>⌘ N</kbd></div>
+						<div class="settings-dialog-row"><span><strong data-i18n="send">发送消息</strong><small data-i18n="settingsSendDescription">提交当前输入内容。</small></span><kbd>Enter</kbd></div>
+						<div class="settings-dialog-row"><span><strong data-i18n="settingsLineBreak">换行</strong><small data-i18n="settingsLineBreakDescription">在消息中插入新行。</small></span><kbd>Shift Enter</kbd></div>
+						<div class="settings-dialog-row"><span><strong data-i18n="settingsCloseDialog">关闭弹窗</strong><small data-i18n="settingsCloseDialogDescription">返回当前任务。</small></span><kbd>Esc</kbd></div>
 					</div>
 				</section>
 
-				<section class="settings-panel" data-settings-content="behavior" hidden>
-					<header class="settings-page-heading">
-						<h1>交互</h1>
-						<p>控制 Agent 忙碌期间消息如何进入当前运行，以及上下文何时压缩。</p>
-					</header>
-
-					<p class="settings-sync-note" id="settingsBehaviorFeedback">连接 Server 后可修改交互设置。</p>
-
-					<div class="settings-group">
-						<h2>消息队列</h2>
-						<div class="settings-card">
-							<div class="settings-row">
-								<div><strong>Steering 模式</strong><span>仅处理 Agent 正在生成时发送的“立即指导”。逐条：每次交付一条并等待响应；全部：把已排队指导一次性交付。</span></div>
-								<select class="settings-select" id="settingsSteeringModeSelect" aria-label="Steering 模式" disabled>
-									<option value="one-at-a-time">逐条</option>
-									<option value="all">全部</option>
-								</select>
-							</div>
-							<div class="settings-row">
-								<div><strong>Follow-up 模式</strong><span>仅处理等待 Agent 本轮结束后再发送的消息。逐条：一问一答；全部：本轮结束后一次性交付全部排队消息。</span></div>
-								<select class="settings-select" id="settingsFollowUpModeSelect" aria-label="Follow-up 模式" disabled>
-									<option value="one-at-a-time">逐条</option>
-									<option value="all">全部</option>
-								</select>
-							</div>
+				<section class="settings-dialog-panel" data-settings-content="server" hidden>
+					<header class="settings-dialog-heading"><h1 data-i18n="serverConfiguration">Server</h1><p data-i18n="settingsServerDescription">管理 Desktop 与 Metis Server 的连接和当前工作区。</p></header>
+					<div class="settings-dialog-card">
+						<div class="settings-dialog-row">
+							<span><strong data-i18n="connectionStatus">连接状态</strong><small id="settingsServerAddress">http://127.0.0.1:4096</small></span>
+							<span class="settings-status" id="settingsServerStatus"><i></i><b data-i18n="disconnected">未连接</b></span>
 						</div>
+						<div class="settings-dialog-row"><span><strong data-i18n="serverConfiguration">Server 配置</strong><small data-i18n="serverConfigurationDescription">设置地址、用户名和密码</small></span><button class="settings-secondary-button" id="settingsOpenServerDialog" type="button" data-i18n="configure">配置…</button></div>
 					</div>
-
-					<div class="settings-group">
-						<h2>上下文维护</h2>
-						<div class="settings-card">
-							<div class="settings-form-row">
-								<div><strong>立即压缩（一次性操作）</strong><span>马上为当前会话生成一次上下文摘要，不会改变上方“自动压缩”开关。说明文字只影响这一次摘要。</span></div>
-								<div class="settings-inline-form"><input id="settingsCompactInstructions" placeholder="压缩说明（可选）" /><button class="settings-action" id="settingsCompactButton" type="button">立即压缩</button></div>
-							</div>
-						</div>
+					<h2 class="settings-dialog-section-title" data-i18n="workspace">工作区</h2>
+					<div class="settings-dialog-card">
+						<div class="settings-dialog-row"><span><strong id="settingsWorkspaceName" data-i18n="currentWorkspace">当前工作区</strong><small id="settingsWorkspacePath">—</small></span><button class="settings-secondary-button" id="settingsChooseWorkspaceButton" type="button" data-i18n="change">更改…</button></div>
 					</div>
 				</section>
 
-				<section class="settings-panel" data-settings-content="session" hidden>
-					<header class="settings-page-heading">
-						<h1>会话</h1>
-						<p>管理当前会话、历史会话、分支和导入导出。</p>
-					</header>
-					<p class="settings-sync-note" id="settingsSessionFeedback">连接 Server 后载入会话信息。</p>
-
-					<div class="settings-group">
-						<h2>当前会话</h2>
-						<div class="settings-card">
-							<div class="settings-form-row">
-								<div><strong>会话名称</strong><span id="settingsSessionSummary">正在载入统计…</span></div>
-								<div class="settings-inline-form"><input id="settingsSessionNameInput" placeholder="会话名称" /><button class="settings-action" id="settingsSaveSessionName" type="button">保存</button></div>
-							</div>
-							<div class="settings-row">
-								<div><strong>复制最后回复</strong><span>只复制最近一条已完成的 Agent 文本消息；不会复制思考过程、工具输出或仍在生成的内容。</span></div>
-								<button class="settings-action" id="settingsCopyReply" type="button">复制</button>
-							</div>
-							<div class="settings-row">
-								<div><strong>克隆会话</strong><span>复制当前分支截至当前位置的完整历史，创建新会话；原会话保持不变。</span></div>
-								<button class="settings-action" id="settingsCloneSession" type="button">克隆</button>
-							</div>
-							<div class="settings-row danger-row">
-								<div><strong>新建会话</strong><span>创建完全空白的会话。当前会话不会删除，仍可从“恢复其他会话”返回。</span></div>
-								<button class="settings-action" id="settingsNewSession" type="button">新建</button>
-							</div>
-						</div>
+				<section class="settings-dialog-panel" data-settings-content="model" hidden>
+					<header class="settings-dialog-heading"><h1 data-i18n="model">模型</h1><p data-i18n="settingsModelDescription">选择当前会话使用的模型和思考等级。</p></header>
+					<div class="settings-dialog-card">
+						<label class="settings-dialog-row" for="settingsModelSelect"><span><strong data-i18n="currentModel">当前模型</strong><small data-i18n="currentModelDescription">切换后立即应用到当前会话</small></span><select id="settingsModelSelect" disabled><option data-i18n="loadAfterConnect">连接后载入</option></select></label>
+						<label class="settings-dialog-row" for="settingsThinkingSelect"><span><strong data-i18n="thinkingLevel">思考等级</strong><small data-i18n="thinkingDescription">可用等级由当前模型决定</small></span><select id="settingsThinkingSelect" disabled><option data-i18n="loadAfterConnect">连接后载入</option></select></label>
 					</div>
-
-					<div class="settings-group">
-						<h2>历史与分支</h2>
-						<div class="settings-card">
-							<div class="settings-form-row">
-								<div><strong>恢复其他会话</strong><span>切换到另一个已保存的会话文件；列表排除当前会话，不创建副本。</span></div>
-								<div class="settings-inline-form"><select id="settingsResumeSelect"><option>正在载入…</option></select><button class="settings-action" id="settingsResumeButton" type="button">恢复</button></div>
-							</div>
-							<div class="settings-form-row">
-								<div><strong>从消息分叉</strong><span>复制所选消息之前的历史并创建新会话，再把该消息放回输入框供修改；原会话保持不变。</span></div>
-								<div class="settings-inline-form"><select id="settingsForkSelect"><option>正在载入…</option></select><button class="settings-action" id="settingsForkButton" type="button">分叉</button></div>
-							</div>
-							<div class="settings-form-row">
-								<div><strong>会话树</strong><span>在同一会话文件内移动到其他历史节点，不创建新会话；列表排除当前节点。</span></div>
-								<div class="settings-inline-form"><select id="settingsTreeSelect"><option>正在载入…</option></select><button class="settings-action" id="settingsTreeButton" type="button">切换</button></div>
-							</div>
-						</div>
+					<h2 class="settings-dialog-section-title" data-i18n="settingsNewSessionDefaults">新会话默认值</h2>
+					<div class="settings-dialog-card">
+						<label class="settings-dialog-row" for="settingsDefaultModelSelect"><span><strong data-i18n="settingsDefaultModel">默认模型</strong><small data-i18n="settingsDefaultModelDescription">只作用于之后创建的新会话。</small></span><select id="settingsDefaultModelSelect" disabled><option data-i18n="loadAfterConnect">连接后载入</option></select></label>
+						<label class="settings-dialog-row" for="settingsDefaultThinkingSelect"><span><strong data-i18n="settingsDefaultThinking">默认思考等级</strong><small data-i18n="settingsDefaultThinkingDescription">只作用于之后创建的新会话。</small></span><select id="settingsDefaultThinkingSelect" disabled><option data-i18n="loadAfterConnect">连接后载入</option></select></label>
 					</div>
-
-					<div class="settings-group">
-						<h2>传输与分享</h2>
-						<div class="settings-card">
-							<div class="settings-row">
-								<div><strong>导出会话</strong><span>HTML 适合阅读、不能恢复；JSONL 保留完整会话结构，可通过“导入会话”恢复。</span></div>
-								<div class="settings-button-group"><button class="settings-action" id="settingsExportHtml" type="button">HTML</button><button class="settings-action" id="settingsExportJsonl" type="button">JSONL</button></div>
-							</div>
-							<div class="settings-row">
-								<div><strong>导入会话</strong><span>复制 JSONL 为新的本地会话并立即切换。当前会话不会被删除，HTML 文件不能导入。</span></div>
-								<button class="settings-action" id="settingsImportSession" type="button">选择文件…</button>
-							</div>
-							<div class="settings-row">
-								<div><strong>分享会话</strong><span>把会话 HTML 上传为私密 GitHub Gist。需要已安装并登录 <code>gh</code>；“私密”仅表示不公开列出，持有链接者仍可访问。</span></div>
-								<button class="settings-action" id="settingsShareSession" type="button">创建链接</button>
-							</div>
-						</div>
-					</div>
+					<p class="settings-dialog-feedback" id="settingsModelFeedback" role="status" aria-live="polite"></p>
 				</section>
 
-				<section class="settings-panel" data-settings-content="security" hidden>
-					<header class="settings-page-heading">
-						<h1>账户与安全</h1>
-						<p>管理项目代码资源是否允许载入，以及 Agent 调用模型时使用的 Provider 凭据；二者互不替代。</p>
-					</header>
-					<p class="settings-sync-note" id="settingsSecurityFeedback">连接 Server 后载入账户状态。</p>
-
-					<div class="settings-group">
-						<h2>项目权限</h2>
-						<div class="settings-card">
-							<div class="settings-row">
-								<div><strong>当前项目可信状态</strong><span>只控制项目级扩展、Skills、Prompts、主题等代码资源是否载入；不控制 Server 网络连接。保存后需重启 Agent 才完全生效。</span></div>
-								<select class="settings-select" id="settingsTrustSelect"><option value="clear">跟随默认设置</option><option value="trusted">可信</option><option value="untrusted">不可信</option></select>
-							</div>
-						</div>
+				<section class="settings-dialog-panel" data-settings-content="agent" hidden>
+					<header class="settings-dialog-heading"><h1 data-i18n="workflowSettingsTitle">工作流</h1><p data-i18n="workflowSettingsDescription">控制当前会话的工具边界，并检查已加载指令来源。</p></header>
+					<div class="settings-dialog-card">
+						<label class="settings-dialog-row" for="settingsCollaborationModeSelect"><span><strong data-i18n="workflowModeSetting">协作模式</strong><small data-i18n="workflowModeSettingDescription">Plan 只显示并调度只读工具；不是 OS 沙箱</small></span><select id="settingsCollaborationModeSelect"><option value="build" data-i18n="workflowBuildMode">构建模式</option><option value="plan" data-i18n="workflowPlanMode">规划模式</option></select></label>
 					</div>
-
-					<div class="settings-group">
-						<h2>Provider 登录</h2>
-						<div class="settings-card">
-							<div class="settings-form-row">
-								<div><strong>OAuth</strong><span>使用 Provider 订阅账户授权。无需填写 API Key；登录流程会打开浏览器或显示设备验证码。</span></div>
-								<div class="settings-inline-form"><select id="settingsOauthProvider"><option>正在载入…</option></select><button class="settings-action primary" id="settingsOauthLoginButton" type="button">OAuth 登录</button></div>
+					<h2 class="settings-dialog-section-title" data-i18n="memory">记忆</h2>
+					<div class="settings-dialog-card settings-memory-card">
+						<label class="settings-dialog-row"><span><strong data-i18n="memory">Memory</strong><small data-i18n="settingsMemoryDescription">Optional long-term advisory memory. It never changes Build or Plan permissions.</small></span><span class="settings-switch"><input id="settingsMemoryInput" type="checkbox" /><i aria-hidden="true"></i></span></label>
+						<section class="memory-status-panel" id="settingsMemoryDashboard" data-tone="disabled" aria-labelledby="settingsMemoryStateLabel" aria-live="polite">
+							<div class="memory-status-header">
+								<div class="memory-status-copy"><span class="memory-state-badge"><i aria-hidden="true"></i><strong id="settingsMemoryStateLabel" data-i18n="settingsMemoryStateOff">Memory off</strong></span><p id="settingsMemorySummary" data-i18n="settingsMemorySummaryOff">Enable Memory to collect reusable knowledge from completed work.</p></div>
+								<div class="memory-run-control"><button class="settings-secondary-button" id="settingsMemoryRun" type="button" data-i18n="settingsRunNow">Run now</button><small id="settingsMemoryRunHint" data-i18n="settingsMemoryRunEnableHint">Enable Memory to run extraction.</small></div>
 							</div>
-							<div class="settings-form-row">
-								<div><strong>API Key</strong><span>为内置或已注册 Provider 保存独立 API Key，不修改 Provider Base URL。</span></div>
-								<div class="settings-stack-form settings-credential-form"><select id="settingsApiKeyProvider"><option>正在载入…</option></select><input id="settingsApiKeyInput" type="password" placeholder="API Key" autocomplete="off" /><button class="settings-action primary" id="settingsApiKeySaveButton" type="button">保存 API Key</button></div>
-							</div>
-							<div class="settings-custom-provider-row">
-								<div class="settings-custom-provider-heading">
-									<div><strong data-i18n="customProviderTitle">自定义 Provider</strong><span data-i18n="customBaseUrlDescription">添加并管理多个 OpenAI-compatible Provider。模型可自动获取、从列表选择或手动输入。</span></div>
-									<div class="settings-custom-provider-picker">
-										<select id="settingsCustomProviderSelect" aria-label="选择自定义 Provider" data-i18n-aria-label="selectCustomProvider"><option value="" data-i18n="newCustomProvider">添加新 Provider…</option></select>
-										<button class="settings-action" id="settingsCustomProviderNewButton" type="button" data-i18n="newCustomProviderButton">新建</button>
-										<button class="settings-action danger" id="settingsCustomProviderDeleteButton" type="button" data-i18n="deleteCustomProviderButton" disabled>删除</button>
-									</div>
+							<div class="memory-metrics" aria-label="Memory details" data-i18n-aria-label="settingsMemoryDetails">
+								<div class="memory-metric">
+									<div class="memory-metric-header"><span data-i18n="settingsMemoryStoredRecords">Stored records</span><span class="memory-chart-badge" id="settingsMemoryRecordBadge">—</span></div>
+									<strong id="settingsMemoryRecordCount">0</strong>
+									<div class="memory-chart-track" aria-hidden="true"><span class="memory-chart-segment memory-chart-segment-global" id="settingsMemoryGlobalBar" style="width: 0%"></span><span class="memory-chart-segment memory-chart-segment-project" id="settingsMemoryProjectBar" style="width: 0%"></span></div>
+									<small id="settingsMemoryRecordDetail">0 global · 0 project</small>
 								</div>
-								<div class="settings-custom-provider-form">
-									<section class="settings-custom-provider-section" aria-labelledby="customProviderConnectionTitle">
-										<div class="settings-custom-section-heading"><strong id="customProviderConnectionTitle" data-i18n="connectionConfiguration">连接配置</strong><span data-i18n="connectionConfigurationDescription">填写 Provider 地址与访问凭据</span></div>
-										<label><span data-i18n="providerName">Provider 名称</span><input id="settingsCustomProviderName" type="text" placeholder="例如：Local Gateway" data-i18n-placeholder="localGatewayExample" /></label>
-										<label><span data-i18n="customProviderBaseUrl">Base URL</span><input id="settingsCustomBaseUrl" type="url" placeholder="https://api.example.com/v1" /></label>
-										<label><span>API Key</span><input id="settingsCustomApiKey" type="password" placeholder="编辑时留空则保留原值" data-i18n-placeholder="customApiKeyEditPlaceholder" autocomplete="off" /></label>
-									</section>
-									<section class="settings-custom-provider-section settings-custom-model-section" aria-labelledby="customProviderModelsTitle">
-										<div class="settings-custom-section-heading settings-custom-model-header">
-											<div><strong id="customProviderModelsTitle" data-i18n="customModelList">模型列表（可多选）</strong><span data-i18n="modelDiscoveryDescription">先自动获取，再按需补充模型 ID</span></div>
-											<button class="settings-action" id="settingsCustomModelsRefreshButton" type="button" data-i18n="discoverModels">自动获取</button>
-										</div>
-										<select id="settingsCustomModelSelect" class="settings-custom-model-select" multiple size="6" aria-label="模型列表" data-i18n-aria-label="customModelList"></select>
-										<label><span data-i18n="additionalModelIds">补充模型 ID</span><input id="settingsCustomModelInput" type="text" placeholder="多个模型用逗号分隔" data-i18n-placeholder="manualModelIdsPlaceholder" /></label>
-									</section>
-									<div class="settings-custom-provider-footer">
-										<label class="settings-checkbox" for="settingsCustomProviderReasoning">
-											<input id="settingsCustomProviderReasoning" type="checkbox" checked />
-											<span data-i18n="enableCustomProviderReasoning">为此 Provider 的模型启用思考等级</span>
-										</label>
-										<button class="settings-action primary" id="settingsCustomProviderSaveButton" type="button" data-i18n="saveCustomProvider">保存 Provider</button>
-									</div>
+								<div class="memory-metric">
+									<div class="memory-metric-header"><span data-i18n="settingsMemoryPendingCheckpoints">Pending checkpoints</span><span class="memory-chart-badge" id="settingsMemoryPendingBadge">—</span></div>
+									<strong id="settingsMemoryPendingCount">0</strong>
+									<div class="memory-chart-track" aria-hidden="true"><span class="memory-chart-segment memory-chart-segment-pending" id="settingsMemoryPendingBar" style="width: 0%"></span></div>
+									<small id="settingsMemoryPendingDetail" data-i18n="settingsMemoryPendingNone">Nothing waiting</small>
+								</div>
+								<div class="memory-metric">
+									<div class="memory-metric-header"><span data-i18n="settingsMemoryLastAdded">Added last run</span><span class="memory-chart-badge" id="settingsMemoryLastRunRate">—</span></div>
+									<strong id="settingsMemoryLastRunValue">—</strong>
+									<div class="memory-chart-track" aria-hidden="true"><span class="memory-chart-segment memory-chart-segment-added" id="settingsMemoryLastRunBar" style="width: 0%"></span><span class="memory-chart-segment memory-chart-segment-skipped" id="settingsMemorySkippedBar" style="width: 0%"></span></div>
+									<small id="settingsMemoryLastRunDetail" data-i18n="settingsMemoryLastRunNever">No run completed yet</small>
+								</div>
+								<div class="memory-metric">
+									<div class="memory-metric-header"><span data-i18n="settingsMemoryExtractionMethod">Extraction method</span><span class="memory-chart-badge" id="settingsMemoryMethodBadge"><i class="memory-engine-indicator" id="settingsMemoryMethodIndicator" aria-hidden="true"></i><span id="settingsMemoryMethodBadgeText">—</span></span></div>
+									<strong id="settingsMemoryMethod" data-i18n="settingsMemoryMethodNone">Not run yet</strong>
+									<div class="memory-chart-track" aria-hidden="true"><span class="memory-chart-segment memory-chart-segment-method" id="settingsMemoryMethodBar" style="width: 0%"></span></div>
+									<small data-i18n="settingsMemoryMethodDescription">Model extraction falls back safely when unavailable.</small>
 								</div>
 							</div>
-							<div class="settings-form-row">
-								<div><strong>移除已保存凭据</strong><span>只删除 Metis 本地凭据；环境变量、云端登录状态和 models.json 不会改变，因此 Provider 仍可能继续可用。</span></div>
-								<div class="settings-inline-form"><select id="settingsLogoutProvider"><option>没有已保存凭据</option></select><button class="settings-action" id="settingsLogoutButton" type="button">退出</button></div>
+							<div class="memory-timeline">
+								<div><span data-i18n="settingsMemoryNextAutomaticRun">Next automatic run</span><strong id="settingsMemoryNextRun">—</strong></div>
+								<div><span data-i18n="settingsMemoryLastCompleted">Last completed</span><strong id="settingsMemoryLastCompleted">—</strong></div>
 							</div>
-						</div>
+							<p class="memory-status-error" id="settingsMemoryError" hidden></p>
+						</section>
+						<div class="settings-dialog-row"><span><strong data-i18n="settingsMemoryRecords">Records</strong><small data-i18n="settingsMemoryRecordsDescription">Search or remove one advisory memory.</small></span><span class="settings-inline-actions"><button class="settings-secondary-button" id="settingsMemorySearch" type="button" data-i18n="settingsSearch">Search</button><button class="settings-secondary-button" id="settingsMemoryReset" type="button" data-i18n="settingsReset">Reset…</button></span></div>
 					</div>
+					<h2 class="settings-dialog-section-title" data-i18n="instructionSourcesTitle">指令来源</h2>
+					<div class="settings-dialog-card instruction-sources" id="instructionSources" aria-live="polite"></div>
+					<p class="settings-dialog-feedback" id="settingsAgentFeedback" role="status" aria-live="polite"></p>
 				</section>
 
-				<section class="settings-panel" data-settings-content="connection" hidden>
-					<header class="settings-page-heading">
-						<h1 data-i18n="connection">连接</h1>
-						<p>管理 Desktop 与 Metis Server 的连接；Agent 设置通过此连接同步。</p>
-					</header>
-
-					<div class="settings-callout">
-						<strong>通常不需要修改</strong>
-						<span>Desktop 默认启动并连接本地 <code>http://127.0.0.1:4096</code>。仅在连接远程 Server 或使用自定义端口时更改。</span>
+				<section class="settings-dialog-panel" data-settings-content="security" hidden>
+					<header class="settings-dialog-heading"><h1 data-i18n="accountSecurity">账户与安全</h1><p data-i18n="securityPageDescription">管理项目资源权限和 Provider 凭据。</p></header>
+					<div class="settings-dialog-card">
+						<label class="settings-dialog-row" for="settingsTrustSelect"><span><strong data-i18n="projectTrust">当前项目可信状态</strong><small data-i18n="projectTrustDescription">控制项目资源是否加载；不控制 Server 网络。</small></span><select id="settingsTrustSelect" disabled><option value="clear" data-i18n="followDefault">跟随默认设置</option><option value="trusted" data-i18n="trusted">可信</option><option value="untrusted" data-i18n="untrusted">不可信</option></select></label>
 					</div>
-
-					<div class="settings-group">
-						<h2>Metis Server</h2>
-						<div class="settings-card">
-							<div class="settings-row">
-								<div><strong>连接状态</strong><span id="settingsServerAddress">http://127.0.0.1:4096</span></div>
-								<span class="settings-status" id="settingsServerStatus"><i></i>未连接</span>
-							</div>
-							<div class="settings-row">
-								<div><strong>Server 配置</strong><span>设置地址与认证信息，并测试连接</span></div>
-								<button class="settings-action" id="settingsOpenServerDialog" type="button">配置…</button>
-							</div>
-						</div>
+					<h2 class="settings-dialog-section-title" data-i18n="providerLogin">Provider 登录</h2>
+					<div class="settings-dialog-card">
+						<div class="settings-dialog-row settings-stacked-row"><span><strong>OAuth</strong><small data-i18n="oauthDescription">使用订阅账户授权，无需 API Key。</small></span><span class="settings-inline-actions settings-provider-actions"><select id="settingsOauthProvider" disabled><option data-i18n="loadAfterConnect">连接后载入</option></select><button class="settings-secondary-button" id="settingsOauthLoginButton" type="button" data-i18n="oauthLogin" disabled>OAuth 登录</button></span></div>
+						<div class="settings-dialog-row settings-stacked-row"><span><strong data-i18n="apiKey">API Key</strong><small data-i18n="apiKeyDescription">为 Provider 保存独立 API Key。</small></span><span class="settings-inline-actions settings-provider-actions settings-api-key-actions"><select id="settingsApiKeyProvider" disabled><option data-i18n="loadAfterConnect">连接后载入</option></select><input id="settingsApiKeyInput" type="password" autocomplete="off" data-i18n-placeholder="apiKey" placeholder="API Key" /><button class="settings-secondary-button" id="settingsApiKeySaveButton" type="button" data-i18n="save">保存</button></span></div>
+						<div class="settings-dialog-row settings-stacked-row"><span><strong data-i18n="removeCredentials">移除已保存凭据</strong><small data-i18n="removeCredentialsDescription">只删除本地 Metis 凭据。</small></span><span class="settings-inline-actions settings-provider-actions"><select id="settingsLogoutProvider" disabled><option data-i18n="loadAfterConnect">连接后载入</option></select><button class="settings-secondary-button" id="settingsLogoutButton" type="button" data-i18n="logout">退出</button></span></div>
 					</div>
-
-					<div class="settings-group">
-						<h2>工作区</h2>
-						<div class="settings-card">
-							<div class="settings-row">
-								<div><strong id="settingsWorkspaceName">当前工作区</strong><span id="settingsWorkspacePath">正在读取…</span></div>
-								<button class="settings-action" id="settingsChooseWorkspaceButton" type="button">更改</button>
-							</div>
-						</div>
+					<h2 class="settings-dialog-section-title" data-i18n="customProviderTitle">自定义 Provider</h2>
+					<div class="settings-dialog-card">
+						<label class="settings-dialog-row" for="settingsCustomProviderSelect"><span><strong data-i18n="customProviderTitle">自定义 Provider</strong><small data-i18n="customBaseUrlDescription">添加 OpenAI-compatible Provider。</small></span><select id="settingsCustomProviderSelect"><option value="" data-i18n="newCustomProvider">添加新 Provider…</option></select></label>
+						<label class="settings-dialog-row" for="settingsCustomProviderName"><span><strong data-i18n="providerName">Provider 名称</strong><small data-i18n="connectionConfigurationDescription">填写连接与凭据。</small></span><input id="settingsCustomProviderName" type="text" /></label>
+						<label class="settings-dialog-row" for="settingsCustomBaseUrl"><span><strong data-i18n="customProviderBaseUrl">Base URL</strong><small data-i18n="customProviderEndpoint">OpenAI-compatible endpoint</small></span><input id="settingsCustomBaseUrl" type="url" placeholder="https://api.example.com/v1" /></label>
+						<label class="settings-dialog-row" for="settingsCustomApiKey"><span><strong data-i18n="apiKey">API Key</strong><small data-i18n="customApiKeyEditPlaceholder">编辑时留空则保留。</small></span><input id="settingsCustomApiKey" type="password" autocomplete="off" /></label>
+						<label class="settings-dialog-row" for="settingsCustomModelIds"><span><strong data-i18n="additionalModelIds">模型 ID</strong><small data-i18n="manualModelIdsPlaceholder">多个模型用逗号分隔。</small></span><input id="settingsCustomModelIds" type="text" /></label>
+						<label class="settings-dialog-row"><span><strong data-i18n="thinkingLevel">思考等级</strong><small data-i18n="enableCustomProviderReasoning">为此 Provider 的模型启用思考等级。</small></span><span class="settings-switch"><input id="settingsCustomProviderReasoning" type="checkbox" checked /><i aria-hidden="true"></i></span></label>
+						<div class="settings-dialog-row"><span><strong data-i18n="saveCustomProvider">保存 Provider</strong><small data-i18n="customProviderDeleteFailed">更改会重新载入模型。</small></span><span class="settings-inline-actions"><button class="settings-secondary-button" id="settingsCustomProviderSave" type="button" data-i18n="save">保存</button><button class="settings-secondary-button" id="settingsCustomProviderDelete" type="button" data-i18n="deleteCustomProviderButton">删除</button></span></div>
 					</div>
+					<p class="settings-dialog-feedback" id="settingsSecurityFeedback" role="status" aria-live="polite"></p>
 				</section>
 
-				<section class="settings-panel" data-settings-content="about" hidden>
-					<header class="settings-page-heading">
-						<h1>关于</h1>
-						<p>Metis Desktop 应用信息。</p>
-					</header>
-
-					<div class="settings-group">
-						<h2>应用</h2>
-						<div class="settings-card">
-							<div class="settings-row">
-								<div><strong>Metis Desktop</strong><span>面向 Metis Agent 的原生桌面工作区</span></div>
-								<span class="settings-value-text" id="settingsAppVersion">—</span>
-							</div>
-							<div class="settings-row">
-								<div><strong>运行平台</strong><span>当前 Electron 运行环境</span></div>
-								<span class="settings-value-text" id="settingsPlatform">—</span>
-							</div>
-						</div>
+				<section class="settings-dialog-panel" data-settings-content="session" hidden>
+					<header class="settings-dialog-heading"><h1 data-i18n="session">会话与数据</h1><p data-i18n="sessionPageDescription">管理当前会话、历史和导入导出。</p></header>
+					<div class="settings-dialog-card">
+						<div class="settings-dialog-row"><span><strong data-i18n="sessionName">会话名称</strong><small data-i18n="currentSession">当前会话</small></span><span class="settings-inline-actions"><input id="settingsSessionNameInput" type="text" autocomplete="off" data-i18n-placeholder="sessionName" placeholder="会话名称" /><button class="settings-secondary-button" id="settingsSaveSessionName" type="button" data-i18n="save">保存</button></span></div>
+						<div class="settings-dialog-row"><span><strong data-i18n="compactNow">立即压缩</strong><small data-i18n="compactNowDescription">整理当前会话，不改变自动压缩。</small></span><button class="settings-secondary-button" id="settingsCompactButton" type="button" data-i18n="compactNow">立即压缩</button></div>
+						<div class="settings-dialog-row"><span><strong data-i18n="newSession">新建会话</strong><small data-i18n="newSessionDescription">保留当前会话，并开始空白任务。</small></span><button class="settings-secondary-button" id="settingsNewSessionButton" type="button" data-i18n="create">新建</button></div>
 					</div>
-
-					<div class="settings-group">
-						<h2>帮助与维护</h2>
-						<div class="settings-card">
-							<div class="settings-row"><div><strong>新手引导</strong><span>重新打开首次进入的欢迎与初始化高亮指引。</span></div><button class="settings-action" id="settingsShowOnboarding" type="button">查看</button></div>
-							<div class="settings-row"><div><strong>更新记录</strong><span>只读查看当前安装版本携带的 Changelog，不会联网检查或安装更新。</span></div><button class="settings-action" id="settingsShowChangelog" type="button">查看</button></div>
-							<div class="settings-row"><div><strong>Desktop 快捷键</strong><span>查看此 Desktop 界面的快捷键；终端 TUI 的自定义快捷键请在 TUI 中查看。</span></div><button class="settings-action" id="settingsShowHotkeys" type="button">查看</button></div>
-							<div class="settings-row"><div><strong>重载 Agent 资源</strong><span>重新载入扩展、Skills、Prompts、主题和模型注册表；不会重启 Desktop，也不会重载 Desktop 快捷键。</span></div><button class="settings-action" id="settingsReloadResources" type="button">重载</button></div>
-							<div class="settings-row danger-row"><div><strong>退出 Metis</strong><span>关闭 Desktop 和自动启动的本地 Server</span></div><button class="settings-action danger" id="settingsQuitApp" type="button">退出</button></div>
-						</div>
+					<h2 class="settings-dialog-section-title" data-i18n="transferShare">传输与分享</h2>
+					<div class="settings-dialog-card">
+						<div class="settings-dialog-row"><span><strong data-i18n="exportSession">导出会话</strong><small data-i18n="exportDescription">HTML 用于阅读；JSONL 可恢复。</small></span><span class="settings-inline-actions"><button class="settings-secondary-button" id="settingsExportHtml" type="button">HTML</button><button class="settings-secondary-button" id="settingsExportJsonl" type="button">JSONL</button></span></div>
+						<div class="settings-dialog-row"><span><strong data-i18n="importSession">导入会话</strong><small data-i18n="importDescription">从 JSONL 创建并切换会话。</small></span><button class="settings-secondary-button" id="settingsImportSession" type="button" data-i18n="chooseFile">选择文件…</button></div>
+						<div class="settings-dialog-row"><span><strong data-i18n="shareSession">分享会话</strong><small data-i18n="shareDescriptionStart">创建私密 GitHub Gist 链接。</small></span><button class="settings-secondary-button" id="settingsShareSession" type="button" data-i18n="createLink">创建链接</button></div>
 					</div>
+					<p class="settings-dialog-feedback" id="settingsSessionFeedback" role="status" aria-live="polite"></p>
 				</section>
-			</div>
-		</main>
-	</section>
 
-	<nav class="window-nav no-drag" aria-label="窗口导航">
+				<section class="settings-dialog-panel" data-settings-content="about" hidden>
+					<header class="settings-dialog-heading"><h1 data-i18n="about">关于</h1><p data-i18n="aboutDescription">应用信息和维护操作。</p></header>
+					<div class="settings-dialog-card">
+						<div class="settings-dialog-row"><span><strong data-i18n="runtimePlatform">运行平台</strong><small data-i18n="electronEnvironment">当前 Electron 运行环境</small></span><b class="settings-value" id="settingsPlatform">—</b></div>
+
+						<div class="settings-dialog-row"><span><strong data-i18n="reloadAgentResources">重载 Agent 资源</strong><small data-i18n="reloadAgentResourcesDescription">重新载入扩展、Skills、主题和模型</small></span><button class="settings-secondary-button" id="settingsReloadResources" type="button" data-i18n="reload">重载</button></div>
+					</div>
+					<p class="settings-dialog-feedback" id="settingsAboutFeedback" role="status" aria-live="polite"></p>
+				</section>
+			</main>
+		</div>
+	</dialog>
+
+	<nav class="window-nav no-drag hidden" aria-label="窗口导航">
 		<button class="icon-button compact" id="sidebarToggle" aria-label="收起侧栏"><svg><use href="#i-panel"/></svg></button>
 		<button class="icon-button compact" id="historyBack" aria-label="后退" disabled><svg><use href="#i-back"/></svg></button>
 		<button class="icon-button compact" id="historyForward" aria-label="前进" disabled><svg><use href="#i-forward"/></svg></button>
 		<button class="icon-button compact collapsed-new-chat" id="collapsedNewChat" aria-label="新建任务"><svg><use href="#i-compose"/></svg></button>
 	</nav>
+
+	<div class="project-customize-popover" id="projectCustomizePopover" role="dialog" aria-modal="false" aria-labelledby="projectCustomizeTitle" popover="manual">
+		<form id="projectCustomizeForm">
+			<div class="project-customize-header">
+				<div class="project-customize-heading"><strong id="projectCustomizeTitle" data-i18n="projectAppearance">项目外观</strong></div>
+			</div>
+			<label class="project-customize-row">
+				<span data-i18n="projectNameShort">名称</span>
+				<input id="projectDisplayNameInput" type="text" maxlength="80" autocomplete="off" />
+			</label>
+			<label class="project-customize-row project-color-row">
+				<span data-i18n="projectColorShort">颜色</span>
+				<div class="project-color-slider">
+					<input id="projectColorInput" type="range" min="0" max="360" step="1" value="270" data-i18n-aria-label="chooseProjectColor" aria-label="选择自定义项目颜色" />
+				</div>
+			</label>
+		</form>
+	</div>
 
 	<dialog class="extension-ui-dialog" id="extensionUiDialog">
 		<form id="extensionUiForm">
@@ -632,7 +768,7 @@
 			<label>Server 地址<input id="serverUrlInput" value="http://127.0.0.1:4096" /></label>
 			<div class="dialog-grid"><label>用户名<input id="serverUsernameInput" value="metis" /></label><label>密码<input id="serverPasswordInput" type="password" placeholder="可选" /></label></div>
 			<p class="dialog-hint">本地回环地址可不设密码；连接远程地址时 Server 会强制认证。</p>
-			<div class="dialog-actions"><button value="cancel" class="secondary-button">取消</button><button type="button" class="primary-button" id="connectServerButton" data-i18n="connect">连接</button></div>
+			<div class="dialog-actions"><button value="cancel" class="secondary-button" data-i18n="cancel">取消</button><button type="button" class="primary-button" id="connectServerButton" data-i18n="connect">连接</button></div>
 		</form>
 	</dialog>
 
@@ -662,6 +798,11 @@
 	<script src="model-selection.js"></script>
 	<script src="onboarding.js"></script>
 	<script src="attachments.js"></script>
+	<script src="skill-composer.js"></script>
+	<script src="work-stats.js"></script>
+	<script src="conversation-token-comet.js"></script>
+	<script src="memory-state.js"></script>
 	<script src="app.js"></script>
+	<div class="fullscreen-onboarding" id="onboardingOverlay" hidden></div>
 </body>
 </html>

@@ -365,10 +365,10 @@ Content`,
 			expect(agentsFiles).toEqual([]);
 		});
 
-		it("should discover SYSTEM.md from cwd/.metis", async () => {
+		it("should discover BASE_INSTRUCTIONS.md from cwd/.metis", async () => {
 			const metisDir = join(cwd, ".metis");
 			mkdirSync(metisDir, { recursive: true });
-			writeFileSync(join(metisDir, "SYSTEM.md"), "You are a helpful assistant.");
+			writeFileSync(join(metisDir, "BASE_INSTRUCTIONS.md"), "You are a helpful assistant.");
 
 			const loader = new DefaultResourceLoader({ cwd, agentDir });
 			await loader.reload();
@@ -386,8 +386,8 @@ Content`,
 			mkdirSync(skillDir, { recursive: true });
 			mkdirSync(promptsDir, { recursive: true });
 			mkdirSync(themesDir, { recursive: true });
-			writeFileSync(join(metisDir, "SYSTEM.md"), "Project system prompt.");
-			writeFileSync(join(agentDir, "SYSTEM.md"), "Global system prompt.");
+			writeFileSync(join(metisDir, "BASE_INSTRUCTIONS.md"), "Project system prompt.");
+			writeFileSync(join(agentDir, "BASE_INSTRUCTIONS.md"), "Global system prompt.");
 			writeFileSync(join(agentDir, "AGENTS.md"), "Global instructions");
 			writeFileSync(join(cwd, "AGENTS.md"), "Project instructions");
 			writeFileSync(join(extensionsDir, "project.ts"), `throw new Error("should not load");`);
@@ -414,7 +414,7 @@ Project skill content`,
 			expect(loader.getAgentsFiles().agentsFiles.some((file) => file.path === join(agentDir, "AGENTS.md"))).toBe(
 				true,
 			);
-			expect(loader.getAgentsFiles().agentsFiles.some((file) => file.path === join(cwd, "AGENTS.md"))).toBe(true);
+			expect(loader.getAgentsFiles().agentsFiles.some((file) => file.path === join(cwd, "AGENTS.md"))).toBe(false);
 			expect(loader.getExtensions().extensions).toHaveLength(0);
 			expect(loader.getExtensions().errors).toEqual([]);
 			expect(loader.getSkills().skills.some((skill) => skill.name === "project-skill")).toBe(false);
@@ -422,10 +422,10 @@ Project skill content`,
 			expect(loader.getThemes().themes.some((theme) => theme.name === "project-theme")).toBe(false);
 		});
 
-		it("should discover APPEND_SYSTEM.md", async () => {
+		it("should discover INSTRUCTIONS.md", async () => {
 			const metisDir = join(cwd, ".metis");
 			mkdirSync(metisDir, { recursive: true });
-			writeFileSync(join(metisDir, "APPEND_SYSTEM.md"), "Additional instructions.");
+			writeFileSync(join(metisDir, "INSTRUCTIONS.md"), "Additional instructions.");
 
 			const loader = new DefaultResourceLoader({ cwd, agentDir });
 			await loader.reload();

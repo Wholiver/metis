@@ -15,19 +15,15 @@ const subagentSchema = Type.Object({
 });
 
 export const SUBAGENT_COORDINATION_GUIDANCE = [
-	"Spawn a background subagent to execute a task in parallel.",
-	"When you already intend to launch two or more subagents at the same planning point, issue all of those subagent tool calls consecutively as one uninterrupted batch.",
-	"Do not place reasoning text, status text, or any other tool call between consecutive planned subagent calls.",
-	"Do not emit a user-facing launch count or waiting notice after the calls; the application UI already shows every running subagent.",
-	"As soon as any subagent has started, every currently running subagent forms one strict synchronization barrier.",
-	"After the final planned launch, end the turn without status text. Do not take any next step, call any tool, continue independent work, acknowledge or summarize a result, or produce an answer until every running subagent has returned.",
-	"Receiving one result never releases this barrier while another subagent is still running; keep waiting silently until the last result arrives, then process all received results together.",
-	"This barrier applies to a single subagent and to multiple subagents, whether their tasks are related or independent. There are no exceptions for separate work.",
-	"This batching rule does not apply when the need for another subagent is discovered only after substantial intervening work or a long interval.",
-	"Never repeat, duplicate, independently investigate, browse, search, verify, checkpoint, log, or use another tool while this barrier is active.",
-	"Do not acknowledge or summarize partial subagent results, and do not produce an interim answer; synthesize once after all results arrive.",
-	"Do not emit waiting, acknowledgement, progress, or status-only messages while results are pending.",
-	"Each finished subagent automatically sends a system message containing its result.",
+	"Spawn a background subagent for parallel work.",
+	"If 2+ launches are planned at one planning point, issue all of those subagent tool calls consecutively as one uninterrupted batch; do not place reasoning text, status text, or any other tool call between them.",
+	"After calls, do not emit a user-facing launch count or waiting notice; UI shows running subagents.",
+	"Once any starts, the current Agent run pauses after the launch batch; do not continue work, call another tool, checkpoint, log, or request another model turn while waiting for the next result.",
+	"After final planned launch, end the turn without status text. Each completed subagent resumes the Agent separately, in completion order.",
+	"For every completed result, first emit a brief user-visible update, then decide whether to continue work now or end the turn and wait for another running subagent.",
+	"A completed result releases the current pause even when other subagents are still running; those remaining results will resume the Agent separately.",
+	"Batching exception: another subagent need discovered only after substantial intervening work or a long interval.",
+	"Finished subagents automatically send system result messages.",
 ].join(" ");
 
 export type SubagentToolInput = Static<typeof subagentSchema>;
@@ -76,8 +72,8 @@ export function createSubagentToolDefinition(
 			const invocation = getMetisInvocation();
 			const args = [
 				...invocation.args,
-				"--print", 
-				"Please execute the following task. CRITICAL: You MUST provide a final summary report as text output in your very last message before finishing. Do not end your turn immediately after a tool call without speaking.", 
+				"--print",
+				"Execute task. Your very last message MUST be a text final-summary report; never finish directly after a tool call.",
 				`@${path.basename(tempFile)}`
 			];
 
@@ -134,8 +130,9 @@ export function createSubagentToolDefinition(
 			child.unref();
 
 			return {
-				content: [{ type: "text", text: `Subagent Job ${jobId} started in the background. Finish any already-planned consecutive subagent calls first, without intervening text. Do not emit a user-facing launch count or waiting notice; the application UI already shows every running subagent. After the final planned launch, end the turn without status text. From the moment any subagent starts, every running subagent forms one strict synchronization barrier. Do not call tools, continue independent work, checkpoint, log, acknowledge partial results, summarize, or answer. Wait silently until every running subagent has returned, even when tasks are independent, then process all results together. Results arrive automatically.` }],
-				details: undefined
+				content: [{ type: "text", text: `Subagent ${jobId} started. Finish every already-planned Subagent launch in this same uninterrupted batch, then end the turn without status text, more tools, checkpointing, or logging. The next completed result will resume the Agent automatically.` }],
+				details: undefined,
+				terminate: true,
 			};
 		},
 		renderCall(args, _theme, context) {

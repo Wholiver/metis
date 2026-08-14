@@ -666,8 +666,8 @@ describe("ExtensionRunner", () => {
 		});
 	});
 
-	describe("before_agent_start", () => {
-		it("keeps ctx.getSystemPrompt() in sync with chained system prompt updates", async () => {
+	describe("workflow schema migration", () => {
+		it("rejects legacy prompt replacement hooks during extension loading", async () => {
 			const extCode1 = `
 				export default function(metis) {
 					metis.on("before_agent_start", async (_event, ctx) => {
@@ -690,23 +690,11 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "before-agent-start-2.ts"), extCode2);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			expect(result.errors).toEqual([]);
-			expect(result.extensions).toHaveLength(2);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const errors: string[] = [];
-			runner.onError((error) => errors.push(error.error));
-			runner.bindCore(extensionActions, extensionContextActions);
-
-			const chained = await runner.emitBeforeAgentStart("hello", undefined, "base", {
-				cwd: tempDir,
-			});
-
-			expect(errors).toEqual([]);
-
-			expect(chained).toEqual({
-				messages: undefined,
-				systemPrompt: "base\nfirst\nsecond",
-			});
+			expect(result.extensions).toHaveLength(0);
+			expect(result.errors).toHaveLength(2);
+			for (const error of result.errors) {
+				expect(error.error).toContain("before_agent_start was removed by workflow schema v2");
+			}
 		});
 	});
 

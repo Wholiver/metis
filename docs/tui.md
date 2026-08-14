@@ -54,6 +54,12 @@ When a `Focusable` component has focus, TUI:
 
 The cursor remains hidden by default. This keeps the fake cursor rendering, while still positioning the hardware cursor for terminals that track IME candidate windows with hidden cursors. Some terminals require a visible hardware cursor for IME positioning; enable it with `showHardwareCursor`, `setShowHardwareCursor(true)`, or `METIS_HARDWARE_CURSOR=1`. The `Editor` and `Input` built-in components already implement this interface.
 
+When the model calls `ask_user`, the TUI temporarily replaces the editor with a themed clarification component. Use Up/Down to select, Enter to answer, Tab/Shift+Tab to review questions, and Esc to cancel only that request. Free-form answers use the native `Input`; completion, cancellation, or abort restores the editor and focus. New TUI sessions and `/new` start in Plan mode unless Build was selected explicitly.
+
+Completed proposals render as a themed preview without exposing the `<proposed_plan>` protocol tags. The preview shows up to 12 source lines; the complete durable artifact remains available through `read_plan`. While idle in Plan mode, an Ask-style prompt replaces the composer: use Up/Down to choose **Process** or **Edit plan**, Enter to confirm, and Esc to return to normal chat. The prompt shares the preview's bottom divider instead of drawing a duplicate line. Process switches to Build and reads the latest artifact before implementation; submitting feedback stays in Plan and produces a new revision. Draft feedback is preserved when returning to chat.
+
+During Build, one terminal-native **Execution plan** surface remains above the composer and updates in place whenever `update_plan` changes. Process shows its proposal-reading and checklist-creation phases immediately; runtime rejects every other tool until `read_plan` and then `update_plan` succeed. The surface shows only execution status and checklist items; the complete approved proposal remains available in its conversational preview and through `read_plan`. It survives abort, compaction, and session reload; Ctrl+O follows the existing tool expansion setting to expand or collapse it. Completed state clears for a later independent Build prompt, while interrupted state stays resumable. Raw `update_plan` tool output is hidden so progress appears only once.
+
 ### Container Components with Embedded Inputs
 
 When a container component (dialog, selector, etc.) contains an `Input` or `Editor` child, the container must implement `Focusable` and propagate the focus state to the child. Otherwise, the hardware cursor won't be positioned correctly for IME input.
@@ -742,7 +748,7 @@ ctx.ui.setStatus("my-ext", ctx.ui.theme.fg("accent", "● active"));
 ctx.ui.setStatus("my-ext", undefined);
 ```
 
-**Examples:** [status-line.ts](../examples/extensions/status-line.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts)
+**Examples:** [status-line.ts](../examples/extensions/status-line.ts), [preset.ts](../examples/extensions/preset.ts)
 
 ### Pattern 4b: Working Indicator Customization
 
@@ -802,7 +808,7 @@ ctx.ui.setWidget("my-widget", (_tui, theme) => {
 ctx.ui.setWidget("my-widget", undefined);
 ```
 
-**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
+**Examples:** [widget-placement.ts](../examples/extensions/widget-placement.ts)
 
 ### Pattern 6: Custom Footer
 
@@ -919,7 +925,7 @@ export default function (metis: ExtensionAPI) {
 - **Selection UI**: [examples/extensions/preset.ts](../examples/extensions/preset.ts) - SelectList with DynamicBorder framing
 - **Async with cancel**: [examples/extensions/qna.ts](../examples/extensions/qna.ts) - BorderedLoader for LLM calls
 - **Settings toggles**: [examples/extensions/tools.ts](../examples/extensions/tools.ts) - SettingsList for tool enable/disable
-- **Status indicators**: [examples/extensions/plan-mode/index.ts](../examples/extensions/plan-mode/index.ts) - setStatus and setWidget
+- **Status indicators**: [examples/extensions/status-line.ts](../examples/extensions/status-line.ts) - setStatus
 - **Working indicator**: [examples/extensions/working-indicator.ts](../examples/extensions/working-indicator.ts) - setWorkingIndicator
 - **Custom footer**: [examples/extensions/custom-footer.ts](../examples/extensions/custom-footer.ts) - setFooter with stats
 - **Custom editor**: [examples/extensions/modal-editor.ts](../examples/extensions/modal-editor.ts) - Vim-like modal editing

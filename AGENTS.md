@@ -28,12 +28,29 @@ If `.codegraph/` exists and its tools work, use CodeGraph before broad text sear
 | Package loading | `src/core/package-manager.ts`, `docs/packages.md` |
 | Dream and built-ins | `src/core/builtins/` |
 | TUI | `src/modes/interactive/`, `vendor/metis-tui/` |
+| Desktop frontend | `desktop/`, `docs/desktop-frontend-development.md` |
 | RPC | `src/modes/rpc/`, `src/rpc-entry.ts` |
 | Public exports | `src/index.ts` |
 | Tests | `test/`, `vitest.config.ts` |
 | User documentation | `README.md`, `README.zh-CN.md`, `docs/` |
 
 Do not modify `vendor/` unless the requested behavior belongs to a vendored package. Do not edit generated `dist/` output by hand.
+
+## Desktop Frontend Changes (Mandatory)
+
+Before any change under `desktop/`, any Desktop-facing Server endpoint, or any `test/desktop-*.test.ts` file, read `docs/desktop-frontend-development.md` completely and follow it as repository instructions.
+
+Non-negotiable rules:
+
+- Trace the real path from `desktop/main.cjs` through `preload.cjs`, renderer state/rendering, active DOM, and final CSS. Do not infer runtime ownership from filenames or screenshots.
+- Treat `desktop/renderer/` as source. Never hand-edit `desktop/dist/` or renderer vendor files. If validating `start:dist` or a packaged app, rebuild first and restart that artifact.
+- Preserve the plain-script load order in `desktop/renderer/index.html`. New helpers must load before `app.js`, expose the expected browser global, support Node tests where applicable, and have wiring coverage.
+- Search every definition of a selector, variable, ID, function, and visible string before editing. `styles.css` has layered rules and later scoped overrides; changing the first match may do nothing.
+- After state changes, prove that the correct render path runs. Account for message object-identity fast paths, requestAnimationFrame scheduling, SSE sequence/session filtering, and snapshot reconciliation.
+- Assistant work spans multiple messages/articles. Keep turn-level ownership, stable `data-part-key` identities, Tool UI contracts, expanded/collapsed behavior, and the work/final-response boundary intact.
+- Change canonical Desktop copy in `desktop/i18n-source.cjs`, regenerate catalogs, and test placeholder parity. Do not edit only generated catalogs.
+- Visual changes require repeatable runtime evidence such as computed styles, bounding boxes, DOM/ARIA assertions, or the Electron capture path. Computer Use and screenshots may assist diagnosis but are not final proof.
+- Run targeted Desktop tests, `npm --prefix desktop run build`, and `git diff --check`. Report exact failures; never claim success from a diff, a timeout, or an unverified visual assumption.
 
 ## Implementation Loop
 

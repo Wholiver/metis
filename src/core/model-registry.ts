@@ -437,7 +437,7 @@ export class ModelRegistry {
 		overrides: Map<string, ProviderOverride>,
 		modelOverrides: Map<string, Map<string, ModelOverride>>,
 	): Model<Api>[] {
-		return getProviders().flatMap((provider) => {
+		const models = getProviders().flatMap((provider) => {
 			const models = getModels(provider as KnownProvider) as Model<Api>[];
 			const providerOverride = overrides.get(provider);
 			const perModelOverrides = modelOverrides.get(provider);
@@ -463,6 +463,27 @@ export class ModelRegistry {
 				return model;
 			});
 		});
+
+		// The Codex subscription catalog can expose newly entitled models before
+		// the vendored transport package publishes a static registry update. Keep
+		// this local overlay intentionally narrow: it reuses the known-good Codex
+		// Responses transport/capabilities from gpt-5.5 and is still authenticated
+		// through AuthStorage like every other built-in model.
+		if (!models.some((model) => model.provider === "openai-codex" && model.id === "gpt-5.6-luna")) {
+			const codexBase = models.find((model) => model.provider === "openai-codex" && model.id === "gpt-5.5");
+			if (codexBase) {
+				models.push({
+					...codexBase,
+					id: "gpt-5.6-luna",
+					name: "GPT-5.6-Luna",
+					reasoning: true,
+					contextWindow: 272_000,
+					maxTokens: 128_000,
+				});
+			}
+		}
+
+		return models;
 	}
 
 	/** Merge custom models into built-in list by provider+id (custom wins on conflicts). */

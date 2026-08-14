@@ -114,6 +114,17 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 			if (header) {
 				writeRawStdout(`${JSON.stringify(header)}\n`);
 			}
+			writeRawStdout(`${JSON.stringify({
+				type: "workflow_state",
+				model: session.model ? { provider: session.model.provider, id: session.model.id } : undefined,
+				thinkingLevel: session.thinkingLevel,
+				collaborationMode: session.collaborationMode,
+				contextWindowId: session.contextWindowId,
+				workflowPlan: session.workflowPlan,
+				instructionSources: session.instructionSources,
+				instructionDiagnostics: session.instructionDiagnostics,
+				memoryState: session.memoryState,
+			})}\n`);
 		}
 
 		await rebindSession();

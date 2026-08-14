@@ -9,6 +9,7 @@ import type { ImageContent } from "@earendil-works/metis-ai";
 import { getProviders } from "@earendil-works/metis-ai/compat";
 import { APP_NAME, getShareViewerUrl, VERSION } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { type AskUserRequest, type AskUserResponse, validateAskUserResponse } from "../../core/ask-user.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -24,14 +25,15 @@ import { getChangelogPath } from "../../utils/changelog.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "../rpc/rpc-types.ts";
+import { loadDesktopWorkStats, type DesktopWorkStats } from "./desktop-work-stats.ts";
 import { createServerOpenApiDocument } from "./openapi.ts";
 import type {
 	ServerAddress,
 	ServerErrorBody,
-	ServerEvent,
 	ServerHandle,
 	ServerModeOptions,
 	ServerPromptRequest,
+	ServerDefaultsState,
 	ServerSessionState,
 } from "./server-types.ts";
 
@@ -81,6 +83,8 @@ export async function startServerMode(
 	}
 
 	let session = runtimeHost.session;
+	const serverInstanceId = crypto.randomUUID();
+	let serverSequence = 0;
 	let unsubscribe: (() => void) | undefined;
 	let closing = false;
 	let resolveClosed!: () => void;
@@ -93,10 +97,33 @@ export async function startServerMode(
 		string,
 		{ resolve: (response: RpcExtensionUIResponse) => void; cancel: () => void }
 	>();
+	const pendingUserInput = new Map<string, { resolve: (response: AskUserResponse) => void; cancel: () => void }>();
+	let desktopWorkStatsCache: { loadedAt: number; value: DesktopWorkStats } | undefined;
+	const getDesktopWorkStats = async (): Promise<DesktopWorkStats> => {
+		if (desktopWorkStatsCache && Date.now() - desktopWorkStatsCache.loadedAt < 30_000) {
+			return desktopWorkStatsCache.value;
+		}
+		const sessionManager = session.sessionManager;
+		const sessionDir = sessionManager.usesDefaultSessionDir() ? undefined : sessionManager.getSessionDir();
+		const value = await loadDesktopWorkStats(sessionDir);
+		desktopWorkStatsCache = { loadedAt: Date.now(), value };
+		return value;
+	};
 
-	const broadcast = (event: ServerEvent | object): void => {
-		const data = `data: ${JSON.stringify(event)}\n\n`;
-		for (const client of eventClients) client.write(data);
+	const serializeEvent = (event: object): string => {
+		const sequence = ++serverSequence;
+		const envelope = {
+			...event,
+			serverInstanceId,
+			serverSequence: sequence,
+			serverSessionId: session.sessionId,
+		};
+		return `id: ${serverInstanceId}:${sequence}\ndata: ${JSON.stringify(envelope)}\n\n`;
+	};
+
+	const broadcast = (event: object): void => {
+		const frame = serializeEvent(event);
+		for (const client of eventClients) client.write(frame);
 	};
 
 	const createDialogPromise = <T>(
@@ -216,8 +243,23 @@ export async function startServerMode(
 		setToolsExpanded(_expanded: boolean) {},
 	});
 
+	// Registered below as the runtime's rebindSession hook, which every session-replacing call
+	// (newSession/switchSession/fork/importFromJsonl) invokes exactly once from
+	// finishSessionReplacement(). Routes must NOT call this again afterwards: a second bind
+	// re-emits session_start to every extension, redoes the startup resource discovery, and
+	// broadcasts a second server.session_changed — and each broadcast costs the renderer a
+	// full session sync.
 	const bindSession = async (): Promise<void> => {
+		for (const pending of [...pendingUserInput.values()]) pending.cancel();
+		pendingUserInput.clear();
 		session = runtimeHost.session;
+		session.setAskUserHandler?.((request, signal) => new Promise<AskUserResponse>((resolve) => {
+			const finish = (response: AskUserResponse) => { pendingUserInput.delete(request.requestId); signal?.removeEventListener("abort", cancel); resolve(response); };
+			const cancel = () => finish({ cancelled: true, answers: [] });
+			if (signal?.aborted) return cancel();
+			signal?.addEventListener("abort", cancel, { once: true });
+			pendingUserInput.set(request.requestId, { resolve: finish, cancel });
+		}));
 		extensionStatuses.clear();
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(),
@@ -301,11 +343,17 @@ export async function startServerMode(
 			});
 			response.flushHeaders();
 			eventClients.add(response);
-			response.write(`data: ${JSON.stringify({ type: "server.connected", properties: { version: VERSION } })}\n\n`);
+			response.write(serializeEvent({ type: "server.connected", properties: { version: VERSION } }));
 			request.on("close", () => eventClients.delete(response));
 			return;
 		}
 		if (method === "GET" && url.pathname === "/session") return sendJson(response, 200, getSessionState());
+		if (method === "GET" && url.pathname === "/settings/defaults") return sendJson(response, 200, getDefaultsState());
+		if (method === "GET" && url.pathname === "/memory") return sendJson(response, 200, session.memoryState);
+		if (method === "GET" && url.pathname === "/memory/search") return sendJson(response, 200, session.searchMemory(url.searchParams.get("q") ?? ""));
+		if (method === "GET" && url.pathname === "/desktop/work-stats") {
+			return sendJson(response, 200, await getDesktopWorkStats());
+		}
 		if (method === "GET" && url.pathname === "/sessions") {
 			const requestedCwd = url.searchParams.get("cwd") || runtimeHost.cwd;
 			const cwd = path.resolve(requestedCwd);
@@ -314,10 +362,21 @@ export async function startServerMode(
 			}
 			const sessionManager = session.sessionManager;
 			const sessionDir = sessionManager.usesDefaultSessionDir() ? undefined : sessionManager.getSessionDir();
-			return sendJson(response, 200, { cwd, sessions: await SessionManager.list(cwd, sessionDir) });
+			// Desktop's sidebar only needs the listing fields — not the full text of every
+			// message or the daily token rollups, which would be re-read from every JSONL
+			// file on every sync (and bloated the payload to ~1.6 MB at ~380 sessions).
+			const sessions = (await SessionManager.list(cwd, sessionDir, undefined, { includeMessageText: false }))
+				.map(({ allMessagesText, dailyActivity, ...rest }) => rest);
+			return sendJson(response, 200, { cwd, sessions });
 		}
 		if (method === "GET" && url.pathname === "/session/messages") {
-			return sendJson(response, 200, { messages: session.messages, messageTimings: getMessageTimings() });
+			return sendJson(response, 200, {
+				serverInstanceId,
+				serverSequence,
+				serverSessionId: session.sessionId,
+				messages: session.messages,
+				messageTimings: getMessageTimings(),
+			});
 		}
 		if (method === "GET" && url.pathname === "/session/entries") {
 			let entries = session.sessionManager.getEntries();
@@ -349,8 +408,24 @@ export async function startServerMode(
 			if (!body || typeof body.message !== "string" || !body.message.trim()) {
 				return sendError(response, 400, "invalid_request", "message must be a non-empty string");
 			}
+			if (body.workflowAction !== undefined && body.workflowAction !== "process_proposal") {
+				return sendError(response, 400, "invalid_request", "workflowAction must be process_proposal");
+			}
 			await submitPrompt(body);
 			return sendJson(response, 202, { accepted: true });
+		}
+		if (method === "POST" && /^\/session\/user-input\/[^/]+$/.test(url.pathname)) {
+			const requestId = decodeURIComponent(url.pathname.slice("/session/user-input/".length));
+			const pending = pendingUserInput.get(requestId);
+			if (!pending) return sendError(response, 404, "user_input_not_found", "User input request is unknown, expired, or already answered");
+			const body = await readJsonBody<AskUserResponse>(request);
+			if (!body || typeof body.cancelled !== "boolean" || !Array.isArray(body.answers)) return sendError(response, 400, "invalid_request", "cancelled and answers are required");
+			const activeRequest = session.pendingUserInput;
+			if (!activeRequest || activeRequest.requestId !== requestId) return sendError(response, 409, "user_input_expired", "User input request is no longer active");
+			const validationError = validateAskUserResponse(activeRequest, body);
+			if (validationError) return sendError(response, 400, "invalid_user_input_response", validationError);
+			pending.resolve(body);
+			return sendJson(response, 200, { success: true });
 		}
 		if (method === "POST" && url.pathname === "/session/steer") {
 			const body = await readMessageBody(request);
@@ -371,9 +446,14 @@ export async function startServerMode(
 				return sendError(response, 400, "invalid_request", "index must be a non-negative integer");
 			}
 			try {
-				const s = session as any;
-				const message = typeof s.removeQueuedMessage === "function" ? s.removeQueuedMessage(body.queue, Number(body.index)) : undefined;
-				return sendJson(response, 200, { success: true, message });
+				const message = session.removeQueuedMessage(body.queue, Number(body.index));
+				return sendJson(response, 200, {
+					success: true,
+					message,
+					pendingMessageCount: session.pendingMessageCount,
+					steeringMessages: session.getSteeringMessages(),
+					followUpMessages: session.getFollowUpMessages(),
+				});
 			} catch (error) {
 				return sendError(response, 404, "queue_item_not_found", error instanceof Error ? error.message : String(error));
 			}
@@ -384,11 +464,14 @@ export async function startServerMode(
 				return sendError(response, 400, "invalid_request", "index must be a non-negative integer");
 			}
 			try {
-				const s = session as any;
-				if (typeof s.promoteFollowUpMessage === "function") {
-					s.promoteFollowUpMessage(Number(body?.index));
-				}
-				return sendJson(response, 200, { success: true });
+				const message = session.promoteFollowUpMessage(Number(body?.index));
+				return sendJson(response, 200, {
+					success: true,
+					message,
+					pendingMessageCount: session.pendingMessageCount,
+					steeringMessages: session.getSteeringMessages(),
+					followUpMessages: session.getFollowUpMessages(),
+				});
 			} catch (error) {
 				return sendError(response, 404, "queue_item_not_found", error instanceof Error ? error.message : String(error));
 			}
@@ -402,27 +485,28 @@ export async function startServerMode(
 			return sendJson(response, 200, await session.compact(body?.customInstructions));
 		}
 		if (method === "POST" && url.pathname === "/session/new") {
-			const body = await readJsonBody<{ cwd?: string; parentSession?: string }>(request, true);
+			const body = await readJsonBody<{ cwd?: string; parentSession?: string; collaborationMode?: unknown }>(request, true);
 			const cwd = body?.cwd ? path.resolve(body.cwd) : undefined;
 			if (cwd && (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory())) {
 				return sendError(response, 400, "invalid_workspace", `Workspace directory does not exist: ${cwd}`);
 			}
-			const result = await runtimeHost.newSession({ cwd, parentSession: body?.parentSession });
-			if (!result.cancelled) await bindSession();
+			const collaborationMode = body?.collaborationMode;
+			if (collaborationMode !== undefined && collaborationMode !== "build" && collaborationMode !== "plan") {
+				return sendError(response, 400, "invalid_request", "collaborationMode must be build or plan");
+			}
+			const result = await runtimeHost.newSession({ cwd, parentSession: body?.parentSession, collaborationMode });
 			return sendJson(response, 200, result);
 		}
 		if (method === "POST" && url.pathname === "/session/switch") {
 			const body = await readJsonBody<{ sessionPath?: string }>(request);
 			if (!body?.sessionPath) return sendError(response, 400, "invalid_request", "sessionPath is required");
 			const result = await runtimeHost.switchSession(body.sessionPath);
-			if (!result.cancelled) await bindSession();
 			return sendJson(response, 200, result);
 		}
 		if (method === "POST" && url.pathname === "/session/fork") {
 			const body = await readJsonBody<{ entryId?: string }>(request, true);
 			if (!body?.entryId) return sendError(response, 400, "invalid_request", "entryId is required");
 			const result = await runtimeHost.fork(body.entryId);
-			if (!result.cancelled) await bindSession();
 			return sendJson(response, 200, result);
 		}
 		if (method === "PUT" && url.pathname === "/session/model") {
@@ -442,20 +526,59 @@ export async function startServerMode(
 			session.setThinkingLevel(body.level as never);
 			return sendJson(response, 200, { success: true, level: session.thinkingLevel });
 		}
+		if (method === "PUT" && url.pathname === "/session/collaboration-mode") {
+			const body = await readJsonBody<{ mode?: unknown }>(request);
+			if (body?.mode !== "build" && body?.mode !== "plan") {
+				return sendError(response, 400, "invalid_request", "mode must be build or plan");
+			}
+			if (session.isStreaming || session.isCompacting) {
+				return sendError(response, 409, "session_busy", "Cannot change collaboration mode while the agent is running.");
+			}
+			try {
+				session.setCollaborationMode(body.mode);
+				return sendJson(response, 200, getSessionState());
+			} catch (error) {
+				return sendError(response, 409, "session_busy", error instanceof Error ? error.message : String(error));
+			}
+		}
+		if (method === "PUT" && url.pathname === "/memory/settings") {
+			const body = await readJsonBody<{ enabled?: unknown }>(request);
+			if (typeof body?.enabled !== "boolean") return sendError(response, 400, "invalid_request", "enabled must be a boolean");
+			try { return sendJson(response, 200, session.setMemoryEnabled(body.enabled)); }
+			catch (error) { return sendError(response, 409, "session_busy", error instanceof Error ? error.message : String(error)); }
+		}
+		if (method === "POST" && url.pathname === "/memory/run") {
+			try { return sendJson(response, 200, await session.runMemory()); }
+			catch (error) { return sendError(response, 409, "session_busy", error instanceof Error ? error.message : String(error)); }
+		}
+		if (method === "DELETE" && /^\/memory\/[^/]+$/.test(url.pathname)) {
+			try { return sendJson(response, 200, { forgotten: session.forgetMemory(decodeURIComponent(url.pathname.slice("/memory/".length))) }); }
+			catch (error) { return sendError(response, 409, "session_busy", error instanceof Error ? error.message : String(error)); }
+		}
+		if (method === "POST" && url.pathname === "/memory/reset") {
+			const body = await readJsonBody<{ confirm?: unknown }>(request);
+			try { session.resetMemory(typeof body?.confirm === "string" ? body.confirm : ""); return sendJson(response, 200, { success: true }); }
+			catch (error) { return sendError(response, 400, "invalid_request", error instanceof Error ? error.message : String(error)); }
+		}
 		if (method === "PUT" && url.pathname === "/session/settings") {
 			const body = await readJsonBody<{
 				autoCompactionEnabled?: unknown;
+				autoRetryEnabled?: unknown;
 				steeringMode?: unknown;
 				followUpMode?: unknown;
 			}>(request);
 			const hasAutoCompaction = body?.autoCompactionEnabled !== undefined;
+			const hasAutoRetry = body?.autoRetryEnabled !== undefined;
 			const hasSteeringMode = body?.steeringMode !== undefined;
 			const hasFollowUpMode = body?.followUpMode !== undefined;
-			if (!hasAutoCompaction && !hasSteeringMode && !hasFollowUpMode) {
+			if (!hasAutoCompaction && !hasAutoRetry && !hasSteeringMode && !hasFollowUpMode) {
 				return sendError(response, 400, "invalid_request", "At least one Agent setting is required");
 			}
 			if (hasAutoCompaction && typeof body?.autoCompactionEnabled !== "boolean") {
 				return sendError(response, 400, "invalid_request", "autoCompactionEnabled must be a boolean");
+			}
+			if (hasAutoRetry && typeof body?.autoRetryEnabled !== "boolean") {
+				return sendError(response, 400, "invalid_request", "autoRetryEnabled must be a boolean");
 			}
 			const queueModes = ["all", "one-at-a-time"];
 			if (hasSteeringMode && !queueModes.includes(body?.steeringMode as string)) {
@@ -466,9 +589,42 @@ export async function startServerMode(
 			}
 
 			if (hasAutoCompaction) session.setAutoCompactionEnabled(body?.autoCompactionEnabled as boolean);
+			if (hasAutoRetry) session.setAutoRetryEnabled(body?.autoRetryEnabled as boolean);
 			if (hasSteeringMode) session.setSteeringMode(body?.steeringMode as "all" | "one-at-a-time");
 			if (hasFollowUpMode) session.setFollowUpMode(body?.followUpMode as "all" | "one-at-a-time");
 			return sendJson(response, 200, getSessionState());
+		}
+		if (method === "PUT" && url.pathname === "/settings/defaults") {
+			const body = await readJsonBody<{ provider?: unknown; modelId?: unknown; thinkingLevel?: unknown }>(request);
+			const hasModelPreference = body?.provider !== undefined || body?.modelId !== undefined;
+			const hasThinkingPreference = body?.thinkingLevel !== undefined;
+			if (!hasModelPreference && !hasThinkingPreference) {
+				return sendError(response, 400, "invalid_request", "At least one default setting is required");
+			}
+			if (hasModelPreference) {
+				const clear = body?.provider === null && body?.modelId === null;
+				if (!clear && (typeof body?.provider !== "string" || typeof body?.modelId !== "string")) {
+					return sendError(response, 400, "invalid_request", "provider and modelId must both be strings or null");
+				}
+				if (clear) {
+					session.settingsManager.clearDefaultModelAndProvider();
+				} else {
+					const models = await session.modelRegistry.getAvailable();
+					const exists = models.some((model: any) => model.provider === body?.provider && model.id === body?.modelId);
+					if (!exists) return sendError(response, 400, "invalid_request", "Default model is not available");
+					session.settingsManager.setDefaultModelAndProvider(body?.provider as string, body?.modelId as string);
+				}
+			}
+			if (hasThinkingPreference) {
+				if (body?.thinkingLevel === null) {
+					session.settingsManager.clearDefaultThinkingLevel();
+				} else if (["off", "minimal", "low", "medium", "high", "xhigh"].includes(body?.thinkingLevel as string)) {
+					session.settingsManager.setDefaultThinkingLevel(body?.thinkingLevel as "off" | "minimal" | "low" | "medium" | "high" | "xhigh");
+				} else {
+					return sendError(response, 400, "invalid_request", "thinkingLevel must be a supported level or null");
+				}
+			}
+			return sendJson(response, 200, getDefaultsState());
 		}
 		if (method === "PUT" && url.pathname === "/session/name") {
 			const body = await readJsonBody<{ name?: string }>(request);
@@ -582,7 +738,6 @@ export async function startServerMode(
 			case "import": {
 				if (!argument) throw new HttpError(400, "missing_argument", "Usage: /import <path.jsonl>");
 				const result = await runtimeHost.importFromJsonl(argument);
-				if (!result.cancelled) await bindSession();
 				return { command: name, ...result, message: result.cancelled ? "导入已取消" : `已导入 ${argument}` };
 			}
 			case "share": {
@@ -613,6 +768,18 @@ export async function startServerMode(
 			}
 			case "session":
 				return { command: name, state: getSessionState(), stats: session.getSessionStats() };
+			case "dream":
+				return { command: name, message: "Dream moved into Memory. Use /memory run, /memory status, or /memory on|off." };
+			case "memory": {
+				const [action = "status", ...rest] = argument.split(/\s+/).filter(Boolean);
+				if (action === "status") return { command: name, state: session.memoryState };
+				if (action === "on" || action === "off") return { command: name, state: session.setMemoryEnabled(action === "on") };
+				if (action === "run") return { command: name, state: await session.runMemory() };
+				if (action === "search") return { command: name, records: session.searchMemory(rest.join(" ")) };
+				if (action === "forget") return { command: name, forgotten: session.forgetMemory(rest[0] ?? "") };
+				if (action === "reset") { session.resetMemory(rest[0] ?? ""); return { command: name, reset: true }; }
+				throw new HttpError(400, "invalid_memory_command", "Usage: /memory status|on|off|run|search|forget|reset");
+			}
 			case "changelog":
 				return { command: name, changelog: fs.readFileSync(getChangelogPath(), "utf8") };
 			case "hotkeys":
@@ -623,14 +790,12 @@ export async function startServerMode(
 			case "fork": {
 				if (!argument) return { command: name, entries: session.getUserMessagesForForking(), usage: "/fork <entryId>" };
 				const result = await runtimeHost.fork(argument);
-				if (!result.cancelled) await bindSession();
 				return { command: name, ...result, message: result.cancelled ? "分叉已取消" : "已创建分叉会话" };
 			}
 			case "clone": {
 				const leafId = session.sessionManager.getLeafId();
 				if (!leafId) throw new HttpError(400, "empty_session", "当前会话还没有可克隆内容");
 				const result = await runtimeHost.fork(leafId, { position: "at" });
-				if (!result.cancelled) await bindSession();
 				return { command: name, ...result, message: result.cancelled ? "克隆已取消" : "已克隆当前会话" };
 			}
 			case "tree": {
@@ -654,7 +819,14 @@ export async function startServerMode(
 				const listProviders = () =>
 					[...new Set([...oauthProviders.map((provider: any) => provider.id), ...session.modelRegistry.getAll().map((model: any) => model.provider)])];
 				let providerIds = listProviders();
-				if (!providerId) return { command: name, providers: providerIds, usage: "/login <provider> [api-key]" };
+				if (!providerId) {
+					return {
+						command: name,
+						providers: providerIds,
+						oauthProviders: oauthProviders.map((provider: any) => provider.id),
+						usage: "/login <provider> [api-key]",
+					};
+				}
 				if (!providerIds.includes(providerId)) {
 					// Desktop writes custom providers to models.json then /reload + /login.
 					// Refresh once so newly saved providers (e.g. "other") are visible.
@@ -696,18 +868,20 @@ export async function startServerMode(
 			}
 			case "new": {
 				const result = await runtimeHost.newSession();
-				if (!result.cancelled) await bindSession();
 				return { command: name, ...result, message: result.cancelled ? "新建会话已取消" : "新会话已创建" };
 			}
 			case "compact":
 				return { command: name, result: await session.compact(argument || undefined), message: "上下文压缩完成" };
 			case "resume": {
 				if (!argument) {
-					const sessions = await SessionManager.listAll(session.sessionManager.getSessionDir());
+					const sessions = await SessionManager.listAll(
+						session.sessionManager.getSessionDir(),
+						undefined,
+						{ includeMessageText: false },
+					);
 					return { command: name, sessions, usage: "/resume <sessionPath>" };
 				}
 				const result = await runtimeHost.switchSession(argument);
-				if (!result.cancelled) await bindSession();
 				return { command: name, ...result, message: result.cancelled ? "恢复会话已取消" : "已切换会话" };
 			}
 			case "reload":
@@ -728,6 +902,8 @@ export async function startServerMode(
 			}
 		}
 		return {
+			serverInstanceId,
+			serverSequence,
 			cwd: session.sessionManager.getCwd(),
 			model: session.model,
 			thinkingLevel: session.thinkingLevel,
@@ -737,12 +913,21 @@ export async function startServerMode(
 			isCompacting: session.isCompacting,
 			steeringMode: session.steeringMode,
 			followUpMode: session.followUpMode,
+			collaborationMode: session.collaborationMode,
+			contextWindowId: session.contextWindowId,
+			workflowPlan: session.workflowPlan,
+			workflowProposal: session.workflowProposal,
+			pendingUserInput: session.pendingUserInput,
+			instructionSources: session.instructionSources,
+			instructionDiagnostics: session.instructionDiagnostics,
+			memoryState: session.memoryState,
 			sessionFile: session.sessionFile,
 			sessionId: session.sessionId,
 			sessionName: session.sessionName,
 			isGeneratingSessionName: s.isGeneratingSessionName ?? false,
 			sessionTitleError: s.sessionNameError ?? undefined,
 			autoCompactionEnabled: session.autoCompactionEnabled,
+			autoRetryEnabled: session.autoRetryEnabled,
 			messageCount: session.messages.length,
 			pendingMessageCount: session.pendingMessageCount,
 			steeringMessages: session.getSteeringMessages(),
@@ -750,6 +935,14 @@ export async function startServerMode(
 			runningSubagentIds: session.getRunningSubagentIds?.() ?? [],
 			extensionStatuses: Object.fromEntries(extensionStatuses),
 			contextUsage: typeof session.getContextUsage === "function" ? session.getContextUsage() : undefined,
+		};
+	}
+
+	function getDefaultsState(): ServerDefaultsState {
+		return {
+			provider: session.settingsManager.getDefaultProvider(),
+			modelId: session.settingsManager.getDefaultModel(),
+			thinkingLevel: session.settingsManager.getDefaultThinkingLevel(),
 		};
 	}
 
@@ -764,11 +957,23 @@ export async function startServerMode(
 	}
 
 	async function submitPrompt(body: ServerPromptRequest): Promise<void> {
+		const sessionWithAutoName = session as typeof session & {
+			ensureSessionName?: (options?: { prompt?: string }) => Promise<string | undefined>;
+		};
+		const isFirstUserPrompt = !session.messages.some((message: any) => message.role === "user");
+		const isContentPrompt = !body.message.trimStart().startsWith("/");
+		if (!session.sessionName && isFirstUserPrompt && isContentPrompt && typeof sessionWithAutoName.ensureSessionName === "function") {
+			// Desktop must start naming as soon as its first prompt is submitted. AgentSession.prompt()
+			// also requests naming later in preflight; the shared in-flight promise deduplicates it.
+			void sessionWithAutoName.ensureSessionName({ prompt: body.message });
+		}
+
 		await new Promise<void>((resolve, reject) => {
 			let settled = false;
 			const promptTask = session.prompt(body.message, {
 				images: normalizeImageContents(body.images),
 				streamingBehavior: body.streamingBehavior,
+				workflowAction: body.workflowAction,
 				source: "rpc",
 				preflightResult: (succeeded) => {
 					if (succeeded && !settled) {
@@ -806,6 +1011,8 @@ export async function startServerMode(
 		eventClients.clear();
 		for (const pending of [...pendingExtensionRequests.values()]) pending.cancel();
 		pendingExtensionRequests.clear();
+		for (const pending of [...pendingUserInput.values()]) pending.cancel();
+		pendingUserInput.clear();
 		await new Promise<void>((resolve, reject) => {
 			server.close((cause) => (cause ? reject(cause) : resolve()));
 		});

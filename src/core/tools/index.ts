@@ -1,4 +1,13 @@
 export {
+	createUpdatePlanTool,
+	createUpdatePlanToolDefinition,
+	type UpdatePlanToolInput,
+	type UpdatePlanToolOptions,
+} from "./update-plan.ts";
+export { createAskUserTool, createAskUserToolDefinition, askUserSchema, type AskUserToolInput, type AskUserToolOptions } from "./ask-user.ts";
+export { createReadPlanTool, createReadPlanToolDefinition } from "./read-plan.ts";
+export { createSearchMemoryTool, createSearchMemoryToolDefinition, normalizeSearchMemoryInput, searchMemorySchema, type SearchMemoryToolInput, type SearchMemoryToolOptions } from "./search-memory.ts";
+export {
 	type BashOperations,
 	type BashSpawnContext,
 	type BashSpawnHook,
@@ -129,6 +138,10 @@ import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } fro
 import { createSubagentTool, createSubagentToolDefinition, type SubagentToolOptions } from "./subagent.ts";
 import { createWebSearchTool, createWebSearchToolDefinition, type WebSearchToolOptions } from "./websearch.ts";
 import { createWebFetchTool, createWebFetchToolDefinition, type WebFetchToolOptions } from "./webfetch.ts";
+import { createUpdatePlanTool, createUpdatePlanToolDefinition, type UpdatePlanToolOptions } from "./update-plan.ts";
+import { createAskUserTool, createAskUserToolDefinition, type AskUserToolOptions } from "./ask-user.ts";
+import { createReadPlanTool, createReadPlanToolDefinition } from "./read-plan.ts";
+import { createSearchMemoryTool, createSearchMemoryToolDefinition, type SearchMemoryToolOptions } from "./search-memory.ts";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
@@ -146,7 +159,11 @@ export type ToolName =
 	| "subagent"
 	| "websearch"
 	| "webfetch"
-	| "video";
+	| "video"
+	| "update_plan"
+	| "ask_user"
+	| "read_plan"
+	| "search_memory";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -162,6 +179,10 @@ export const allToolNames: Set<ToolName> = new Set([
 	"websearch",
 	"webfetch",
 	"video",
+	"update_plan",
+	"ask_user",
+	"read_plan",
+	"search_memory",
 ]);
 
 export interface ToolsOptions {
@@ -177,6 +198,9 @@ export interface ToolsOptions {
 	websearch?: WebSearchToolOptions;
 	webfetch?: WebFetchToolOptions;
 	video?: VideoToolOptions;
+	updatePlan?: UpdatePlanToolOptions;
+	askUser?: AskUserToolOptions;
+	searchMemory?: SearchMemoryToolOptions;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
@@ -209,6 +233,14 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createWebFetchToolDefinition(options?.webfetch);
 		case "video":
 			return createVideoToolDefinition(cwd, options?.video);
+		case "update_plan":
+			return createUpdatePlanToolDefinition(options?.updatePlan);
+		case "ask_user":
+			return createAskUserToolDefinition(options?.askUser);
+		case "read_plan":
+			return createReadPlanToolDefinition();
+		case "search_memory":
+			return createSearchMemoryToolDefinition(options?.searchMemory);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -244,6 +276,14 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createWebFetchTool(options?.webfetch);
 		case "video":
 			return createVideoTool(cwd, options?.video);
+		case "update_plan":
+			return createUpdatePlanTool(options?.updatePlan);
+		case "ask_user":
+			return createAskUserTool(options?.askUser);
+		case "read_plan":
+			return createReadPlanTool();
+		case "search_memory":
+			return createSearchMemoryTool(options?.searchMemory);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -258,6 +298,9 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createLogToolDefinition(cwd, options?.log),
 		createRememberUserIntentToolDefinition(cwd),
 		createUserIntentToolDefinition(cwd),
+		createAskUserToolDefinition(options?.askUser),
+		createReadPlanToolDefinition(),
+		createSearchMemoryToolDefinition(options?.searchMemory),
 		createSubagentToolDefinition(cwd, options?.subagent),
 		createWebSearchToolDefinition(options?.websearch),
 		createWebFetchToolDefinition(options?.webfetch),
@@ -272,6 +315,9 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 		createFindToolDefinition(cwd, options?.find),
 		createLsToolDefinition(cwd, options?.ls),
 		createVideoToolDefinition(cwd, options?.video),
+		createAskUserToolDefinition(options?.askUser),
+		createReadPlanToolDefinition(),
+		createSearchMemoryToolDefinition(options?.searchMemory),
 	];
 }
 
@@ -291,6 +337,10 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		websearch: createWebSearchToolDefinition(options?.websearch),
 		webfetch: createWebFetchToolDefinition(options?.webfetch),
 		video: createVideoToolDefinition(cwd, options?.video),
+		update_plan: createUpdatePlanToolDefinition(options?.updatePlan),
+		ask_user: createAskUserToolDefinition(options?.askUser),
+		read_plan: createReadPlanToolDefinition(),
+		search_memory: createSearchMemoryToolDefinition(options?.searchMemory),
 	};
 }
 
@@ -303,6 +353,9 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createLogTool(cwd, options?.log),
 		createRememberUserIntentTool(cwd),
 		createUserIntentTool(cwd),
+		createAskUserTool(options?.askUser),
+		createReadPlanTool(),
+		createSearchMemoryTool(options?.searchMemory),
 		createSubagentTool(cwd, options?.subagent),
 		createWebSearchTool(options?.websearch),
 		createWebFetchTool(options?.webfetch),
@@ -317,6 +370,9 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 		createFindTool(cwd, options?.find),
 		createLsTool(cwd, options?.ls),
 		createVideoTool(cwd, options?.video),
+		createAskUserTool(options?.askUser),
+		createReadPlanTool(),
+		createSearchMemoryTool(options?.searchMemory),
 	];
 }
 
@@ -336,5 +392,9 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		websearch: createWebSearchTool(options?.websearch),
 		webfetch: createWebFetchTool(options?.webfetch),
 		video: createVideoTool(cwd, options?.video),
+		update_plan: createUpdatePlanTool(options?.updatePlan),
+		ask_user: createAskUserTool(options?.askUser),
+		read_plan: createReadPlanTool(),
+		search_memory: createSearchMemoryTool(options?.searchMemory),
 	};
 }

@@ -16,6 +16,7 @@ export interface AppKeybindings {
 	"app.exit": true;
 	"app.suspend": true;
 	"app.thinking.cycle": true;
+	"app.workflow.toggle": true;
 	"app.model.cycleForward": true;
 	"app.model.cycleBackward": true;
 	"app.model.select": true;
@@ -72,6 +73,10 @@ export const KEYBINDINGS = {
 	"app.thinking.cycle": {
 		defaultKeys: "shift+tab",
 		description: "Cycle thinking level",
+	},
+	"app.workflow.toggle": {
+		defaultKeys: "tab",
+		description: "Switch Build and Plan workflow modes",
 	},
 	"app.model.cycleForward": {
 		defaultKeys: "ctrl+p",

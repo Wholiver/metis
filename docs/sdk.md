@@ -69,7 +69,39 @@ const { session } = await createAgentSession({
 
 ### AgentSession
 
+#### Memory
+
+`session.memoryState` exposes typed background status. Normal sessions checkpoint task state automatically. The default Plan and Build tool sets include read-only `search_memory`; the model decides when to search and may refine or repeat queries without a call-count limit. The runtime does not automatically retrieve memory for every prompt. Search results are advisory evidence only and cannot override current user input, developer instructions, or project instructions. Legacy memory bookkeeping tools remain compatibility-only and inactive by default.
+
+Background extraction exposes only `search_memory`. It sets `reasoning: "low"` only for models that advertise reasoning support, otherwise omits the field, and does not set a Metis-specific `maxTokens` or tool-round limit. Provider/model limits and normal cancellation still apply; each search returns at most 20 records and each checkpoint accepts at most six candidates.
+
+```typescript
+session.setMemoryEnabled(true);
+await session.runMemory(); // idle sessions only
+const records = session.searchMemory("test command");
+session.forgetMemory(records[0].id);
+session.resetMemory("RESET_MEMORY"); // explicit destructive confirmation
+```
+
+`memory_state_changed` and `memory_records_changed` are emitted for all clients.
+
 The session manages agent lifecycle, message history, model state, compaction, and event streaming.
+
+#### Plans and clarification
+
+Pass `askUserHandler` when an SDK host can collect user input. It receives one to three structured questions and must return `{ cancelled, answers }`; without a handler `ask_user` returns a recoverable unsupported error. A cancelled response must have no answers. A successful response must contain exactly one non-empty answer for every question, with no unknown or duplicate IDs; `selectedLabel`, when present, must match that question's option. Abort resolves pending input as cancelled. `session.workflowProposal` exposes the latest durable Plan artifact and `read_plan` lets the model recover it after compaction.
+
+`session.workflowPlan` exposes the latest durable, task-scoped Build execution checklist. `read_plan` returns the proposal first and appends current execution progress when available, allowing a model to resume checklist ownership after compaction or reload. Hosts starting an approved proposal can pass `workflowAction: "process_proposal"` to `session.prompt()`; runtime then enforces `read_plan`, followed by `update_plan`, before any other tool. The state exposes the preparation `phase`, task identity, and proposal revision. Completed state resets on a later independent Build prompt; interrupted work remains resumable.
+
+```typescript
+const { session } = await createAgentSession({
+  collaborationMode: "plan",
+  askUserHandler: async (request) => ({
+    cancelled: false,
+    answers: request.questions.map((question) => ({ id: question.id, value: "chosen value" })),
+  }),
+});
+```
 
 ```typescript
 interface AgentSession {
@@ -134,13 +166,19 @@ import {
   SessionManager,
 } from "metis";
 
-const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+  cwd,
+  sessionManager,
+  sessionStartEvent,
+  collaborationMode,
+}) => {
   const services = await createAgentSessionServices({ cwd });
   return {
     ...(await createAgentSessionFromServices({
       services,
       sessionManager,
       sessionStartEvent,
+      collaborationMode,
     })),
     services,
     diagnostics: services.diagnostics,
@@ -168,6 +206,7 @@ Important behavior:
 - event subscriptions are attached to a specific `AgentSession`, so re-subscribe after replacement
 - if you use extensions, call `runtime.session.bindExtensions(...)` again for the new session
 - creation returns diagnostics on `runtime.diagnostics`
+- `newSession({ collaborationMode: "plan" })` can preserve an explicitly selected mode while replacing the session
 - if runtime creation or replacement fails, the method throws and the caller decides how to handle it
 
 ```typescript
@@ -473,15 +512,16 @@ const simpleRegistry = ModelRegistry.inMemory(authStorage);
 
 > See [examples/sdk/09-api-keys-and-oauth.ts](../examples/sdk/09-api-keys-and-oauth.ts)
 
-### System Prompt
+### Instruction Stack
 
-Use a `ResourceLoader` to override the system prompt:
+Use a `ResourceLoader` to set the base profile and trusted developer instructions. Runtime context and user messages are not concatenated into these instructions:
 
 ```typescript
 import { createAgentSession, DefaultResourceLoader } from "metis";
 
 const loader = new DefaultResourceLoader({
-  systemPromptOverride: () => "You are a helpful assistant.",
+  baseInstructions: "You are a helpful assistant.",
+  developerInstructions: ["Keep answers concise."],
 });
 await loader.reload();
 
@@ -951,7 +991,7 @@ const loader = new DefaultResourceLoader({
   cwd: process.cwd(),
   agentDir: "/custom/agent",
   settingsManager,
-  systemPromptOverride: () => "You are a minimal assistant. Be concise.",
+  baseInstructions: "You are a minimal assistant. Be concise.",
 });
 await loader.reload();
 

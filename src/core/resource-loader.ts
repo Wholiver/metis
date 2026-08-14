@@ -8,7 +8,6 @@ import type { ResourceDiagnostic } from "./diagnostics.ts";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
 import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
-import dreamModeBuiltin from "./builtins/dream-mode.ts";
 import { createEventBus, type EventBus } from "./event-bus.ts";
 import {
 	clearExtensionCache,
@@ -66,7 +65,7 @@ function resolvePromptInput(input: string | undefined, description: string): str
 }
 
 function loadContextFileFromDir(dir: string): { path: string; content: string } | null {
-	const candidates = ["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
+	const candidates = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
 	for (const filename of candidates) {
 		const filePath = join(dir, filename);
 		if (existsSync(filePath)) {
@@ -100,25 +99,42 @@ export function loadProjectContextFiles(options: {
 	}
 
 	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
+	const filesystemRoot = resolve("/");
+	let projectRoot: string | undefined;
+	for (let currentDir = resolvedCwd; ; currentDir = resolve(currentDir, "..")) {
+		if (existsSync(join(currentDir, ".git"))) {
+			projectRoot = currentDir;
+			break;
+		}
+		if (currentDir === filesystemRoot) break;
+	}
 
-	let currentDir = resolvedCwd;
-	const root = resolve("/");
-
-	while (true) {
+	// Outside a repository, cwd itself is the project boundary. Never inherit
+	// arbitrary instructions from parent directories or the filesystem root.
+	const boundary = projectRoot ?? resolvedCwd;
+	for (let currentDir = resolvedCwd; ; currentDir = resolve(currentDir, "..")) {
 		const contextFile = loadContextFileFromDir(currentDir);
 		if (contextFile && !seenPaths.has(contextFile.path)) {
 			ancestorContextFiles.unshift(contextFile);
 			seenPaths.add(contextFile.path);
 		}
 
-		if (currentDir === root) break;
-
-		const parentDir = resolve(currentDir, "..");
-		if (parentDir === currentDir) break;
-		currentDir = parentDir;
+		if (currentDir === boundary) break;
 	}
 
-	contextFiles.push(...ancestorContextFiles);
+	const maxBytes = 32 * 1024;
+	let remaining = maxBytes;
+	const discoveredContextFiles = [...contextFiles, ...ancestorContextFiles];
+	contextFiles.length = 0;
+	for (const entry of discoveredContextFiles) {
+		const bytes = Buffer.byteLength(entry.content, "utf8");
+		if (bytes > remaining) {
+			console.warn(chalk.yellow(`Warning: Skipping ${entry.path}; AGENTS instruction budget is ${maxBytes} bytes.`));
+			continue;
+		}
+		contextFiles.push(entry);
+		remaining -= bytes;
+	}
 
 	return contextFiles;
 }
@@ -138,7 +154,13 @@ export interface DefaultResourceLoaderOptions {
 	noPromptTemplates?: boolean;
 	noThemes?: boolean;
 	noContextFiles?: boolean;
+	/** Replaces built-in base instructions. */
+	baseInstructions?: string;
+	/** Trusted developer instruction fragments. */
+	developerInstructions?: string[];
+	/** @deprecated Use baseInstructions. */
 	systemPrompt?: string;
+	/** @deprecated Use developerInstructions. */
 	appendSystemPrompt?: string[];
 	extensionsOverride?: (base: LoadExtensionsResult) => LoadExtensionsResult;
 	skillsOverride?: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
@@ -235,8 +257,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.noPromptTemplates = options.noPromptTemplates ?? false;
 		this.noThemes = options.noThemes ?? false;
 		this.noContextFiles = options.noContextFiles ?? false;
-		this.systemPromptSource = options.systemPrompt;
-		this.appendSystemPromptSource = options.appendSystemPrompt;
+		this.systemPromptSource = options.baseInstructions ?? options.systemPrompt;
+		this.appendSystemPromptSource = options.developerInstructions ?? options.appendSystemPrompt;
 		this.extensionsOverride = options.extensionsOverride;
 		this.skillsOverride = options.skillsOverride;
 		this.promptsOverride = options.promptsOverride;
@@ -464,13 +486,16 @@ export class DefaultResourceLoader implements ResourceLoader {
 			}
 		}
 
+		const discoveredAgentsFiles = this.noContextFiles
+			? []
+			: loadProjectContextFiles({
+					cwd: this.cwd,
+					agentDir: this.agentDir,
+				});
 		const agentsFiles = {
-			agentsFiles: this.noContextFiles
-				? []
-				: loadProjectContextFiles({
-						cwd: this.cwd,
-						agentDir: this.agentDir,
-					}),
+			agentsFiles: this.settingsManager.isProjectTrusted()
+				? discoveredAgentsFiles
+				: discoveredAgentsFiles.filter((file) => this.isUnderPath(resolve(file.path), this.agentDir)),
 		};
 		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
 		this.agentsFiles = resolvedAgentsFiles.agentsFiles;
@@ -898,7 +923,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const errors: Array<{ path: string; error: string }> = [];
 
 		for (const [index, factory] of this.extensionFactories.entries()) {
-			const extensionPath = factory === dreamModeBuiltin ? "<builtin:dream>" : `<inline:${index + 1}>`;
+			const extensionPath = `<inline:${index + 1}>`;
 			try {
 				const extension = await loadExtensionFromFactory(factory, this.cwd, this.eventBus, runtime, extensionPath);
 				extensions.push(extension);
@@ -965,12 +990,12 @@ export class DefaultResourceLoader implements ResourceLoader {
 	}
 
 	private discoverSystemPromptFile(): string | undefined {
-		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "SYSTEM.md");
+		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "BASE_INSTRUCTIONS.md");
 		if (this.settingsManager.isProjectTrusted() && existsSync(projectPath)) {
 			return projectPath;
 		}
 
-		const globalPath = join(this.agentDir, "SYSTEM.md");
+		const globalPath = join(this.agentDir, "BASE_INSTRUCTIONS.md");
 		if (existsSync(globalPath)) {
 			return globalPath;
 		}
@@ -979,12 +1004,12 @@ export class DefaultResourceLoader implements ResourceLoader {
 	}
 
 	private discoverAppendSystemPromptFile(): string | undefined {
-		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
+		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "INSTRUCTIONS.md");
 		if (this.settingsManager.isProjectTrusted() && existsSync(projectPath)) {
 			return projectPath;
 		}
 
-		const globalPath = join(this.agentDir, "APPEND_SYSTEM.md");
+		const globalPath = join(this.agentDir, "INSTRUCTIONS.md");
 		if (existsSync(globalPath)) {
 			return globalPath;
 		}

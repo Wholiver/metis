@@ -148,6 +148,11 @@ export class FooterComponent implements Component {
 
     // Build stats line
     const statsParts = [];
+    const workflowMode =
+      this.session.collaborationMode === "plan"
+        ? theme.bg("toolPendingBg", theme.bold(theme.fg("text", " PLAN ")))
+        : theme.bold(theme.fg("dim", "[ BUILD ]"));
+    statsParts.push(workflowMode);
     if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
     if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
     if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
@@ -189,17 +194,7 @@ export class FooterComponent implements Component {
     )
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, text]) => ({ key, text: sanitizeStatusText(text) }));
-    const dreamStatus = extensionStatuses.find(
-      (status) => status.key === "dream",
-    );
-    const otherStatuses = extensionStatuses.filter(
-      (status) => status.key !== "dream",
-    );
-
-    if (dreamStatus) {
-      statsParts.push("•");
-      statsParts.push(dreamStatus.text);
-    }
+    const otherStatuses = extensionStatuses.filter((status) => status.key !== "dream");
 
     if (areExperimentalFeaturesEnabled()) {
       statsParts.push(
@@ -207,7 +202,11 @@ export class FooterComponent implements Component {
       );
     }
 
-    let statsLeft = statsParts.join(" ");
+    // On narrow terminals, preserve the explicit workflow label before
+    // optional token/cost detail. It does not rely on colour alone.
+    let statsLeft = width < 72
+      ? [workflowMode, contextPercentStr].join(" ")
+      : statsParts.join(" ");
 
     // Add model name on the right side, plus thinking level if model supports it
     const modelName = state.model?.id || "no-model";

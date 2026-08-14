@@ -13,6 +13,7 @@ import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { CreateAgentSessionResult } from "./sdk.ts";
 import { assertSessionCwdExists } from "./session-cwd.ts";
 import { SessionManager } from "./session-manager.ts";
+import type { CollaborationMode } from "./workflow-runtime.ts";
 
 /**
  * Result returned by runtime creation.
@@ -38,6 +39,7 @@ export type CreateAgentSessionRuntimeFactory = (options: {
 	sessionManager: SessionManager;
 	sessionStartEvent?: SessionStartEvent;
 	projectTrustContext?: ProjectTrustContext;
+	collaborationMode?: CollaborationMode;
 }) => Promise<CreateAgentSessionRuntimeResult>;
 
 /**
@@ -223,6 +225,7 @@ export class AgentSessionRuntime {
 	async newSession(options?: {
 		cwd?: string;
 		parentSession?: string;
+		collaborationMode?: CollaborationMode;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}): Promise<{ cancelled: boolean }> {
@@ -253,6 +256,7 @@ export class AgentSessionRuntime {
 				agentDir: this.services.agentDir,
 				sessionManager,
 				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },
+				collaborationMode: options?.collaborationMode ?? "plan",
 			}),
 		);
 		if (options?.setup) {

@@ -1,441 +1,222 @@
-/**
- * Metis Desktop - Pure Spotlight Onboarding Tour (黑白极简与精确定位)
- */
+/* Metis Desktop first-run setup. Browser global + CommonJS-free by design. */
 (function () {
-	const STORAGE_KEY = "metis.desktopOnboardingCompleted.v1";
+	const STORAGE_KEY = "metis.desktopOnboardingCompleted.v2";
 	const LANGUAGE_KEY = "metis.desktopUiLanguage.v2";
-	const text = (key, variables) => window.metisDesktopI18n.t(key, localStorage.getItem(LANGUAGE_KEY) || "auto", variables);
-
-	let isRunning = false;
-	let currentStep = 1; // 1: Credential, 2: Workspace, 3: First Message
-	let subStep = 0; // For step 1: 0 = click settings, 1 = in security panel
-
-	// UI Elements
-	let overlayEl = null;
-	let maskPathEl = null;
-	let arrowPathEl = null;
-	let spotlightRingEl = null;
-	let inputBlockerEls = [];
-	let cardEl = null;
-
-	const STEPS = [
-		{
-			id: "credential",
-			stepNum: 1,
-			titleKey: "onboardingCredentialsTitle",
-			descriptionKey: "onboardingCredentialsDescription",
-			targetSelector: "#sidebarSettingsButton",
-			targetPanel: null,
-			placementPriority: ["top", "right", "bottom", "left"],
-		},
-		{
-			id: "credential-panel",
-			stepNum: 1,
-			titleKey: "onboardingProviderTitle",
-			descriptionKey: "onboardingProviderDescription",
-			targetSelector: ".settings-panel[data-settings-content='security'] .settings-group:nth-of-type(2)",
-			targetPanel: "security",
-			placementPriority: ["left", "bottom", "top", "right"],
-		},
-		{
-			id: "workspace",
-			stepNum: 2,
-			titleKey: "onboardingProjectTitle",
-			descriptionKey: "onboardingProjectDescription",
-			targetSelector: "#chooseWorkspaceButton",
-			targetPanel: null,
-			placementPriority: ["right", "bottom", "top", "left"],
-		},
-		{
-			id: "chat",
-			stepNum: 3,
-			titleKey: "onboardingMessageTitle",
-			descriptionKey: "onboardingMessageDescription",
-			targetSelector: "#composer",
-			targetPanel: null,
-			placementPriority: ["top", "right", "left", "bottom"],
-		},
+	const STEP_COUNT = 4;
+	const unicode = (...codePoints) => String.fromCodePoint(...codePoints);
+	const GREETINGS = [
+		"Hello",
+		unicode(0x4f60, 0x597d),
+		"Bonjour",
+		"Hola",
+		unicode(0x3053, 0x3093, 0x306b, 0x3061, 0x306f),
+		unicode(0xc548, 0xb155, 0xd558, 0xc138, 0xc694),
+		"Ciao",
+		`Ol${unicode(0x00e1)}`,
 	];
+	const PROVIDERS = ["openai", "anthropic", "deepseek", "gemini", "openrouter", "groq", "ollama"];
+	let active = false;
+	let step = 1;
+	let selectedWorkspaces = new Map();
+	let greetingTimer;
 
-	function getStepConfig() {
-		if (currentStep === 1) {
-			return subStep === 0 ? STEPS[0] : STEPS[1];
-		}
-		if (currentStep === 2) return STEPS[2];
-		if (currentStep === 3) return STEPS[3];
-		return STEPS[0];
-	}
-
-	function createOverlayDOM() {
-		if (document.getElementById("onboardingOverlay")) return;
-
-		const wrap = document.createElement("div");
-		wrap.id = "onboardingOverlay";
-		wrap.className = "onboarding-overlay hidden";
-		wrap.innerHTML = `
-			<svg class="onboarding-svg" width="100%" height="100%">
-				<defs>
-					<mask id="onboardingMask">
-						<rect width="100%" height="100%" fill="white"/>
-						<!-- Spotlight Mask Cutout -->
-						<rect id="onboardingMaskCutout" x="0" y="0" width="0" height="0" rx="10" ry="10" fill="black" fill-opacity="0.9"/>
-					</mask>
-					<!-- Open arrow head stays legible even when the path is short. -->
-					<marker id="sketchArrowHead" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto">
-						<path d="M 1 1 L 10 6 L 1 11" class="sketch-arrow-head" />
-					</marker>
-					<filter id="onboardingSketchWobble" x="-10%" y="-10%" width="120%" height="120%">
-						<feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="2" seed="7" result="noise" />
-						<feDisplacementMap in="SourceGraphic" in2="noise" scale="0.9" xChannelSelector="R" yChannelSelector="G" />
-					</filter>
-				</defs>
-				<rect width="100%" height="100%" fill="rgba(15, 23, 42, 0.46)" mask="url(#onboardingMask)"/>
-				<rect id="onboardingSpotlightRing" class="onboarding-spotlight-ring" x="0" y="0" width="0" height="0" rx="10" ry="10" />
-				<!-- Natural Curved Arrow Pointer -->
-				<path id="sketchArrow" class="sketch-arrow" d="" marker-end="url(#sketchArrowHead)" />
-			</svg>
-			<div class="onboarding-input-blocker" data-onboarding-blocker="top"></div>
-			<div class="onboarding-input-blocker" data-onboarding-blocker="right"></div>
-			<div class="onboarding-input-blocker" data-onboarding-blocker="bottom"></div>
-			<div class="onboarding-input-blocker" data-onboarding-blocker="left"></div>
-			<div id="onboardingCard" class="onboarding-card">
-				<div class="onboarding-card-header">
-					<span class="onboarding-step-badge" id="onboardingStepBadge">${text("onboardingStep", { step: 1, total: 3 })}</span>
-					<button class="onboarding-skip-btn" id="onboardingSkipBtn" type="button" title="${text("onboardingSkip")}">✕</button>
-				</div>
-				<div class="onboarding-card-body">
-					<h3 id="onboardingCardTitle">${text("onboardingCredentialsTitle")}</h3>
-					<p id="onboardingCardDesc">${text("onboardingCredentialsDescription")}</p>
-				</div>
-				<div class="onboarding-card-footer">
-					<button class="onboarding-prev-btn" id="onboardingPrevBtn" type="button">${text("onboardingPrevious")}</button>
-					<button class="onboarding-next-btn" id="onboardingNextBtn" type="button">${text("onboardingNext")}</button>
-				</div>
-			</div>
-		`;
-		document.body.appendChild(wrap);
-
-		overlayEl = wrap;
-		maskPathEl = document.getElementById("onboardingMaskCutout");
-		arrowPathEl = document.getElementById("sketchArrow");
-		spotlightRingEl = document.getElementById("onboardingSpotlightRing");
-		inputBlockerEls = Array.from(document.querySelectorAll("[data-onboarding-blocker]"));
-		cardEl = document.getElementById("onboardingCard");
-
-		document.getElementById("onboardingSkipBtn").addEventListener("click", stop);
-		document.getElementById("onboardingNextBtn").addEventListener("click", nextStep);
-		document.getElementById("onboardingPrevBtn").addEventListener("click", prevStep);
-	}
-
-	function clamp(value, min, max) {
-		return Math.min(Math.max(value, min), Math.max(min, max));
-	}
-
-	// Two cubic segments make a restrained S curve while keeping the arrow head
-	// perpendicular to the target edge.
-	function generateSketchArrowPath(fromX, fromY, toX, toY, direction) {
-		const dx = toX - fromX;
-		const dy = toY - fromY;
-		const midX = (fromX + toX) / 2;
-		const midY = (fromY + toY) / 2;
-		const distance = direction === "top" || direction === "bottom" ? Math.abs(dy) : Math.abs(dx);
-		const bend = clamp(distance * 0.2, 7, 18);
-
-		if (direction === "top" || direction === "bottom") {
-			const sign = dy >= 0 ? 1 : -1;
-			return [
-				`M ${fromX.toFixed(1)},${fromY.toFixed(1)}`,
-				`C ${(fromX + bend).toFixed(1)},${(fromY + dy * 0.18).toFixed(1)} ${(midX + bend).toFixed(1)},${(midY - sign * bend * 0.35).toFixed(1)} ${midX.toFixed(1)},${midY.toFixed(1)}`,
-				`C ${(midX - bend).toFixed(1)},${(midY + sign * bend * 0.35).toFixed(1)} ${toX.toFixed(1)},${(toY - dy * 0.2).toFixed(1)} ${toX.toFixed(1)},${toY.toFixed(1)}`,
-			].join(" ");
-		}
-
-		const sign = dx >= 0 ? 1 : -1;
-		return [
-			`M ${fromX.toFixed(1)},${fromY.toFixed(1)}`,
-			`C ${(fromX + dx * 0.18).toFixed(1)},${(fromY + bend).toFixed(1)} ${(midX - sign * bend * 0.35).toFixed(1)},${(midY + bend).toFixed(1)} ${midX.toFixed(1)},${midY.toFixed(1)}`,
-			`C ${(midX + sign * bend * 0.35).toFixed(1)},${(midY - bend).toFixed(1)} ${(toX - dx * 0.2).toFixed(1)},${toY.toFixed(1)} ${toX.toFixed(1)},${toY.toFixed(1)}`,
-		].join(" ");
-	}
-
-	function chooseCardPlacement(targetRect, cardWidth, cardHeight, winWidth, winHeight, priority) {
-		const viewportMargin = 16;
-		const arrowGap = 62;
-		const available = {
-			top: targetRect.top - viewportMargin,
-			bottom: winHeight - targetRect.bottom - viewportMargin,
-			left: targetRect.left - viewportMargin,
-			right: winWidth - targetRect.right - viewportMargin,
-		};
-		const required = {
-			top: cardHeight + arrowGap,
-			bottom: cardHeight + arrowGap,
-			left: cardWidth + arrowGap,
-			right: cardWidth + arrowGap,
-		};
-		const direction = priority.find((side) => available[side] >= required[side])
-			|| priority.reduce((best, side) => available[side] / required[side] > available[best] / required[best] ? side : best);
-
-		let x = targetRect.left + targetRect.width / 2 - cardWidth / 2;
-		let y = targetRect.top + targetRect.height / 2 - cardHeight / 2;
-		if (direction === "top") y = targetRect.top - arrowGap - cardHeight;
-		if (direction === "bottom") y = targetRect.bottom + arrowGap;
-		if (direction === "left") x = targetRect.left - arrowGap - cardWidth;
-		if (direction === "right") x = targetRect.right + arrowGap;
-
-		return {
-			direction,
-			x: clamp(x, viewportMargin, winWidth - cardWidth - viewportMargin),
-			y: clamp(y, viewportMargin, winHeight - cardHeight - viewportMargin),
-		};
-	}
-
-	function getArrowAnchors(placement, cardRect, targetRect, spotlightPad) {
-		const targetCenterX = targetRect.left + targetRect.width / 2;
-		const targetCenterY = targetRect.top + targetRect.height / 2;
-		const edgeInset = 28;
-
-		if (placement === "top" || placement === "bottom") {
-			const x = clamp(targetCenterX, cardRect.left + edgeInset, cardRect.right - edgeInset);
-			return placement === "top"
-				? { fromX: x, fromY: cardRect.bottom + 5, toX: targetCenterX, toY: targetRect.top - spotlightPad - 6 }
-				: { fromX: x, fromY: cardRect.top - 5, toX: targetCenterX, toY: targetRect.bottom + spotlightPad + 6 };
-		}
-
-		const y = clamp(targetCenterY, cardRect.top + edgeInset, cardRect.bottom - edgeInset);
-		return placement === "left"
-			? { fromX: cardRect.right + 5, fromY: y, toX: targetRect.left - spotlightPad - 6, toY: targetCenterY }
-			: { fromX: cardRect.left - 5, fromY: y, toX: targetRect.right + spotlightPad + 6, toY: targetCenterY };
-	}
-
-	function setInputBlockerRect(name, x, y, width, height) {
-		const blocker = inputBlockerEls.find((element) => element.dataset.onboardingBlocker === name);
-		if (!blocker) return;
-		blocker.style.left = `${Math.max(0, x)}px`;
-		blocker.style.top = `${Math.max(0, y)}px`;
-		blocker.style.width = `${Math.max(0, width)}px`;
-		blocker.style.height = `${Math.max(0, height)}px`;
-	}
-
-	function updateInputBlockers(cutout, winWidth, winHeight) {
-		setInputBlockerRect("top", 0, 0, winWidth, cutout.y);
-		setInputBlockerRect("right", cutout.x + cutout.width, cutout.y, winWidth - cutout.x - cutout.width, cutout.height);
-		setInputBlockerRect("bottom", 0, cutout.y + cutout.height, winWidth, winHeight - cutout.y - cutout.height);
-		setInputBlockerRect("left", 0, cutout.y, cutout.x, cutout.height);
-	}
-
-	function blockEntireViewport() {
-		setInputBlockerRect("top", 0, 0, window.innerWidth, window.innerHeight);
-		for (const name of ["right", "bottom", "left"]) {
-			setInputBlockerRect(name, 0, 0, 0, 0);
-		}
-	}
-
-	function updateSpotlight() {
-		if (!isRunning) return;
-
-		const stepConfig = getStepConfig();
-		document.getElementById("onboardingStepBadge").textContent = text("onboardingStep", { step: stepConfig.stepNum, total: 3 });
-		document.getElementById("onboardingCardTitle").textContent = text(stepConfig.titleKey);
-		document.getElementById("onboardingCardDesc").textContent = text(stepConfig.descriptionKey);
-
-		const prevBtn = document.getElementById("onboardingPrevBtn");
-		const nextBtn = document.getElementById("onboardingNextBtn");
-		prevBtn.style.display = currentStep === 1 && subStep === 0 ? "none" : "inline-block";
-		nextBtn.textContent = text(currentStep === 3 ? "onboardingFinish" : "onboardingNext");
-
-		let target = document.querySelector(stepConfig.targetSelector);
-
-		if (!target || target.offsetParent === null) {
-			arrowPathEl.setAttribute("d", "");
-			spotlightRingEl.setAttribute("width", "0");
-			spotlightRingEl.setAttribute("height", "0");
-			maskPathEl.setAttribute("width", "0");
-			maskPathEl.setAttribute("height", "0");
-			blockEntireViewport();
-			return;
-		}
-
-		const rect = target.getBoundingClientRect();
-		const pad = 8;
-		const winW = window.innerWidth;
-		const winH = window.innerHeight;
-		const cutout = {
-			x: Math.max(0, rect.left - pad),
-			y: Math.max(0, rect.top - pad),
-			width: Math.min(winW, rect.right + pad) - Math.max(0, rect.left - pad),
-			height: Math.min(winH, rect.bottom + pad) - Math.max(0, rect.top - pad),
-		};
-
-		maskPathEl.setAttribute("x", cutout.x);
-		maskPathEl.setAttribute("y", cutout.y);
-		maskPathEl.setAttribute("width", cutout.width);
-		maskPathEl.setAttribute("height", cutout.height);
-		spotlightRingEl.setAttribute("x", cutout.x + 1);
-		spotlightRingEl.setAttribute("y", cutout.y + 1);
-		spotlightRingEl.setAttribute("width", Math.max(0, cutout.width - 2));
-		spotlightRingEl.setAttribute("height", Math.max(0, cutout.height - 2));
-		updateInputBlockers(cutout, winW, winH);
-
-		const cardSize = cardEl.getBoundingClientRect();
-		const placement = chooseCardPlacement(rect, cardSize.width, cardSize.height, winW, winH, stepConfig.placementPriority);
-		cardEl.style.left = `${placement.x}px`;
-		cardEl.style.top = `${placement.y}px`;
-		cardEl.dataset.placement = placement.direction;
-
-		const positionedCardRect = cardEl.getBoundingClientRect();
-		const anchors = getArrowAnchors(placement.direction, positionedCardRect, rect, pad);
-		arrowPathEl.setAttribute("d", generateSketchArrowPath(
-			anchors.fromX,
-			anchors.fromY,
-			anchors.toX,
-			anchors.toY,
-			placement.direction,
-		));
-
-	}
-
-	function start() {
-		createOverlayDOM();
-		isRunning = true;
-		currentStep = 1;
-		const settingsShell = document.querySelector("#settingsShell");
-		subStep = settingsShell && !settingsShell.hidden ? 1 : 0;
-		overlayEl.classList.remove("hidden");
-
-		updateSpotlight();
-
-		window.addEventListener("resize", updateSpotlight);
-		window.addEventListener("scroll", updateSpotlight, true);
-	}
-
-	function stop() {
-		isRunning = false;
-		if (overlayEl) {
-			overlayEl.classList.add("hidden");
-		}
-		window.removeEventListener("resize", updateSpotlight);
-		window.removeEventListener("scroll", updateSpotlight, true);
-	}
-
-	function complete() {
-		localStorage.setItem(STORAGE_KEY, "true");
-		showCelebration();
-		setTimeout(() => {
-			stop();
-		}, 2200);
-	}
-
-	function showCelebration() {
-		if (!cardEl) return;
-		cardEl.classList.add("celebrating");
-		document.getElementById("onboardingStepBadge").textContent = text("onboardingCompleteBadge");
-		document.getElementById("onboardingCardTitle").textContent = text("onboardingCompleteTitle");
-		document.getElementById("onboardingCardDesc").textContent = text("onboardingCompleteDescription");
-		document.getElementById("onboardingPrevBtn").style.display = "none";
-		document.getElementById("onboardingNextBtn").style.display = "none";
-	}
-
-	function nextStep() {
-		if (currentStep === 1) {
-			if (subStep === 0) {
-				subStep = 1;
-				const settingsBtn = document.querySelector("#sidebarSettingsButton");
-				if (settingsBtn) settingsBtn.click();
-				setTimeout(() => {
-					const securityNav = document.querySelector('[data-settings-panel="security"]');
-					if (securityNav) securityNav.click();
-					updateSpotlight();
-				}, 150);
-				return;
-			} else {
-				currentStep = 2;
-				subStep = 0;
-				const backBtn = document.querySelector("#settingsBackButton");
-				if (backBtn) backBtn.click();
-			}
-		} else if (currentStep === 2) {
-			currentStep = 3;
-		} else if (currentStep === 3) {
-			complete();
-			return;
-		}
-		updateSpotlight();
-	}
-
-	function prevStep() {
-		if (currentStep === 1 && subStep === 1) {
-			subStep = 0;
-			const backBtn = document.querySelector("#settingsBackButton");
-			if (backBtn) backBtn.click();
-			setTimeout(updateSpotlight, 150);
-			return;
-		} else if (currentStep === 2) {
-			currentStep = 1;
-			subStep = 1;
-			const settingsBtn = document.querySelector("#sidebarSettingsButton");
-			if (settingsBtn) settingsBtn.click();
-			setTimeout(() => {
-				const securityNav = document.querySelector('[data-settings-panel="security"]');
-				if (securityNav) securityNav.click();
-				updateSpotlight();
-			}, 150);
-			return;
-		} else if (currentStep === 3) {
-			currentStep = 2;
-		}
-		updateSpotlight();
-	}
-
-	function notifyEvent(eventType) {
-		if (!isRunning) return;
-
-		if (eventType === "provider_saved" || eventType === "credentials_present") {
-			if (currentStep === 1) {
-				currentStep = 2;
-				subStep = 0;
-				const backBtn = document.querySelector("#settingsBackButton");
-				if (backBtn) backBtn.click();
-				updateSpotlight();
-			}
-		} else if (eventType === "workspace_changed" || eventType === "workspace_added") {
-			if (currentStep === 2) {
-				currentStep = 3;
-				updateSpotlight();
-			}
-		} else if (eventType === "message_sent") {
-			if (currentStep === 3) {
-				complete();
-			}
-		} else if (eventType === "open_settings") {
-			if (currentStep === 1 && subStep === 0) {
-				subStep = 1;
-				setTimeout(() => {
-					const securityNav = document.querySelector('[data-settings-panel="security"]');
-					if (securityNav) securityNav.click();
-					updateSpotlight();
-				}, 150);
-			}
-		}
-	}
-
-	function isCompleted() {
-		return localStorage.getItem(STORAGE_KEY) === "true";
-	}
-
-	function reset() {
-		localStorage.removeItem(STORAGE_KEY);
-		start();
-	}
-
-	window.MetisOnboarding = {
-		start,
-		stop,
-		complete,
-		nextStep,
-		prevStep,
-		notifyEvent,
-		isCompleted,
-		reset,
+	const uiText = (key, variables) => window.metisDesktopI18n?.t(key, localStorage.getItem(LANGUAGE_KEY) || "auto", variables) || key;
+	const escapeHtml = (value) => String(value || "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+	function overlay() { return document.querySelector("#onboardingOverlay"); }
+	const NATIVE_LANGUAGE_NAMES = {
+		auto: "automatic",
+		"zh-CN": "\u7b80\u4f53\u4e2d\u6587",
+		"zh-TW": "\u7e41\u9ad4\u4e2d\u6587",
+		en: "English",
+		ja: "\u65e5\u672c\u8a9e",
+		ko: "\ud55c\uad6d\uc5b4",
+		es: "Espa\u00f1ol",
+		fr: "Fran\u00e7ais",
+		de: "Deutsch",
+		pt: "Portugu\u00eas",
+		ru: "\u0420\u0443\u0441\u0441\u043a\u0438\u0439",
+		it: "Italiano",
 	};
+	function getLanguages() {
+		return [
+			["auto", uiText("automatic")],
+			["zh-CN", NATIVE_LANGUAGE_NAMES["zh-CN"]],
+			["en", NATIVE_LANGUAGE_NAMES.en],
+			["zh-TW", NATIVE_LANGUAGE_NAMES["zh-TW"]],
+			["ja", NATIVE_LANGUAGE_NAMES.ja],
+			["ko", NATIVE_LANGUAGE_NAMES.ko],
+			["es", NATIVE_LANGUAGE_NAMES.es],
+			["fr", NATIVE_LANGUAGE_NAMES.fr],
+			["de", NATIVE_LANGUAGE_NAMES.de],
+			["pt", NATIVE_LANGUAGE_NAMES.pt],
+			["ru", NATIVE_LANGUAGE_NAMES.ru],
+			["it", NATIVE_LANGUAGE_NAMES.it],
+		];
+	}
+	function render() {
+		const root = overlay();
+		if (!root) return;
+		clearInterval(greetingTimer);
+		root.innerHTML = `<div class="onboarding-progress" aria-hidden="true">${Array.from({ length: STEP_COUNT }, (_, index) => `<i class="${index + 1 === step ? "active" : index + 1 < step ? "done" : ""}"></i>`).join("")}</div><main class="onboarding-stage" aria-live="polite">${scene()}</main>${navigation()}`;
+		bindScene(root);
+	}
+	function updateLanguageSelection(root, language) {
+		const autoButton = root.querySelector('[data-language="auto"]');
+		if (autoButton) autoButton.textContent = uiText("automatic");
+		root.querySelectorAll("[data-language]").forEach((button) => {
+			const selected = button.dataset.language === language;
+			button.classList.toggle("selected", selected);
+			button.setAttribute("aria-pressed", String(selected));
+		});
+	}
+	function scene() {
+		if (step === 1) return `<section class="onboarding-screen onboarding-welcome" data-scene="1"><div class="onboarding-greeting" id="onboardingGreeting">${GREETINGS[0]}</div><p>${uiText("onboardingWelcomeSubtitle")}</p><button type="button" class="onboarding-primary onboarding-welcome-action" data-onboarding-next>${uiText("onboardingGetStarted")}</button></section>`;
+		if (step === 2) {
+			const selected = localStorage.getItem(LANGUAGE_KEY) || "auto";
+			return `<section class="onboarding-screen onboarding-setup-screen" data-scene="2"><header class="onboarding-scene-heading"><h1>${uiText("onboardingLanguageTitle")}</h1><p>${uiText("onboardingLanguageSubtitle")}</p></header><div class="onboarding-language-grid" translate="no">${getLanguages().map(([code, label]) => `<button type="button" data-language="${code}" class="${code === selected ? "selected" : ""}" aria-pressed="${code === selected}" translate="no">${label}</button>`).join("")}</div></section>`;
+		}
+		if (step === 3) return `<section class="onboarding-screen onboarding-setup-screen" data-scene="3"><header class="onboarding-scene-heading"><h1>${uiText("onboardingProviderTitle")}</h1><p>${uiText("onboardingProviderDescription")}</p></header><div class="onboarding-provider-card"><div class="onboarding-provider-tabs" role="tablist" aria-label="${uiText("onboardingProviderTitle")}"><button type="button" role="tab" aria-selected="true" data-provider-tab="api">${uiText("onboardingProviderTabApiKey")}</button><button type="button" role="tab" aria-selected="false" data-provider-tab="oauth">${uiText("onboardingProviderTabOAuth")}</button><button type="button" role="tab" aria-selected="false" data-provider-tab="custom">${uiText("onboardingProviderTabCustom")}</button></div><div class="onboarding-provider-panel" id="onboardingProviderPanel">${providerPanel("api")}</div><p class="onboarding-feedback" id="onboardingFeedback" role="status"></p></div></section>`;
+		const recent = (window.state?.projects || []).slice(0, 4);
+		return `<section class="onboarding-screen onboarding-setup-screen" data-scene="4"><header class="onboarding-scene-heading"><h1>${uiText("onboardingWorkspaceTitle")}</h1><p>${uiText("onboardingWorkspaceSubtitle")}</p></header><div class="onboarding-workspace"><button type="button" class="onboarding-folder" data-onboarding-workspace><svg aria-hidden="true"><use href="#i-folder"/></svg>${uiText("onboardingChooseFolder")}</button><div class="onboarding-selected-list" id="onboardingSelectedList"></div>${recent.length ? `<div class="onboarding-recent"><span>${uiText("onboardingRecentProjects")}</span>${recent.map((project) => `<button type="button" data-workspace-path="${escapeHtml(project.path)}" data-workspace-name="${escapeHtml(project.displayName || project.name)}" aria-pressed="false"><span><strong>${escapeHtml(project.displayName || project.name)}</strong><small>${escapeHtml(project.path)}</small></span><span class="onboarding-project-check" aria-hidden="true"><svg><use href="#i-check"/></svg><span>${uiText("onboardingSelectedProject")}</span></span></button>`).join("")}</div>` : ""}</div></section>`;
+	}
+	function providerPanel(kind) {
+		if (kind === "oauth") return `<div class="onboarding-provider-fields" data-provider-panel="oauth"><div class="onboarding-provider-inputs onboarding-provider-inputs-single"><label><span>${uiText("providerName")}</span><select id="onboardingOAuthProvider"><option value="anthropic">Anthropic</option><option value="openai-codex">OpenAI Codex</option><option value="github-copilot">GitHub Copilot</option></select></label></div><footer class="onboarding-provider-actions"><p>${uiText("oauthDescription")}</p><button class="onboarding-primary onboarding-provider-submit" type="button" data-onboarding-oauth>${uiText("oauthLogin")}</button></footer></div>`;
+		if (kind === "custom") return `<div class="onboarding-provider-fields" data-provider-panel="custom"><div class="onboarding-provider-inputs onboarding-custom-fields"><label><span>${uiText("providerName")}</span><input id="onboardingCustomName" type="text" /></label><label><span>${uiText("customProviderBaseUrl")}</span><input id="onboardingCustomBaseUrl" type="url" placeholder="https://api.example.com/v1" /></label><label><span>${uiText("apiKey")}</span><input id="onboardingCustomApiKey" type="password" autocomplete="off" /></label><label><span>${uiText("additionalModelIds")}</span><input id="onboardingCustomModels" type="text" placeholder="${uiText("manualModelIdsPlaceholder")}" /></label></div><footer class="onboarding-provider-actions"><p>${uiText("customBaseUrlDescription")}</p><button class="onboarding-primary onboarding-provider-submit" type="button" data-onboarding-custom>${uiText("onboardingSaveAndConnect")}</button></footer></div>`;
+		return `<div class="onboarding-provider-fields" data-provider-panel="api"><div class="onboarding-provider-inputs"><label><span>${uiText("providerName")}</span><select id="onboardingProvider">${PROVIDERS.map((provider) => `<option value="${provider}">${provider}</option>`).join("")}</select></label><label><span>${uiText("apiKey")}</span><input id="onboardingApiKey" type="password" autocomplete="off" placeholder="sk-…" /></label></div><footer class="onboarding-provider-actions"><p>${uiText("apiKeyDescription")}</p><button class="onboarding-primary onboarding-provider-submit" type="button" data-onboarding-save>${uiText("onboardingSaveAndConnect")}</button></footer></div>`;
+	}
+	function navigation() {
+		const isFinalStep = step === STEP_COUNT;
+		return `<nav class="onboarding-navigation ${step === 1 ? "onboarding-navigation-hidden" : ""}" aria-label="${uiText("onboardingStep", { step, total: STEP_COUNT })}"><button type="button" class="onboarding-back" data-onboarding-back ${step === 1 ? "disabled" : ""}>${uiText("onboardingPrevious")}</button><button type="button" class="onboarding-primary" data-onboarding-next ${isFinalStep && selectedWorkspaces.size === 0 ? "disabled" : ""}>${isFinalStep ? uiText("onboardingStartCoding") : uiText("onboardingNext")}</button></nav>`;
+	}
+	function bindScene(root) {
+		root.querySelector("[data-onboarding-next]")?.addEventListener("click", next);
+		root.querySelector("[data-onboarding-back]")?.addEventListener("click", () => { step = Math.max(1, step - 1); render(); });
+		root.querySelectorAll("[data-language]").forEach((button) => button.addEventListener("click", () => {
+			const language = button.dataset.language;
+			localStorage.setItem(LANGUAGE_KEY, language);
+			window.setUiLanguage?.(language);
+			// Preserve this scene's DOM. Rebuilding it restarts its one-time entrance
+			// animation for every language choice, which makes selection feel sluggish.
+			updateLanguageSelection(root, language);
+		}));
+		root.querySelector("[data-onboarding-skip]")?.addEventListener("click", next);
+		bindProviderControls(root);
+		root.querySelector("[data-onboarding-workspace]")?.addEventListener("click", chooseWorkspace);
+		root.querySelectorAll("[data-workspace-path]").forEach((button) => button.addEventListener("click", () => {
+			const path = button.dataset.workspacePath;
+			if (selectedWorkspaces.has(path)) selectedWorkspaces.delete(path);
+			else selectedWorkspaces.set(path, { path, name: button.dataset.workspaceName });
+			updateWorkspaceSelection(root);
+		}));
+		updateWorkspaceSelection(root);
+		const greeting = root.querySelector("#onboardingGreeting");
+		if (greeting) {
+			let index = 0;
+			greetingTimer = window.setInterval(() => {
+				index = (index + 1) % GREETINGS.length;
+				greeting.classList.add("changing");
+				window.setTimeout(() => { greeting.textContent = GREETINGS[index]; greeting.classList.remove("changing"); }, 220);
+			}, 2200);
+		}
+	}
+	function bindProviderControls(root) {
+		root.querySelectorAll("[data-provider-tab]").forEach((tab) => tab.addEventListener("click", () => {
+			root.querySelectorAll("[data-provider-tab]").forEach((candidate) => candidate.setAttribute("aria-selected", String(candidate === tab)));
+			const panel = root.querySelector("#onboardingProviderPanel");
+			if (panel) panel.innerHTML = providerPanel(tab.dataset.providerTab);
+			bindProviderActions(root);
+		}));
+		bindProviderActions(root);
+	}
+	function bindProviderActions(root) {
+		root.querySelector("[data-onboarding-save]")?.addEventListener("click", saveProvider);
+		root.querySelector("[data-onboarding-oauth]")?.addEventListener("click", saveOAuthProvider);
+		root.querySelector("[data-onboarding-custom]")?.addEventListener("click", saveCustomProvider);
+	}
+	async function saveProvider() {
+		const feedback = document.querySelector("#onboardingFeedback");
+		const provider = document.querySelector("#onboardingProvider")?.value;
+		const apiKey = document.querySelector("#onboardingApiKey")?.value.trim();
+		if (!apiKey) { feedback.textContent = uiText("enterApiKey"); return; }
+		try {
+			feedback.textContent = uiText("saving");
+			await window.runPreferencesCommand?.(`/login ${provider} ${apiKey}`, feedback, { sync: true });
+			feedback.textContent = uiText("savedAndApplied");
+			window.setTimeout(next, 450);
+		} catch (error) { feedback.textContent = uiText("saveFailed", { message: error.message || String(error) }); }
+	}
+	async function saveOAuthProvider() {
+		const feedback = document.querySelector("#onboardingFeedback");
+		const provider = document.querySelector("#onboardingOAuthProvider")?.value;
+		try {
+			feedback.textContent = uiText("saving");
+			await window.runPreferencesCommand?.(`/login ${provider}`, feedback, { sync: true });
+			feedback.textContent = uiText("savedAndApplied");
+			window.setTimeout(next, 450);
+		} catch (error) { feedback.textContent = uiText("saveFailed", { message: error.message || String(error) }); }
+	}
+	async function saveCustomProvider() {
+		const feedback = document.querySelector("#onboardingFeedback");
+		const name = document.querySelector("#onboardingCustomName")?.value.trim();
+		const baseUrl = document.querySelector("#onboardingCustomBaseUrl")?.value.trim();
+		const apiKey = document.querySelector("#onboardingCustomApiKey")?.value.trim();
+		const modelIds = String(document.querySelector("#onboardingCustomModels")?.value || "").split(",").map((value) => value.trim()).filter(Boolean);
+		if (!name || !baseUrl) { feedback.textContent = uiText("enterProviderName"); return; }
+		try {
+			feedback.textContent = uiText("saving");
+			const saved = await window.metisDesktop?.providerConfig?.saveCustom({ name, baseUrl, apiKey, modelIds, reasoning: true });
+			await window.runPreferencesCommand?.("/reload", feedback, { sync: true });
+			if (apiKey && saved?.provider) await window.runPreferencesCommand?.(`/login ${saved.provider} ${apiKey}`, feedback, { sync: true });
+			feedback.textContent = uiText("savedAndApplied");
+			window.setTimeout(next, 450);
+		} catch (error) { feedback.textContent = uiText("saveFailed", { message: error.message || String(error) }); }
+	}
+	async function chooseWorkspace() {
+		const picked = await window.metisDesktop?.workspace?.selectMany?.();
+		for (const project of picked || []) selectedWorkspaces.set(project.path, project);
+		updateWorkspaceSelection(overlay());
+	}
+	function updateWorkspaceSelection(root) {
+		if (!root) return;
+		root.querySelectorAll("[data-workspace-path]").forEach((button) => {
+			const selected = selectedWorkspaces.has(button.dataset.workspacePath);
+			button.classList.toggle("selected", selected);
+			button.setAttribute("aria-pressed", String(selected));
+		});
+		const selectedList = root.querySelector("#onboardingSelectedList");
+		if (selectedList) {
+			selectedList.innerHTML = [...selectedWorkspaces.values()].map((project) => `<div class="onboarding-selected"><span><strong>${escapeHtml(project.name || project.path.split("/").pop())}</strong><small>${escapeHtml(project.path)}</small></span><span class="onboarding-project-check"><svg aria-hidden="true"><use href="#i-check"/></svg>${uiText("onboardingSelectedProject")}</span></div>`).join("");
+			selectedList.classList.toggle("hidden", selectedWorkspaces.size === 0);
+		}
+		const finish = root.querySelector('.onboarding-navigation [data-onboarding-next]');
+		if (step === STEP_COUNT && finish) finish.disabled = selectedWorkspaces.size === 0;
+	}
+	async function next() {
+		if (step < STEP_COUNT) { step += 1; render(); return; }
+		if (selectedWorkspaces.size === 0) return;
+		localStorage.setItem(STORAGE_KEY, "true");
+		stop();
+		const projects = [...selectedWorkspaces.values()].map((workspace) => window.ensureProject?.(workspace)).filter(Boolean);
+		const project = projects.at(-1);
+		if (project) await window.activateProject?.(project, { forceNewConversation: true });
+		window.focusComposer?.();
+	}
+	function start() {
+		const root = overlay();
+		if (!root) return;
+		active = true;
+		step = 1;
+		selectedWorkspaces = new Map();
+		root.hidden = false;
+		document.body.classList.add("onboarding-open");
+		render();
+	}
+	function stop() {
+		active = false;
+		clearInterval(greetingTimer);
+		overlay()?.setAttribute("hidden", "");
+		document.body.classList.remove("onboarding-open");
+	}
+	function isCompleted() { return localStorage.getItem(STORAGE_KEY) === "true"; }
+	window.MetisOnboarding = { start, stop, isCompleted, reset: () => { localStorage.removeItem(STORAGE_KEY); start(); }, setStep: (nextStep) => { if (!active) start(); step = Math.min(STEP_COUNT, Math.max(1, Number(nextStep) || 1)); render(); }, get active() { return active; } };
 })();

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, session, shell, utilityProcess } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, session, shell, utilityProcess } = require("electron");
 const { execFile } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
 const fs = require("node:fs");
@@ -7,7 +7,10 @@ const path = require("node:path");
 const { promisify } = require("node:util");
 const { createApplicationMenuTemplate, createEditorContextMenuTemplate } = require("./main-menu.cjs");
 const customProviderConfig = require("./provider-config.cjs");
+const { readSessionTokenActivity, readSessionTokenTotals } = require("./session-token-totals.cjs");
 const desktopI18n = require("./renderer/i18n.js");
+
+app.commandLine.appendSwitch("log-level", "3");
 
 const execFileAsync = promisify(execFile);
 const MAX_TREE_ITEMS = 600;
@@ -55,7 +58,7 @@ function findMetisCli() {
 
 async function isLocalServerHealthy() {
 	try {
-		const response = await fetch("http://127.0.0.1:4096/global/health", { signal: AbortSignal.timeout(500) });
+		const response = await net.fetch("http://127.0.0.1:4096/global/health", { signal: AbortSignal.timeout(500) });
 		if (!response.ok) return false;
 		const data = await response.json();
 		return data?.healthy === true;
@@ -83,7 +86,13 @@ async function ensureLocalMetisServer() {
 		stdio: ["ignore", "pipe", "pipe"],
 		serviceName: "Metis Server",
 	});
-	autoServerProcess.stdout?.on("data", (chunk) => process.stdout.write("[server] " + chunk));
+	autoServerProcess.stdout?.on("data", (chunk) => {
+		const str = chunk.toString();
+		process.stdout.write("[server] " + str);
+		if (str.includes("metis server listening")) {
+			mainWindow?.webContents.send("metis:server-ready");
+		}
+	});
 	autoServerProcess.stderr?.on("data", (chunk) => {
 		const str = chunk.toString();
 		if (str.trim()) lastStderr = str.trim();
@@ -97,8 +106,11 @@ async function ensureLocalMetisServer() {
 			mainWindow?.webContents.send("metis:disconnected", nativeText("localServerStopped", { code, detail }));
 		}
 	});
-	for (let attempt = 0; attempt < 40; attempt += 1) {
-		if (await isLocalServerHealthy()) return;
+	for (let attempt = 0; attempt < 120; attempt += 1) {
+		if (await isLocalServerHealthy()) {
+			mainWindow?.webContents.send("metis:server-ready");
+			return;
+		}
 		if (!autoServerProcess) return;
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
@@ -130,16 +142,16 @@ function createWindow() {
 		minWidth: 1040,
 		minHeight: 700,
 		show: false,
-		backgroundColor: "#edf1f2",
-		transparent: false,
+		backgroundColor: "#00000000",
+		transparent: isMac,
 		roundedCorners: true,
-		vibrancy: isMac ? "sidebar" : undefined,
+		vibrancy: isMac ? "under-window" : undefined,
 		visualEffectState: isMac ? "active" : undefined,
 		title: "Metis",
 		icon,
 		autoHideMenuBar: true,
 		titleBarStyle: isMac ? "hiddenInset" : "hidden",
-		trafficLightPosition: isMac ? { x: 18, y: 18 } : undefined,
+		trafficLightPosition: isMac ? { x: 16, y: 18 } : undefined,
 		titleBarOverlay: isWin
 			? {
 					color: "#fbfbfa",
@@ -166,6 +178,70 @@ function createWindow() {
 		mainWindow.show();
 		if (process.env.METIS_DESKTOP_CAPTURE) {
 			setTimeout(async () => {
+				const onboardingStep = Number(process.env.METIS_DESKTOP_CAPTURE_ONBOARDING_STEP);
+				if (Number.isInteger(onboardingStep) && onboardingStep >= 1 && onboardingStep <= 4) {
+					await mainWindow.webContents.executeJavaScript(`window.MetisOnboarding?.setStep(${onboardingStep})`);
+					if (process.env.METIS_DESKTOP_CAPTURE_PROVIDER_TAB) {
+						await mainWindow.webContents.executeJavaScript(
+							`document.querySelector('[data-provider-tab="${String(process.env.METIS_DESKTOP_CAPTURE_PROVIDER_TAB).replace(/[^a-z]/g, "")}"]')?.click()`,
+						);
+					}
+					if (process.env.METIS_DESKTOP_CAPTURE_WORKSPACE_SELECTIONS) {
+						await mainWindow.webContents.executeJavaScript(`(() => {
+							window.__metisCaptureOnboardingScene = document.querySelector('[data-scene="4"]');
+							[...document.querySelectorAll('[data-workspace-path]')].slice(0, ${Math.max(0, Number(process.env.METIS_DESKTOP_CAPTURE_WORKSPACE_SELECTIONS) || 0)}).forEach((button) => button.click());
+						})()`);
+					}
+					if (process.env.METIS_DESKTOP_CAPTURE_ONBOARDING_SLOW_MOTION) {
+						await mainWindow.webContents.executeJavaScript(
+							"document.getAnimations().forEach((animation) => { animation.playbackRate = 0.1; })",
+						);
+					}
+					await new Promise((resolve) => setTimeout(resolve, 500));
+					const metrics = await mainWindow.webContents.executeJavaScript(`(() => {
+						const overlay = document.querySelector('#onboardingOverlay');
+						const scene = overlay?.querySelector('[data-scene]');
+						const heading = overlay?.querySelector('.onboarding-scene-heading');
+						const rect = heading?.getBoundingClientRect();
+						const sceneStyle = scene ? getComputedStyle(scene) : null;
+						const hello = overlay?.querySelector('.onboarding-greeting');
+						const centralAction = overlay?.querySelector('.onboarding-primary');
+						const centralActionRect = centralAction?.getBoundingClientRect();
+						const navigation = overlay?.querySelector('.onboarding-navigation');
+						const navigationRect = navigation?.getBoundingClientRect();
+						const backRect = navigation?.querySelector('[data-onboarding-back]')?.getBoundingClientRect();
+						const nextRect = navigation?.querySelector('[data-onboarding-next]')?.getBoundingClientRect();
+						const providerCard = overlay?.querySelector('.onboarding-provider-card');
+						const providerCardRect = providerCard?.getBoundingClientRect();
+						const selectedProviderTab = overlay?.querySelector('[data-provider-tab][aria-selected="true"]');
+						return {
+							overlayVisible: Boolean(overlay && !overlay.hidden),
+							scene: scene?.dataset.scene || null,
+							helloFont: hello ? getComputedStyle(hello).fontFamily : null,
+							helloText: hello?.textContent || null,
+							centralAction: centralActionRect
+								? {
+									width: Math.round(centralActionRect.width),
+									height: Math.round(centralActionRect.height),
+								}
+								: null,
+							headingRect: rect ? { width: rect.width, height: rect.height, top: rect.top, centerX: rect.left + rect.width / 2 } : null,
+							navigationRect: navigationRect ? { left: navigationRect.left, width: navigationRect.width, centerX: navigationRect.left + navigationRect.width / 2 } : null,
+							backRect: backRect ? { left: backRect.left, width: backRect.width, centerX: backRect.left + backRect.width / 2 } : null,
+							nextRect: nextRect ? { left: nextRect.left, width: nextRect.width, centerX: nextRect.left + nextRect.width / 2 } : null,
+							viewportCenterX: window.innerWidth / 2,
+							providerTabs: overlay?.querySelectorAll('[data-provider-tab]').length || 0,
+							selectedProviderTab: selectedProviderTab?.dataset.providerTab || null,
+							providerCardRect: providerCardRect ? { width: providerCardRect.width, height: providerCardRect.height, centerX: providerCardRect.left + providerCardRect.width / 2 } : null,
+							selectedWorkspaceCount: overlay?.querySelectorAll('[data-workspace-path][aria-pressed="true"]').length || 0,
+							workspaceScenePreserved: !window.__metisCaptureOnboardingScene || window.__metisCaptureOnboardingScene === scene,
+							sceneOpacity: sceneStyle?.opacity || null,
+							sceneTransform: sceneStyle?.transform || null,
+							runningAnimations: document.getAnimations().filter((animation) => animation.playState === 'running').length,
+						};
+					})()`);
+					console.error(`[capture:onboarding] ${JSON.stringify(metrics)}`);
+				}
 				if (process.env.METIS_DESKTOP_CAPTURE_SETTINGS) {
 					await mainWindow.webContents.executeJavaScript(
 						"typeof openSettings === 'function' ? openSettings() : document.querySelector('#sidebarSettingsButton')?.click()",
@@ -212,6 +288,159 @@ function createWindow() {
 						document.querySelector('#advancedEntry')?.click();
 					`);
 					await new Promise((resolve) => setTimeout(resolve, 220));
+				}
+				if (process.env.METIS_DESKTOP_CAPTURE_MEMORY) {
+					if (process.env.METIS_DESKTOP_CAPTURE_MEMORY_NARROW) {
+						mainWindow.setMinimumSize(600, 600);
+						mainWindow.setSize(620, 800);
+						await new Promise((resolve) => setTimeout(resolve, 300));
+					}
+					const memoryMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+						typeof openSettings === 'function' ? openSettings() : document.querySelector('#sidebarSettingsButton')?.click();
+						selectPreferencesPanel('agent');
+						state.serverConnected = true;
+						state.session = { ...(state.session || {}), isStreaming: false, isCompacting: false };
+						setMemoryState({ enabled: true, phase: 'idle', globalCount: 0, projectCount: 9, pendingJobs: 51, nextEligibleAt: '2026-08-14T20:49:42.000Z', lastRunProcessed: 3, lastRunAdded: 3, lastRunSkipped: 0, lastExtractionMethod: 'model', fallbackUsed: false, lastConsolidatedAt: '2026-08-13T15:00:00.000Z' });
+						const panel = document.querySelector('#settingsMemoryDashboard');
+						const card = panel?.closest('.settings-dialog-card');
+						const metrics = panel?.querySelector('.memory-metrics');
+						const button = document.querySelector('#settingsMemoryRun');
+						const panelRect = panel?.getBoundingClientRect();
+						const cardRect = card?.getBoundingClientRect();
+						const panelStyle = panel ? getComputedStyle(panel) : null;
+						const buttonRect = button?.getBoundingClientRect();
+						state.session.isStreaming = true;
+						renderMemoryStatus();
+						const busyState = { disabled: button?.disabled || false, hint: document.querySelector('#settingsMemoryRunHint')?.textContent || '' };
+						state.session.isStreaming = false;
+						renderMemoryStatus();
+						return {
+							viewportWidth: window.innerWidth,
+							visible: Boolean(panelRect && panelRect.width > 0 && panelRect.height > 0),
+							insideCard: Boolean(panelRect && cardRect && panelRect.left >= cardRect.left && panelRect.right <= cardRect.right),
+							width: Math.round(panelRect?.width || 0),
+							height: Math.round(panelRect?.height || 0),
+							gridColumns: metrics ? getComputedStyle(metrics).gridTemplateColumns.split(' ').length : 0,
+							buttonHeight: Math.round(buttonRect?.height || 0),
+							backgroundColor: panelStyle?.backgroundColor || null,
+							borderRadius: panelStyle?.borderRadius || null,
+							tone: panel?.dataset.tone || null,
+							label: document.querySelector('#settingsMemoryStateLabel')?.textContent || '',
+							summary: document.querySelector('#settingsMemorySummary')?.textContent || '',
+							records: document.querySelector('#settingsMemoryRecordCount')?.textContent || '',
+							pending: document.querySelector('#settingsMemoryPendingCount')?.textContent || '',
+							lastAdded: document.querySelector('#settingsMemoryLastRunValue')?.textContent || '',
+							method: document.querySelector('#settingsMemoryMethod')?.textContent || '',
+							errorHidden: document.querySelector('#settingsMemoryError')?.hidden !== false,
+							busyState,
+						};
+					})()`);
+					console.error(`[capture:memory] ${JSON.stringify(memoryMetrics)}`);
+					await new Promise((resolve) => setTimeout(resolve, 220));
+				}
+				if (process.env.METIS_DESKTOP_CAPTURE_ASK) {
+					const askMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+						document.querySelector('[data-purpose="main-chat"]')?.classList.remove('is-empty-state');
+						const toolCallId = "capture-ask-tool";
+						const tool = document.createElement("div");
+						tool.className = "tool-card collapsed running";
+						tool.dataset.partKey = toolCallId;
+						tool.innerHTML = '<div class="tool-header-bar" role="button" aria-expanded="false">Ask user</div><div class="tool-details-body"></div>';
+						document.querySelector("#messageColumn").append(tool);
+						state.serverConnected = true;
+						state.session = { ...(state.session || {}), collaborationMode: "plan", pendingUserInput: { requestId: "capture-ask-request", toolCallId, questions: [{ id: "scope", header: "Scope", question: "Which scope should this change cover?", options: [{ label: "Focused", description: "Only the requested workflow", recommended: true }, { label: "Broad", description: "Related workflows too" }] }, { id: "audience", header: "Audience", question: "Who is this for?", options: [{ label: "Developers", description: "Optimize for contributors" }, { label: "Everyone", description: "Balance all readers" }] }] } };
+						renderUserInputCard(state.session.pendingUserInput);
+						const card = document.querySelector('[data-user-input-request-id="capture-ask-request"]');
+						const rect = card?.getBoundingClientRect();
+						const style = card ? getComputedStyle(card.querySelector(".user-input-card")) : null;
+						const actionsRect = card?.querySelector('.user-input-actions')?.getBoundingClientRect();
+						const wrapRect = card?.parentElement?.getBoundingClientRect();
+						const composerRect = document.querySelector('#composer')?.getBoundingClientRect();
+						const recordedComposerWidth = Number(card?.dataset.composerWidth || 0);
+						return { replacesComposer: card?.parentElement === document.querySelector('#composer')?.parentElement && getComputedStyle(document.querySelector('#composer')).display === 'none', outsideToolCall: !card?.closest('[data-part-key]'), visibleQuestionCount: card?.querySelectorAll('fieldset').length || 0, progress: card?.querySelector('.user-input-heading span')?.textContent, composerDisabled: document.querySelector("#composerInput")?.disabled, minButtonHeight: card ? getComputedStyle(card.querySelector("button")).minHeight : null, borderColor: style?.borderColor, backgroundColor: style?.backgroundColor, width: rect?.width || 0, composerWidth: recordedComposerWidth, widthMatches: Math.abs((rect?.width || 0) - recordedComposerWidth) < 1, actionsVisible: Boolean(actionsRect && wrapRect && actionsRect.bottom <= wrapRect.bottom && actionsRect.top >= wrapRect.top) };
+					})()`);
+					console.error(`[capture:ask] ${JSON.stringify(askMetrics)}`);
+					const askNextMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+						const card = document.querySelector('[data-user-input-request-id="capture-ask-request"]');
+						const firstOption = card?.querySelector('input[type="radio"]');
+						if (firstOption) firstOption.checked = true;
+						card?.querySelector('form')?.requestSubmit();
+						return { visibleQuestionCount: card?.querySelectorAll('fieldset').length || 0, progress: card?.querySelector('.user-input-heading span')?.textContent, questionId: card?.querySelector('fieldset')?.dataset.questionId, finalAction: card?.querySelector('.user-input-confirm')?.getAttribute('aria-label') };
+					})()`);
+					console.error(`[capture:ask-next] ${JSON.stringify(askNextMetrics)}`);
+					await new Promise((resolve) => setTimeout(resolve, 220));
+				}
+				if (process.env.METIS_DESKTOP_CAPTURE_PROPOSAL) {
+					const proposalMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+						const plan = "# Summary\\n\\nImprove README onboarding and examples.";
+						state.serverConnected = true;
+						state.session = { ...(state.session || {}), collaborationMode: "plan", workflowProposal: { markdown: plan, revision: 1, updatedAt: new Date().toISOString() } };
+						const article = document.createElement("article");
+						article.className = "message assistant-message";
+						const body = document.createElement("div");
+						body.className = "assistant-body";
+						article.append(body);
+						document.querySelector("#messageColumn").append(article);
+						renderAssistantText(body, "<proposed_plan>\\n" + plan + "\\n</proposed_plan>");
+						return (() => { const actions = document.querySelector(".proposed-plan-actions"); const process = actions?.querySelector(".proposed-plan-process"); const refine = actions?.querySelector(".proposed-plan-refine"); const send = actions?.querySelector(".proposed-plan-refine-send"); const processStyle = process ? getComputedStyle(process) : null; const refineStyle = refine ? getComputedStyle(refine) : null; const sendStyle = send ? getComputedStyle(send) : null; refine?.focus(); const focusedRefineStyle = refine ? getComputedStyle(refine) : null; state.messages = [{ role: "user", content: "optimistic", timestamp: 1, _metisOptimistic: true }]; upsertStreamMessage({ role: "user", content: "authoritative", timestamp: 2 }); const optimisticReconciled = state.messages.length === 1 && state.messages[0].timestamp === 2 && !state.messages[0]._metisOptimistic; return { processFirst: actions?.firstElementChild === process, refineSecond: actions?.lastElementChild === refine?.parentElement, buttonCount: actions?.querySelectorAll("button").length || 0, processCompact: (process?.getBoundingClientRect().width || 0) < (refine?.getBoundingClientRect().width || 0), processWidth: process?.getBoundingClientRect().width || 0, refineWidth: refine?.getBoundingClientRect().width || 0, equalHeights: processStyle?.height === refineStyle?.height, equalRadii: processStyle?.borderRadius === refineStyle?.borderRadius, processHeight: processStyle?.height, refineHeight: refineStyle?.height, processRadius: processStyle?.borderRadius, refineRadius: refineStyle?.borderRadius, focusedBorder: focusedRefineStyle?.borderTopColor, focusedBoxShadow: focusedRefineStyle?.boxShadow, sendTransparent: sendStyle?.backgroundColor === "rgba(0, 0, 0, 0)", sendWidth: send?.getBoundingClientRect().width || 0, optimisticReconciled, refineHasSendIcon: Boolean(actions?.querySelector(".proposed-plan-refine-send use[href=\\\"#i-send\\\"]")) }; })();
+					})()`);
+					console.error(`[capture:proposal] ${JSON.stringify(proposalMetrics)}`);
+					const executionPlanMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+						state.session = { ...(state.session || {}), collaborationMode: "build", workflowProposal: { markdown: "# Summary\\n\\nApproved proposal remains readable during Build.", revision: 2, updatedAt: new Date().toISOString() }, workflowPlan: { taskId: "capture-task", proposalRevision: 2, phase: "active", explanation: "Implement and verify", plan: [{ step: "Inspect", status: "completed" }, { step: "Implement", status: "in_progress" }, { step: "Verify", status: "pending" }], updatedAt: new Date().toISOString() } };
+						state.workflowPlanCollapsed = false;
+						renderWorkflowPlanCard();
+						const card = document.querySelector("#workflowPlanCard");
+						const body = document.querySelector("#workflowPlanBody");
+						const header = card?.querySelector(".workflow-plan-header");
+						const cardRect = card?.getBoundingClientRect();
+						const composerRect = document.querySelector("#composer")?.getBoundingClientRect();
+						state.session.workflowPlan = { ...state.session.workflowPlan, phase: "active", plan: state.session.workflowPlan.plan.map((item) => ({ ...item, status: "completed" })), updatedAt: new Date(Date.now() + 1).toISOString() };
+						renderWorkflowPlanCard();
+						const autoCollapsed = card?.classList.contains("collapsed") && header?.getAttribute("aria-expanded") === "false";
+						header?.click();
+						return { visible: Boolean(card && !card.classList.contains("hidden")), proposalHidden: !card?.querySelector(".workflow-plan-proposal") && !card?.textContent.includes("Approved proposal remains readable"), stepCount: card?.querySelectorAll(".workflow-plan-steps li").length || 0, ariaExpanded: header?.getAttribute("aria-expanded"), headerMinHeight: header ? getComputedStyle(header).minHeight : null, width: Math.round(cardRect?.width || 0), composerWidth: Math.round(composerRect?.width || 0), widthMatches: Math.abs((cardRect?.width || 0) - (composerRect?.width || 0)) < 1, autoCollapsed, manualReopen: !card?.classList.contains("collapsed") && header?.getAttribute("aria-expanded") === "true", bodyConnected: Boolean(body?.isConnected) };
+					})()`);
+					console.error(`[capture:execution-plan] ${JSON.stringify(executionPlanMetrics)}`);
+				}
+				if (process.env.METIS_DESKTOP_CAPTURE_WORK_TRACE) {
+					const workTraceMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+						document.querySelector('#onboardingOverlay')?.setAttribute('hidden', '');
+						document.querySelector('[data-purpose="main-chat"]')?.classList.remove('is-empty-state');
+						state.isStreaming = true;
+						state.messages = [{ role: "user", content: "Improve README", timestamp: 1 }, { role: "assistant", timestamp: 2, content: [
+							{ type: "thinking", thinking: "Inspect the project structure and documentation entry points." },
+							{ type: "text", text: "I will inspect the existing README, project entry points, and configuration before proposing focused improvements." },
+							{ type: "toolCall", id: "capture-read", name: "read", arguments: { path: "README.md" } },
+						] }];
+						renderServerMessages(state.messages);
+						const captureProject = state.projects.find((project) => project.id === state.activeProjectId) || state.projects[0];
+						if (captureProject) {
+							captureProject.conversations = Array.from({ length: 7 }, (_, index) => ({ id: 'capture-' + index, title: 'Capture conversation ' + index, branch: false }));
+							renderConversations();
+						}
+						const thoughts = document.querySelector('.cot-thoughts-group');
+						const text = document.querySelector('.cot-text');
+						const tool = document.querySelector('.cot-content-inner > .tool-card');
+						const header = document.querySelector('.assistant-turn-work-start .cot-header-bar');
+						const title = header?.querySelector('.cot-title');
+						const chevron = header?.querySelector('.cot-chevron');
+						const composerStack = document.querySelector('[data-purpose="composer-stack"]');
+						const body = text?.closest('.assistant-body');
+						const thoughtsRect = thoughts?.getBoundingClientRect();
+						const textRect = text?.getBoundingClientRect();
+						const toolRect = tool?.getBoundingClientRect();
+						const textStyle = text ? getComputedStyle(text) : null;
+						const bodyStyle = body ? getComputedStyle(body) : null;
+						const headerStyle = header ? getComputedStyle(header) : null;
+						const composerStackStyle = composerStack ? getComputedStyle(composerStack) : null;
+						const titleRect = title?.getBoundingClientRect();
+						const chevronRect = chevron?.getBoundingClientRect();
+						const expandedBorder = headerStyle ? [headerStyle.borderBottomWidth, headerStyle.borderBottomStyle, headerStyle.borderBottomColor].join(' ') : null;
+						header?.click();
+						const collapsedHeaderStyle = header ? getComputedStyle(header) : null;
+						return { fontMatchesBody: Boolean(textStyle && bodyStyle && textStyle.fontFamily === bodyStyle.fontFamily && textStyle.fontSize === bodyStyle.fontSize && textStyle.fontWeight === bodyStyle.fontWeight && textStyle.lineHeight === bodyStyle.lineHeight && textStyle.color === bodyStyle.color), thoughtsToText: thoughtsRect && textRect ? Math.round(textRect.top - thoughtsRect.bottom) : null, textToTool: textRect && toolRect ? Math.round(toolRect.top - textRect.bottom) : null, thoughtsHeight: thoughtsRect ? Math.round(thoughtsRect.height) : null, textColor: textStyle?.color || null, bodyColor: bodyStyle?.color || null, headerWidth: header ? Math.round(header.getBoundingClientRect().width) : null, expandedBorder, collapsedBorder: collapsedHeaderStyle ? [collapsedHeaderStyle.borderBottomWidth, collapsedHeaderStyle.borderBottomStyle, collapsedHeaderStyle.borderBottomColor].join(' ') : null, chevronWidth: chevronRect ? Math.round(chevronRect.width) : null, titleToChevron: titleRect && chevronRect ? Math.round(chevronRect.left - titleRect.right) : null, composerStackBackground: composerStackStyle?.backgroundColor || null, conversationCount: document.querySelectorAll('#conversationList .conversation-item').length, hasConversationCollapseControl: Boolean(document.querySelector('#conversationList .conversation-expand-button')) };
+					})()`);
+					console.error(`[capture:work-trace] ${JSON.stringify(workTraceMetrics)}`);
 				}
 				const image = await mainWindow.webContents.capturePage();
 				await fsp.writeFile(process.env.METIS_DESKTOP_CAPTURE, image.toPNG());
@@ -324,6 +553,8 @@ function registerIpc() {
 		});
 		return result.canceled ? undefined : result.filePath;
 	});
+	ipcMain.handle("session-tokens:totals", (_event, sessionPaths) => readSessionTokenTotals(sessionPaths));
+	ipcMain.handle("session-tokens:activity", (_event, sessionPaths) => readSessionTokenActivity(sessionPaths));
 
 	ipcMain.handle("workspace:get", () => workspaceSummary());
 	ipcMain.handle("workspace:set", (_event, workspacePath) => {
@@ -342,6 +573,15 @@ function registerIpc() {
 		const result = await dialog.showOpenDialog(mainWindow, { buttonLabel: nativeText("dialogSelectFolder"), properties: ["openDirectory", "createDirectory"] });
 		if (result.canceled || result.filePaths.length === 0) return undefined;
 		return setWorkspaceRoot(result.filePaths[0]);
+	});
+	ipcMain.handle("workspace:select-many", async () => {
+		const result = await dialog.showOpenDialog(mainWindow, { buttonLabel: nativeText("dialogSelectFolder"), properties: ["openDirectory", "multiSelections"] });
+		if (result.canceled || result.filePaths.length === 0) return [];
+		return result.filePaths.map((workspacePath) => {
+			const resolved = path.resolve(workspacePath);
+			if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) throw new Error(nativeText("workspaceMissing", { path: resolved }));
+			return { name: path.basename(resolved), path: resolved };
+		});
 	});
 	ipcMain.handle("workspace:tree", () => readWorkspaceTree());
 	ipcMain.handle("workspace:diff", (_event, relativePath) => readGitDiff(relativePath));
@@ -368,7 +608,11 @@ function registerIpc() {
 			password: String(options.password || ""),
 		};
 		const health = await metisRequest("/global/health");
-		if (health.ok) void streamMetisEvents();
+		// 幂等：已有活跃 SSE（streamMetisEvents 循环在跑，含断线重试等待期）时不重复 abort/重建，
+		// 避免 renderer 的 interval 与 onServerReady/启动初始化并发触发时反复重建连接。
+		if (health.ok && (!metisEventController || metisEventController.signal.aborted)) {
+			void streamMetisEvents();
+		}
 		return health;
 	});
 	ipcMain.handle("metis:disconnect", () => {
@@ -554,7 +798,9 @@ async function metisRequest(requestPath, init = {}) {
 		? Math.max(1_000, Math.min(requestedTimeout, 10 * 60_000))
 		: 15_000;
 	try {
-		const response = await fetch(`${metisServer.baseUrl}${requestPath}`, {
+		// net.fetch 走 Chromium 网络栈：不读取 shell 的 HTTP(S)_PROXY 环境变量，
+		// 仅受系统代理设置影响（macOS 系统代理默认绕过 localhost），保证 127.0.0.1 直连。
+		const response = await net.fetch(`${metisServer.baseUrl}${requestPath}`, {
 			method,
 			headers,
 			body: init.body === undefined ? undefined : JSON.stringify(init.body),
@@ -584,7 +830,7 @@ async function streamMetisEvents() {
 	let retryDelay = 250;
 	while (!controller.signal.aborted) {
 		try {
-			const response = await fetch(`${metisServer.baseUrl}/event`, { headers, signal: controller.signal });
+			const response = await net.fetch(`${metisServer.baseUrl}/event`, { headers, signal: controller.signal });
 			if (!response.ok || !response.body) throw new Error(nativeText("sseFailed", { status: response.status }));
 			retryDelay = 250;
 			const reader = response.body.getReader();
@@ -598,7 +844,8 @@ async function streamMetisEvents() {
 				while ((boundary = buffer.indexOf("\n\n")) !== -1) {
 					const frame = buffer.slice(0, boundary);
 					buffer = buffer.slice(boundary + 2);
-					const data = frame
+					const cleanFrame = frame.replace(/\r/g, "");
+					const data = cleanFrame
 						.split("\n")
 						.filter((line) => line.startsWith("data:"))
 						.map((line) => line.slice(5).trimStart())

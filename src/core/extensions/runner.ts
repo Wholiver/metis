@@ -14,6 +14,10 @@ import type { BuildSystemPromptOptions } from "../system-prompt.ts";
 import type {
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeStepEvent,
+	BeforeStepEventResult,
+	BeforeTransportRequestEvent,
+	BeforeTransportRequestResult,
 	BeforeProviderRequestEvent,
 	CompactOptions,
 	ContextEvent,
@@ -71,6 +75,7 @@ const RESERVED_KEYBINDINGS_FOR_EXTENSION_CONFLICTS = [
 	"app.exit",
 	"app.suspend",
 	"app.thinking.cycle",
+	"app.workflow.toggle",
 	"app.model.cycleForward",
 	"app.model.cycleBackward",
 	"app.model.select",
@@ -1011,6 +1016,64 @@ export class ExtensionRunner {
 		}
 
 		return currentPayload;
+	}
+
+	async emitBeforeStep(prompt: string, collaborationMode: BeforeStepEvent["collaborationMode"]): Promise<BeforeStepEventResult | undefined> {
+		const ctx = this.createContext();
+		const developerInstructions: NonNullable<BeforeStepEventResult["developerInstructions"]> = [];
+		const context: NonNullable<BeforeStepEventResult["context"]> = [];
+		const toolNames = new Set<string>();
+		for (const ext of this.extensions) {
+			for (const handler of ext.handlers.get("before_step") ?? []) {
+				try {
+					const result = (await handler({ type: "before_step", prompt, collaborationMode } satisfies BeforeStepEvent, ctx)) as
+						| BeforeStepEventResult
+						| undefined;
+					if (!result) continue;
+					developerInstructions.push(...(result.developerInstructions ?? []));
+					context.push(...(result.context ?? []));
+					for (const name of result.toolNames ?? []) toolNames.add(name);
+				} catch (err) {
+					this.emitError({
+						extensionPath: ext.path,
+						event: "before_step",
+						error: err instanceof Error ? err.message : String(err),
+						stack: err instanceof Error ? err.stack : undefined,
+					});
+				}
+			}
+		}
+		if (developerInstructions.length === 0 && context.length === 0 && toolNames.size === 0) return undefined;
+		return { developerInstructions, context, toolNames: [...toolNames] };
+	}
+
+	async emitBeforeTransportRequest(event: BeforeTransportRequestEvent): Promise<BeforeTransportRequestResult> {
+		const ctx = this.createContext();
+		let headers = { ...event.headers };
+		let timeoutMs = event.timeoutMs;
+		let providerTuning = event.providerTuning ? { ...event.providerTuning } : undefined;
+		for (const ext of this.extensions) {
+			for (const handler of ext.handlers.get("before_transport_request") ?? []) {
+				try {
+					const result = (await handler(
+						{ ...event, headers: { ...headers }, timeoutMs, providerTuning },
+						ctx,
+					)) as BeforeTransportRequestResult | undefined;
+					if (!result) continue;
+					headers = { ...headers, ...(result.headers ?? {}) };
+					timeoutMs = result.timeoutMs ?? timeoutMs;
+					providerTuning = result.providerTuning ? { ...providerTuning, ...result.providerTuning } : providerTuning;
+				} catch (err) {
+					this.emitError({
+						extensionPath: ext.path,
+						event: "before_transport_request",
+						error: err instanceof Error ? err.message : String(err),
+						stack: err instanceof Error ? err.stack : undefined,
+					});
+				}
+			}
+		}
+		return { headers, timeoutMs, providerTuning };
 	}
 
 	async emitBeforeAgentStart(

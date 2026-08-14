@@ -12,6 +12,7 @@
  */
 
 import * as crypto from "node:crypto";
+import { type AskUserResponse, validateAskUserResponse } from "../../core/ask-user.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
 	ExtensionUIContext,
@@ -80,6 +81,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		string,
 		{ resolve: (value: any) => void; reject: (error: Error) => void }
 	>();
+	const pendingUserInput = new Map<string, { resolve: (response: AskUserResponse) => void; cancel: () => void }>();
 
 	// Shutdown request flag
 	let shutdownRequested = false;
@@ -314,7 +316,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	});
 
 	const rebindSession = async (): Promise<void> => {
+		for (const pending of [...pendingUserInput.values()]) pending.cancel();
+		pendingUserInput.clear();
 		session = runtimeHost.session;
+		session.setAskUserHandler?.((request, signal) => new Promise<AskUserResponse>((resolve) => {
+			const finish = (response: AskUserResponse) => { pendingUserInput.delete(request.requestId); signal?.removeEventListener("abort", cancel); resolve(response); };
+			const cancel = () => finish({ cancelled: true, answers: [] });
+			if (signal?.aborted) return cancel();
+			signal?.addEventListener("abort", cancel, { once: true });
+			pendingUserInput.set(request.requestId, { resolve: finish, cancel });
+		}));
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",
@@ -395,6 +406,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					.prompt(command.message, {
 						images: command.images,
 						streamingBehavior: command.streamingBehavior,
+						workflowAction: command.workflowAction,
 						source: "rpc",
 						preflightResult: (didSucceed) => {
 							if (didSucceed) {
@@ -447,15 +459,38 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					isCompacting: session.isCompacting,
 					steeringMode: session.steeringMode,
 					followUpMode: session.followUpMode,
+					collaborationMode: session.collaborationMode,
+					contextWindowId: session.contextWindowId,
+					workflowPlan: session.workflowPlan,
+					workflowProposal: session.workflowProposal,
+					pendingUserInput: session.pendingUserInput,
+					instructionSources: session.instructionSources,
+					instructionDiagnostics: session.instructionDiagnostics,
+					memoryState: session.memoryState,
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,
 					sessionName: session.sessionName,
 					autoCompactionEnabled: session.autoCompactionEnabled,
+					autoRetryEnabled: session.autoRetryEnabled,
 					messageCount: session.messages.length,
 					pendingMessageCount: session.pendingMessageCount,
 				};
 				return success(id, "get_state", state);
 			}
+
+			case "get_memory":
+				return success(id, "get_memory", session.memoryState);
+			case "set_memory_enabled":
+				return success(id, "set_memory_enabled", session.setMemoryEnabled(command.enabled));
+			case "run_memory":
+				return success(id, "run_memory", await session.runMemory());
+			case "search_memory":
+				return success(id, "search_memory", session.searchMemory(command.query));
+			case "forget_memory":
+				return success(id, "forget_memory", { forgotten: session.forgetMemory(command.memoryId) });
+			case "reset_memory":
+				session.resetMemory(command.confirm);
+				return success(id, "reset_memory", undefined);
 
 			// =================================================================
 			// Model
@@ -513,6 +548,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "set_follow_up_mode": {
 				session.setFollowUpMode(command.mode);
 				return success(id, "set_follow_up_mode");
+			}
+
+			case "set_collaboration_mode": {
+				session.setCollaborationMode(command.mode);
+				return success(id, "set_collaboration_mode");
 			}
 
 			// =================================================================
@@ -706,6 +746,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		}
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
+		for (const pending of [...pendingUserInput.values()]) pending.cancel();
+		pendingUserInput.clear();
 		await runtimeHost.dispose();
 		detachInput();
 		process.stdin.pause();
@@ -749,6 +791,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				pendingExtensionRequests.delete(response.id);
 				pending.resolve(response);
 			}
+			return;
+		}
+		if (typeof parsed === "object" && parsed !== null && "type" in parsed && parsed.type === "user_input_response") {
+			const response = parsed as unknown as { requestId: string; cancelled: boolean; answers: AskUserResponse["answers"] };
+			const pending = pendingUserInput.get(response.requestId);
+			const activeRequest = session.pendingUserInput;
+			if (!pending || !activeRequest || activeRequest.requestId !== response.requestId) {
+				output(error(undefined, "user_input_response", "User input request is unknown, expired, or already answered"));
+				return;
+			}
+			const value = { cancelled: response.cancelled, answers: response.answers };
+			const validationError = validateAskUserResponse(activeRequest, value);
+			if (validationError) {
+				output(error(undefined, "user_input_response", validationError));
+				return;
+			}
+			pending.resolve(value);
 			return;
 		}
 

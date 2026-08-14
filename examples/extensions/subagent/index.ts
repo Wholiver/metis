@@ -24,7 +24,6 @@ import {
 	type ExtensionAPI,
 	getAgentDir,
 	getMarkdownTheme,
-	withFileMutationQueue,
 } from "metis";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/metis-tui";
 import { Type } from "typebox";
@@ -236,16 +235,6 @@ async function mapWithConcurrencyLimit<TIn, TOut>(
 	return results;
 }
 
-async function writePromptToTempFile(agentName: string, prompt: string): Promise<{ dir: string; filePath: string }> {
-	const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "metis-subagent-"));
-	const safeName = agentName.replace(/[^\w.-]+/g, "_");
-	const filePath = path.join(tmpDir, `prompt-${safeName}.md`);
-	await withFileMutationQueue(filePath, async () => {
-		await fs.promises.writeFile(filePath, prompt, { encoding: "utf-8", mode: 0o600 });
-	});
-	return { dir: tmpDir, filePath };
-}
-
 function getMetisInvocation(args: string[]): { command: string; args: string[] } {
 	const currentScript = process.argv[1];
 	const isBunVirtualScript = currentScript?.startsWith("/$bunfs/root/");
@@ -295,9 +284,6 @@ async function runSingleAgent(
 	if (agent.model) args.push("--model", agent.model);
 	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 
-	let tmpPromptDir: string | null = null;
-	let tmpPromptPath: string | null = null;
-
 	const currentResult: SingleResult = {
 		agent: agentName,
 		agentSource: agent.source,
@@ -319,27 +305,23 @@ async function runSingleAgent(
 		}
 	};
 
-	try {
-		if (agent.systemPrompt.trim()) {
-			const tmp = await writePromptToTempFile(agent.name, agent.systemPrompt);
-			tmpPromptDir = tmp.dir;
-			tmpPromptPath = tmp.filePath;
-			args.push("--append-system-prompt", tmpPromptPath);
-		}
+	if (agent.systemPrompt.trim()) {
+		args.push("--developer-instructions", agent.systemPrompt);
+	}
 
-		args.push(`Task: ${task}`);
-		let wasAborted = false;
+	args.push(`Task: ${task}`);
+	let wasAborted = false;
 
-		const exitCode = await new Promise<number>((resolve) => {
-			const invocation = getMetisInvocation(args);
-			const proc = spawn(invocation.command, invocation.args, {
-				cwd: cwd ?? defaultCwd,
-				shell: false,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-			let buffer = "";
+	const exitCode = await new Promise<number>((resolve) => {
+		const invocation = getMetisInvocation(args);
+		const proc = spawn(invocation.command, invocation.args, {
+			cwd: cwd ?? defaultCwd,
+			shell: false,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		let buffer = "";
 
-			const processLine = (line: string) => {
+		const processLine = (line: string) => {
 				if (!line.trim()) return;
 				let event: any;
 				try {
@@ -374,29 +356,29 @@ async function runSingleAgent(
 					currentResult.messages.push(event.message as Message);
 					emitUpdate();
 				}
-			};
+		};
 
-			proc.stdout.on("data", (data) => {
+		proc.stdout.on("data", (data) => {
 				buffer += data.toString();
 				const lines = buffer.split("\n");
 				buffer = lines.pop() || "";
 				for (const line of lines) processLine(line);
-			});
+		});
 
-			proc.stderr.on("data", (data) => {
+		proc.stderr.on("data", (data) => {
 				currentResult.stderr += data.toString();
-			});
+		});
 
-			proc.on("close", (code) => {
+		proc.on("close", (code) => {
 				if (buffer.trim()) processLine(buffer);
 				resolve(code ?? 0);
-			});
+		});
 
-			proc.on("error", () => {
+		proc.on("error", () => {
 				resolve(1);
-			});
+		});
 
-			if (signal) {
+		if (signal) {
 				const killProc = () => {
 					wasAborted = true;
 					proc.kill("SIGTERM");
@@ -406,26 +388,12 @@ async function runSingleAgent(
 				};
 				if (signal.aborted) killProc();
 				else signal.addEventListener("abort", killProc, { once: true });
-			}
-		});
+		}
+	});
 
-		currentResult.exitCode = exitCode;
-		if (wasAborted) throw new Error("Subagent was aborted");
-		return currentResult;
-	} finally {
-		if (tmpPromptPath)
-			try {
-				fs.unlinkSync(tmpPromptPath);
-			} catch {
-				/* ignore */
-			}
-		if (tmpPromptDir)
-			try {
-				fs.rmdirSync(tmpPromptDir);
-			} catch {
-				/* ignore */
-			}
-	}
+	currentResult.exitCode = exitCode;
+	if (wasAborted) throw new Error("Subagent was aborted");
+	return currentResult;
 }
 
 const TaskItem = Type.Object({

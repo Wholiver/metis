@@ -1,7 +1,8 @@
 import type { AgentTool } from "@earendil-works/metis-agent-core";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/metis-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createHarness, type Harness } from "./harness.ts";
+import { createHarness, getAssistantTexts, type Harness } from "./harness.ts";
 
 function passiveTool(name: string): AgentTool {
 	return {
@@ -9,95 +10,155 @@ function passiveTool(name: string): AgentTool {
 		label: name,
 		description: `${name} test tool`,
 		parameters: Type.Object({}),
-		execute: async () => ({ content: [{ type: "text", text: `${name} executed` }] }),
+		execute: async () => ({ content: [{ type: "text", text: `${name} executed` }], details: {} }),
 	};
 }
 
-describe("AgentSession Subagent execution barrier", () => {
+type SubagentInternals = {
+	_setSubagentRunning(jobId: string, running: boolean): void;
+	_closeSubagentLaunchBatch(): void;
+	_queueSubagentResult(jobId: string, result: string): void;
+	_workingMemoryCheckpointDue: boolean;
+	_createWorkingMemoryReminder(): unknown;
+};
+
+describe("AgentSession Subagent execution pause", () => {
 	const harnesses: Harness[] = [];
 
 	afterEach(() => {
 		while (harnesses.length > 0) harnesses.pop()?.cleanup();
 	});
 
-	it("blocks every non-Subagent tool and disables tools after the launch batch", async () => {
+	it("blocks tools during launch pause and releases them on the first completed result", async () => {
 		const harness = await createHarness({
 			tools: [passiveTool("subagent"), passiveTool("log"), passiveTool("bash")],
 			initialActiveToolNames: ["subagent", "log", "bash"],
 		});
 		harnesses.push(harness);
-		const internals = harness.session as unknown as {
-			_setSubagentRunning(jobId: string, running: boolean): void;
-			_closeSubagentLaunchBatch(): void;
-			_workingMemoryCheckpointDue: boolean;
-			_createWorkingMemoryReminder(): unknown;
-		};
+		const internals = harness.session as unknown as SubagentInternals;
+		let releaseDelivery: (() => void) | undefined;
+		vi.spyOn(harness.session, "sendCustomMessage").mockImplementation(
+			() => new Promise<void>((resolve) => {
+				releaseDelivery = resolve;
+			}),
+		);
 
 		internals._setSubagentRunning("first1", true);
+		internals._setSubagentRunning("second", true);
 		expect(harness.session.getActiveToolNames()).toEqual(["subagent"]);
 		expect(await harness.session.agent.beforeToolCall?.({
 			toolCall: { id: "log-1", name: "log", arguments: {} },
 			args: {},
-		} as never)).toMatchObject({ block: true, reason: expect.stringContaining("create checkpoints") });
+		} as never)).toMatchObject({ block: true, reason: expect.stringContaining("launch pause") });
 		expect(await harness.session.agent.beforeToolCall?.({
 			toolCall: { id: "subagent-2", name: "subagent", arguments: {} },
 			args: {},
 		} as never)).toBeUndefined();
 
-		internals._workingMemoryCheckpointDue = true;
-		expect(internals._createWorkingMemoryReminder()).toBeUndefined();
 		internals._closeSubagentLaunchBatch();
 		expect(harness.session.getActiveToolNames()).toEqual([]);
-		expect(await harness.session.agent.beforeToolCall?.({
-			toolCall: { id: "subagent-late", name: "subagent", arguments: {} },
-			args: {},
-		} as never)).toMatchObject({ block: true });
 
 		internals._setSubagentRunning("first1", false);
+		internals._queueSubagentResult("first1", "first result");
+		expect(harness.session.getRunningSubagentIds()).toEqual(["second"]);
 		expect(harness.session.getActiveToolNames()).toEqual(["subagent", "log", "bash"]);
+		expect(await harness.session.agent.beforeToolCall?.({
+			toolCall: { id: "bash-1", name: "bash", arguments: {} },
+			args: {},
+		} as never)).toBeUndefined();
+
+		releaseDelivery?.();
+		await vi.waitFor(() => expect(harness.session.getRunningSubagentIds()).toEqual(["second"]));
 	});
 
-	it("delivers one combined result only after every Subagent returns", async () => {
+	it("serializes completed results into separate model turns in completion order", async () => {
 		const harness = await createHarness({
 			tools: [passiveTool("subagent"), passiveTool("log")],
 			initialActiveToolNames: ["subagent", "log"],
 		});
 		harnesses.push(harness);
-		const sendMessage = vi.spyOn(harness.session, "sendCustomMessage").mockResolvedValue(undefined);
-		const internals = harness.session as unknown as {
-			_setSubagentRunning(jobId: string, running: boolean): void;
-			_closeSubagentLaunchBatch(): void;
-			_queueSubagentResult(jobId: string, result: string): void;
-		};
+		const internals = harness.session as unknown as SubagentInternals;
+		harness.setResponses([fauxAssistantMessage("visible first"), fauxAssistantMessage("visible second")]);
 
 		internals._setSubagentRunning("first1", true);
 		internals._setSubagentRunning("second", true);
 		internals._closeSubagentLaunchBatch();
 		internals._setSubagentRunning("first1", false);
 		internals._queueSubagentResult("first1", "first result");
-		expect(sendMessage).not.toHaveBeenCalled();
-
 		internals._setSubagentRunning("second", false);
 		internals._queueSubagentResult("second", "second result");
-		expect(sendMessage).toHaveBeenCalledTimes(1);
-		const [message, options] = sendMessage.mock.calls[0];
-		expect(JSON.stringify(message)).toContain("[Subagent Job first1 finished]");
-		expect(JSON.stringify(message)).toContain("[Subagent Job second finished]");
-		expect(options).toMatchObject({ triggerTurn: true, deliverAs: "followUp" });
+
+		await vi.waitFor(() => expect(harness.getPendingResponseCount()).toBe(0));
+		await harness.session.agent.waitForIdle();
+
+		const results = harness.session.messages.filter(
+			(message) => message.role === "custom" && message.customType === "subagent_result",
+		);
+		expect(results).toHaveLength(2);
+		expect(JSON.stringify(results[0])).toContain("[Subagent Job first1 finished]");
+		expect(JSON.stringify(results[0])).not.toContain("[Subagent Job second finished]");
+		expect(JSON.stringify(results[0])).toContain("First emit a brief user-visible update");
+		expect(JSON.stringify(results[1])).toContain("[Subagent Job second finished]");
+		expect(getAssistantTexts(harness)).toEqual(["visible first", "visible second"]);
 	});
 
-	it("does not deliver an instant result before the launch batch closes", async () => {
+	it("ends a pure Subagent batch without another model call or automatic log", async () => {
+		let internals: SubagentInternals;
+		const launched: string[] = [];
+		let logRuns = 0;
+		const subagentTool: AgentTool = {
+			name: "subagent",
+			label: "subagent",
+			description: "test Subagent",
+			parameters: Type.Object({ task: Type.String() }),
+			executionMode: "sequential",
+			execute: async (toolCallId, params) => {
+				launched.push((params as { task: string }).task);
+				internals._setSubagentRunning(toolCallId, true);
+				return { content: [{ type: "text", text: "started" }], details: {}, terminate: true };
+			},
+		};
+		const logTool: AgentTool = {
+			...passiveTool("log"),
+			execute: async () => {
+				logRuns++;
+				return { content: [{ type: "text", text: "logged" }], details: {} };
+			},
+		};
+		const harness = await createHarness({
+			tools: [subagentTool, logTool],
+			initialActiveToolNames: ["subagent", "log"],
+		});
+		harnesses.push(harness);
+		internals = harness.session as unknown as SubagentInternals;
+		internals._workingMemoryCheckpointDue = true;
+		harness.setResponses([
+			fauxAssistantMessage([
+				fauxToolCall("subagent", { task: "first" }),
+				fauxToolCall("log", {}),
+				fauxToolCall("subagent", { task: "second" }),
+			], { stopReason: "toolUse" }),
+			fauxAssistantMessage("unexpected continuation"),
+		]);
+
+		await harness.session.prompt("launch");
+
+		expect(launched).toEqual(["first", "second"]);
+		expect(logRuns).toBe(0);
+		expect(harness.getPendingResponseCount()).toBe(1);
+		expect(getAssistantTexts(harness)).toEqual([""]);
+		expect(harness.session.messages.filter((message) => message.role === "toolResult")).toHaveLength(2);
+		expect(harness.session.getActiveToolNames()).toEqual([]);
+	});
+
+	it("buffers an instant result until the launch batch closes", async () => {
 		const harness = await createHarness({
 			tools: [passiveTool("subagent"), passiveTool("log")],
 			initialActiveToolNames: ["subagent", "log"],
 		});
 		harnesses.push(harness);
 		const sendMessage = vi.spyOn(harness.session, "sendCustomMessage").mockResolvedValue(undefined);
-		const internals = harness.session as unknown as {
-			_setSubagentRunning(jobId: string, running: boolean): void;
-			_closeSubagentLaunchBatch(): void;
-			_queueSubagentResult(jobId: string, result: string): void;
-		};
+		const internals = harness.session as unknown as SubagentInternals;
 
 		internals._setSubagentRunning("instant", true);
 		internals._setSubagentRunning("instant", false);
@@ -105,6 +166,6 @@ describe("AgentSession Subagent execution barrier", () => {
 		expect(sendMessage).not.toHaveBeenCalled();
 
 		internals._closeSubagentLaunchBatch();
-		expect(sendMessage).toHaveBeenCalledTimes(1);
+		await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
 	});
 });

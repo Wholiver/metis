@@ -12,6 +12,10 @@ import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
+import type { CollaborationMode, WorkflowPlanState, WorkflowProposalState } from "../../core/workflow-runtime.ts";
+import type { AskUserRequest } from "../../core/ask-user.ts";
+import type { InstructionSourceSummary } from "../../core/system-prompt.ts";
+import type { MemoryRecordSummary, MemoryState } from "../../core/memory-coordinator.ts";
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -19,7 +23,7 @@ import type { SourceInfo } from "../../core/source-info.ts";
 
 export type RpcCommand =
 	// Prompting
-	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
+	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp"; workflowAction?: "process_proposal" }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "abort" }
@@ -40,6 +44,13 @@ export type RpcCommand =
 	// Queue modes
 	| { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }
 	| { id?: string; type: "set_follow_up_mode"; mode: "all" | "one-at-a-time" }
+	| { id?: string; type: "set_collaboration_mode"; mode: CollaborationMode }
+	| { id?: string; type: "get_memory" }
+	| { id?: string; type: "set_memory_enabled"; enabled: boolean }
+	| { id?: string; type: "run_memory" }
+	| { id?: string; type: "search_memory"; query: string }
+	| { id?: string; type: "forget_memory"; memoryId: string }
+	| { id?: string; type: "reset_memory"; confirm: string }
 
 	// Compaction
 	| { id?: string; type: "compact"; customInstructions?: string }
@@ -98,10 +109,19 @@ export interface RpcSessionState {
 	isCompacting: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
+	collaborationMode: CollaborationMode;
+	contextWindowId: string;
+	workflowPlan?: WorkflowPlanState;
+	workflowProposal?: WorkflowProposalState;
+	pendingUserInput?: AskUserRequest;
+	instructionSources: InstructionSourceSummary[];
+	instructionDiagnostics: string[];
+	memoryState: MemoryState;
 	sessionFile?: string;
 	sessionId: string;
 	sessionName?: string;
 	autoCompactionEnabled: boolean;
+	autoRetryEnabled: boolean;
 	messageCount: number;
 	pendingMessageCount: number;
 }
@@ -158,6 +178,13 @@ export type RpcResponse =
 	// Queue modes
 	| { id?: string; type: "response"; command: "set_steering_mode"; success: true }
 	| { id?: string; type: "response"; command: "set_follow_up_mode"; success: true }
+	| { id?: string; type: "response"; command: "set_collaboration_mode"; success: true }
+	| { id?: string; type: "response"; command: "get_memory"; success: true; data: MemoryState }
+	| { id?: string; type: "response"; command: "set_memory_enabled"; success: true; data: MemoryState }
+	| { id?: string; type: "response"; command: "run_memory"; success: true; data: MemoryState }
+	| { id?: string; type: "response"; command: "search_memory"; success: true; data: MemoryRecordSummary[] }
+	| { id?: string; type: "response"; command: "forget_memory"; success: true; data: { forgotten: boolean } }
+	| { id?: string; type: "response"; command: "reset_memory"; success: true }
 
 	// Compaction
 	| { id?: string; type: "response"; command: "compact"; success: true; data: CompactionResult }
@@ -273,6 +300,10 @@ export type RpcExtensionUIResponse =
 	| { type: "extension_ui_response"; id: string; value: string }
 	| { type: "extension_ui_response"; id: string; confirmed: boolean }
 	| { type: "extension_ui_response"; id: string; cancelled: true };
+
+/** Model-initiated clarification bridge for RPC clients. */
+export type RpcUserInputRequest = { type: "user_input_request"; request: import("../../core/ask-user.ts").AskUserRequest };
+export type RpcUserInputResponse = { type: "user_input_response"; requestId: string; cancelled: boolean; answers: import("../../core/ask-user.ts").AskUserAnswer[] };
 
 // ============================================================================
 // Helper type for extracting command types

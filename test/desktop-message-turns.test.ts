@@ -2,34 +2,70 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { analyzeAssistantTurn, getSubagentProgress, getRunningSubagentCount, getRunningSubagentIds, getSubagentToolCalls, shouldQueueDesktopMessage, getAssistantContentLayout, getAssistantWorkLayout, shouldHideAssistantWorkHeader, getAssistantTurnDuration, reconcileAssistantFinalDivider, isSubagentLaunchNotice } = require("../desktop/renderer/message-turns.js") as {
+const { analyzeAssistantTurn, getSubagentProgress, getRunningSubagentCount, getRunningSubagentIds, getSubagentToolCalls, shouldQueueDesktopMessage, getAssistantContentLayout, getAssistantWorkLayout, shouldHideAssistantWorkHeader, getAssistantTurnDuration, extractProposedPlan, reconcileAssistantFinalDivider, isSubagentLaunchNotice, mergeStreamingMessage, classifyDesktopActivityEvent } = require("../desktop/renderer/message-turns.js") as {
 	analyzeAssistantTurn: (message: unknown, messages: unknown[], isStreaming: boolean) => {
 		hasCoT: boolean;
 		hasRunningSubagent: boolean;
 		isFinalAssistant: boolean;
 		isIntermediate: boolean;
+		hasFinalResponse: boolean;
 		shouldCollapse: boolean;
 	};
-	getSubagentProgress: (part: unknown, messages: unknown[]) => { jobId: string; state: "running" | "completed" | "failed" };
+	getSubagentProgress: (part: unknown, messages: unknown[]) => { jobId: string; state: "running" | "completed" | "failed"; durationMs?: number };
 	getRunningSubagentCount: (messages: unknown[]) => number;
 	getRunningSubagentIds: (messages: unknown[], reportedJobIds?: unknown[]) => string[];
 	getSubagentToolCalls: (messages: unknown[]) => Array<{ jobId: string; part: unknown }>;
 	shouldQueueDesktopMessage: (messages: unknown[], isStreaming: boolean) => boolean;
-	getAssistantContentLayout: (message: unknown, isFinalAssistant: boolean) => {
+	getAssistantContentLayout: (message: unknown, isFinalAssistant: boolean, isStreaming?: boolean) => {
 		cotParts: unknown[];
 		finalResponsePart?: unknown;
 	};
-	getAssistantWorkLayout: (message: unknown, messages: unknown[], isFinalAssistant: boolean) => {
+	getAssistantWorkLayout: (message: unknown, messages: unknown[], isFinalAssistant: boolean, isStreaming?: boolean) => {
 		workItems: unknown[];
 		finalResponsePart?: unknown;
 	};
+	extractProposedPlan: (text: unknown) => { before: string; plan: string; after: string } | undefined;
 	isSubagentLaunchNotice: (text: unknown) => boolean;
 	shouldHideAssistantWorkHeader: (message: unknown, messages: unknown[]) => boolean;
 	getAssistantTurnDuration: (message: unknown, messages: unknown[], timings: Record<string, unknown>, options?: { active?: boolean; now?: number }) => number | undefined;
 	reconcileAssistantFinalDivider: (body: unknown, shouldRender: boolean, beforeNode?: unknown) => unknown;
+	mergeStreamingMessage: (previous: any, incoming: any) => any;
+	classifyDesktopActivityEvent: (event: { type: string; willRetry?: boolean }) => "active" | "complete" | "unchanged";
 };
 
 describe("desktop assistant turn grouping", () => {
+	it("extracts a completed proposed plan without changing surrounding response text", () => {
+		expect(extractProposedPlan("Intro\n<proposed_plan>\n- Inspect\n- Fix\n</proposed_plan>\nDone")).toEqual({
+			before: "Intro",
+			plan: "- Inspect\n- Fix",
+			after: "Done",
+		});
+		expect(extractProposedPlan("<proposed_plan>still streaming")).toBeUndefined();
+	});
+
+	it("preserves an emitted tool call when a partial reasoning snapshot omits it", () => {
+		const toolCall = { type: "toolCall", id: "tool-call-1", name: "read", arguments: { path: "a.ts" } };
+		const previous = { role: "assistant", timestamp: 10, content: [
+			{ type: "thinking", thinking: "Inspecting" },
+			toolCall,
+		] };
+		const incoming = { role: "assistant", timestamp: 10, content: [
+			{ type: "thinking", thinking: "Inspecting more" },
+		] };
+
+		expect(mergeStreamingMessage(previous, incoming).content).toEqual([
+			incoming.content[0],
+			toolCall,
+		]);
+	});
+
+	it("keeps work active across message boundaries and retrying agent ends", () => {
+		expect(classifyDesktopActivityEvent({ type: "message_end" })).toBe("unchanged");
+		expect(classifyDesktopActivityEvent({ type: "tool_execution_end" })).toBe("active");
+		expect(classifyDesktopActivityEvent({ type: "agent_end", willRetry: true })).toBe("active");
+		expect(classifyDesktopActivityEvent({ type: "agent_end", willRetry: false })).toBe("complete");
+	});
+
 	it("keeps empty parts from shifting CoT DOM layout", () => {
 		const waiting = { type: "text", text: "Waiting for subagent result." };
 		const toolCall = { type: "toolCall", id: "tool-call-kqpvqh", name: "subagent" };
@@ -111,6 +147,52 @@ describe("desktop assistant turn grouping", () => {
 		expect(getAssistantContentLayout(message, true)).toEqual({
 			cotParts: [message.content[0], toolCall],
 			finalResponsePart: answer,
+		});
+	});
+
+	it("keeps streaming text in Thoughts until the agent completes", () => {
+		const status = { type: "text", text: "I found the issue and will fix it." };
+		const message = { role: "assistant", content: [status] };
+		const messages = [{ role: "user", content: "fix it" }, message];
+
+		expect(analyzeAssistantTurn(message, messages, true)).toMatchObject({
+			hasFinalResponse: false,
+			shouldCollapse: false,
+		});
+		expect(getAssistantContentLayout(message, true, true)).toEqual({
+			cotParts: [status],
+			finalResponsePart: undefined,
+		});
+		expect(getAssistantWorkLayout(message, messages, true, true)).toEqual({
+			workItems: [status],
+			finalResponsePart: undefined,
+		});
+		expect(getAssistantContentLayout(message, true, false)).toEqual({
+			cotParts: [],
+			finalResponsePart: status,
+		});
+	});
+
+	it("preserves Plan progress text between tool calls in CLI order", () => {
+		const inspect = { type: "text", text: "先检查项目入口和现有文档结构。" };
+		const firstTool = { type: "toolCall", id: "tool-call-read-1", name: "read" };
+		const evidence = { type: "text", text: "入口已经确认，接下来核对测试和发布路径。" };
+		const secondTool = { type: "toolCall", id: "tool-call-read-2", name: "read" };
+		const plan = { type: "text", text: "<proposed_plan>\n## Summary\n同步文档。\n</proposed_plan>" };
+		const message = { role: "assistant", content: [inspect, firstTool, evidence, secondTool, plan] };
+
+		expect(getAssistantWorkLayout(message, [message], true)).toEqual({
+			workItems: [inspect, firstTool, evidence, secondTool],
+			finalResponsePart: plan,
+		});
+	});
+
+	it("keeps legacy streaming string content out of the final-response layout", () => {
+		const message = { role: "assistant", content: "Checking the workspace before editing." };
+
+		expect(getAssistantWorkLayout(message, [message], true, true)).toEqual({
+			workItems: [{ type: "text", text: message.content }],
+			finalResponsePart: undefined,
 		});
 	});
 
@@ -255,6 +337,25 @@ describe("desktop assistant turn grouping", () => {
 		expect(analyzeAssistantTurn(working, messages, true).shouldCollapse).toBe(false);
 	});
 
+	it("keeps a completed plan final while the next turn streams", () => {
+		const plan = {
+			role: "assistant",
+			content: [{ type: "text", text: "<proposed_plan>\n- Implement\n</proposed_plan>" }],
+		};
+		const messages = [
+			{ role: "user", content: "make a plan" },
+			plan,
+			{ role: "user", content: "process it" },
+			{ role: "assistant", content: [{ type: "thinking", thinking: "working" }] },
+		];
+
+		expect(analyzeAssistantTurn(plan, messages, true)).toMatchObject({
+			hasFinalResponse: true,
+			isCurrentTurn: false,
+			isFinalAssistant: true,
+		});
+	});
+
 	it("keeps background Subagent work active between agent turns", () => {
 		const launch = { role: "assistant", content: [{ type: "toolCall", id: "tool-call-kqpvqh", name: "subagent" }] };
 		const waiting = { role: "assistant", content: [{ type: "text", text: "Waiting for subagent." }] };
@@ -306,6 +407,16 @@ describe("desktop subagent progress", () => {
 		];
 
 		expect(getSubagentProgress(part, messages)).toEqual({ jobId: "kqpvqh", state: "completed" });
+	});
+
+	it("reports completed Subagent duration when message timestamps are available", () => {
+		const part = { type: "toolCall", id: "tool-call-kqpvqh", name: "subagent" };
+		const messages = [
+			{ role: "assistant", timestamp: "2026-08-09T08:00:00.000Z", content: [part] },
+			{ role: "custom", customType: "subagent_result", timestamp: "2026-08-09T08:00:03.450Z", content: "[Subagent Job kqpvqh finished]\n\nDone" },
+		];
+
+		expect(getSubagentProgress(part, messages)).toEqual({ jobId: "kqpvqh", state: "completed", durationMs: 3_450 });
 	});
 
 	it("reports launch failures", () => {

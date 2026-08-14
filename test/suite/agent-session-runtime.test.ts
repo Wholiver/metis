@@ -85,7 +85,7 @@ describe("AgentSessionRuntime characterization", () => {
 				noThemes: true,
 			},
 		};
-		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent, collaborationMode }) => {
 			const services = await createAgentSessionServices({
 				...runtimeOptions,
 				cwd,
@@ -97,6 +97,7 @@ describe("AgentSessionRuntime characterization", () => {
 					sessionStartEvent,
 					model: runtimeOptions.model,
 					thinkingLevel: runtimeOptions.thinkingLevel,
+					collaborationMode,
 				})),
 				services,
 				diagnostics: services.diagnostics,
@@ -528,6 +529,16 @@ describe("AgentSessionRuntime characterization", () => {
 
 		expect(realpathSync(runtime.cwd)).toBe(realpathSync(secondDir));
 		expect(realpathSync(runtime.session.sessionManager.getCwd())).toBe(realpathSync(secondDir));
+	});
+
+	it("preserves an explicitly selected collaboration mode in a fresh session", async () => {
+		const { runtime, tempDir } = await createRuntimeForTest(() => {});
+		const secondDir = join(tempDir, "plan-workspace");
+		mkdirSync(secondDir, { recursive: true });
+
+		await runtime.newSession({ cwd: secondDir, collaborationMode: "plan" });
+
+		expect(runtime.session.collaborationMode).toBe("plan");
 	});
 
 	it("restores model and thinking state from the destination session", async () => {

@@ -11,6 +11,10 @@ import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
+function visibleSessionMessages(harness: Harness) {
+	return harness.session.messages.filter((message) => !(message.role === "custom" && message.customType === "workflow_context"));
+}
+
 describe("AgentSession prompt characterization", () => {
 	const harnesses: Harness[] = [];
 	const tempDirs: string[] = [];
@@ -35,9 +39,52 @@ describe("AgentSession prompt characterization", () => {
 
 		await harness.session.prompt("hi");
 
-		expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
-		expect(getMessageText(harness.session.messages[0]!)).toBe("hi");
+		expect(visibleSessionMessages(harness).map((message) => message.role)).toEqual(["user", "assistant"]);
+		expect(getMessageText(visibleSessionMessages(harness)[0]!)).toBe("hi");
 		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("keeps Build tools configured while Plan exposes only read tools", async () => {
+		const harness = await createHarness({ initialActiveToolNames: ["read", "write"], collaborationMode: "build" });
+		harnesses.push(harness);
+
+		expect(harness.session.getActiveToolNames()).toEqual(["read", "write"]);
+		harness.session.setCollaborationMode("plan");
+		expect(harness.session.getActiveToolNames()).toEqual(["read"]);
+		expect(harness.session.getAllTools().map((tool) => tool.name)).not.toContain("write");
+
+		harness.session.setCollaborationMode("build");
+		expect(harness.session.getActiveToolNames()).toEqual(["read", "write"]);
+	});
+
+	it("includes update_plan in the default Build tool set but never in Plan", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		expect(harness.session.getActiveToolNames()).toContain("update_plan");
+		harness.session.setCollaborationMode("plan");
+		expect(harness.session.getActiveToolNames()).not.toContain("update_plan");
+		harness.session.setCollaborationMode("build");
+		expect(harness.session.getActiveToolNames()).toContain("update_plan");
+	});
+
+	it("exposes ask_user in Plan and persists its structured answer as a tool result", async () => {
+		const harness = await createHarness({ collaborationMode: "plan" });
+		harnesses.push(harness);
+		expect(harness.session.getActiveToolNames()).toContain("ask_user");
+		expect(harness.session.getAllTools().map((tool) => tool.name)).toContain("ask_user");
+		harness.session.setAskUserHandler(async (request) => ({
+			cancelled: false,
+			answers: [{ id: request.questions[0]!.id, value: "Developers", selectedLabel: "Developers" }],
+		}));
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("ask_user", { questions: [{ id: "audience", header: "Audience", question: "Who is this for?", options: [{ label: "Users", description: "End users" }, { label: "Developers", description: "Contributors", recommended: true }] }] }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("<proposed_plan>\n# Summary\nOptimize for developers.\n</proposed_plan>"),
+		]);
+		await harness.session.prompt("Optimize README");
+		const result = harness.session.messages.find((message) => message.role === "toolResult" && message.toolName === "ask_user");
+		expect(result?.role).toBe("toolResult");
+		expect(getMessageText(result)).toContain('"selectedLabel":"Developers"');
 	});
 
 	it("handles a tool call turn and waits for the follow-up LLM response", async () => {
@@ -67,14 +114,14 @@ describe("AgentSession prompt characterization", () => {
 		await harness.session.prompt("start");
 
 		expect(toolRuns).toEqual(["hello"]);
-		expect(harness.session.messages.map((message) => message.role)).toEqual([
+		expect(visibleSessionMessages(harness).map((message) => message.role)).toEqual([
 			"user",
 			"assistant",
 			"toolResult",
 			"assistant",
 		]);
-		expect(harness.session.messages[2]?.role).toBe("toolResult");
-		expect(harness.session.messages[3]?.role).toBe("assistant");
+		expect(visibleSessionMessages(harness)[2]?.role).toBe("toolResult");
+		expect(visibleSessionMessages(harness)[3]?.role).toBe("assistant");
 	});
 
 	it("executes multiple tool calls from one response and continues with a single follow-up response", async () => {
@@ -122,7 +169,7 @@ describe("AgentSession prompt characterization", () => {
 
 		harness.setResponses([
 			(context) => {
-				const user = context.messages.find((message) => message.role === "user");
+				const user = [...context.messages].reverse().find((message) => message.role === "user");
 				sawImage =
 					user?.role === "user" &&
 					typeof user.content !== "string" &&
@@ -178,7 +225,7 @@ describe("AgentSession prompt characterization", () => {
 
 		harness.setResponses([
 			(context) => {
-				const user = context.messages.find((message) => message.role === "user");
+				const user = [...context.messages].reverse().find((message) => message.role === "user");
 				expandedPrompt = user ? getMessageText(user) : "";
 				return fauxAssistantMessage("ok");
 			},
@@ -213,7 +260,7 @@ describe("AgentSession prompt characterization", () => {
 
 		harness.setResponses([
 			(context) => {
-				const user = context.messages.find((message) => message.role === "user");
+				const user = [...context.messages].reverse().find((message) => message.role === "user");
 				expandedPrompt = user ? getMessageText(user) : "";
 				return fauxAssistantMessage("ok");
 			},
@@ -256,8 +303,8 @@ describe("AgentSession prompt characterization", () => {
 
 		await harness.session.sendUserMessage("from extension");
 
-		expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
-		expect(getMessageText(harness.session.messages[0]!)).toBe("from extension");
+		expect(visibleSessionMessages(harness).map((message) => message.role)).toEqual(["user", "assistant"]);
+		expect(getMessageText(visibleSessionMessages(harness)[0]!)).toBe("from extension");
 	});
 
 	it("does not report streamingBehavior to input handlers while idle", async () => {

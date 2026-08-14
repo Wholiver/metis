@@ -103,7 +103,14 @@
 		return undefined;
 	}
 
+	function shouldSkip(target) {
+		if (!target) return false;
+		const element = target.nodeType === 1 ? target : target.parentElement;
+		return Boolean(element?.closest?.('[translate="no"], [data-no-translate]'));
+	}
+
 	function translateTextNode(node, language) {
+		if (shouldSkip(node)) return;
 		const raw = node.nodeValue || "";
 		let source = originalText.get(node);
 		if (!source || raw !== source.rendered) source = matchSource(raw);
@@ -122,6 +129,7 @@
 	}
 
 	function translateAttribute(element, attribute, language) {
+		if (shouldSkip(element)) return;
 		const explicitKey = explicitAttributeKey(element, attribute);
 		const raw = element.getAttribute(attribute);
 		if (raw == null) return;
@@ -144,6 +152,7 @@
 	}
 
 	function translateElement(element, language) {
+		if (shouldSkip(element)) return;
 		const explicitKey = element.getAttribute?.("data-i18n");
 		if (explicitKey && element.childElementCount === 0) {
 			const rendered = t(explicitKey, language);
@@ -153,7 +162,7 @@
 	}
 
 	function translateSubtree(target, language = activeLanguage) {
-		if (!target) return;
+		if (!target || shouldSkip(target)) return;
 		if (target.nodeType === 3) {
 			translateTextNode(target, language);
 			return;
@@ -164,6 +173,7 @@
 		const walker = documentRef.createTreeWalker(target, (root?.NodeFilter || globalThis.NodeFilter).SHOW_ELEMENT | (root?.NodeFilter || globalThis.NodeFilter).SHOW_TEXT);
 		let node;
 		while ((node = walker.nextNode())) {
+			if (shouldSkip(node)) continue;
 			if (node.nodeType === 3) translateTextNode(node, language);
 			else translateElement(node, language);
 		}
@@ -180,6 +190,7 @@
 		if (!root?.document?.body || observer) return;
 		observer = new root.MutationObserver((records) => {
 			for (const record of records) {
+				if (shouldSkip(record.target)) continue;
 				if (record.type === "characterData") translateTextNode(record.target, activeLanguage);
 				else if (record.type === "attributes") translateAttribute(record.target, record.attributeName, activeLanguage);
 				else for (const node of record.addedNodes) translateSubtree(node, activeLanguage);

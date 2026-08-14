@@ -1,13 +1,16 @@
 {
 	"name": "metis-desktop",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"private": true,
 	"description": "Electron desktop shell for Metis",
 	"main": "main.cjs",
 	"scripts": {
+		"prepare:cli": "npm --prefix .. run build",
 		"prepare:renderer": "node scripts/sync-renderer-vendor.mjs",
 		"i18n:generate": "node scripts/generate-i18n-catalogs.mjs",
+		"predev": "npm run prepare:cli",
 		"dev": "npm run prepare:renderer && electron .",
+		"prestart": "npm run prepare:cli",
 		"start": "npm run prepare:renderer && electron .",
 		"build": "npm run prepare:renderer && node scripts/build.mjs",
 		"package:mac": "node scripts/package-macos.mjs",

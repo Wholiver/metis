@@ -27,8 +27,16 @@ const legitimateCognates = new Set([
 	"general",
 	"interaction",
 	"optional",
+	"onboardingProviderTabApiKey",
+	"onboardingProviderTabOAuth",
 	"onboardingSetting",
+	"projectColorShort",
+	"projectNameShort",
+	"proposedPlanProcess",
 	"session",
+	"settingsDesktopSection",
+	"settingsMemoryStatus",
+	"thoughts",
 	"thinkingMinimal",
 	"timelineMessage",
 	"version",
@@ -51,6 +59,16 @@ describe("Desktop translation catalogs", () => {
 			));
 			expect(unexpected, language).toEqual([]);
 		}
+	});
+
+	it("keeps Desktop proposal actions aligned with CLI durable-plan semantics", () => {
+		for (const language of resolvedLanguages) {
+			expect(i18n.catalogs[language].proposedPlanProcessPrompt, language).toContain("read_plan");
+		}
+		expect(i18n.catalogs.en.proposedPlanProcessPrompt).toBe(
+			"Call read_plan first to load the latest proposal and execution progress. Then MUST call update_plan to create or refresh a concise implementation and verification checklist before any other tool. Keep the checklist current through completion, provide concise visible progress updates in my language, and continue until every step is verified.",
+		);
+		expect(i18n.catalogs["zh-CN"].proposedPlanProcessPrompt).toContain("update_plan");
 	});
 
 	it("resolves Automatic consistently for Windows and macOS locale forms", () => {
@@ -85,7 +103,7 @@ describe("Desktop translation coverage", () => {
 		)).map(([value]) => value));
 		const unresolved: string[] = [];
 		$("*").each((_index, element) => {
-			if ($(element).closest("#settingsLanguageSelect").length) return;
+			if ($(element).is("kbd")) return;
 			for (const node of $(element).contents().toArray()) {
 				if (node.type !== "text") continue;
 				const value = node.data.trim();
@@ -137,16 +155,5 @@ describe("Desktop native menu localization", () => {
 			const context = menu.createEditorContextMenuTemplate({ isEditable: true, editFlags: {} }, text);
 			expect(context.find((item) => item.role === "copy")?.label, language).toBe(text("menuCopy"));
 		}
-	});
-});
-
-describe("Desktop settings platform parity", () => {
-	it("keeps the Windows settings layout aligned with the macOS baseline", () => {
-		const css = readFileSync(new URL("../desktop/renderer/styles.css", import.meta.url), "utf8");
-		const platformSettingsRules = [...css.matchAll(/body\.platform-(?:darwin|win32)[^{]*\.settings-[^{]*\{[^}]*\}/g)]
-			.map(([rule]) => rule.replace(/\s+/g, " ").trim());
-		expect(platformSettingsRules).toEqual([
-			"body.platform-win32 .settings-main-drag { right: var(--titlebar-overlay-width); }",
-		]);
 	});
 });

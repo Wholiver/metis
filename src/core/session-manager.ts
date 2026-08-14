@@ -1,5 +1,6 @@
 import { type AgentMessage, uuidv7 } from "@earendil-works/metis-agent-core";
 import type { ImageContent, Message, TextContent } from "@earendil-works/metis-ai";
+import type { CollaborationMode } from "./workflow-runtime.ts";
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,
@@ -18,7 +19,7 @@ import { join, resolve } from "path";
 import { createInterface } from "readline";
 import { StringDecoder } from "string_decoder";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.ts";
-import { normalizePath, resolvePath } from "../utils/paths.ts";
+import { canonicalizePath, normalizePath, resolvePath } from "../utils/paths.ts";
 import {
 	type BashExecutionMessage,
 	type CustomMessage,
@@ -64,6 +65,11 @@ export interface ModelChangeEntry extends SessionEntryBase {
 	type: "model_change";
 	provider: string;
 	modelId: string;
+}
+
+export interface CollaborationModeChangeEntry extends SessionEntryBase {
+	type: "collaboration_mode_change";
+	mode: CollaborationMode;
 }
 
 export interface CompactionEntry<T = unknown> extends SessionEntryBase {
@@ -141,6 +147,7 @@ export type SessionEntry =
 	| SessionMessageEntry
 	| ThinkingLevelChangeEntry
 	| ModelChangeEntry
+	| CollaborationModeChangeEntry
 	| CompactionEntry
 	| BranchSummaryEntry
 	| CustomEntry
@@ -165,6 +172,21 @@ export interface SessionContext {
 	messages: AgentMessage[];
 	thinkingLevel: string;
 	model: { provider: string; modelId: string } | null;
+	collaborationMode: CollaborationMode;
+}
+
+export interface SessionDailyActivity {
+	/** Local calendar date in YYYY-MM-DD format. */
+	date: string;
+	userMessages: number;
+	modelCalls: number;
+	toolCalls: number;
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	totalTokens: number;
+	cost: number;
 }
 
 export interface SessionInfo {
@@ -181,6 +203,8 @@ export interface SessionInfo {
 	messageCount: number;
 	firstMessage: string;
 	allMessagesText: string;
+	/** Daily activity used by Desktop statistics. Omitted by older/custom providers. */
+	dailyActivity?: SessionDailyActivity[];
 }
 
 export type ReadonlySessionManager = Pick<
@@ -355,21 +379,24 @@ function buildSessionPath(
 	return path;
 }
 
-function getSessionContextSettings(path: SessionEntry[]): Pick<SessionContext, "thinkingLevel" | "model"> {
+function getSessionContextSettings(path: SessionEntry[]): Pick<SessionContext, "thinkingLevel" | "model" | "collaborationMode"> {
 	let thinkingLevel = "off";
 	let model: { provider: string; modelId: string } | null = null;
+	let collaborationMode: CollaborationMode = "build";
 
 	for (const entry of path) {
 		if (entry.type === "thinking_level_change") {
 			thinkingLevel = entry.thinkingLevel;
 		} else if (entry.type === "model_change") {
 			model = { provider: entry.provider, modelId: entry.modelId };
+		} else if (entry.type === "collaboration_mode_change") {
+			collaborationMode = entry.mode;
 		} else if (entry.type === "message" && entry.message.role === "assistant") {
 			model = { provider: entry.message.provider, modelId: entry.message.model };
 		}
 	}
 
-	return { thinkingLevel, model };
+	return { thinkingLevel, model, collaborationMode };
 }
 
 /**
@@ -449,9 +476,9 @@ export function buildSessionContext(
 	byId?: Map<string, SessionEntry>,
 ): SessionContext {
 	const path = buildSessionPath(entries, leafId, byId);
-	const { thinkingLevel, model } = getSessionContextSettings(path);
+	const { thinkingLevel, model, collaborationMode } = getSessionContextSettings(path);
 	const messages = buildContextEntries(entries, leafId, byId).flatMap(sessionEntryToContextMessages);
-	return { messages, thinkingLevel, model };
+	return { messages, thinkingLevel, model, collaborationMode };
 }
 
 /**
@@ -459,7 +486,7 @@ export function buildSessionContext(
  * Encodes cwd into a safe directory name under ~/.metis/agent/sessions/.
  */
 function getDefaultSessionDirPath(cwd: string, agentDir: string = getDefaultAgentDir()): string {
-	const resolvedCwd = resolvePath(cwd);
+	const resolvedCwd = canonicalizePath(resolvePath(cwd));
 	const resolvedAgentDir = resolvePath(agentDir);
 	const safePath = `--${resolvedCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 	return join(resolvedAgentDir, "sessions", safePath);
@@ -554,7 +581,16 @@ function getSessionHeaderCwd(header: SessionHeader): string | undefined {
 }
 
 function sessionCwdMatches(cwd: string | undefined, resolvedCwd: string): boolean {
-	return cwd !== undefined && cwd !== "" && resolvePath(cwd) === resolvedCwd;
+	if (!cwd) return false;
+	const resolvedSessionCwd = resolvePath(cwd);
+	const targetResolvedCwd = resolvePath(resolvedCwd);
+	if (resolvedSessionCwd === targetResolvedCwd) return true;
+	if (canonicalizePath(resolvedSessionCwd) === canonicalizePath(targetResolvedCwd)) return true;
+	if (process.platform === "darwin" || process.platform === "win32") {
+		if (resolvedSessionCwd.toLowerCase() === targetResolvedCwd.toLowerCase()) return true;
+		if (canonicalizePath(resolvedSessionCwd).toLowerCase() === canonicalizePath(targetResolvedCwd).toLowerCase()) return true;
+	}
+	return false;
 }
 
 /** Exported for testing */
@@ -609,15 +645,123 @@ function getMessageActivityTime(entry: SessionMessageEntry): number | undefined 
 	return Number.isNaN(t) ? undefined : t;
 }
 
-async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
+function localDateKey(timestamp: number): string {
+	const date = new Date(timestamp);
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+}
+
+function finiteNonNegative(value: unknown): number {
+	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/** Tokens one model call billed, preferring the provider-reported total. */
+function usageTokenTotal(usage: {
+	input?: unknown;
+	output?: unknown;
+	cacheRead?: unknown;
+	cacheWrite?: unknown;
+	totalTokens?: unknown;
+}): number {
+	return (
+		finiteNonNegative(usage.totalTokens) ||
+		finiteNonNegative(usage.input) +
+			finiteNonNegative(usage.output) +
+			finiteNonNegative(usage.cacheRead) +
+			finiteNonNegative(usage.cacheWrite)
+	);
+}
+
+/**
+ * Options for building session listings.
+ *
+ * `includeMessageText` controls whether `allMessagesText` is populated. It exists only for
+ * the interactive resume picker's fuzzy search; callers that just render a list (Desktop's
+ * sidebar, work stats) leave it off so neither the cache nor the HTTP payload carries a
+ * full copy of every conversation's text.
+ */
+export interface SessionListOptions {
+	includeMessageText?: boolean;
+}
+
+interface SessionInfoCacheEntry {
+	mtimeMs: number;
+	size: number;
+	hasMessageText: boolean;
+	info: SessionInfo;
+}
+
+/**
+ * Session files are append-only, so (mtimeMs, size) is a sound revalidation key: any new
+ * entry moves both. Without this cache every `/sessions` request re-parses every JSONL line
+ * of every session in the project, which is what made Desktop stall on each switch.
+ */
+const sessionInfoCache = new Map<string, SessionInfoCacheEntry>();
+const MAX_CACHED_SESSION_INFOS = 4000;
+const MAX_CACHED_SESSION_INFO_BYTES = 256 * 1024 * 1024;
+let cachedSessionInfoBytes = 0;
+
+function readSessionInfoCache(
+	filePath: string,
+	mtimeMs: number,
+	size: number,
+	needsMessageText: boolean,
+): SessionInfo | undefined {
+	const cached = sessionInfoCache.get(filePath);
+	if (!cached || cached.mtimeMs !== mtimeMs || cached.size !== size) return undefined;
+	if (needsMessageText && !cached.hasMessageText) return undefined;
+	// Refresh LRU position.
+	sessionInfoCache.delete(filePath);
+	sessionInfoCache.set(filePath, cached);
+	return cached.info;
+}
+
+function writeSessionInfoCache(filePath: string, entry: SessionInfoCacheEntry): void {
+	const previous = sessionInfoCache.get(filePath);
+	if (previous) {
+		cachedSessionInfoBytes -= previous.size;
+		sessionInfoCache.delete(filePath);
+	}
+	sessionInfoCache.set(filePath, entry);
+	cachedSessionInfoBytes += entry.size;
+	// Evict oldest-first until both the count and the byte budget are satisfied. The byte
+	// budget matters because `allMessagesText` entries are roughly file-sized.
+	while (
+		sessionInfoCache.size > MAX_CACHED_SESSION_INFOS ||
+		(cachedSessionInfoBytes > MAX_CACHED_SESSION_INFO_BYTES && sessionInfoCache.size > 1)
+	) {
+		const oldest = sessionInfoCache.entries().next();
+		if (oldest.done) break;
+		const [oldestPath, oldestEntry] = oldest.value;
+		sessionInfoCache.delete(oldestPath);
+		cachedSessionInfoBytes -= oldestEntry.size;
+	}
+}
+
+/** Drop memoized session listings. Exported for tests and for explicit cache busting. */
+export function clearSessionInfoCache(): void {
+	sessionInfoCache.clear();
+	cachedSessionInfoBytes = 0;
+}
+
+async function buildSessionInfo(
+	filePath: string,
+	options?: SessionListOptions,
+): Promise<SessionInfo | null> {
 	try {
 		const stats = await stat(filePath);
+		const includeMessageText = options?.includeMessageText === true;
+		const cached = readSessionInfoCache(filePath, stats.mtimeMs, stats.size, includeMessageText);
+		if (cached) return cached;
 		let header: SessionHeader | null = null;
 		let messageCount = 0;
 		let firstMessage = "";
 		const allMessages: string[] = [];
 		let name: string | undefined;
 		let lastActivityTime: number | undefined;
+		const dailyActivity = new Map<string, SessionDailyActivity>();
 
 		const rl = createInterface({
 			input: createReadStream(filePath, { encoding: "utf8" }),
@@ -651,10 +795,51 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 			if (!isMessageWithContent(message)) continue;
 			if (message.role !== "user" && message.role !== "assistant") continue;
 
+			if (typeof activityTime === "number") {
+				const date = localDateKey(activityTime);
+				let day = dailyActivity.get(date);
+				if (!day) {
+					day = {
+						date,
+						userMessages: 0,
+						modelCalls: 0,
+						toolCalls: 0,
+						inputTokens: 0,
+						outputTokens: 0,
+						cacheReadTokens: 0,
+						cacheWriteTokens: 0,
+						totalTokens: 0,
+						cost: 0,
+					};
+					dailyActivity.set(date, day);
+				}
+				if (message.role === "user") {
+					day.userMessages++;
+				} else {
+					day.toolCalls += message.content.filter((block) => block.type === "toolCall").length;
+					const usage = message.usage;
+					if (usage) {
+						day.modelCalls++;
+						const input = finiteNonNegative(usage.input);
+						const output = finiteNonNegative(usage.output);
+						const cacheRead = finiteNonNegative(usage.cacheRead);
+						const cacheWrite = finiteNonNegative(usage.cacheWrite);
+						day.inputTokens += input;
+						day.outputTokens += output;
+						day.cacheReadTokens += cacheRead;
+						day.cacheWriteTokens += cacheWrite;
+						day.totalTokens += usageTokenTotal(usage);
+						day.cost += finiteNonNegative((usage.cost as { total?: unknown } | undefined)?.total);
+					}
+				}
+			}
+
+			if (!includeMessageText && firstMessage) continue;
+
 			const textContent = extractTextContent(message);
 			if (!textContent) continue;
 
-			allMessages.push(textContent);
+			if (includeMessageText) allMessages.push(textContent);
 			if (!firstMessage && message.role === "user") {
 				firstMessage = textContent;
 			}
@@ -672,7 +857,7 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 					? new Date(headerTime)
 					: stats.mtime;
 
-		return {
+		const info: SessionInfo = {
 			path: filePath,
 			id: header.id,
 			cwd,
@@ -683,7 +868,15 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 			messageCount,
 			firstMessage: firstMessage || "(no messages)",
 			allMessagesText: allMessages.join(" "),
+			dailyActivity: [...dailyActivity.values()].sort((a, b) => a.date.localeCompare(b.date)),
 		};
+		writeSessionInfoCache(filePath, {
+			mtimeMs: stats.mtimeMs,
+			size: stats.size,
+			hasMessageText: includeMessageText,
+			info,
+		});
+		return info;
 	} catch {
 		return null;
 	}
@@ -696,6 +889,7 @@ const MAX_CONCURRENT_SESSION_INFO_LOADS = 10;
 async function buildSessionInfosWithConcurrency(
 	files: string[],
 	onLoaded: () => void,
+	options?: SessionListOptions,
 ): Promise<(SessionInfo | null)[]> {
 	const results: (SessionInfo | null)[] = new Array(files.length).fill(null);
 	const inFlight = new Set<Promise<void>>();
@@ -707,7 +901,7 @@ async function buildSessionInfosWithConcurrency(
 		if (!file) return;
 
 		let task: Promise<void>;
-		task = buildSessionInfo(file)
+		task = buildSessionInfo(file, options)
 			.then((info) => {
 				results[index] = info;
 			})
@@ -738,6 +932,7 @@ async function listSessionsFromDir(
 	onProgress?: SessionListProgress,
 	progressOffset = 0,
 	progressTotal?: number,
+	options?: SessionListOptions,
 ): Promise<SessionInfo[]> {
 	const sessions: SessionInfo[] = [];
 	if (!existsSync(dir)) {
@@ -750,10 +945,14 @@ async function listSessionsFromDir(
 		const total = progressTotal ?? files.length;
 
 		let loaded = 0;
-		const results = await buildSessionInfosWithConcurrency(files, () => {
-			loaded++;
-			onProgress?.(progressOffset + loaded, total);
-		});
+		const results = await buildSessionInfosWithConcurrency(
+			files,
+			() => {
+				loaded++;
+				onProgress?.(progressOffset + loaded, total);
+			},
+			options,
+		);
 		for (const info of results) {
 			if (info) {
 				sessions.push(info);
@@ -1007,6 +1206,19 @@ export class SessionManager {
 			timestamp: new Date().toISOString(),
 			provider,
 			modelId,
+		};
+		this._appendEntry(entry);
+		return entry.id;
+	}
+
+	/** Append workflow mode so resumed sessions retain Plan versus Build policy. */
+	appendCollaborationModeChange(mode: CollaborationMode): string {
+		const entry: CollaborationModeChangeEntry = {
+			type: "collaboration_mode_change",
+			id: generateId(this.byId),
+			parentId: this.leafId,
+			timestamp: new Date().toISOString(),
+			mode,
 		};
 		this._appendEntry(entry);
 		return entry.id;
@@ -1468,6 +1680,11 @@ export class SessionManager {
 		return new SessionManager(cwd, "", undefined, false, options);
 	}
 
+	/** Whether this session has durable history and is eligible for long-term memory. */
+	isPersistent(): boolean {
+		return this.persist;
+	}
+
 	/**
 	 * Fork a session from another project directory into the current project.
 	 * Creates a new session in the target cwd with the full history from the source session.
@@ -1533,12 +1750,52 @@ export class SessionManager {
 	 * @param cwd Working directory (used to compute default session directory)
 	 * @param sessionDir Optional session directory. If omitted, uses default (~/.metis/agent/sessions/<encoded-cwd>/).
 	 * @param onProgress Optional callback for progress updates (loaded, total)
+	 * @param options Controls which fields are populated (see {@link SessionListOptions})
 	 */
-	static async list(cwd: string, sessionDir?: string, onProgress?: SessionListProgress): Promise<SessionInfo[]> {
-		const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(cwd);
-		const filterCwd = sessionDir !== undefined && dir !== getDefaultSessionDirPath(cwd);
+	static async list(
+		cwd: string,
+		sessionDir?: string,
+		onProgress?: SessionListProgress,
+		options?: SessionListOptions,
+	): Promise<SessionInfo[]> {
 		const resolvedCwd = resolvePath(cwd);
-		const sessions = (await listSessionsFromDir(dir, onProgress)).filter(
+		const canonicalCwd = canonicalizePath(resolvedCwd);
+		const isDefaultDir = sessionDir === undefined || sessionDir === getDefaultSessionDirPath(cwd);
+
+		if (isDefaultDir) {
+			const primaryDir = getDefaultSessionDir(cwd);
+			const altDir = getDefaultSessionDir(canonicalCwd);
+			const dirsToScan = new Set([primaryDir, altDir]);
+			const allSessions: SessionInfo[] = [];
+			const seenPaths = new Set<string>();
+
+			for (const dir of dirsToScan) {
+				const list = await listSessionsFromDir(dir, onProgress, 0, undefined, options);
+				for (const s of list) {
+					if (!seenPaths.has(s.path) && sessionCwdMatches(s.cwd, resolvedCwd)) {
+						seenPaths.add(s.path);
+						allSessions.push(s);
+					}
+				}
+			}
+
+			if (allSessions.length === 0) {
+				const globalSessions = await SessionManager.listAll(onProgress, options);
+				for (const s of globalSessions) {
+					if (!seenPaths.has(s.path) && sessionCwdMatches(s.cwd, resolvedCwd)) {
+						seenPaths.add(s.path);
+						allSessions.push(s);
+					}
+				}
+			}
+
+			allSessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+			return allSessions;
+		}
+
+		const dir = normalizePath(sessionDir);
+		const filterCwd = dir !== getDefaultSessionDirPath(cwd);
+		const sessions = (await listSessionsFromDir(dir, onProgress, 0, undefined, options)).filter(
 			(session) => !filterCwd || sessionCwdMatches(session.cwd, resolvedCwd),
 		);
 		sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
@@ -1548,18 +1805,31 @@ export class SessionManager {
 	/**
 	 * List all sessions across all project directories.
 	 * @param onProgress Optional callback for progress updates (loaded, total)
+	 * @param options Controls which fields are populated (see {@link SessionListOptions})
 	 */
-	static async listAll(onProgress?: SessionListProgress): Promise<SessionInfo[]>;
-	static async listAll(sessionDir?: string, onProgress?: SessionListProgress): Promise<SessionInfo[]>;
+	static async listAll(onProgress?: SessionListProgress, options?: SessionListOptions): Promise<SessionInfo[]>;
+	static async listAll(
+		sessionDir?: string,
+		onProgress?: SessionListProgress,
+		options?: SessionListOptions,
+	): Promise<SessionInfo[]>;
 	static async listAll(
 		sessionDirOrOnProgress?: string | SessionListProgress,
-		onProgress?: SessionListProgress,
+		onProgress?: SessionListProgress | SessionListOptions,
+		options?: SessionListOptions,
 	): Promise<SessionInfo[]> {
 		const customSessionDir =
 			typeof sessionDirOrOnProgress === "string" ? normalizePath(sessionDirOrOnProgress) : undefined;
-		const progress = typeof sessionDirOrOnProgress === "function" ? sessionDirOrOnProgress : onProgress;
+		const progress =
+			typeof sessionDirOrOnProgress === "function"
+				? sessionDirOrOnProgress
+				: typeof onProgress === "function"
+					? onProgress
+					: undefined;
+		const listOptions =
+			options ?? (typeof onProgress === "object" && onProgress !== null ? onProgress : undefined);
 		if (customSessionDir) {
-			const sessions = await listSessionsFromDir(customSessionDir, progress);
+			const sessions = await listSessionsFromDir(customSessionDir, progress, 0, undefined, listOptions);
 			sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 			return sessions;
 		}
@@ -1591,10 +1861,14 @@ export class SessionManager {
 			const sessions: SessionInfo[] = [];
 			const allFiles = dirFiles.flat();
 
-			const results = await buildSessionInfosWithConcurrency(allFiles, () => {
-				loaded++;
-				progress?.(loaded, totalFiles);
-			});
+			const results = await buildSessionInfosWithConcurrency(
+				allFiles,
+				() => {
+					loaded++;
+					progress?.(loaded, totalFiles);
+				},
+				listOptions,
+			);
 
 			for (const info of results) {
 				if (info) {

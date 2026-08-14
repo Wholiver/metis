@@ -59,7 +59,7 @@ import {
 	getShareViewerUrl,
 	VERSION,
 } from "../../config.ts";
-import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
+import { type AgentSession, type AgentSessionEvent, type PromptOptions, parseSkillBlock } from "../../core/agent-session.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
 import type {
 	AutocompleteProviderFactory,
@@ -128,7 +128,9 @@ import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./c
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { LanguageSelectorComponent } from "./components/language-selector.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
+import { AskUserComponent } from "./components/ask-user.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
+import { PlanActionsComponent } from "./components/plan-actions.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
@@ -146,6 +148,7 @@ import { TreeSelectorComponent } from "./components/tree-selector.ts";
 import { TrustSelectorComponent } from "./components/trust-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
+import { WorkflowPlanComponent } from "./components/workflow-plan.ts";
 import { getModelSearchText } from "./model-search.ts";
 import {
 	getUiLanguage,
@@ -171,6 +174,11 @@ import { InteractiveThemeController } from "./theme/theme-controller.ts";
 /** Interface for components that can be expanded/collapsed */
 interface Expandable {
 	setExpanded(expanded: boolean): void;
+}
+
+export const PLAN_PROCESS_PROMPT = "Call read_plan first to load the latest proposal and execution progress. Then MUST call update_plan to create or refresh a concise implementation and verification checklist before any other tool. Keep the checklist current through completion, provide concise visible progress updates in my language, and continue until every step is verified.";
+export function createPlanRevisionPrompt(feedback: string): string {
+	return `Call read_plan first, then revise the latest proposed plan using this feedback: ${feedback}`;
 }
 
 function isExpandable(obj: unknown): obj is Expandable {
@@ -374,6 +382,8 @@ export class InteractiveMode {
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
 	private editorContainer: Container;
+	private workflowPlanContainer: Container;
+	private workflowPlanComponent: WorkflowPlanComponent | undefined = undefined;
 	private footer: FooterComponent;
 	private footerDataProvider: FooterDataProvider;
 	// Stored so the same manager can be injected into custom editors, selectors, and extension UI.
@@ -382,6 +392,7 @@ export class InteractiveMode {
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
 	private pendingUserInputs: string[] = [];
+	private nextPromptWorkflowAction?: PromptOptions["workflowAction"];
 	private activeStatusIndicator: StatusIndicator | undefined = undefined;
 	private readonly idleStatus = new IdleStatus();
 	private workingMessage: string | undefined = undefined;
@@ -446,6 +457,8 @@ export class InteractiveMode {
 	// Extension UI state
 	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
+	private askUserComponent: AskUserComponent | undefined = undefined;
+	private planActionsComponent: PlanActionsComponent | undefined = undefined;
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
 	private extensionTerminalInputUnsubscribers = new Set<() => void>();
 
@@ -523,6 +536,7 @@ export class InteractiveMode {
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
+		this.workflowPlanContainer = new Container();
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
@@ -626,6 +640,17 @@ export class InteractiveMode {
 					description: item.provider,
 				}));
 			};
+		}
+		const modeCommand = slashCommands.find((command) => command.name === "mode");
+		if (modeCommand) {
+			modeCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] =>
+				["build", "plan"]
+					.filter((mode) => mode.startsWith(prefix.toLowerCase()))
+					.map((mode) => ({
+						value: mode,
+						label: mode,
+						description: mode === "plan" ? "Read-only tools; no shell, edits, or writes" : "Full configured tool access",
+					}));
 		}
 
 		// Convert prompt templates to SlashCommand format for autocomplete
@@ -759,6 +784,7 @@ export class InteractiveMode {
 		
 		this.bottomContainer.addChild(this.statusContainer);
 		this.bottomContainer.addChild(this.widgetContainerAbove);
+		this.bottomContainer.addChild(this.workflowPlanContainer);
 		this.bottomContainer.addChild(this.editorContainer);
 		this.bottomContainer.addChild(this.widgetContainerBelow);
 		this.bottomContainer.addChild(this.footer);
@@ -791,6 +817,7 @@ export class InteractiveMode {
 					hint("app.suspend", t("header.toSuspend")),
 					keyHint("tui.editor.deleteToLineEnd", t("header.toDeleteEnd")),
 					hint("app.thinking.cycle", t("header.toCycleThinking")),
+					hint("app.workflow.toggle", t("header.switchWorkflow")),
 					rawKeyHint(
 						`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`,
 						t("header.toCycleModels"),
@@ -809,6 +836,7 @@ export class InteractiveMode {
 				].join("\n");
 			const buildCompactInstructions = () =>
 				[
+					hint("app.workflow.toggle", t("header.switchWorkflow")),
 					hint("app.interrupt", t("header.interrupt")),
 					rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, t("header.clearExit")),
 					rawKeyHint("/", t("header.commands")),
@@ -948,8 +976,10 @@ export class InteractiveMode {
 		// Main interactive loop
 		while (true) {
 			const userInput = await this.getUserInput();
+			const workflowAction = this.nextPromptWorkflowAction;
+			this.nextPromptWorkflowAction = undefined;
 			try {
-				await this.session.prompt(userInput);
+				await this.session.prompt(userInput, workflowAction ? { workflowAction } : undefined);
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
@@ -1653,6 +1683,7 @@ export class InteractiveMode {
 	 */
 	private async bindCurrentSessionExtensions(): Promise<void> {
 		const uiContext = this.createExtensionUIContext();
+		this.session.setAskUserHandler((request, signal) => this.showAskUser(request, signal));
 		await this.session.bindExtensions({
 			uiContext,
 			mode: "tui",
@@ -1765,7 +1796,25 @@ export class InteractiveMode {
 		}
 		await this.updateAvailableProviderCount();
 		this.updateEditorBorderColor();
-		this.updateTerminalTitle();
+		this.renderWorkflowPlan?.();
+	}
+
+	private renderWorkflowPlan(): void {
+		const plan = this.session.collaborationMode === "build" ? this.session.workflowPlan : undefined;
+		if (!plan) {
+			this.workflowPlanContainer.clear();
+			this.workflowPlanComponent = undefined;
+			return;
+		}
+		const lastAssistant = [...this.session.messages].reverse().find((message) => message.role === "assistant");
+		const interrupted = !this.session.isStreaming && lastAssistant?.role === "assistant" && lastAssistant.stopReason === "aborted";
+		if (this.workflowPlanComponent) {
+			this.workflowPlanComponent.update(plan, interrupted);
+		} else {
+			this.workflowPlanComponent = new WorkflowPlanComponent(plan, interrupted);
+			this.workflowPlanContainer.clear();
+			this.workflowPlanContainer.addChild(this.workflowPlanComponent);
+		}
 	}
 
 	private async handleFatalRuntimeError(prefix: string, error: unknown): Promise<never> {
@@ -1977,12 +2026,14 @@ export class InteractiveMode {
 	}
 
 	private resetExtensionUI(): void {
+		this.hidePlanActions(true);
 		if (this.extensionSelector) {
 			this.hideExtensionSelector();
 		}
 		if (this.extensionInput) {
 			this.hideExtensionInput();
 		}
+		this.hideAskUser();
 		if (this.extensionEditor) {
 			this.hideExtensionEditor();
 		}
@@ -2219,6 +2270,96 @@ export class InteractiveMode {
 	/**
 	 * Show a selector for extensions.
 	 */
+	private showAskUser(request: import("../../core/ask-user.ts").AskUserRequest, signal?: AbortSignal): Promise<import("../../core/ask-user.ts").AskUserResponse> {
+		return new Promise((resolve) => {
+			const finish = (response: import("../../core/ask-user.ts").AskUserResponse) => {
+				signal?.removeEventListener("abort", cancel);
+				this.hideAskUser();
+				resolve(response);
+			};
+			const cancel = () => finish({ cancelled: true, answers: [] });
+			if (signal?.aborted) return cancel();
+			signal?.addEventListener("abort", cancel, { once: true });
+			this.askUserComponent = new AskUserComponent(request, finish, cancel);
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.askUserComponent);
+			this.ui.setFocus(this.askUserComponent);
+			this.ui.requestRender();
+		});
+	}
+
+	private hideAskUser(): void {
+		if (!this.askUserComponent) return;
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.askUserComponent = undefined;
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	private enqueuePlanAction(prompt: string, workflowAction?: PromptOptions["workflowAction"]): void {
+		this.nextPromptWorkflowAction = workflowAction;
+		if (this.onInputCallback) {
+			this.onInputCallback(prompt);
+		} else {
+			this.pendingUserInputs.push(prompt);
+		}
+	}
+
+	private showPlanActionsIfAvailable(allowSettlingAgentEnd = false): void {
+		const proposal = this.session.workflowProposal;
+		if (
+			!proposal
+			|| this.session.collaborationMode !== "plan"
+			|| (this.session.isStreaming && !allowSettlingAgentEnd)
+			|| this.session.isCompacting
+			|| this.askUserComponent
+			|| this.extensionSelector
+			|| this.extensionInput
+			|| this.extensionEditor
+			|| this.editor !== this.defaultEditor
+		) return;
+		if (this.planActionsComponent) return;
+
+		const initialFeedback = this.editor.getExpandedText?.() ?? this.editor.getText();
+		this.planActionsComponent = new PlanActionsComponent(
+			initialFeedback,
+			() => {
+				this.hidePlanActions();
+				this.editor.setText("");
+				try {
+					this.session.setCollaborationMode("build");
+					this.footer.invalidate();
+					this.enqueuePlanAction(PLAN_PROCESS_PROMPT, "process_proposal");
+				} catch (error) {
+					this.showError(error instanceof Error ? error.message : String(error));
+					this.showPlanActionsIfAvailable();
+				}
+			},
+			(feedback) => {
+				this.hidePlanActions();
+				this.editor.setText("");
+				this.enqueuePlanAction(createPlanRevisionPrompt(feedback));
+			},
+			(draft) => this.hidePlanActions(true, draft),
+		);
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.planActionsComponent);
+		this.ui.setFocus(this.planActionsComponent);
+		this.ui.requestRender();
+	}
+
+	private hidePlanActions(restoreDraft = false, draftOverride?: string): void {
+		if (!this.planActionsComponent) return;
+		const draft = draftOverride ?? this.planActionsComponent.getDraft();
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.planActionsComponent = undefined;
+		if (restoreDraft) this.editor.setText(draft);
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
 	private showExtensionSelector(
 		title: string,
 		options: string[],
@@ -2632,6 +2773,7 @@ export class InteractiveMode {
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
 		this.defaultEditor.onAction("app.suspend", () => this.handleCtrlZ());
 		this.defaultEditor.onAction("app.thinking.cycle", () => this.cycleThinkingLevel());
+		this.defaultEditor.onAction("app.workflow.toggle", () => this.toggleCollaborationMode());
 		this.defaultEditor.onAction("app.model.cycleForward", () => this.cycleModel("forward"));
 		this.defaultEditor.onAction("app.model.cycleBackward", () => this.cycleModel("backward"));
 
@@ -2693,6 +2835,78 @@ export class InteractiveMode {
 			if (text === "/settings") {
 				this.showSettingsSelector();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/mode" || text.startsWith("/mode ")) {
+				const mode = text.slice(5).trim();
+				if (!mode) {
+					this.editor.setText("");
+					const selected = await this.showExtensionSelector(
+						"Workflow mode\nBuild uses all configured tools. Plan exposes read-only tools and is not an OS sandbox.",
+						["Build", "Plan"],
+					);
+					if (!selected) return;
+					try {
+						this.session.setCollaborationMode(selected.toLowerCase() as "build" | "plan");
+						this.footer.invalidate();
+						this.showStatus(`Workflow mode set to ${selected.toLowerCase()}.`);
+					} catch (error) {
+						this.showError(error instanceof Error ? error.message : String(error));
+					}
+					return;
+				}
+				if (mode !== "build" && mode !== "plan") {
+					this.showStatus(`Workflow mode: ${this.session.collaborationMode}. Use /mode build or /mode plan.`);
+				} else {
+					try {
+						this.session.setCollaborationMode(mode);
+						this.footer.invalidate();
+						this.showStatus(`Workflow mode set to ${mode}.`);
+					} catch (error) {
+						this.showError(error instanceof Error ? error.message : String(error));
+					}
+				}
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/memory" || text.startsWith("/memory ")) {
+				const [action = "status", ...rest] = text.slice(7).trim().split(/\s+/).filter(Boolean);
+				this.editor.setText("");
+				try {
+					switch (action) {
+						case "status": {
+							const memory = this.session.memoryState;
+							const zeroReason = memory.globalCount + memory.projectCount === 0
+								? memory.pendingJobs > 0 ? " No records yet: extraction pending." : memory.lastRunProcessed === 0 ? " No eligible checkpoints in last run." : " No durable high-confidence records extracted yet."
+								: "";
+							this.showStatus(`Memory ${memory.enabled ? memory.phase : "off"}: ${memory.globalCount} global, ${memory.projectCount} project, ${memory.pendingJobs} pending${memory.nextEligibleAt ? ` (eligible ${memory.nextEligibleAt})` : ""}. Last run: ${memory.lastRunProcessed ?? 0} processed, ${memory.lastRunAdded ?? 0} added, ${memory.lastRunSkipped ?? 0} skipped; method ${memory.lastExtractionMethod ?? "none"}${memory.fallbackUsed ? " (fallback)" : ""}.${memory.modelFailureReason ? ` Model failure: ${memory.modelFailureReason}.` : ""}${zeroReason}`);
+							break;
+						}
+						case "on": this.session.setMemoryEnabled(true); this.showStatus("Memory enabled."); break;
+						case "off": this.session.setMemoryEnabled(false); this.showStatus("Memory disabled."); break;
+						case "run": {
+							const memory = await this.session.runMemory();
+							this.showStatus(`Memory run completed: ${memory.lastRunProcessed ?? 0} processed, ${memory.lastRunAdded ?? 0} added, ${memory.lastRunSkipped ?? 0} skipped${memory.fallbackUsed ? " (fallback used)" : ""}.`);
+							break;
+						}
+						case "search": {
+							const query = rest.join(" ");
+							if (!query) throw new Error("Usage: /memory search <query>");
+							const records = this.session.searchMemory(query);
+							this.showStatus(records.length ? records.map((record) => `[${record.scope}/${record.kind}] ${record.content}`).join("\n") : "No matching memory.");
+							break;
+						}
+						case "forget": if (!rest[0]) throw new Error("Usage: /memory forget <id>"); this.showStatus(this.session.forgetMemory(rest[0]) ? "Memory forgotten." : "Memory not found."); break;
+						case "reset": if (rest[0] !== "RESET_MEMORY") throw new Error("Usage: /memory reset RESET_MEMORY"); this.session.resetMemory("RESET_MEMORY"); this.showStatus("Memory reset."); break;
+						default: throw new Error("Usage: /memory status|on|off|run|search|forget|reset");
+					}
+					this.footer.invalidate();
+				} catch (error) { this.showError(error instanceof Error ? error.message : String(error)); }
+				return;
+			}
+			if (text === "/dream" || text.startsWith("/dream ")) {
+				this.editor.setText("");
+				this.showStatus("Dream moved into Memory. Use /memory run, /memory status, or /memory on|off.");
 				return;
 			}
 			if (text === "/language") {
@@ -2877,6 +3091,21 @@ export class InteractiveMode {
 		};
 	}
 
+	private toggleCollaborationMode(): void {
+		if (this.session.isStreaming || this.session.isCompacting) {
+			this.showStatus("Workflow mode can only change while the session is idle.");
+			return;
+		}
+		const mode = this.session.collaborationMode === "build" ? "plan" : "build";
+		try {
+			this.session.setCollaborationMode(mode);
+			this.footer.invalidate();
+			this.showStatus(`Workflow mode set to ${mode}.`);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
 	private subscribeToAgent(): void {
 		this.unsubscribe = this.session.subscribe(async (event) => {
 			await this.handleEvent(event);
@@ -2892,6 +3121,7 @@ export class InteractiveMode {
 
 		switch (event.type) {
 			case "agent_start":
+				this.hidePlanActions(true);
 				this.pendingTools.clear();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
@@ -2927,9 +3157,21 @@ export class InteractiveMode {
 
 			case "entry_appended":
 				if (event.entry.type === "custom") {
-					this.addCustomEntryToChat(event.entry);
+					if (event.entry.customType === "workflow_plan" || event.entry.customType === "workflow_plan_reset") this.renderWorkflowPlan();
+					else this.addCustomEntryToChat(event.entry);
+					if (event.entry.customType === "workflow_proposal" && !this.session.isStreaming) {
+						this.showPlanActionsIfAvailable();
+					}
 					this.ui.requestRender();
 				}
+				break;
+
+			case "collaboration_mode_changed":
+				if (event.mode === "plan") this.showPlanActionsIfAvailable();
+				else this.hidePlanActions(true);
+				this.renderWorkflowPlan();
+				this.updateEditorBorderColor();
+				this.ui.requestRender();
 				break;
 
 			case "session_info_changed":
@@ -2973,6 +3215,7 @@ export class InteractiveMode {
 
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
+							if (content.name === "update_plan") continue;
 							if (!this.pendingTools.has(content.id)) {
 								const component = new ToolExecutionComponent(
 									content.name,
@@ -3041,6 +3284,7 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
+				if (event.toolName === "update_plan") break;
 				let component = this.pendingTools.get(event.toolCallId);
 				if (!component) {
 					component = new ToolExecutionComponent(
@@ -3094,13 +3338,16 @@ export class InteractiveMode {
 					this.streamingMessage = undefined;
 				}
 				this.pendingTools.clear();
+				this.renderWorkflowPlan();
 
 				await this.checkShutdownRequested();
+				if (!event.willRetry) this.showPlanActionsIfAvailable(true);
 
 				this.ui.requestRender();
 				break;
 
 			case "compaction_start": {
+				this.hidePlanActions(true);
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -3365,6 +3612,7 @@ export class InteractiveMode {
 				// Render tool call components
 				for (const content of message.content) {
 					if (content.type === "toolCall") {
+						if (content.name === "update_plan") continue;
 						const component = new ToolExecutionComponent(
 							content.name,
 							content.id,
@@ -3442,6 +3690,8 @@ export class InteractiveMode {
 			populateHistory: true,
 		});
 		this.renderProjectTrustWarningIfNeeded();
+		this.showPlanActionsIfAvailable();
+		this.renderWorkflowPlan();
 
 		// Show compaction info if session was compacted
 		const allEntries = this.sessionManager.getEntries();
@@ -3788,6 +4038,7 @@ export class InteractiveMode {
 				}
 			}
 		}
+		this.workflowPlanComponent?.setExpanded(expanded);
 		this.ui.requestRender();
 	}
 
@@ -4772,11 +5023,18 @@ export class InteractiveMode {
 		this.showSelector((done) => {
 			const selector = new SessionSelectorComponent(
 				(onProgress) =>
-					SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress),
+					SessionManager.list(
+						this.sessionManager.getCwd(),
+						this.sessionManager.getSessionDir(),
+						onProgress,
+						{ includeMessageText: true },
+					),
 				(onProgress) =>
 					this.sessionManager.usesDefaultSessionDir()
-						? SessionManager.listAll(onProgress)
-						: SessionManager.listAll(this.sessionManager.getSessionDir(), onProgress),
+						? SessionManager.listAll(onProgress, { includeMessageText: true })
+						: SessionManager.listAll(this.sessionManager.getSessionDir(), onProgress, {
+								includeMessageText: true,
+							}),
 				async (sessionPath) => {
 					done();
 					await this.handleResumeSession(sessionPath);
@@ -5769,6 +6027,18 @@ export class InteractiveMode {
 		}
 		info += `${theme.fg("dim", "File:")} ${stats.sessionFile ?? "In-memory"}\n`;
 		info += `${theme.fg("dim", "ID:")} ${stats.sessionId}\n\n`;
+		info += `${theme.bold("Workflow")}\n`;
+		info += `${theme.fg("dim", "Mode:")} ${this.session.collaborationMode}\n`;
+		const memory = this.session.memoryState;
+		info += `${theme.fg("dim", "Memory:")} ${memory.enabled ? memory.phase : "off"} · ${memory.globalCount} global / ${memory.projectCount} project · ${memory.pendingJobs} pending\n`;
+		const instructionSources = this.session.instructionSources;
+		if (instructionSources.length) {
+			info += `${theme.fg("dim", "Instructions:")} ${instructionSources.map((source) => `${source.channel}:${source.source} (${source.trust})`).join(", ")}\n`;
+		}
+		for (const diagnostic of this.session.instructionDiagnostics) {
+			info += `${theme.fg("warning", "Instruction warning:")} ${diagnostic}\n`;
+		}
+		info += "\n";
 		info += `${theme.bold("Messages")}\n`;
 		info += `${theme.fg("dim", "User:")} ${stats.userMessages}\n`;
 		info += `${theme.fg("dim", "Assistant:")} ${stats.assistantMessages}\n`;
@@ -5856,7 +6126,6 @@ export class InteractiveMode {
 		const yank = this.getEditorKeyDisplay("tui.editor.yank");
 		const yankPop = this.getEditorKeyDisplay("tui.editor.yankPop");
 		const undo = this.getEditorKeyDisplay("tui.editor.undo");
-		const tab = this.getEditorKeyDisplay("tui.input.tab");
 
 		// App keybindings
 		const interrupt = this.getAppKeyDisplay("app.interrupt");
@@ -5864,6 +6133,7 @@ export class InteractiveMode {
 		const exit = this.getAppKeyDisplay("app.exit");
 		const suspend = this.getAppKeyDisplay("app.suspend");
 		const cycleThinkingLevel = this.getAppKeyDisplay("app.thinking.cycle");
+		const toggleWorkflow = this.getAppKeyDisplay("app.workflow.toggle");
 		const cycleModelForward = this.getAppKeyDisplay("app.model.cycleForward");
 		const selectModel = this.getAppKeyDisplay("app.model.select");
 		const expandTools = this.getAppKeyDisplay("app.tools.expand");
@@ -5902,7 +6172,7 @@ export class InteractiveMode {
 **Other**
 | Key | Action |
 |-----|--------|
-| \`${tab}\` | Path completion / accept autocomplete |
+| \`${toggleWorkflow}\` | Switch Build / Plan workflow mode; accept command and explicit-path autocomplete when active |
 | \`${interrupt}\` | Cancel autocomplete / abort streaming |
 | \`${clear}\` | Clear editor (first) / exit (second) |
 | \`${exit}\` | Exit (when editor is empty) |

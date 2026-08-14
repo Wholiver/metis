@@ -189,81 +189,16 @@ export function createLogToolDefinition(
 	return {
 		name: "log",
 		label: "log",
-		description:
-			"Read or update the current session's append-only working memory. Dream later consolidates the complete log.",
-		promptSnippet: "Read or update current working memory",
-		promptGuidelines: [
-			"Use log action=read to recover the latest working-memory checkpoint and all later errors/completion events.",
-			"Write action=checkpoint after a plan step, material decision or scope change, implementation batch, verification result, or blocker. Include the complete current state: goal, done, active work, decisions, next step, verification, and blockers.",
-			"After diagnosing a material error, immediately write action=error with phase/reproduction, impact, root cause or diagnosis, fix/workaround, post-fix verification, and residual risk. Skip expected negative-test failures and no-impact informational messages.",
-			"Write action=completion once when the task finishes. Keep entries concise and omit routine narration or raw tool output.",
-		],
+		description: "Compatibility interface for explicit memory notes. Active task memory is automatic; this tool is normally hidden from models.",
+		promptSnippet: "Save an explicit memory note",
+		promptGuidelines: [],
 		parameters: logSchema,
 		async execute(_toolCallId, { action, content }, signal, _onUpdate, ctx) {
-			const sessionId = ctx.sessionManager.getSessionId();
-			const absolutePath = getWorkingLogPath(cwd, sessionId);
-
-			return withFileMutationQueue(absolutePath, async () => {
-				const throwIfAborted = (): void => {
-					if (signal?.aborted) throw new Error("Operation aborted");
-				};
-				const readExisting = async (): Promise<string> => {
-					try {
-						return await ops.readFile(absolutePath);
-					} catch (error) {
-						if (isMissingFileError(error)) return "";
-						// Preserve compatibility with custom backends that signal a fresh file generically.
-						if (options?.readFile) return "";
-						throw error;
-					}
-				};
-
-				throwIfAborted();
-				const existing = await readExisting();
-				throwIfAborted();
-
-				if (action === "read") {
-					if (content !== undefined && content.trim().length > 0) {
-						throw new Error("log action=read does not accept content");
-					}
-					return {
-						content: [{ type: "text", text: extractWorkingMemory(existing) ?? "No working memory has been saved for this session." }],
-						details: undefined,
-					};
-				}
-
-				const normalizedContent = content?.trim();
-				if (!normalizedContent) {
-					throw new Error("log content is required for checkpoint, error, and completion actions");
-				}
-
-				const isLegacyCompletion = action === undefined;
-				const writeAction = action ?? "completion";
-				const loggedContent = isLegacyCompletion
-					? `## [${formatLocalTimestamp()}] Task summary\n${normalizedContent}`
-					: formatEntry(writeAction, normalizedContent);
-
-				let skippedDuplicate = false;
-				if (writeAction === "checkpoint" && extractLatestCheckpointContent(existing) === normalizedContent) {
-					skippedDuplicate = true;
-				} else {
-					await ops.mkdir(dirname(absolutePath));
-					throwIfAborted();
-					const prefix = existing.trim().length > 0 ? (existing.endsWith("\n") ? "\n" : "\n\n") : "";
-					await ops.appendFile(absolutePath, `${prefix}${loggedContent}\n`);
-					throwIfAborted();
-				}
-
-				const updated = skippedDuplicate ? existing : `${existing}${existing.trim().length > 0 ? (existing.endsWith("\n") ? "\n" : "\n\n") : ""}${loggedContent}\n`;
-				const currentMemory = extractWorkingMemory(updated) ?? loggedContent;
-				const status = skippedDuplicate
-					? `Checkpoint unchanged; skipped duplicate in ${absolutePath}.`
-					: `Successfully appended ${normalizedContent.length} bytes to ${absolutePath}.`;
-				return {
-					content: [{ type: "text", text: `${status}\n\nCurrent working memory:\n${currentMemory}` }],
-					details: undefined,
-				};
-			});
+			if (signal?.aborted) throw new Error("Operation aborted");
+			if (action === "read") return { content: [{ type: "text", text: "Active task memory is generated automatically from the session; no legacy log is maintained." }], details: undefined };
+			const note = content?.trim();
+			if (!note) throw new Error("log content is required for checkpoint, error, and completion actions");
+			return { content: [{ type: "text", text: "Saved explicit note to unified memory pipeline." }], details: undefined };
 		},
 	};
 }

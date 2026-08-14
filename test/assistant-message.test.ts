@@ -1,6 +1,10 @@
 import type { AssistantMessage } from "@earendil-works/metis-ai";
 import { describe, expect, test } from "vitest";
-import { AssistantMessageComponent } from "../src/modes/interactive/components/assistant-message.ts";
+import {
+	AssistantMessageComponent,
+	compactProposedPlanText,
+	parseProposedPlanPreview,
+} from "../src/modes/interactive/components/assistant-message.ts";
 import { UserMessageComponent } from "../src/modes/interactive/components/user-message.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
@@ -33,6 +37,46 @@ function createAssistantMessage(
 }
 
 describe("AssistantMessageComponent", () => {
+	test("limits proposed-plan display lines without changing ordinary responses", () => {
+		const lines = Array.from({ length: 15 }, (_, index) => `- Step ${index + 1}`);
+		const full = `<proposed_plan>\n${lines.join("\n")}\n</proposed_plan>`;
+		const compact = compactProposedPlanText(full, 12);
+
+		expect(compact).toContain("- Step 12");
+		expect(compact).not.toContain("- Step 13");
+		expect(compact).toContain("3 more lines");
+		expect(compact).not.toContain("<proposed_plan>");
+		expect(compactProposedPlanText("ordinary response", 2)).toBe("ordinary response");
+	});
+
+	test("renders a compact proposed plan while retaining full source message", () => {
+		initTheme("dark");
+		const plan = Array.from({ length: 15 }, (_, index) => `- Step ${index + 1}`).join("\n");
+		const message = createAssistantMessage([{ type: "text", text: `<proposed_plan>\n${plan}\n</proposed_plan>` }]);
+		const component = new AssistantMessageComponent(message);
+		const rendered = stripAnsi(component.render(80).join("\n"));
+
+		expect(rendered).toContain("Step 12");
+		expect(rendered).not.toContain("Step 13");
+		expect(rendered).toContain("Plan ready");
+		expect(rendered).toContain("3 more lines");
+		expect(rendered).not.toContain("<proposed_plan>");
+		expect(message.content[0]).toMatchObject({ text: expect.stringContaining("Step 15") });
+	});
+
+	test("renders an unfinished proposal as a draft without leaking its protocol tag", () => {
+		initTheme("dark");
+		const preview = parseProposedPlanPreview("Before\n<proposed_plan>\n## Summary\nDraft");
+		expect(preview).toMatchObject({ before: "Before", complete: false, totalLines: 2 });
+
+		const component = new AssistantMessageComponent(
+			createAssistantMessage([{ type: "text", text: "<proposed_plan>\n## Summary\nDraft" }]),
+		);
+		const rendered = stripAnsi(component.render(80).join("\n"));
+		expect(rendered).toContain("Drafting plan");
+		expect(rendered).not.toContain("<proposed_plan>");
+	});
+
 	test("adds OSC 133 zone markers to assistant messages without tool calls", () => {
 		initTheme("dark");
 

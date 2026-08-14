@@ -150,32 +150,6 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.session.messages[0]?.role).toBe("compactionSummary");
 	});
 
-	it("reinjects working memory after manual compaction and includes it in token estimation", async () => {
-		const harness = await createHarness({
-			settings: { compaction: { keepRecentTokens: 1 } },
-			extensionFactories: [
-				(metis) => {
-					metis.on("session_before_compact", async (event) => ({
-						compaction: {
-							summary: "manual summary",
-							firstKeptEntryId: event.preparation.firstKeptEntryId,
-							tokensBefore: event.preparation.tokensBefore,
-						},
-					}));
-				},
-			],
-		});
-		harnesses.push(harness);
-		seedCompactableSession(harness);
-		seedWorkingMemory(harness);
-
-		const result = await harness.session.compact();
-		const expectedTokens = harness.session.messages.reduce((sum, message) => sum + estimateTokens(message), 0);
-
-		expectWorkingMemoryAtContextTail(harness);
-		expect(result.estimatedTokensAfter).toBe(expectedTokens);
-	});
-
 	it("throws when compacting without a model", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
@@ -217,19 +191,6 @@ describe("AgentSession compaction characterization", () => {
 		expect(compactionEntries).toHaveLength(1);
 		expect(compactionEnd?.result?.estimatedTokensAfter).toBeGreaterThan(0);
 		expect(getStreamCallCount()).toBe(1);
-	});
-
-	it("reinjects working memory after automatic compaction", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
-		harnesses.push(harness);
-		seedCompactableSession(harness);
-		seedWorkingMemory(harness);
-		useSummaryStreamFn(harness, "auto working-memory summary");
-		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
-
-		await sessionInternals._runAutoCompaction("threshold", false);
-
-		expectWorkingMemoryAtContextTail(harness);
 	});
 
 	it("cancels in-progress manual compaction when abortCompaction is called", async () => {

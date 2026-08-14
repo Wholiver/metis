@@ -234,6 +234,21 @@ describe("SessionManager custom flat session directory", () => {
 		const continuedA = SessionManager.continueRecent(projectA, tempDir);
 		expect(continuedA.getSessionFile()).toBe(sessionA);
 	});
+
+	it("matches sessions created under canonicalized path variants", async () => {
+		const symlinkTargetDir = join(tempDir, "real-project");
+		const symlinkDir = join(tempDir, "symlink-project");
+		mkdirSync(symlinkTargetDir, { recursive: true });
+		try {
+			symlinkSync(symlinkTargetDir, symlinkDir, "dir");
+		} catch {
+			return; // Skip if symlinks not supported on OS environment
+		}
+
+		const sessionFile = createPersistedSession(symlinkTargetDir, "from target");
+		const sessionsViaSymlink = await SessionManager.list(symlinkDir, tempDir);
+		expect(sessionsViaSymlink.map((s) => s.path)).toEqual([sessionFile]);
+	});
 });
 
 describe("SessionManager.setSessionFile with corrupted files", () => {

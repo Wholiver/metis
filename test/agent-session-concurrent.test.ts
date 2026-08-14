@@ -478,7 +478,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		expect(snapshots).toEqual([
 			["user", "assistant"],
-			["user", "assistant"],
+			["user", "assistant", "toolResult"],
 		]);
 	});
 

@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
+import { KEYBINDINGS, KeybindingsManager } from "../src/core/keybindings.ts";
 import { runMigrations } from "../src/migrations.ts";
 
 describe("keybindings migration", () => {
@@ -21,6 +21,14 @@ describe("keybindings migration", () => {
 		fs.writeFileSync(path.join(agentDir, "keybindings.json"), `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 		return agentDir;
 	}
+
+	it("binds Tab to workflow mode switching by default", () => {
+		const agentDir = createAgentDir({});
+		const keybindings = KeybindingsManager.create(agentDir);
+
+		expect(KEYBINDINGS["app.workflow.toggle"].defaultKeys).toBe("tab");
+		expect(keybindings.matches("\t", "app.workflow.toggle")).toBe(true);
+	});
 
 	it("rewrites old key names to namespaced ids", () => {
 		const agentDir = createAgentDir({

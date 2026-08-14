@@ -249,34 +249,31 @@ Summary of that exploration:
 
 `;
 
-const BRANCH_SUMMARY_PROMPT = `Create a structured summary of this conversation branch for context when returning later.
-
-Use this EXACT format:
+export const BRANCH_SUMMARY_PROMPT = `Summarize this conversation branch for later return. Use EXACTLY:
 
 ## Goal
-[What was the user trying to accomplish in this branch?]
+[Branch goal]
 
 ## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned]
-- [Or "(none)" if none were mentioned]
+- [Constraints/preferences/requirements, or "(none)"]
 
 ## Progress
 ### Done
-- [x] [Completed tasks/changes]
+- [x] [Completed work]
 
 ### In Progress
-- [ ] [Work that was started but not finished]
+- [ ] [Started, unfinished work]
 
 ### Blocked
-- [Issues preventing progress, if any]
+- [Blockers, if any]
 
 ## Key Decisions
 - **[Decision]**: [Brief rationale]
 
 ## Next Steps
-1. [What should happen next to continue this work]
+1. [Ordered continuation actions]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Be concise; preserve exact paths, function names, error messages.`;
 
 /**
  * Generate a summary of abandoned branch entries.

@@ -13,6 +13,7 @@ import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
+import type { CollaborationMode } from "../../core/workflow-runtime.ts";
 
 // ============================================================================
 // Types
@@ -292,6 +293,11 @@ export class RpcClient {
 	 */
 	async setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
 		await this.send({ type: "set_follow_up_mode", mode });
+	}
+
+	/** Switch workflow policy while idle. */
+	async setCollaborationMode(mode: CollaborationMode): Promise<void> {
+		await this.send({ type: "set_collaboration_mode", mode });
 	}
 
 	/**

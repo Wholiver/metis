@@ -159,7 +159,7 @@ describe("AgentSession bash and persistence characterization", () => {
 		await harness.session.prompt("start");
 
 		const entries = harness.sessionManager.getEntries();
-		expect(entries.map((entry) => entry.type)).toEqual([
+		expect(entries.filter((entry) => entry.type !== "custom").map((entry) => entry.type)).toEqual([
 			"custom_message",
 			"message",
 			"message",
@@ -214,7 +214,7 @@ describe("AgentSession bash and persistence characterization", () => {
 		await harness.session.abort();
 		await promptPromise;
 
-		const lastEntry = harness.sessionManager.getEntries()[harness.sessionManager.getEntries().length - 1];
+		const lastEntry = harness.sessionManager.getEntries().findLast((entry) => entry.type === "message");
 		expect(lastEntry?.type).toBe("message");
 		if (lastEntry?.type === "message") {
 			expect(lastEntry.message.role).toBe("assistant");

@@ -6,6 +6,7 @@ import type { ThinkingLevel } from "@earendil-works/metis-agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
+import type { CollaborationMode } from "../core/workflow-runtime.ts";
 
 export type Mode = "text" | "json" | "rpc" | "server";
 
@@ -13,8 +14,9 @@ export interface Args {
 	provider?: string;
 	model?: string;
 	apiKey?: string;
-	systemPrompt?: string;
-	appendSystemPrompt?: string[];
+	baseInstructions?: string;
+	developerInstructions?: string[];
+	collaborationMode?: CollaborationMode;
 	thinking?: ThinkingLevel;
 	continue?: boolean;
 	resume?: boolean;
@@ -108,11 +110,24 @@ export function parseArgs(args: string[]): Args {
 			result.model = args[++i];
 		} else if (arg === "--api-key" && i + 1 < args.length) {
 			result.apiKey = args[++i];
-		} else if (arg === "--system-prompt" && i + 1 < args.length) {
-			result.systemPrompt = args[++i];
-		} else if (arg === "--append-system-prompt" && i + 1 < args.length) {
-			result.appendSystemPrompt = result.appendSystemPrompt ?? [];
-			result.appendSystemPrompt.push(args[++i]);
+		} else if (arg === "--system-prompt" || arg === "--append-system-prompt") {
+			if (i + 1 < args.length && !args[i + 1].startsWith("-")) i++;
+			result.diagnostics.push({
+				type: "error",
+				message: `${arg} was removed. Use --base-instructions or --developer-instructions instead.`,
+			});
+		} else if (arg === "--base-instructions" && i + 1 < args.length) {
+			result.baseInstructions = args[++i];
+		} else if (arg === "--developer-instructions" && i + 1 < args.length) {
+			result.developerInstructions = result.developerInstructions ?? [];
+			result.developerInstructions.push(args[++i]);
+		} else if (arg === "--collaboration-mode" && i + 1 < args.length) {
+			const mode = args[++i];
+			if (mode === "build" || mode === "plan") {
+				result.collaborationMode = mode;
+			} else {
+				result.diagnostics.push({ type: "error", message: `Invalid collaboration mode: ${mode}. Use build or plan.` });
+			}
 		} else if (arg === "--name" || arg === "-n") {
 			if (i + 1 < args.length) {
 				result.name = args[++i];
@@ -256,8 +271,9 @@ ${chalk.bold("Options:")}
   --provider <name>              Provider name (default: google)
   --model <pattern>              Model pattern or ID (supports "provider/id" and optional ":<thinking>")
   --api-key <key>                API key (defaults to env vars)
-  --system-prompt <text>         System prompt (default: coding assistant prompt)
-  --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
+  --base-instructions <text>     Replace built-in base instruction profile
+  --developer-instructions <text> Add trusted developer instructions (repeatable)
+  --collaboration-mode <mode>    Workflow mode: plan (default) or build
   --mode <mode>                  Output mode: text (default), json, or rpc
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
@@ -295,7 +311,7 @@ ${chalk.bold("Options:")}
   --help, -h                     Show this help
   --version, -v                  Show version number
 
-Extensions can register additional flags (e.g., --plan from plan-mode extension).${extensionFlagsText}
+Extensions can register additional flags.${extensionFlagsText}
 
 ${chalk.bold("Examples:")}
   # Interactive mode

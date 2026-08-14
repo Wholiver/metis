@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fauxAssistantMessage } from "@earendil-works/metis-ai";
 import { generateFallbackSessionName, sanitizeGeneratedSessionName } from "../src/core/session-name-generator.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
@@ -10,20 +10,38 @@ describe("automatic session names", () => {
 		while (harnesses.length > 0) harnesses.pop()?.cleanup();
 	});
 
-	it("generates and persists a model-authored name after the first turn", async () => {
+	it("starts title generation alongside the first turn using only the first user prompt", async () => {
 		const harness = await createHarness({ autoSessionName: true });
 		harnesses.push(harness);
+		let finishMainResponse: ((message: ReturnType<typeof fauxAssistantMessage>) => void) | undefined;
+		let titleRequestStarted = false;
 		harness.setResponses([
-			fauxAssistantMessage("可以，已修复。"),
-			(_context, options) => {
+			(context, options) => {
 				expect(options).toMatchObject({ maxTokens: 1024 });
 				expect(options).not.toHaveProperty("temperature");
 				expect(options).not.toHaveProperty("reasoning");
+				expect(context.messages).toHaveLength(1);
+				expect(context.messages[0]).toMatchObject({ role: "user" });
+				expect(context.messages[0]?.content).toEqual([
+					{
+						type: "text",
+						text: "<user_prompt>\n修复 Dream 指示器的对齐问题\n</user_prompt>\n\nGenerate title.",
+					},
+				]);
+				titleRequestStarted = true;
 				return fauxAssistantMessage("**修复 Dream 指示器**");
 			},
+			async () =>
+				await new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => {
+					finishMainResponse = resolve;
+				}),
 		]);
 
-		await harness.session.prompt("修复 Dream 指示器的对齐问题");
+		const prompt = harness.session.prompt("修复 Dream 指示器的对齐问题");
+		await vi.waitFor(() => expect(titleRequestStarted).toBe(true));
+		expect(harness.session.isStreaming).toBe(true);
+		finishMainResponse?.(fauxAssistantMessage("模型输出不应进入标题请求"));
+		await prompt;
 		await harness.session.ensureSessionName();
 
 		expect(harness.session.sessionName).toBe("修复 Dream 指示器");
@@ -38,8 +56,8 @@ describe("automatic session names", () => {
 		const harness = await createHarness({ autoSessionName: true });
 		harnesses.push(harness);
 		harness.setResponses([
-			fauxAssistantMessage("完成"),
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: "title provider failed" }),
+			fauxAssistantMessage("完成"),
 		]);
 
 		await harness.session.prompt("执行任务");
@@ -61,13 +79,9 @@ describe("automatic session names", () => {
 	it("times out a title provider that never settles", async () => {
 		const harness = await createHarness({ autoSessionName: true });
 		harnesses.push(harness);
-		harness.setResponses([
-			fauxAssistantMessage("完成"),
-			async () => await new Promise<never>(() => {}),
-		]);
+		harness.setResponses([async () => await new Promise<never>(() => {})]);
 
-		await harness.session.prompt("执行任务");
-		await harness.session.ensureSessionName({ timeoutMs: 10 });
+		await harness.session.ensureSessionName({ prompt: "执行任务", timeoutMs: 10 });
 
 		expect(harness.session.isGeneratingSessionName).toBe(false);
 		expect(harness.session.sessionName).toBe("执行任务");
@@ -81,7 +95,7 @@ describe("automatic session names", () => {
 	it("falls back when a custom model returns no title text", async () => {
 		const harness = await createHarness({ autoSessionName: true });
 		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("完成"), fauxAssistantMessage("")]);
+		harness.setResponses([fauxAssistantMessage(""), fauxAssistantMessage("完成")]);
 
 		await harness.session.prompt("分析自定义模型标题");
 		await harness.session.ensureSessionName();
@@ -96,11 +110,8 @@ describe("automatic session names", () => {
 	it("generates a fallback even when no model remains selected", async () => {
 		const harness = await createHarness({ autoSessionName: true });
 		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("完成")]);
-
-		await harness.session.prompt("无模型标题");
 		harness.session.state.model = undefined;
-		await harness.session.ensureSessionName();
+		await harness.session.ensureSessionName({ prompt: "无模型标题" });
 
 		expect(harness.session.sessionName).toBe("无模型标题");
 		expect(harness.eventsOfType("session_name_generation").map((event) => event.status)).toEqual([
@@ -112,14 +123,10 @@ describe("automatic session names", () => {
 	it("settles when title generation is cancelled", async () => {
 		const harness = await createHarness({ autoSessionName: true });
 		harnesses.push(harness);
-		harness.setResponses([
-			fauxAssistantMessage("完成"),
-			async () => await new Promise<never>(() => {}),
-		]);
+		harness.setResponses([async () => await new Promise<never>(() => {})]);
 
-		await harness.session.prompt("执行任务");
 		const controller = new AbortController();
-		const naming = harness.session.ensureSessionName({ signal: controller.signal });
+		const naming = harness.session.ensureSessionName({ prompt: "执行任务", signal: controller.signal });
 		controller.abort(new Error("title cancelled"));
 		await naming;
 
