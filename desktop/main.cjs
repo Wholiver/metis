@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, session, shell, utilityProcess } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, session, shell, utilityProcess } = require("electron");
 const { execFile } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
 const fs = require("node:fs");
@@ -523,6 +523,12 @@ function registerIpc() {
 		desktopLanguage = desktopI18n.languages.includes(language) ? language : "auto";
 		rebuildApplicationMenu();
 		return desktopI18n.resolve(desktopLanguage, [app.getLocale()]);
+	});
+	ipcMain.handle("app:set-theme", (_event, theme) => {
+		const validThemes = ["system", "light", "dark"];
+		const targetTheme = theme === "auto" ? "system" : theme;
+		nativeTheme.themeSource = validThemes.includes(targetTheme) ? targetTheme : "system";
+		return nativeTheme.shouldUseDarkColors ? "dark" : "light";
 	});
 	ipcMain.handle("app:quit", () => app.quit());
 	ipcMain.handle("clipboard:write-text", (_event, text) => clipboard.writeText(String(text ?? "")));

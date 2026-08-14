@@ -19,9 +19,18 @@ const THINKING_LEVEL_KEYS = {
 };
 const THINKING_TAIL_CELL_COUNT = 90;
 const UI_LANGUAGES = desktopI18n.languages;
+const UI_THEMES = ["auto", "light", "dark"];
 const PROJECT_STATE_KEY = "metis.desktopProjects.v2";
 function resolveUiLanguage(language = state?.uiLanguage || "auto") {
 	return desktopI18n.resolve(language);
+}
+
+function resolveUiTheme(theme = state?.uiTheme || "auto") {
+	if (theme === "dark" || theme === "light") return theme;
+	if (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+		return "dark";
+	}
+	return "light";
 }
 
 function uiText(key, variables) {
@@ -51,6 +60,7 @@ const state = {
 	lastServerSequence: 0,
 	lastServerStateSequence: 0,
 	uiLanguage: UI_LANGUAGES.includes(localStorage.getItem("metis.desktopUiLanguage.v2")) ? localStorage.getItem("metis.desktopUiLanguage.v2") : "auto",
+	uiTheme: UI_THEMES.includes(localStorage.getItem("metis.desktopTheme.v2")) ? localStorage.getItem("metis.desktopTheme.v2") : (UI_THEMES.includes(localStorage.getItem("metis.desktopTheme")) ? localStorage.getItem("metis.desktopTheme") : "auto"),
 	memoryState: { enabled: false, phase: "disabled", globalCount: 0, projectCount: 0, pendingJobs: 0 },
 	isStreaming: false,
 	session: undefined,
@@ -193,6 +203,7 @@ const elements = {
 	get browserView() { return document.querySelector("#browserView"); },
 	get settingsDialog() { return document.querySelector("#settingsDialog"); },
 	get settingsLanguageSelect() { return document.querySelector("#settingsLanguageSelect"); },
+	get settingsThemeSelect() { return document.querySelector("#settingsThemeSelect"); },
 	get settingsAutoCompactInput() { return document.querySelector("#settingsAutoCompactInput"); },
 	get settingsAutoRetryInput() { return document.querySelector("#settingsAutoRetryInput"); },
 	get settingsSteeringModeSelect() { return document.querySelector("#settingsSteeringModeSelect"); },
@@ -429,6 +440,10 @@ function renderPreferencesControls() {
 			option.textContent = language === "auto" ? uiText("automatic") : (NATIVE_LANGUAGE_NAMES[language] || language);
 		}
 		elements.settingsLanguageSelect.value = state.uiLanguage;
+	}
+
+	if (elements.settingsThemeSelect) {
+		elements.settingsThemeSelect.value = state.uiTheme || "auto";
 	}
 
 	if (elements.settingsModelSelect) {
@@ -3873,6 +3888,16 @@ function applyUiLanguage(language) {
 	if (state.session) upsertServerConversation(state.session);
 }
 
+function applyUiTheme(theme) {
+	state.uiTheme = UI_THEMES.includes(theme) ? theme : "auto";
+	localStorage.setItem("metis.desktopTheme.v2", state.uiTheme);
+	const resolved = resolveUiTheme(state.uiTheme);
+	document.documentElement.dataset.theme = resolved;
+	document.documentElement.style.colorScheme = resolved;
+	if (elements.settingsThemeSelect) elements.settingsThemeSelect.value = state.uiTheme;
+	void desktop.setUiTheme?.(state.uiTheme === "auto" ? "system" : state.uiTheme);
+}
+
 // refreshConversations=false skips the /sessions round-trip. Switching or creating a
 // conversation inside the already-loaded project does not need the whole listing rebuilt —
 // upsertServerConversation() below folds the new/updated session into the sidebar locally.
@@ -5170,6 +5195,10 @@ elements.settingsLanguageSelect?.addEventListener("change", () => {
 	applyUiLanguage(language);
 	if (state.serverConnected) void runPreferencesCommand(`/language ${language}`, elements.settingsGeneralFeedback);
 });
+elements.settingsThemeSelect?.addEventListener("change", () => {
+	const theme = elements.settingsThemeSelect.value;
+	applyUiTheme(theme);
+});
 elements.settingsAutoCompactInput?.addEventListener("change", () => void updatePreferencesSession(
 	{ autoCompactionEnabled: elements.settingsAutoCompactInput.checked },
 	elements.settingsGeneralFeedback,
@@ -5661,6 +5690,14 @@ window.addEventListener("resize", positionModelMenu);
 
 desktopI18n.observeDocument();
 applyUiLanguage(state.uiLanguage);
+applyUiTheme(state.uiTheme);
+if (typeof window !== "undefined" && window.matchMedia) {
+	window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+		if (state.uiTheme === "auto") {
+			applyUiTheme("auto");
+		}
+	});
+}
 renderConversations();
 window.setInterval(refreshWorkTimerTitles, 100);
 desktop.metis?.onServerReady?.(() => {
@@ -5680,6 +5717,8 @@ window.activateProject = activateProject;
 window.loadWorkspace = loadWorkspace;
 window.runPreferencesCommand = runPreferencesCommand;
 window.setUiLanguage = applyUiLanguage;
+window.setUiTheme = applyUiTheme;
+window.resolveUiTheme = resolveUiTheme;
 window.focusComposer = () => elements.composerInput?.focus();
 
 

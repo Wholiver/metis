@@ -1,6 +1,6 @@
 {
 	"name": "@wholiver_hu/metis",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"description": "A terminal-first coding agent that helps models search, remember, execute, and verify more reliably",
 	"type": "module",
 	"metisConfig": {

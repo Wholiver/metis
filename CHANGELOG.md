@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.0.3] - 2026-08-15
+
+### Desktop Theme & UI Polish
+
+- Added comprehensive Desktop theme support and visual styling refinement.
+- Updated renderer catalogs, theme toggling, and layout consistency.
+- Added desktop theme regression test coverage.
+
 ## [1.0.2] - 2026-08-14
 
 ### Memory DB Query Tooling
