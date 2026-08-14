@@ -90,7 +90,7 @@ New interactive and Desktop sessions start in Plan mode. `/mode plan` and `/mode
 
 ### Memory
 
-Metis checkpoints active work after prompts, completed steps, compaction, errors, aborts, and completion. Durable records and their search index live in `~/.metis/memories/state.sqlite`, with inspectable global and project `MEMORY.md` views. `search_memory` is available on demand in Plan and Build; results are advisory and never override current instructions.
+Metis checkpoints active work after prompts, completed steps, compaction, errors, aborts, and completion. Durable records and their search index live in `~/.metis/memories/state.sqlite`. `query_memory_db` is available on demand in Plan and Build; results are advisory and never override current instructions.
 
 Use `/memory status|on|off|run|search|forget|reset`. Proposal artifacts and long-term memory remain separate, so an unexecuted draft is not promoted automatically.
 

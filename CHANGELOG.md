@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.0.2] - 2026-08-14
+
+### Memory DB Query Tooling
+
+- Replaced `search_memory` tool with `query_memory_db` to support structured memory database querying.
+- Updated memory coordinator, SDK runtime, and documentation to use `query_memory_db`.
+- Added unit tests and updated regression test suites for `query_memory_db` coverage.
+
 ## [1.0.1] - 2026-08-14
 
 ### Desktop & Memory Improvements

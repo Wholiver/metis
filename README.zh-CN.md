@@ -90,7 +90,7 @@ metis
 
 ### 记忆
 
-Metis 会在 Prompt、完整 Step、上下文压缩、错误、中止及完成后自动保存活跃工作。持久记录和检索索引位于 `~/.metis/memories/state.sqlite`，并提供可检查的全局与项目 `MEMORY.md` 视图。Plan 与 Build 均可按需调用 `search_memory`；搜索结果只作为建议性证据，不能覆盖当前指令。
+Metis 会在 Prompt、完整 Step、上下文压缩、错误、中止及完成后自动保存活跃工作。持久记录和检索索引位于 `~/.metis/memories/state.sqlite`。Plan 与 Build 均可按需调用 `query_memory_db`；搜索结果只作为建议性证据，不能覆盖当前指令。
 
 使用 `/memory status|on|off|run|search|forget|reset`。方案 Artifact 与长期记忆彼此独立，未执行草案不会自动进入长期记忆。
 

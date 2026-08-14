@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -190,5 +190,104 @@ describe("MemoryCoordinator", () => {
 		const touched = memory.searchAndTouch("Vitest", 6, { category: "tech_stack" });
 		expect(touched).toHaveLength(1);
 		expect(touched[0].lastUsedAt).toBeTruthy();
+	});
+
+	it("cleans up legacy markdown views on initialization and does not generate them during run", async () => {
+		const root = mkdtempSync(join(tmpdir(), "metis-memory-views-"));
+		roots.push(root);
+		const memoryDir = join(root, "memories");
+		mkdirSync(join(memoryDir, "projects", "proj1"), { recursive: true });
+		writeFileSync(join(memoryDir, "MEMORY.md"), "# Old memory\n");
+		writeFileSync(join(memoryDir, "memory_summary.md"), "# Old summary\n");
+		writeFileSync(join(memoryDir, "projects", "proj1", "MEMORY.md"), "# Project memory\n");
+
+		const memory = new MemoryCoordinator({
+			agentDir: join(root, "agent"),
+			cwd: root,
+			trusted: () => true,
+			settings: () => ({ minRolloutIdleHours: 1, maxRolloutsPerSweep: 2 }),
+		});
+
+		// Check that legacy markdown views are removed on startup
+		expect(existsSync(join(memoryDir, "MEMORY.md"))).toBe(false);
+		expect(existsSync(join(memoryDir, "memory_summary.md"))).toBe(false);
+		expect(existsSync(join(memoryDir, "projects"))).toBe(false);
+
+		// Record and run extraction
+		memory.recordCheckpoint({ sessionId: "session-view", reason: "completed", timestamp: new Date().toISOString(), verification: ["build passes"] });
+		await memory.run(true);
+
+		// Ensure markdown views are not created after run
+		expect(existsSync(join(memoryDir, "MEMORY.md"))).toBe(false);
+		expect(existsSync(join(memoryDir, "memory_summary.md"))).toBe(false);
+		expect(existsSync(join(memoryDir, "projects"))).toBe(false);
+	});
+
+	it("saves updated memory-map.md from model extraction, passes existing map, and deletes it on reset", async () => {
+		const root = mkdtempSync(join(tmpdir(), "metis-memory-map-"));
+		roots.push(root);
+		const memoryDir = join(root, "memories");
+		let passedExistingMap: string | undefined;
+
+		const memory = new MemoryCoordinator({
+			agentDir: join(root, "agent"),
+			cwd: root,
+			trusted: () => true,
+			settings: () => ({ minRolloutIdleHours: 1, maxRolloutsPerSweep: 2 }),
+			extract: async (_checkpoint, _signal, existingMemoryMap) => {
+				passedExistingMap = existingMemoryMap;
+				return {
+					candidates: [{ scope: "project", category: "tech_stack", kind: "fact", content: "React 19 with Vite", confidence: 0.9 }],
+					memoryMap: "# Memory Map\n\n## Projects\n- **[tech_stack]**: React 19",
+				};
+			},
+		});
+
+		memory.recordCheckpoint({ sessionId: "session-map-1", reason: "completed", timestamp: new Date().toISOString() });
+		await memory.run(true);
+
+		const mapFile = join(memoryDir, "memory-map.md");
+		expect(existsSync(mapFile)).toBe(true);
+		expect(passedExistingMap).toBeUndefined();
+
+		// Second run: verify previous memory-map.md is passed to extract
+		memory.recordCheckpoint({ sessionId: "session-map-2", reason: "completed", timestamp: new Date().toISOString() });
+		await memory.run(true);
+		expect(passedExistingMap).toContain("# Memory Map");
+
+		// Reset clears memory-map.md
+		memory.reset("RESET_MEMORY");
+		expect(existsSync(mapFile)).toBe(false);
+	});
+
+	it("executes read-only SQL queries and blocks mutating statements", async () => {
+		const memory = coordinator();
+		memory.recordCheckpoint({
+			sessionId: "session-sql",
+			reason: "completed",
+			timestamp: new Date().toISOString(),
+			verification: ["npm test passes with vitest"],
+		});
+		await memory.run(true);
+
+		// Valid SELECT
+		const rows = memory.query("SELECT id, scope, category, kind, content FROM memory_records WHERE status = 'active'");
+		expect(rows).toHaveLength(1);
+		expect(rows[0].content).toContain("npm test");
+
+		// FTS5 join query
+		const ftsRows = memory.query("SELECT r.id, r.content FROM memory_fts f JOIN memory_records r ON r.id = f.id WHERE f.memory_fts MATCH 'vitest'");
+		expect(ftsRows).toHaveLength(1);
+
+		// Parameterized query
+		const paramRows = memory.query("SELECT id, category FROM memory_records WHERE category = ?", ["workflows_and_commands"]);
+		expect(paramRows).toHaveLength(1);
+
+		// Disallows mutating statements
+		expect(() => memory.query("DELETE FROM memory_records")).toThrow(/Only read-only queries/i);
+		expect(() => memory.query("DROP TABLE memory_records")).toThrow(/Only read-only queries/i);
+		expect(() => memory.query("INSERT INTO memory_meta VALUES ('k', 'v')")).toThrow(/Only read-only queries/i);
+		expect(() => memory.query("SELECT 1; DELETE FROM memory_records;")).toThrow(/mutating operations/i);
+		expect(() => memory.query("   ")).toThrow(/empty/i);
 	});
 });

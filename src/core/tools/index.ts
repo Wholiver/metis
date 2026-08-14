@@ -6,7 +6,13 @@ export {
 } from "./update-plan.ts";
 export { createAskUserTool, createAskUserToolDefinition, askUserSchema, type AskUserToolInput, type AskUserToolOptions } from "./ask-user.ts";
 export { createReadPlanTool, createReadPlanToolDefinition } from "./read-plan.ts";
-export { createSearchMemoryTool, createSearchMemoryToolDefinition, normalizeSearchMemoryInput, searchMemorySchema, type SearchMemoryToolInput, type SearchMemoryToolOptions } from "./search-memory.ts";
+export {
+	createQueryMemoryDbTool,
+	createQueryMemoryDbToolDefinition,
+	queryMemoryDbSchema,
+	type QueryMemoryDbToolInput,
+	type QueryMemoryDbToolOptions,
+} from "./query-memory-db.ts";
 export {
 	type BashOperations,
 	type BashSpawnContext,
@@ -141,7 +147,7 @@ import { createWebFetchTool, createWebFetchToolDefinition, type WebFetchToolOpti
 import { createUpdatePlanTool, createUpdatePlanToolDefinition, type UpdatePlanToolOptions } from "./update-plan.ts";
 import { createAskUserTool, createAskUserToolDefinition, type AskUserToolOptions } from "./ask-user.ts";
 import { createReadPlanTool, createReadPlanToolDefinition } from "./read-plan.ts";
-import { createSearchMemoryTool, createSearchMemoryToolDefinition, type SearchMemoryToolOptions } from "./search-memory.ts";
+import { createQueryMemoryDbTool, createQueryMemoryDbToolDefinition, type QueryMemoryDbToolOptions } from "./query-memory-db.ts";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
@@ -163,7 +169,7 @@ export type ToolName =
 	| "update_plan"
 	| "ask_user"
 	| "read_plan"
-	| "search_memory";
+	| "query_memory_db";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -182,7 +188,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"update_plan",
 	"ask_user",
 	"read_plan",
-	"search_memory",
+	"query_memory_db",
 ]);
 
 export interface ToolsOptions {
@@ -200,7 +206,7 @@ export interface ToolsOptions {
 	video?: VideoToolOptions;
 	updatePlan?: UpdatePlanToolOptions;
 	askUser?: AskUserToolOptions;
-	searchMemory?: SearchMemoryToolOptions;
+	queryMemoryDb?: QueryMemoryDbToolOptions;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
@@ -239,8 +245,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createAskUserToolDefinition(options?.askUser);
 		case "read_plan":
 			return createReadPlanToolDefinition();
-		case "search_memory":
-			return createSearchMemoryToolDefinition(options?.searchMemory);
+		case "query_memory_db":
+			return createQueryMemoryDbToolDefinition(options?.queryMemoryDb);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -282,8 +288,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createAskUserTool(options?.askUser);
 		case "read_plan":
 			return createReadPlanTool();
-		case "search_memory":
-			return createSearchMemoryTool(options?.searchMemory);
+		case "query_memory_db":
+			return createQueryMemoryDbTool(options?.queryMemoryDb);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -300,7 +306,7 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createUserIntentToolDefinition(cwd),
 		createAskUserToolDefinition(options?.askUser),
 		createReadPlanToolDefinition(),
-		createSearchMemoryToolDefinition(options?.searchMemory),
+		createQueryMemoryDbToolDefinition(options?.queryMemoryDb),
 		createSubagentToolDefinition(cwd, options?.subagent),
 		createWebSearchToolDefinition(options?.websearch),
 		createWebFetchToolDefinition(options?.webfetch),
@@ -317,7 +323,7 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 		createVideoToolDefinition(cwd, options?.video),
 		createAskUserToolDefinition(options?.askUser),
 		createReadPlanToolDefinition(),
-		createSearchMemoryToolDefinition(options?.searchMemory),
+		createQueryMemoryDbToolDefinition(options?.queryMemoryDb),
 	];
 }
 
@@ -340,7 +346,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		update_plan: createUpdatePlanToolDefinition(options?.updatePlan),
 		ask_user: createAskUserToolDefinition(options?.askUser),
 		read_plan: createReadPlanToolDefinition(),
-		search_memory: createSearchMemoryToolDefinition(options?.searchMemory),
+		query_memory_db: createQueryMemoryDbToolDefinition(options?.queryMemoryDb),
 	};
 }
 
@@ -355,7 +361,7 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createUserIntentTool(cwd),
 		createAskUserTool(options?.askUser),
 		createReadPlanTool(),
-		createSearchMemoryTool(options?.searchMemory),
+		createQueryMemoryDbTool(options?.queryMemoryDb),
 		createSubagentTool(cwd, options?.subagent),
 		createWebSearchTool(options?.websearch),
 		createWebFetchTool(options?.webfetch),
@@ -372,7 +378,7 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 		createVideoTool(cwd, options?.video),
 		createAskUserTool(options?.askUser),
 		createReadPlanTool(),
-		createSearchMemoryTool(options?.searchMemory),
+		createQueryMemoryDbTool(options?.queryMemoryDb),
 	];
 }
 
@@ -395,6 +401,6 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		update_plan: createUpdatePlanTool(options?.updatePlan),
 		ask_user: createAskUserTool(options?.askUser),
 		read_plan: createReadPlanTool(),
-		search_memory: createSearchMemoryTool(options?.searchMemory),
+		query_memory_db: createQueryMemoryDbTool(options?.queryMemoryDb),
 	};
 }

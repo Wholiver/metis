@@ -9,8 +9,8 @@ const checkpoint = { sessionId: "session", reason: "completed" as const, timesta
 const registry = { getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: "test", headers: {}, env: {} })) } as any;
 
 describe("background memory extraction", () => {
-	it("allows more than three model-directed searches without a fixed output token cap", async () => {
-		const queued = [0, 1, 2, 3].map((index) => response([{ type: "toolCall", id: `call-${index}`, name: "search_memory", arguments: { query: `fact ${index}`, limit: 2 } }], "toolUse"));
+	it("allows more than three model-directed queries without a fixed output token cap", async () => {
+		const queued = [0, 1, 2, 3].map((index) => response([{ type: "toolCall", id: `call-${index}`, name: "query_memory_db", arguments: { sql: `SELECT * FROM memory_records WHERE category = 'cat-${index}'` } }], "toolUse"));
 		queued.push(response([{ type: "text", text: JSON.stringify([{ scope: "project", kind: "fact", content: "Verified durable project fact", confidence: 0.9 }]) }], "stop"));
 		const options: any[] = [];
 		const contexts: any[] = [];
@@ -19,16 +19,17 @@ describe("background memory extraction", () => {
 			options.push(requestOptions);
 			return { result: async () => queued.shift() };
 		});
-		const searches: string[] = [];
+		const queries: string[] = [];
 		const result = await extractMemoryCandidates(
 			{ reasoning: true } as any,
 			registry,
 			checkpoint,
-			(query) => { searches.push(query); return []; },
+			(sql) => { queries.push(sql); return []; },
 			undefined,
 			stream as any,
 		);
-		expect(searches).toEqual(["fact 0", "fact 1", "fact 2", "fact 3"]);
+		expect(queries).toHaveLength(4);
+		expect(queries[0]).toContain("cat-0");
 		expect(result.candidates).toHaveLength(1);
 		expect(options).toHaveLength(5);
 		for (const request of options) {
@@ -49,10 +50,10 @@ describe("background memory extraction", () => {
 		expect(requestOptions).not.toHaveProperty("maxTokens");
 	});
 
-	it("rejects unknown tools and invalid search arguments as recoverable extraction failures", async () => {
+	it("rejects unknown tools and invalid query arguments as recoverable extraction failures", async () => {
 		for (const toolCall of [
 			{ type: "toolCall", id: "unknown", name: "read", arguments: { path: "MEMORY.md" } },
-			{ type: "toolCall", id: "invalid", name: "search_memory", arguments: { query: "", limit: 50 } },
+			{ type: "toolCall", id: "invalid", name: "query_memory_db", arguments: { sql: "" } },
 		]) {
 			const stream = vi.fn(() => ({ result: async () => response([toolCall], "toolUse") }));
 			const result = await extractMemoryCandidates({ reasoning: false } as any, registry, checkpoint, () => [], undefined, stream as any);
@@ -122,5 +123,46 @@ describe("background memory extraction", () => {
 			confidence: 0.95,
 			supersedes: ["old-id-1", "old-id-2"],
 		});
+	});
+
+	it("supports memoryMap in JSON object format and passes existingMemoryMap in user prompt", async () => {
+		let capturedContext: any;
+		const stream = vi.fn((_model, context) => {
+			capturedContext = context;
+			return {
+				result: async () =>
+					response([
+						{
+							type: "text",
+							text: JSON.stringify({
+								candidates: [
+									{
+										scope: "project",
+										category: "tech_stack",
+										kind: "fact",
+										content: "Node.js v22 required",
+										confidence: 0.9,
+									},
+								],
+								memoryMap: "# Memory Map\n\n## Projects\n- **[tech_stack]**: Node.js v22",
+							}),
+						},
+					], "stop"),
+			};
+		});
+
+		const result = await extractMemoryCandidates(
+			{ reasoning: false } as any,
+			registry,
+			checkpoint,
+			() => [],
+			undefined,
+			stream as any,
+			"# Existing Memory Map\n## Old section",
+		);
+
+		expect(capturedContext.messages[0].content[0].text).toContain("Existing Memory Map:\n# Existing Memory Map");
+		expect(result.candidates).toHaveLength(1);
+		expect(result.memoryMap).toBe("# Memory Map\n\n## Projects\n- **[tech_stack]**: Node.js v22");
 	});
 });

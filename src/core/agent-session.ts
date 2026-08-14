@@ -1170,6 +1170,7 @@ export class AgentSession {
 	}
 
 	searchMemory(query?: string, limit?: number, filterOptions?: MemorySearchOptions): MemoryRecordSummary[] { return this._memoryCoordinator?.search(query, limit, filterOptions) ?? []; }
+	queryMemoryDb(sql: string, params?: Array<string | number | null | undefined>): Array<Record<string, unknown>> { return this._memoryCoordinator?.query(sql, params) ?? []; }
 	forgetMemory(id: string): boolean {
 		if (this.isStreaming) throw new Error("Memory can only change while the session is idle.");
 		return this._memoryCoordinator?.forget(id) ?? false;
@@ -3127,7 +3128,7 @@ export class AgentSession {
 						},
 					},
 					askUser: { handler: () => (request, signal) => this._askUser(request, signal) },
-					searchMemory: { search: (query, limit, filterOptions) => this._memoryCoordinator?.searchAndTouch(query, limit, filterOptions) ?? [] },
+					queryMemoryDb: { query: (sql, params) => this._memoryCoordinator?.query(sql, params) ?? [] },
 				});
 
 		this._baseToolDefinitions = new Map(
@@ -3156,7 +3157,7 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "subagent", "check_subagent", "websearch", "webfetch", "update_plan", "ask_user", "read_plan", "search_memory"];
+			: ["read", "bash", "edit", "write", "subagent", "check_subagent", "websearch", "webfetch", "update_plan", "ask_user", "read_plan", "query_memory_db"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

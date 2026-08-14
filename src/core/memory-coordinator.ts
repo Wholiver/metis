@@ -6,7 +6,7 @@
  * scope, retrieval and the idle background queue.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -163,7 +163,7 @@ export interface MemoryCoordinatorOptions {
 	trusted: () => boolean;
 	settings: () => MemorySettings | undefined;
 	/** Test hook and the sole place a foreground session can expose its model. */
-	extract?: (checkpoint: SessionMemoryCheckpoint, signal?: AbortSignal) => Promise<MemoryCandidate[] | MemoryExtractionResult>;
+	extract?: (checkpoint: SessionMemoryCheckpoint, signal?: AbortSignal, existingMemoryMap?: string) => Promise<MemoryCandidate[] | MemoryExtractionResult>;
 }
 
 export interface MemoryCandidate {
@@ -177,6 +177,7 @@ export interface MemoryCandidate {
 
 export interface MemoryExtractionResult {
 	candidates: MemoryCandidate[];
+	memoryMap?: string;
 	failureReason?: string;
 }
 
@@ -268,6 +269,10 @@ export class MemoryCoordinator {
 
 	/** Deliberately narrow, idempotent legacy removal. Other .metis data stays untouched. */
 	private migrateLegacyArtifacts(): void {
+		for (const target of ["MEMORY.md", "memory_summary.md", "projects"]) {
+			const path = join(this.root, target);
+			try { if (existsSync(path)) rmSync(path, { recursive: true, force: true }); } catch { /* ignore */ }
+		}
 		const migrated = this.db.prepare("SELECT value FROM memory_meta WHERE key = 'memory-v2-migrated'").get() as { value?: string } | undefined;
 		if (migrated) return;
 		const legacyRoot = resolve(this.options.agentDir, "..");
@@ -354,7 +359,6 @@ export class MemoryCoordinator {
 				this.db.prepare("DELETE FROM memory_fts WHERE id = ?").run(u.id);
 				this.db.prepare("INSERT INTO memory_fts(id, content) VALUES (?, ?)").run(u.id, u.content);
 			}
-			this.writeViews();
 		} catch { /* never block startup */ }
 		this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("memory-v2-category-consolidated", now());
 	}
@@ -466,7 +470,6 @@ export class MemoryCoordinator {
 			this.db.prepare("DELETE FROM memory_meta WHERE key IN ('error', 'nextRetryAt')").run();
 			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastExtractedAt", now());
 			this.phase("consolidating");
-			this.writeViews();
 			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastConsolidatedAt", now());
 			this.publish(true);
 			return this.getState();
@@ -500,16 +503,34 @@ export class MemoryCoordinator {
 	private async extractJob(job: Record<string, unknown>, signal?: AbortSignal): Promise<{ added: number; skipped: number; fallbackUsed: boolean; modelFailureReason?: string }> {
 		const checkpoint = parseJson<SessionMemoryCheckpoint>(String(job.checkpoint ?? ""), {} as SessionMemoryCheckpoint);
 		let extracted: MemoryCandidate[] = [];
+		let updatedMemoryMap: string | undefined;
 		let modelFailureReason: string | undefined;
 		let extractionFailed = !this.options.extract;
+		const memoryMapPath = join(this.root, "memory-map.md");
+		let existingMemoryMap: string | undefined;
 		try {
-			const result = this.options.extract ? await this.options.extract(checkpoint, signal) : { candidates: [], failureReason: "No background model adapter is configured." };
+			if (existsSync(memoryMapPath)) existingMemoryMap = readFileSync(memoryMapPath, "utf8");
+		} catch { /* ignore read error */ }
+		try {
+			const result = this.options.extract ? await this.options.extract(checkpoint, signal, existingMemoryMap) : { candidates: [], failureReason: "No background model adapter is configured." };
 			if (Array.isArray(result)) extracted = result;
-			else { extracted = result.candidates; modelFailureReason = result.failureReason; extractionFailed ||= Boolean(result.failureReason); }
+			else {
+				extracted = result.candidates;
+				updatedMemoryMap = result.memoryMap;
+				modelFailureReason = result.failureReason;
+				extractionFailed ||= Boolean(result.failureReason);
+			}
 		} catch (error) {
 			if (signal?.aborted) throw error;
 			modelFailureReason = error instanceof Error ? error.message : String(error);
 			extractionFailed = true;
+		}
+		if (updatedMemoryMap && typeof updatedMemoryMap === "string" && updatedMemoryMap.trim().length > 0) {
+			try {
+				const temp = `${memoryMapPath}.${process.pid}.tmp`;
+				writeFileSync(temp, updatedMemoryMap.trim() + "\n", "utf8");
+				renameSync(temp, memoryMapPath);
+			} catch { /* atomic write error fallback */ }
 		}
 		const fallbackUsed = extractionFailed;
 		const candidates = fallbackUsed ? this.deriveCandidates(checkpoint) : extracted;
@@ -638,17 +659,41 @@ export class MemoryCoordinator {
 		return records;
 	}
 
+	/**
+	 * Executes a read-only SQL query against the SQLite database.
+	 * Only SELECT, WITH, PRAGMA, and EXPLAIN statements are permitted.
+	 */
+	query(sql: string, params: Array<string | number | null | undefined> = []): Array<Record<string, unknown>> {
+		if (!this.enabled()) return [];
+		const normalized = sql.trim();
+		if (!normalized) throw new Error("SQL query cannot be empty.");
+
+		const firstWord = normalized.match(/^\s*([A-Za-z]+)/)?.[1]?.toUpperCase();
+		if (!firstWord || !["SELECT", "WITH", "PRAGMA", "EXPLAIN"].includes(firstWord)) {
+			throw new Error(`Only read-only queries (SELECT, WITH, PRAGMA, EXPLAIN) are permitted. Received: ${firstWord || "unknown"}`);
+		}
+		if (/;\s*(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|VACUUM|ATTACH|DETACH)\b/i.test(normalized)) {
+			throw new Error("Multiple statements with mutating operations are strictly forbidden.");
+		}
+
+		const normalizedParams = params.map((p) => p ?? null);
+		const rows = this.db.prepare(normalized).all(...normalizedParams) as Array<Record<string, unknown>>;
+		return rows.slice(0, 100);
+	}
+
 	forget(id: string): boolean {
 		const result = this.db.prepare("DELETE FROM memory_records WHERE id = ?").run(id);
 		this.db.prepare("DELETE FROM memory_fts WHERE id = ?").run(id);
-		if (result.changes) { this.writeViews(); this.publish(true); }
+		if (result.changes) this.publish(true);
 		return result.changes > 0;
 	}
 
 	reset(confirm: string): void {
 		if (confirm !== "RESET_MEMORY") throw new Error("Memory reset requires confirm=RESET_MEMORY");
 		this.db.exec("DELETE FROM memory_records; DELETE FROM memory_fts; DELETE FROM memory_jobs;");
-		this.writeViews(); this.publish(true);
+		const memoryMapPath = join(this.root, "memory-map.md");
+		try { if (existsSync(memoryMapPath)) rmSync(memoryMapPath, { force: true }); } catch { /* ignore */ }
+		this.publish(true);
 	}
 
 	private summary(row: Record<string, string | null>): MemoryRecordSummary {
@@ -664,28 +709,5 @@ export class MemoryCoordinator {
 			updatedAt: row.updated_at!,
 			lastUsedAt: row.last_used_at ?? undefined,
 		};
-	}
-
-	private writeViews(): void {
-		const rows = this.db.prepare("SELECT * FROM memory_records WHERE status = 'active' ORDER BY updated_at DESC").all() as Array<Record<string, string | null>>;
-		const write = (path: string, content: string) => { mkdirSync(dirname(path), { recursive: true }); const temp = `${path}.${process.pid}.tmp`; writeFileSync(temp, content, "utf8"); renameSync(temp, path); };
-		const render = (title: string, values: Array<Record<string, string | null>>) => {
-			if (values.length === 0) return `# ${title}\n\nNo consolidated memories yet.\n`;
-			let doc = `# ${title}\n\n`;
-			for (const cat of MEMORY_CATEGORIES) {
-				const catRows = values.filter((row) => normalizeCategory(row.category, row.kind, row.content ?? "") === cat);
-				if (catRows.length > 0) {
-					doc += `## ${CATEGORY_DISPLAY_TITLES[cat]}\n`;
-					for (const row of catRows) {
-						doc += `- [${row.kind ?? categoryToKind(cat)}] ${row.content}\n`;
-					}
-					doc += `\n`;
-				}
-			}
-			return doc.trimEnd() + "\n";
-		};
-		write(join(this.root, "MEMORY.md"), render("Metis memory", rows.filter((row) => row.scope === "global")));
-		write(join(this.root, "projects", this.identity.projectKey, "MEMORY.md"), render("Project memory", rows.filter((row) => row.scope !== "global")));
-		write(join(this.root, "memory_summary.md"), render("Memory index", rows.slice(0, 20)).slice(0, 6000));
 	}
 }

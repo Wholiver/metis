@@ -40,16 +40,15 @@ import {
 	createWebFetchTool,
 	createAskUserTool,
 	createReadPlanTool,
-	createSearchMemoryToolDefinition,
-	normalizeSearchMemoryInput,
+	createQueryMemoryDbToolDefinition,
 	createWriteTool,
 	type ToolName,
 	withFileMutationQueue,
 } from "./tools/index.ts";
 
-const MEMORY_EXTRACTION_PROMPT = `Extract durable coding-agent memory from this checkpoint.
+const MEMORY_EXTRACTION_PROMPT = `Extract durable coding-agent memory from this checkpoint and maintain an up-to-date Memory Map catalog.
 
-All extracted memory records MUST be written in English, regardless of the conversation or checkpoint language. All search queries to search_memory MUST also use English keywords.
+All extracted memory records and the Memory Map MUST be written in English, regardless of the conversation or checkpoint language.
 
 Standard Categories:
 - tech_stack: Runtime environment (e.g. Node 22+), language, core dependencies, package name.
@@ -63,19 +62,40 @@ Standard Categories:
 
 Instructions:
 1. Determine the relevant category for new durable knowledge from the checkpoint.
-2. Use search_memory with English keywords to inspect existing records in that category.
+2. Use query_memory_db to inspect existing records (e.g. \`SELECT id, category, content FROM memory_records WHERE category = '...'\`).
 3. Apply 3-Way Deduplication Decision:
    - SKIP (Redundant): If an existing record already covers the fact/rule with equivalent or sufficient information, DO NOT extract it (skip completely).
    - MERGE / UPDATE (Supersedes): If the checkpoint provides more complete, updated, or corrected information that refines one or more existing records, extract the consolidated English text and set "supersedes": ["<existing-id-1>", ...] with the ID(s) of the superseded record(s).
    - NEW (Novel knowledge): If the knowledge is genuinely new and uncovered by existing records, extract as a new candidate in English without "supersedes".
+4. Maintain the Memory Map (memoryMap):
+   - Review the existing Memory Map provided in the context (if any).
+   - Produce an updated, high-density Markdown document indexing where different categories and kinds of memories are organized across scopes (Global vs Projects) and their thematic ranges/summaries.
+   - Example structure:
+     # Memory Map
+     ## Global Memories
+     - **[user_preferences]** (Global): Key preferences, rules...
+     ## Projects
+     ### <project / checkout>
+     - **[tech_stack]**: Runtime, dependencies, package overview...
+     - **[workflows_and_commands]**: Build, test, run commands...
+     - **[known_failures_and_fixes]**: Recurring pitfalls and fixes...
 
-Return strict JSON only: an array of at most 6 candidate objects with:
-- scope: "global" | "project" | "checkout"
-- category: "tech_stack" | "architecture_patterns" | "project_conventions" | "domain_knowledge" | "workflows_and_commands" | "known_failures_and_fixes" | "deployment_and_infra" | "user_preferences"
-- kind: "preference" | "fact" | "procedure" | "failure"
-- content: string (concise, clear, durable knowledge written strictly in English)
-- confidence: number (0-1)
-- supersedes?: string[] (optional array of superseded record IDs)
+Return strict JSON only. The JSON object format is:
+{
+  "candidates": [
+    {
+      "scope": "global" | "project" | "checkout",
+      "category": "tech_stack" | "architecture_patterns" | "project_conventions" | "domain_knowledge" | "workflows_and_commands" | "known_failures_and_fixes" | "deployment_and_infra" | "user_preferences",
+      "kind": "preference" | "fact" | "procedure" | "failure",
+      "content": "string (concise, clear, durable knowledge written strictly in English)",
+      "confidence": 0-1,
+      "supersedes": ["optional array of superseded record IDs"]
+    }
+  ],
+  "memoryMap": "string (updated Markdown document of the Memory Map)"
+}
+
+(Returning an array of candidate objects is also accepted for backward compatibility.)
 
 Exclude temporary tasks, guesses, secrets, and unexecuted plans.`;
 
@@ -83,16 +103,21 @@ export async function extractMemoryCandidates(
 	model: Model<any> | undefined,
 	modelRegistry: ModelRegistry,
 	checkpoint: SessionMemoryCheckpoint,
-	searchMemory: (query?: string, limit?: number, filterOptions?: { category?: MemoryCategory; scope?: MemoryScope }) => MemoryRecordSummary[] = () => [],
+	queryMemoryDb: (sql: string, params?: Array<string | number | null | undefined>) => Array<Record<string, unknown>> = () => [],
 	signal?: AbortSignal,
 	stream: typeof streamSimple = streamSimple,
+	existingMemoryMap?: string,
 ): Promise<MemoryExtractionResult> {
 	if (!model) return { candidates: [], failureReason: "No model is available for background memory extraction." };
 	try {
 		const auth = await modelRegistry.getApiKeyAndHeaders(model);
 		if (!auth.ok) return { candidates: [], failureReason: "No authentication is available for the background memory model." };
-		const tool = createSearchMemoryToolDefinition();
-		const messages: Message[] = [{ role: "user", content: [{ type: "text", text: JSON.stringify(checkpoint) }], timestamp: Date.now() }];
+		const tool = createQueryMemoryDbToolDefinition();
+		let userPromptText = `Checkpoint:\n${JSON.stringify(checkpoint)}`;
+		if (existingMemoryMap && existingMemoryMap.trim().length > 0) {
+			userPromptText += `\n\nExisting Memory Map:\n${existingMemoryMap.trim()}`;
+		}
+		const messages: Message[] = [{ role: "user", content: [{ type: "text", text: userPromptText }], timestamp: Date.now() }];
 		while (true) {
 			if (signal?.aborted) throw new Error("Background memory extraction aborted.");
 			const response = await stream(model, {
@@ -113,18 +138,19 @@ export async function extractMemoryCandidates(
 			if (toolCalls.length > 0) {
 				messages.push(response);
 				for (const toolCall of toolCalls) {
-					if (toolCall.name !== "search_memory") return { candidates: [], failureReason: `Background memory model requested unknown tool: ${toolCall.name}.` };
-					let normalized: { query?: string; category?: MemoryCategory; scope?: MemoryScope; limit: number };
+					if (toolCall.name !== "query_memory_db") return { candidates: [], failureReason: `Background memory model requested unknown tool: ${toolCall.name}.` };
+					const args = toolCall.arguments as Record<string, unknown> | undefined;
+					const sql = typeof args?.sql === "string" ? args.sql.trim() : "";
+					if (!sql) return { candidates: [], failureReason: "Background memory query arguments were invalid: sql is required." };
+					const params = Array.isArray(args?.params) ? args.params : [];
+					let formattedText = "No matching records found.";
 					try {
-						normalized = normalizeSearchMemoryInput(toolCall.arguments as any);
+						const rows = queryMemoryDb(sql, params);
+						if (rows.length > 0) {
+							formattedText = `Query returned ${rows.length} row${rows.length > 1 ? "s" : ""}:\n\`\`\`json\n${JSON.stringify(rows, null, 2)}\n\`\`\``;
+						}
 					} catch (error) {
-						return { candidates: [], failureReason: `Background memory search arguments were invalid: ${error instanceof Error ? error.message : String(error)}` };
-					}
-					const records = searchMemory(normalized.query, normalized.limit, { category: normalized.category, scope: normalized.scope });
-					let formattedText = "No matching durable memories found.";
-					if (records.length > 0) {
-						formattedText = `Found ${records.length} durable memory record${records.length > 1 ? "s" : ""}:\n` +
-							records.map((r) => `- [ID: \`${r.id.slice(0, 8)}\`] **[${r.category ?? r.kind}]** (${r.scope}): ${r.content}`).join("\n");
+						formattedText = `Query error: ${error instanceof Error ? error.message : String(error)}`;
 					}
 					messages.push({
 						role: "toolResult",
@@ -141,9 +167,24 @@ export async function extractMemoryCandidates(
 			const text = response.content.filter((part): part is { type: "text"; text: string } => part.type === "text").map((part) => part.text).join("\n").trim();
 			const json = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
 			const parsed = JSON.parse(json) as unknown;
-			if (!Array.isArray(parsed)) return { candidates: [], failureReason: "Background memory model returned non-array JSON." };
+			let candidateList: unknown[];
+			let memoryMapText: string | undefined;
+			if (Array.isArray(parsed)) {
+				candidateList = parsed;
+			} else if (parsed && typeof parsed === "object") {
+				const obj = parsed as Record<string, unknown>;
+				if (!Array.isArray(obj.candidates)) {
+					return { candidates: [], failureReason: "Background memory model returned JSON object without candidates array." };
+				}
+				candidateList = obj.candidates;
+				if (typeof obj.memoryMap === "string" && obj.memoryMap.trim().length > 0) {
+					memoryMapText = obj.memoryMap.trim();
+				}
+			} else {
+				return { candidates: [], failureReason: "Background memory model returned invalid JSON structure." };
+			}
 			const candidates: MemoryCandidate[] = [];
-			for (const value of parsed) {
+			for (const value of candidateList) {
 				if (!value || typeof value !== "object") return { candidates: [], failureReason: "Background memory model returned an invalid candidate object." };
 				const candidate = value as Record<string, unknown>;
 				const scope = String(candidate.scope ?? "project");
@@ -179,11 +220,14 @@ export async function extractMemoryCandidates(
 					});
 				}
 			}
-			return { candidates: candidates.slice(0, 6) };
+			return {
+				candidates: candidates.slice(0, 6),
+				...(memoryMapText ? { memoryMap: memoryMapText } : {}),
+			};
 		}
 	} catch (error) {
 		if (signal?.aborted) throw error;
-		return { candidates: [], failureReason: error instanceof Error ? error.message : String(error) };
+		return { candidates: [], failureReason: `Background memory extraction failed: ${error instanceof Error ? error.message : String(error)}` };
 	}
 }
 
@@ -418,9 +462,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
 	}
 
-	// Legacy memory/log bookkeeping tools remain explicit-only. search_memory is
+	// Legacy memory/log bookkeeping tools remain explicit-only. query_memory_db is
 	// active so the model can retrieve durable knowledge on demand in any host.
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "subagent", "websearch", "webfetch", "video", "update_plan", "ask_user", "read_plan", "search_memory"];
+	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "subagent", "websearch", "webfetch", "video", "update_plan", "ask_user", "read_plan", "query_memory_db"];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
@@ -578,12 +622,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			cwd,
 			trusted: () => settingsManager.isProjectTrusted(),
 			settings: () => settingsManager.getMemorySettings(),
-			extract: async (checkpoint, signal) => extractMemoryCandidates(
+			extract: async (checkpoint, signal, existingMemoryMap) => extractMemoryCandidates(
 				agent.state.model,
 				modelRegistry,
 				checkpoint,
-				(query, limit, filterOptions) => memoryCoordinator?.searchAndTouch(query, limit, filterOptions) ?? [],
+				(sql, params) => memoryCoordinator?.query(sql, params) ?? [],
 				signal,
+				streamSimple,
+				existingMemoryMap,
 			),
 		});
 	}
