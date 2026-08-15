@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type Static, Type } from "typebox";
-import type { AskUserHandler, AskUserRequest } from "../ask-user.ts";
+import type { AskUserHandler, AskUserRequest, AskUserResponse } from "../ask-user.ts";
 import { validateAskUserRequest } from "../ask-user.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -33,7 +33,31 @@ export function createAskUserToolDefinition(options: AskUserToolOptions = {}): T
 			const error = validateAskUserRequest(input);
 			if (error) throw new Error(error);
 			const handler = options.handler?.();
-			if (!handler) throw new Error("ask_user is unsupported in this mode because no interactive user-input handler is configured.");
+			if (!handler) {
+				const answers = input.questions.map((q) => {
+					const recommended = q.options?.find((opt) => opt.recommended);
+					const chosen = recommended ?? q.options?.[0];
+					return {
+						id: q.id,
+						value: chosen ? chosen.label : "(unattended default)",
+						selectedLabel: chosen ? chosen.label : undefined,
+					};
+				});
+				const autoResponse: AskUserResponse = {
+					cancelled: false,
+					answers,
+				};
+				return {
+					content: [{
+						type: "text",
+						text: JSON.stringify({
+							...autoResponse,
+							note: "Unattended mode: auto-resolved questions with default/recommended options.",
+						}),
+					}],
+					details: autoResponse,
+				};
+			}
 			const request: AskUserRequest = { requestId: randomUUID(), toolCallId, questions: input.questions };
 			const response = await handler(request, signal);
 			return { content: [{ type: "text", text: JSON.stringify(response) }], details: response };

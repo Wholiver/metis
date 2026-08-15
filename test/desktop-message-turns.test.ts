@@ -471,4 +471,70 @@ describe("desktop subagent progress", () => {
 		expect(shouldQueueDesktopMessage(completed, false)).toBe(false);
 		expect(shouldQueueDesktopMessage([], true)).toBe(true);
 	});
+
+	it("tracks native spawn_agent sync completion with structured result payload", () => {
+		const part = { type: "toolCall", id: "tool-call-spwn01", name: "spawn_agent", arguments: { agent: "planner", task: "Plan architecture", mode: "sync" } };
+		const launchMessage = { role: "assistant", timestamp: "2026-08-15T00:00:00.000Z", content: [part] };
+		const resultPayload = JSON.stringify({
+			status: "success",
+			agent: "planner",
+			agentId: "planner-abc123",
+			result: "Architecture plan generated",
+		});
+		const resultMessage = { role: "toolResult", toolCallId: part.id, timestamp: "2026-08-15T00:00:02.500Z", content: [{ type: "text", text: resultPayload }] };
+		const messages = [launchMessage, resultMessage];
+
+		expect(getSubagentProgress(part, messages)).toEqual({
+			jobId: "spwn01",
+			state: "completed",
+			durationMs: 2500,
+		});
+	});
+
+	it("tracks native spawn_agent sync error payload as failed", () => {
+		const part = { type: "toolCall", id: "tool-call-spwn02", name: "spawn_agent", arguments: { agent: "implementer", task: "Write code", mode: "sync" } };
+		const launchMessage = { role: "assistant", timestamp: "2026-08-15T00:00:00.000Z", content: [part] };
+		const resultPayload = JSON.stringify({
+			status: "error",
+			agent: "implementer",
+			error: "Task exceeded max depth",
+		});
+		const resultMessage = { role: "toolResult", toolCallId: part.id, timestamp: "2026-08-15T00:00:01.000Z", content: [{ type: "text", text: resultPayload }] };
+		const messages = [launchMessage, resultMessage];
+
+		expect(getSubagentProgress(part, messages)).toEqual({
+			jobId: "spwn02",
+			state: "failed",
+			durationMs: 1000,
+		});
+	});
+
+	it("keeps turn open when spawn_agent is actively running in background", () => {
+		const launch = {
+			role: "assistant",
+			content: [{
+				type: "toolCall",
+				id: "tool-call-bg0001",
+				name: "spawn_agent",
+				arguments: { agent: "verifier", task: "Run test matrix", mode: "async" },
+			}],
+		};
+		const startedResult = {
+			role: "toolResult",
+			toolCallId: "tool-call-bg0001",
+			content: JSON.stringify({ status: "started", agent: "verifier" }),
+		};
+		const intermediateText = { role: "assistant", content: [{ type: "text", text: "Verifier subagent launched." }] };
+		const messages = [
+			{ role: "user", content: "Test the build" },
+			launch,
+			startedResult,
+			intermediateText,
+		];
+
+		expect(analyzeAssistantTurn(launch, messages, false)).toMatchObject({
+			hasRunningSubagent: true,
+			shouldCollapse: false,
+		});
+	});
 });

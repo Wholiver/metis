@@ -8,7 +8,7 @@ import {
 import { SUMMARIZATION_SYSTEM_PROMPT } from "../src/core/compaction/utils.ts";
 import { SESSION_NAME_SYSTEM_PROMPT } from "../src/core/session-name-generator.ts";
 import { buildSystemPrompt } from "../src/core/system-prompt.ts";
-import { SUBAGENT_COORDINATION_GUIDANCE } from "../src/core/tools/subagent.ts";
+import { SPAWN_AGENT_GUIDANCE } from "../src/core/tools/spawn_agent.ts";
 
 const TOOL_NAMES = [
 	"read",
@@ -21,7 +21,7 @@ const TOOL_NAMES = [
 	"websearch",
 	"webfetch",
 	"video",
-	"subagent",
+	"spawn_agent",
 ];
 
 describe("static prompt compression contracts", () => {
@@ -68,11 +68,11 @@ describe("static prompt compression contracts", () => {
 		expect(SUMMARIZATION_SYSTEM_PROMPT).toContain("Never continue it or answer its questions");
 	});
 
-	it("keeps subagent and title safety constraints within budgets", () => {
-		expect(SUBAGENT_COORDINATION_GUIDANCE.length).toBeLessThan(1_300);
-		expect(SUBAGENT_COORDINATION_GUIDANCE).toContain("current Agent run pauses");
-		expect(SUBAGENT_COORDINATION_GUIDANCE).toContain("in completion order");
-		expect(SUBAGENT_COORDINATION_GUIDANCE).toContain("brief user-visible update");
+	it("keeps spawn agent and title safety constraints within budgets", () => {
+		expect(SPAWN_AGENT_GUIDANCE.length).toBeLessThan(1_300);
+		expect(SPAWN_AGENT_GUIDANCE).toContain("Delegate a specific task to a specialized named agent");
+		expect(SPAWN_AGENT_GUIDANCE).toContain("synchronous");
+		expect(SPAWN_AGENT_GUIDANCE).toContain("async");
 
 		expect(SESSION_NAME_SYSTEM_PROMPT.length).toBeLessThan(140);
 		expect(SESSION_NAME_SYSTEM_PROMPT).toContain("first prompt");

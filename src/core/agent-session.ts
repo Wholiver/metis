@@ -513,7 +513,7 @@ export class AgentSession {
 				};
 			}
 			const subagentBarrierActive = this._subagentPauseActive;
-			const canExtendLaunchBatch = this._subagentLaunchBatchOpen && toolCall.name === "subagent";
+			const canExtendLaunchBatch = this._subagentLaunchBatchOpen && (toolCall.name === "spawn_agent" || toolCall.name === "subagent");
 			if (subagentBarrierActive && !canExtendLaunchBatch) {
 				return {
 					block: true,
@@ -768,7 +768,7 @@ export class AgentSession {
 			this._subagentPauseActive = true;
 			this._subagentLaunchBatchOpen = true;
 			this._runningSubagentIds.add(jobId);
-			this.setActiveToolsByName(this._toolRegistry.has("subagent") ? ["subagent"] : []);
+			this.setActiveToolsByName(this._toolRegistry.has("spawn_agent") ? ["spawn_agent"] : this._toolRegistry.has("subagent") ? ["subagent"] : []);
 		} else {
 			this._runningSubagentIds.delete(jobId);
 		}
@@ -967,12 +967,12 @@ export class AgentSession {
 	private _normalizeSubagentLaunchMessage(message: AgentMessage): void {
 		if (message.role !== "assistant") return;
 		const firstSubagentIndex = message.content.findIndex(
-			(part) => part.type === "toolCall" && part.name === "subagent",
+			(part) => part.type === "toolCall" && (part.name === "spawn_agent" || part.name === "subagent"),
 		);
 		if (firstSubagentIndex === -1) return;
 
 		const content = message.content.filter((part, index) => {
-			if (part.type === "toolCall") return part.name === "subagent";
+			if (part.type === "toolCall") return part.name === "spawn_agent" || part.name === "subagent";
 			if (index > firstSubagentIndex && part.type === "text") return false;
 			return true;
 		});
@@ -1458,13 +1458,15 @@ export class AgentSession {
 		const loaderAppendSystemPrompt = this._resourceLoader.getAppendSystemPrompt();
 		const appendSystemPrompt =
 			loaderAppendSystemPrompt.length > 0 ? loaderAppendSystemPrompt.join("\n\n") : undefined;
-		const loadedSkills = this._resourceLoader.getSkills().skills;
-		const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;
+		const loadedSkills = this._resourceLoader.getSkills ? this._resourceLoader.getSkills().skills : [];
+		const loadedAgents = this._resourceLoader.getAgents ? this._resourceLoader.getAgents().agents : [];
+		const loadedContextFiles = this._resourceLoader.getAgentsFiles ? this._resourceLoader.getAgentsFiles().agentsFiles : [];
 
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
 			sessionId: this.sessionManager.getSessionId(),
 			skills: loadedSkills,
+			agents: loadedAgents,
 			contextFiles: loadedContextFiles,
 			customPrompt: loaderSystemPrompt,
 			appendSystemPrompt,
@@ -3109,7 +3111,19 @@ export class AgentSession {
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
 					bash: { commandPrefix: shellCommandPrefix, shellPath },
-					subagent: {
+					spawnAgent: {
+						getRuntimeContext: () => ({
+							rootRunId: process.env.METIS_ROOT_RUN_ID,
+							currentAgentId: process.env.METIS_AGENT_ID,
+							currentDepth: process.env.METIS_AGENT_DEPTH ? parseInt(process.env.METIS_AGENT_DEPTH, 10) : 0,
+							provider: this.model?.provider,
+							model: this.model?.id,
+							thinking: this.thinkingLevel,
+							skills: this._resourceLoader
+								.getSkills()
+								.skills.filter((s) => s.sourceInfo.source === "cli" || s.sourceInfo.scope === "temporary")
+								.map((s) => s.filePath),
+						}),
 						onStatusChange: (jobId, running) => this._setSubagentRunning(jobId, running),
 						sendMessage: (jobId, result) => this._queueSubagentResult(jobId, result),
 					},
@@ -3157,7 +3171,7 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "subagent", "check_subagent", "websearch", "webfetch", "update_plan", "ask_user", "read_plan", "query_memory_db"];
+			: ["read", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "update_plan", "ask_user", "read_plan", "query_memory_db"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

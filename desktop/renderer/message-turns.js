@@ -5,10 +5,16 @@
 				|| part.type === "toolCall");
 	}
 
+	function isSubagentToolCall(part) {
+		if (part?.type !== "toolCall") return false;
+		const name = String(part?.name || "").toLowerCase();
+		return name === "subagent" || name === "spawn_agent";
+	}
+
 	function isSubagentLaunchNotice(text) {
 		const normalized = String(text || "").trim();
-		if (!normalized || normalized.length > 240 || !/subagent/i.test(normalized)) return false;
-		return /(已启动|启动了|started|launched)/i.test(normalized) && /(等待|等它|waiting|wait for)/i.test(normalized);
+		if (!normalized || normalized.length > 240 || (!/subagent/i.test(normalized) && !/spawn_agent/i.test(normalized) && !/agent/i.test(normalized))) return false;
+		return /(已启动|启动了|started|launched|spawning|spawned)/i.test(normalized) && /(等待|等它|waiting|wait for|background)/i.test(normalized);
 	}
 
 	function shouldHideAssistantWorkHeader(message, messages) {
@@ -102,7 +108,7 @@
 		const hasFinalResponse = !turnIsStreaming && messageHasText(lastAssistant);
 		const hasRunningSubagent = assistantMessages.some((assistantMessage) => Array.isArray(assistantMessage.content)
 			&& assistantMessage.content.some((part) => part.type === "toolCall"
-				&& String(part.name || "").toLowerCase() === "subagent"
+				&& isSubagentToolCall(part)
 				&& getSubagentProgress(part, messages).state === "running"));
 		const isFinalAssistant = message === lastAssistant;
 
@@ -156,6 +162,52 @@
 			if (message.customType === "subagent_result" && messageText(message).includes(completionMarker)) return true;
 			return messageText(message).includes(completionMarker);
 		});
+
+		if (toolResult) {
+			let resultPayload;
+			const extractPayload = (text) => {
+				if (!text || typeof text !== "string") return;
+				try {
+					resultPayload = JSON.parse(text);
+				} catch {}
+			};
+
+			if (typeof toolResult.content === "string") {
+				extractPayload(toolResult.content);
+			} else if (Array.isArray(toolResult.content)) {
+				for (const c of toolResult.content) {
+					if (c.type === "text" && c.text) extractPayload(c.text);
+				}
+			}
+
+			const isStartedNotice = (typeof toolResult.content === "string" && /started/i.test(toolResult.content))
+				|| (resultPayload?.status === "started");
+
+			if (resultPayload && !isStartedNotice) {
+				const isSuccess = resultPayload.status === "success" || resultPayload.status === "completed";
+				const isFail = resultPayload.status === "error" || resultPayload.status === "timed_out";
+				const startedAt = toTimestamp(launchMessage?.timestamp);
+				const finishedAt = toTimestamp(toolResult.timestamp);
+				const durationMs = startedAt !== undefined && finishedAt !== undefined && finishedAt >= startedAt
+					? finishedAt - startedAt
+					: undefined;
+				const state = isFail ? "failed" : isSuccess ? "completed" : "running";
+				return durationMs === undefined ? { jobId, state } : { jobId, state, durationMs };
+			}
+
+			if (!isStartedNotice && !completionMessage && String(part?.name || "").toLowerCase() === "spawn_agent") {
+				const args = typeof part?.arguments === "object" && part.arguments !== null ? part.arguments : {};
+				if (args.mode !== "async") {
+					const startedAt = toTimestamp(launchMessage?.timestamp);
+					const finishedAt = toTimestamp(toolResult.timestamp);
+					const durationMs = startedAt !== undefined && finishedAt !== undefined && finishedAt >= startedAt
+						? finishedAt - startedAt
+						: undefined;
+					return durationMs === undefined ? { jobId, state: "completed" } : { jobId, state: "completed", durationMs };
+				}
+			}
+		}
+
 		const completed = Boolean(completionMessage);
 		const startedAt = toTimestamp(launchMessage?.timestamp);
 		const finishedAt = toTimestamp(completionMessage?.timestamp);
@@ -178,7 +230,7 @@
 		for (const message of messages) {
 			if (message?.role !== "assistant" || !Array.isArray(message.content)) continue;
 			for (const part of message.content) {
-				if (part?.type !== "toolCall" || String(part.name || "").toLowerCase() !== "subagent") continue;
+				if (!isSubagentToolCall(part)) continue;
 				const jobId = String(part.id || "").slice(-6);
 				if (!jobId || seen.has(jobId)) continue;
 				seen.add(jobId);
@@ -260,7 +312,7 @@
 
 		const cotParts = content.filter((part, index) => {
 			if (index === finalResponseIndex) return false;
-			if (part?.type === "toolCall") return String(part.name || "").toLowerCase() !== "subagent";
+			if (part?.type === "toolCall") return !isSubagentToolCall(part);
 			if (part?.type === "thinking") return Boolean(String(part.thinking || "").trim());
 			if (part?.type === "text") return Boolean(String(part.text || "").trim()) && !isSubagentLaunchNotice(part.text);
 			return false;
@@ -284,7 +336,7 @@
 				workItems.push(part);
 				continue;
 			}
-			if (part?.type !== "toolCall" || String(part.name || "").toLowerCase() !== "subagent") continue;
+			if (!isSubagentToolCall(part)) continue;
 			const progress = getSubagentProgress(part, messages);
 			workItems.push({ type: "subagentCard", part, progress });
 		}

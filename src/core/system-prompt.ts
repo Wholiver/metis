@@ -8,6 +8,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { formatAgentsForPrompt, type AgentDefinition } from "./agent-definition.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 import type { CollaborationMode } from "./workflow-runtime.ts";
 
@@ -58,6 +59,7 @@ export interface BuildSystemPromptOptions {
 	cwd: string;
 	contextFiles?: Array<{ path: string; content: string }>;
 	skills?: Skill[];
+	agents?: AgentDefinition[];
 	sessionId?: string;
 }
 
@@ -132,6 +134,13 @@ export function buildInstructionStack(options: BuildSystemPromptOptions): Instru
 	if (options.skills?.length && (!options.selectedTools || options.selectedTools.includes("read"))) {
 		const entry = block("runtime:skills", "developer", formatSkillsForPrompt(options.skills), "skill registry", "runtime");
 		if (entry) developer.push(entry);
+	}
+	if (options.agents?.length && (!options.selectedTools || options.selectedTools.includes("spawn_agent"))) {
+		const agentsXml = formatAgentsForPrompt(options.agents);
+		if (agentsXml) {
+			const entry = block("runtime:agents", "developer", agentsXml.trim(), "agent registry", "runtime");
+			if (entry) developer.push(entry);
+		}
 	}
 	const collaborationGuidance = options.collaborationMode === "plan"
 		? "Plan Mode is conversational and read-only. Do not edit files, run mutating tools, or call update_plan. Keep the user oriented during planning: before each meaningful batch of read-only tool calls, emit one concise ordinary assistant-text update stating the current objective. After a batch, emit another update only when the evidence materially changes the direction. Use the user's language. Do not narrate every file read, repeat tool output, or expose hidden reasoning. Follow this gate strictly:\n\n1. Grounding: inspect repository structure, relevant entry points, state ownership, call paths, tests, and recent changes with read-only tools. Never ask the user for facts that can be discovered locally.\n2. Intent: establish goal, success criteria, audience, scope, constraints, and meaningful tradeoffs. If a material ambiguity remains, you MUST call ask_user and wait for its result; do not produce a final plan yet. Never present clarification questions as ordinary assistant text.\n3. Implementation: establish interfaces, data flow, compatibility, failure modes, migration needs, and verification. If an implementer would still need to make a material product decision, call ask_user instead of guessing or writing the questions in prose.\n4. Finalization: only when decision-complete, output exactly one <proposed_plan> block. Include Summary, Architecture Evidence, Implementation Changes, Public Interfaces, Tests, and Assumptions. Cite paths and symbols only when they disambiguate real evidence; do not invent line numbers or mechanical mode lists."

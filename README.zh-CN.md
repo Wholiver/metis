@@ -66,6 +66,8 @@ metis
 - **持久记忆与恢复** — 检索可复用的项目知识；中断、上下文压缩或会话重载后继续工作。
 - **灵活的模型与认证** — 使用内置订阅登录、API Key Provider，或带模型发现能力的自定义 OpenAI 兼容 Provider。
 - **桌面工作区** — 通过选择器、剪贴板或拖放添加图片、视频、文本及其他文件，并以图形界面管理 Provider 和会话。
+- **原生命名递归多智能体体系** — 内置具名 Agent 角色（`coordinator`、`planner`、`implementer`、`reviewer`、`verifier`），支持 L0→L4 递归委派、工具白名单沙箱、Git Worktree 物理隔离与生命周期控制。
+- **TerminalBench 与 Harbor 评测就绪** — 无头机器可读 JSONL 执行、标准退出码（`0`/`1`/`2`）、最终回答文件隔离、全链路 Trace/Token/Cost 聚合以及官方 Python 适配器。
 - **视频证据** — 通过元数据、时间戳故事板、有序运动样本、高清帧、字幕与本地转录检查视频。
 - **可扩展核心** — 加载 TypeScript Extensions、Agent Skills、Prompt Templates、Themes 与 Metis Packages；通过 Print、JSON、RPC、Server 或 Node.js SDK 集成。
 - **经过验证的执行** — 协调 Subagents、保持工具结果顺序、运行相关检查，并逐项对照原始要求交付。
@@ -117,6 +119,8 @@ Metis 会在 Prompt、完整 Step、上下文压缩、错误、中止及完成�
 | 安装、认证与首次运行 | [快速入门](docs/quickstart.md) |
 | 命令与交互式使用 | [使用 Metis](docs/usage.md) |
 | Provider 与自定义模型 | [Providers](docs/providers.md) · [Custom models](docs/models.md) |
+| 具名多智能体体系 | [多智能体与递归委派](docs/agents.md) |
+| 基准评测与无头模式 | [TerminalBench 与 Harbor 适配](docs/terminalbench.md) |
 | 会话与上下文压缩 | [Sessions](docs/sessions.md) · [Compaction](docs/compaction.md) |
 | Extensions、Skills 与 Packages | [Extensions](docs/extensions.md) · [Skills](docs/skills.md) · [Packages](docs/packages.md) |
 | 程序化集成 | [SDK](docs/sdk.md) · [RPC](docs/rpc.md) · [JSON](docs/json.md) |

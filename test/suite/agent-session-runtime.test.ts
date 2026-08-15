@@ -106,7 +106,7 @@ describe("AgentSessionRuntime characterization", () => {
 		const runtime = await createAgentSessionRuntime(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(tempDir),
+			sessionManager: SessionManager.create(tempDir, tempDir),
 		});
 		await runtime.session.bindExtensions({});
 
@@ -233,7 +233,7 @@ describe("AgentSessionRuntime characterization", () => {
 		events.length = 0;
 		const otherDir = join(tmpdir(), `metis-runtime-other-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(otherDir, { recursive: true });
-		const otherSession = SessionManager.create(otherDir);
+		const otherSession = SessionManager.create(otherDir, otherDir);
 		otherSession.appendMessage({ role: "user", content: [{ type: "text", text: "other" }], timestamp: Date.now() });
 		const otherSessionFile = otherSession.getSessionFile();
 		cancelReason = "resume";
@@ -506,7 +506,7 @@ describe("AgentSessionRuntime characterization", () => {
 		const otherRuntime = await createAgentSessionRuntime(createOtherRuntime, {
 			cwd: secondDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(secondDir),
+			sessionManager: SessionManager.create(secondDir, tempDir),
 		});
 		cleanups.push(async () => {
 			await otherRuntime.dispose();
@@ -600,7 +600,7 @@ describe("AgentSessionRuntime characterization", () => {
 		const otherRuntime = await createAgentSessionRuntime(createOtherRuntime, {
 			cwd: otherDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(otherDir),
+			sessionManager: SessionManager.create(otherDir, tempDir),
 		});
 		cleanups.push(async () => {
 			await otherRuntime.dispose();

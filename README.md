@@ -66,6 +66,8 @@ Use `/login` for supported subscription providers, or configure an API key. Run 
 - **Durable memory and recovery** — search reusable project knowledge and resume work after interruption, compaction, or session reload.
 - **Flexible models and authentication** — use built-in subscription login, API-key providers, or custom OpenAI-compatible providers with model discovery.
 - **Desktop workspace** — attach images, videos, text, and other files through the picker, clipboard, or drag and drop; manage providers and sessions graphically.
+- **Recursive Multi-Agent System** — native named agent definitions (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`), L0→L4 recursive delegation, role-based tool sandboxing, physical Git Worktree isolation, and deterministic lifecycle control.
+- **TerminalBench & Harbor Ready** — headless machine-readable JSONL execution, standardized exit codes (`0`/`1`/`2`), final answer separation, full trace aggregation, and official Python harness adapters.
 - **Video evidence** — inspect local video through metadata, timestamped storyboards, ordered motion samples, high-resolution frames, subtitles, and local transcription.
 - **Extensible core** — add TypeScript extensions, Agent Skills, prompt templates, themes, and Metis packages; integrate through print, JSON, RPC, Server, or the Node.js SDK.
 - **Verified execution** — coordinate subagents, preserve tool-result ordering, run relevant checks, and compare delivery against the original request.
@@ -117,6 +119,8 @@ In one user test on the same task, Metis finished in 1 minute 30 seconds and Ope
 | Install, authenticate, and start | [Quickstart](docs/quickstart.md) |
 | Commands and interactive usage | [Using Metis](docs/usage.md) |
 | Providers and custom models | [Providers](docs/providers.md) · [Custom models](docs/models.md) |
+| Multi-Agent System | [Named Agents & Delegation](docs/agents.md) |
+| Benchmark & Evaluation | [TerminalBench & Harbor](docs/terminalbench.md) |
 | Sessions and compaction | [Sessions](docs/sessions.md) · [Compaction](docs/compaction.md) |
 | Extensions, skills, and packages | [Extensions](docs/extensions.md) · [Skills](docs/skills.md) · [Packages](docs/packages.md) |
 | Programmatic integration | [SDK](docs/sdk.md) · [RPC](docs/rpc.md) · [JSON](docs/json.md) |

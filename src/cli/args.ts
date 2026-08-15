@@ -52,6 +52,18 @@ export interface Args {
 	offline?: boolean;
 	verbose?: boolean;
 	projectTrustOverride?: boolean;
+	agent?: string;
+	depth?: number;
+	parentId?: string;
+	rootRunId?: string;
+	agentContext?: string;
+	agentChain?: string[];
+	maxSpawnDepth?: number;
+	maxChildren?: number;
+	maxConcurrent?: number;
+	timeout?: number;
+	baseUrl?: string;
+	outputFinalAnswer?: string;
 	messages: string[];
 	fileArgs: string[];
 	/** Unknown flags (potentially extension flags) - map of flag name to value */
@@ -216,6 +228,60 @@ export function parseArgs(args: string[]): Args {
 			result.projectTrustOverride = false;
 		} else if (arg === "--offline") {
 			result.offline = true;
+		} else if (arg === "--agent" && i + 1 < args.length) {
+			result.agent = args[++i];
+		} else if ((arg === "--depth" || arg === "--agent-depth") && i + 1 < args.length) {
+			const rawDepth = args[++i];
+			const parsedDepth = parseInt(rawDepth, 10);
+			if (Number.isNaN(parsedDepth) || parsedDepth < 0) {
+				result.diagnostics.push({ type: "error", message: `Invalid depth: ${rawDepth}` });
+			} else {
+				result.depth = parsedDepth;
+			}
+		} else if ((arg === "--parent-id" || arg === "--parent-agent-id") && i + 1 < args.length) {
+			result.parentId = args[++i];
+		} else if (arg === "--root-run-id" && i + 1 < args.length) {
+			result.rootRunId = args[++i];
+		} else if (arg === "--agent-context" && i + 1 < args.length) {
+			result.agentContext = args[++i];
+		} else if (arg === "--agent-chain" && i + 1 < args.length) {
+			result.agentChain = args[++i].split(",").map((s) => s.trim()).filter(Boolean);
+		} else if (arg === "--max-spawn-depth" && i + 1 < args.length) {
+			const rawVal = args[++i];
+			const parsedVal = parseInt(rawVal, 10);
+			if (Number.isNaN(parsedVal) || parsedVal < 0) {
+				result.diagnostics.push({ type: "error", message: `Invalid max-spawn-depth: ${rawVal}` });
+			} else {
+				result.maxSpawnDepth = parsedVal;
+			}
+		} else if (arg === "--max-children" && i + 1 < args.length) {
+			const rawVal = args[++i];
+			const parsedVal = parseInt(rawVal, 10);
+			if (Number.isNaN(parsedVal) || parsedVal < 1) {
+				result.diagnostics.push({ type: "error", message: `Invalid max-children: ${rawVal}` });
+			} else {
+				result.maxChildren = parsedVal;
+			}
+		} else if (arg === "--max-concurrent" && i + 1 < args.length) {
+			const rawVal = args[++i];
+			const parsedVal = parseInt(rawVal, 10);
+			if (Number.isNaN(parsedVal) || parsedVal < 1) {
+				result.diagnostics.push({ type: "error", message: `Invalid max-concurrent: ${rawVal}` });
+			} else {
+				result.maxConcurrent = parsedVal;
+			}
+		} else if (arg === "--timeout" && i + 1 < args.length) {
+			const rawVal = args[++i];
+			const parsedVal = parseInt(rawVal, 10);
+			if (Number.isNaN(parsedVal) || parsedVal < 1) {
+				result.diagnostics.push({ type: "error", message: `Invalid timeout: ${rawVal}` });
+			} else {
+				result.timeout = parsedVal;
+			}
+		} else if (arg === "--base-url" && i + 1 < args.length) {
+			result.baseUrl = args[++i];
+		} else if (arg === "--output-final-answer" && i + 1 < args.length) {
+			result.outputFinalAnswer = args[++i];
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--")) {
@@ -270,7 +336,9 @@ ${chalk.bold("Commands:")}
 ${chalk.bold("Options:")}
   --provider <name>              Provider name (default: google)
   --model <pattern>              Model pattern or ID (supports "provider/id" and optional ":<thinking>")
+  --base-url <url>               Base URL for OpenAI-compatible endpoint (e.g. http://localhost:8000/v1)
   --api-key <key>                API key (defaults to env vars)
+  --output-final-answer <file>   Write final assistant text response to isolated file
   --base-instructions <text>     Replace built-in base instruction profile
   --developer-instructions <text> Add trusted developer instructions (repeatable)
   --collaboration-mode <mode>    Workflow mode: plan (default) or build
@@ -304,6 +372,11 @@ ${chalk.bold("Options:")}
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
+  --agent <name>                 Run as specific named agent (e.g. coordinator, planner, implementer)
+  --depth, --agent-depth <n>     Agent recursion depth level (0=root, 1=L1, ...)
+  --parent-id <id>               Parent agent identifier
+  --root-run-id <id>             Root run identifier across recursive agent tree
+  --agent-context <text>         Inject additional context payload to agent prompt
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --approve, -a                  Trust project-local files for this run
   --no-approve, -na              Ignore project-local files for this run

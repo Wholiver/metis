@@ -110,11 +110,33 @@ export {
 	type WriteToolOptions,
 } from "./write.ts";
 export {
-	createSubagentTool,
-	createSubagentToolDefinition,
-	type SubagentToolInput,
-	type SubagentToolOptions,
-} from "./subagent.ts";
+	createSpawnAgentTool,
+	createSpawnAgentToolDefinition,
+	spawnAgentSchema,
+	type SpawnAgentToolInput,
+	type SpawnAgentToolOptions,
+	type SpawnAgentRuntimeContext,
+	type ChildAgentResultPayload,
+} from "./spawn_agent.ts";
+export {
+	createListAgentsTool,
+	createListAgentsToolDefinition,
+	listAgentsSchema,
+	type ListAgentsToolInput,
+	createWaitAgentTool,
+	createWaitAgentToolDefinition,
+	waitAgentSchema,
+	type WaitAgentToolInput,
+	createKillAgentTool,
+	createKillAgentToolDefinition,
+	killAgentSchema,
+	type KillAgentToolInput,
+	createMessageAgentTool,
+	createMessageAgentToolDefinition,
+	messageAgentSchema,
+	type MessageAgentToolInput,
+	type AgentManagementToolOptions,
+} from "./agent-management.ts";
 export {
 	createWebSearchTool,
 	createWebSearchToolDefinition,
@@ -141,7 +163,18 @@ import { createUserIntentTool, createUserIntentToolDefinition } from "./user-int
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import { createVideoTool, createVideoToolDefinition, type VideoToolOptions } from "./video.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
-import { createSubagentTool, createSubagentToolDefinition, type SubagentToolOptions } from "./subagent.ts";
+import { createSpawnAgentTool, createSpawnAgentToolDefinition, type SpawnAgentToolOptions } from "./spawn_agent.ts";
+import {
+	createListAgentsTool,
+	createListAgentsToolDefinition,
+	createWaitAgentTool,
+	createWaitAgentToolDefinition,
+	createKillAgentTool,
+	createKillAgentToolDefinition,
+	createMessageAgentTool,
+	createMessageAgentToolDefinition,
+	type AgentManagementToolOptions,
+} from "./agent-management.ts";
 import { createWebSearchTool, createWebSearchToolDefinition, type WebSearchToolOptions } from "./websearch.ts";
 import { createWebFetchTool, createWebFetchToolDefinition, type WebFetchToolOptions } from "./webfetch.ts";
 import { createUpdatePlanTool, createUpdatePlanToolDefinition, type UpdatePlanToolOptions } from "./update-plan.ts";
@@ -162,7 +195,11 @@ export type ToolName =
 	| "grep"
 	| "find"
 	| "ls"
-	| "subagent"
+	| "spawn_agent"
+	| "list_agents"
+	| "wait_agent"
+	| "kill_agent"
+	| "message_agent"
 	| "websearch"
 	| "webfetch"
 	| "video"
@@ -181,7 +218,11 @@ export const allToolNames: Set<ToolName> = new Set([
 	"grep",
 	"find",
 	"ls",
-	"subagent",
+	"spawn_agent",
+	"list_agents",
+	"wait_agent",
+	"kill_agent",
+	"message_agent",
 	"websearch",
 	"webfetch",
 	"video",
@@ -200,7 +241,8 @@ export interface ToolsOptions {
 	grep?: GrepToolOptions;
 	find?: FindToolOptions;
 	ls?: LsToolOptions;
-	subagent?: SubagentToolOptions;
+	spawnAgent?: SpawnAgentToolOptions;
+	agentManagement?: AgentManagementToolOptions;
 	websearch?: WebSearchToolOptions;
 	webfetch?: WebFetchToolOptions;
 	video?: VideoToolOptions;
@@ -231,8 +273,16 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createFindToolDefinition(cwd, options?.find);
 		case "ls":
 			return createLsToolDefinition(cwd, options?.ls);
-		case "subagent":
-			return createSubagentToolDefinition(cwd, options?.subagent);
+		case "spawn_agent":
+			return createSpawnAgentToolDefinition(cwd, options?.spawnAgent);
+		case "list_agents":
+			return createListAgentsToolDefinition(options?.agentManagement);
+		case "wait_agent":
+			return createWaitAgentToolDefinition(options?.agentManagement);
+		case "kill_agent":
+			return createKillAgentToolDefinition(options?.agentManagement);
+		case "message_agent":
+			return createMessageAgentToolDefinition(options?.agentManagement);
 		case "websearch":
 			return createWebSearchToolDefinition(options?.websearch);
 		case "webfetch":
@@ -274,8 +324,16 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createFindTool(cwd, options?.find);
 		case "ls":
 			return createLsTool(cwd, options?.ls);
-		case "subagent":
-			return createSubagentTool(cwd, options?.subagent);
+		case "spawn_agent":
+			return createSpawnAgentTool(cwd, options?.spawnAgent);
+		case "list_agents":
+			return createListAgentsTool(options?.agentManagement);
+		case "wait_agent":
+			return createWaitAgentTool(options?.agentManagement);
+		case "kill_agent":
+			return createKillAgentTool(options?.agentManagement);
+		case "message_agent":
+			return createMessageAgentTool(options?.agentManagement);
 		case "websearch":
 			return createWebSearchTool(options?.websearch);
 		case "webfetch":
@@ -307,7 +365,11 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createAskUserToolDefinition(options?.askUser),
 		createReadPlanToolDefinition(),
 		createQueryMemoryDbToolDefinition(options?.queryMemoryDb),
-		createSubagentToolDefinition(cwd, options?.subagent),
+		createSpawnAgentToolDefinition(cwd, options?.spawnAgent),
+		createListAgentsToolDefinition(options?.agentManagement),
+		createWaitAgentToolDefinition(options?.agentManagement),
+		createKillAgentToolDefinition(options?.agentManagement),
+		createMessageAgentToolDefinition(options?.agentManagement),
 		createWebSearchToolDefinition(options?.websearch),
 		createWebFetchToolDefinition(options?.webfetch),
 		createVideoToolDefinition(cwd, options?.video),
@@ -339,7 +401,11 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		grep: createGrepToolDefinition(cwd, options?.grep),
 		find: createFindToolDefinition(cwd, options?.find),
 		ls: createLsToolDefinition(cwd, options?.ls),
-		subagent: createSubagentToolDefinition(cwd, options?.subagent),
+		spawn_agent: createSpawnAgentToolDefinition(cwd, options?.spawnAgent),
+		list_agents: createListAgentsToolDefinition(options?.agentManagement),
+		wait_agent: createWaitAgentToolDefinition(options?.agentManagement),
+		kill_agent: createKillAgentToolDefinition(options?.agentManagement),
+		message_agent: createMessageAgentToolDefinition(options?.agentManagement),
 		websearch: createWebSearchToolDefinition(options?.websearch),
 		webfetch: createWebFetchToolDefinition(options?.webfetch),
 		video: createVideoToolDefinition(cwd, options?.video),
@@ -362,7 +428,11 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createAskUserTool(options?.askUser),
 		createReadPlanTool(),
 		createQueryMemoryDbTool(options?.queryMemoryDb),
-		createSubagentTool(cwd, options?.subagent),
+		createSpawnAgentTool(cwd, options?.spawnAgent),
+		createListAgentsTool(options?.agentManagement),
+		createWaitAgentTool(options?.agentManagement),
+		createKillAgentTool(options?.agentManagement),
+		createMessageAgentTool(options?.agentManagement),
 		createWebSearchTool(options?.websearch),
 		createWebFetchTool(options?.webfetch),
 		createVideoTool(cwd, options?.video),
@@ -394,7 +464,11 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		grep: createGrepTool(cwd, options?.grep),
 		find: createFindTool(cwd, options?.find),
 		ls: createLsTool(cwd, options?.ls),
-		subagent: createSubagentTool(cwd, options?.subagent),
+		spawn_agent: createSpawnAgentTool(cwd, options?.spawnAgent),
+		list_agents: createListAgentsTool(options?.agentManagement),
+		wait_agent: createWaitAgentTool(options?.agentManagement),
+		kill_agent: createKillAgentTool(options?.agentManagement),
+		message_agent: createMessageAgentTool(options?.agentManagement),
 		websearch: createWebSearchTool(options?.websearch),
 		webfetch: createWebFetchTool(options?.webfetch),
 		video: createVideoTool(cwd, options?.video),

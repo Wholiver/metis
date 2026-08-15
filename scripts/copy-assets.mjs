@@ -34,6 +34,10 @@ copyMatching(
 	new Set([".js"]),
 );
 
+if (existsSync(join(root, "src/core/builtins"))) {
+	cpSync(join(root, "src/core/builtins"), join(root, "dist/core/builtins"), { recursive: true });
+}
+
 const executableExtension = process.platform === "win32" ? ".exe" : "";
 const videoBinaries = [
 	["ffmpeg", join(root, "node_modules/ffmpeg-static", `ffmpeg${executableExtension}`)],

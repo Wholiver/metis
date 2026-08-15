@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.ts";
@@ -24,11 +24,13 @@ import type { Skill } from "./skills.ts";
 import { loadSkills } from "./skills.ts";
 import { createSourceInfo, type SourceInfo } from "./source-info.ts";
 import { resetTimings } from "./timings.ts";
+import { AgentRegistry, type AgentDefinition, loadAgents } from "./agent-definition.ts";
 
 export interface ResourceExtensionPaths {
 	skillPaths?: Array<{ path: string; metadata: PathMetadata }>;
 	promptPaths?: Array<{ path: string; metadata: PathMetadata }>;
 	themePaths?: Array<{ path: string; metadata: PathMetadata }>;
+	agentPaths?: Array<{ path: string; metadata: PathMetadata }>;
 }
 
 export interface ResourceLoaderReloadOptions {
@@ -40,6 +42,8 @@ export interface ResourceLoader {
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
+	getAgents(): { agents: AgentDefinition[]; diagnostics: ResourceDiagnostic[] };
+	getAgentRegistry(): AgentRegistry;
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 	getSystemPrompt(): string | undefined;
 	getAppendSystemPrompt(): string[];
@@ -148,11 +152,13 @@ export interface DefaultResourceLoaderOptions {
 	additionalSkillPaths?: string[];
 	additionalPromptTemplatePaths?: string[];
 	additionalThemePaths?: string[];
+	additionalAgentPaths?: string[];
 	extensionFactories?: ExtensionFactory[];
 	noExtensions?: boolean;
 	noSkills?: boolean;
 	noPromptTemplates?: boolean;
 	noThemes?: boolean;
+	noAgents?: boolean;
 	noContextFiles?: boolean;
 	/** Replaces built-in base instructions. */
 	baseInstructions?: string;
@@ -175,6 +181,10 @@ export interface DefaultResourceLoaderOptions {
 		themes: Theme[];
 		diagnostics: ResourceDiagnostic[];
 	};
+	agentsOverride?: (base: { agents: AgentDefinition[]; diagnostics: ResourceDiagnostic[] }) => {
+		agents: AgentDefinition[];
+		diagnostics: ResourceDiagnostic[];
+	};
 	agentsFilesOverride?: (base: { agentsFiles: Array<{ path: string; content: string }> }) => {
 		agentsFiles: Array<{ path: string; content: string }>;
 	};
@@ -192,11 +202,13 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private additionalSkillPaths: string[];
 	private additionalPromptTemplatePaths: string[];
 	private additionalThemePaths: string[];
+	private additionalAgentPaths: string[];
 	private extensionFactories: ExtensionFactory[];
 	private noExtensions: boolean;
 	private noSkills: boolean;
 	private noPromptTemplates: boolean;
 	private noThemes: boolean;
+	private noAgents: boolean;
 	private noContextFiles: boolean;
 	private systemPromptSource?: string;
 	private appendSystemPromptSource?: string[];
@@ -213,6 +225,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 		themes: Theme[];
 		diagnostics: ResourceDiagnostic[];
 	};
+	private agentsOverride?: (base: { agents: AgentDefinition[]; diagnostics: ResourceDiagnostic[] }) => {
+		agents: AgentDefinition[];
+		diagnostics: ResourceDiagnostic[];
+	};
 	private agentsFilesOverride?: (base: { agentsFiles: Array<{ path: string; content: string }> }) => {
 		agentsFiles: Array<{ path: string; content: string }>;
 	};
@@ -226,6 +242,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private promptDiagnostics: ResourceDiagnostic[];
 	private themes: Theme[];
 	private themeDiagnostics: ResourceDiagnostic[];
+	private agents: AgentDefinition[];
+	private agentDiagnostics: ResourceDiagnostic[];
+	private agentRegistry: AgentRegistry;
 	private agentsFiles: Array<{ path: string; content: string }>;
 	private systemPrompt?: string;
 	private appendSystemPrompt: string[];
@@ -233,8 +252,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private extensionSkillSourceInfos: Map<string, SourceInfo>;
 	private extensionPromptSourceInfos: Map<string, SourceInfo>;
 	private extensionThemeSourceInfos: Map<string, SourceInfo>;
+	private extensionAgentSourceInfos: Map<string, SourceInfo>;
 	private lastPromptPaths: string[];
 	private lastThemePaths: string[];
+	private lastAgentPaths: string[];
 	private loaded: boolean;
 
 	constructor(options: DefaultResourceLoaderOptions) {
@@ -251,11 +272,13 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.additionalSkillPaths = options.additionalSkillPaths ?? [];
 		this.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? [];
 		this.additionalThemePaths = options.additionalThemePaths ?? [];
+		this.additionalAgentPaths = options.additionalAgentPaths ?? [];
 		this.extensionFactories = options.extensionFactories ?? [];
 		this.noExtensions = options.noExtensions ?? false;
 		this.noSkills = options.noSkills ?? false;
 		this.noPromptTemplates = options.noPromptTemplates ?? false;
 		this.noThemes = options.noThemes ?? false;
+		this.noAgents = options.noAgents ?? false;
 		this.noContextFiles = options.noContextFiles ?? false;
 		this.systemPromptSource = options.baseInstructions ?? options.systemPrompt;
 		this.appendSystemPromptSource = options.developerInstructions ?? options.appendSystemPrompt;
@@ -263,6 +286,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.skillsOverride = options.skillsOverride;
 		this.promptsOverride = options.promptsOverride;
 		this.themesOverride = options.themesOverride;
+		this.agentsOverride = options.agentsOverride;
 		this.agentsFilesOverride = options.agentsFilesOverride;
 		this.systemPromptOverride = options.systemPromptOverride;
 		this.appendSystemPromptOverride = options.appendSystemPromptOverride;
@@ -274,14 +298,19 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.promptDiagnostics = [];
 		this.themes = [];
 		this.themeDiagnostics = [];
+		this.agents = [];
+		this.agentDiagnostics = [];
+		this.agentRegistry = new AgentRegistry([], []);
 		this.agentsFiles = [];
 		this.appendSystemPrompt = [];
 		this.lastSkillPaths = [];
 		this.extensionSkillSourceInfos = new Map();
 		this.extensionPromptSourceInfos = new Map();
 		this.extensionThemeSourceInfos = new Map();
+		this.extensionAgentSourceInfos = new Map();
 		this.lastPromptPaths = [];
 		this.lastThemePaths = [];
+		this.lastAgentPaths = [];
 		this.loaded = false;
 	}
 
@@ -301,6 +330,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return { themes: this.themes, diagnostics: this.themeDiagnostics };
 	}
 
+	getAgents(): { agents: AgentDefinition[]; diagnostics: ResourceDiagnostic[] } {
+		return { agents: this.agents, diagnostics: this.agentDiagnostics };
+	}
+
+	getAgentRegistry(): AgentRegistry {
+		return this.agentRegistry;
+	}
+
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> } {
 		return { agentsFiles: this.agentsFiles };
 	}
@@ -317,6 +354,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const skillPaths = this.normalizeExtensionPaths(paths.skillPaths ?? []);
 		const promptPaths = this.normalizeExtensionPaths(paths.promptPaths ?? []);
 		const themePaths = this.normalizeExtensionPaths(paths.themePaths ?? []);
+		const agentPaths = this.normalizeExtensionPaths(paths.agentPaths ?? []);
 
 		for (const entry of skillPaths) {
 			this.extensionSkillSourceInfos.set(entry.path, createSourceInfo(entry.path, entry.metadata));
@@ -326,6 +364,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 		for (const entry of themePaths) {
 			this.extensionThemeSourceInfos.set(entry.path, createSourceInfo(entry.path, entry.metadata));
+		}
+		for (const entry of agentPaths) {
+			this.extensionAgentSourceInfos.set(entry.path, createSourceInfo(entry.path, entry.metadata));
 		}
 
 		if (skillPaths.length > 0) {
@@ -350,6 +391,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 				themePaths.map((entry) => entry.path),
 			);
 			this.updateThemesFromPaths(this.lastThemePaths);
+		}
+
+		if (agentPaths.length > 0) {
+			this.lastAgentPaths = this.mergePaths(
+				this.lastAgentPaths,
+				agentPaths.map((entry) => entry.path),
+			);
+			this.updateAgentsFromPaths(this.lastAgentPaths);
 		}
 	}
 
@@ -483,6 +532,21 @@ export class DefaultResourceLoader implements ResourceLoader {
 			const resolved = this.resolveResourcePath(p);
 			if (!existsSync(resolved) && !this.themeDiagnostics.some((d) => d.path === resolved)) {
 				this.themeDiagnostics.push({ type: "error", message: "Theme path does not exist", path: resolved });
+			}
+		}
+
+		const agentPaths = this.noAgents
+			? this.additionalAgentPaths
+			: this.mergePaths([], this.additionalAgentPaths);
+
+		this.lastAgentPaths = agentPaths;
+		this.updateAgentsFromPaths(agentPaths, metadataByPath);
+		for (const p of this.additionalAgentPaths) {
+			if (isLocalPath(p)) {
+				const resolved = this.resolveResourcePath(p);
+				if (!existsSync(resolved) && !this.agentDiagnostics.some((d) => d.path === resolved)) {
+					this.agentDiagnostics.push({ type: "error", message: "Agent path does not exist", path: resolved });
+				}
 			}
 		}
 
@@ -651,6 +715,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				agentDir: this.agentDir,
 				skillPaths,
 				includeDefaults: false,
+				includeBuiltins: !this.noSkills,
 			});
 		}
 		const resolvedSkills = this.skillsOverride ? this.skillsOverride(skillsResult) : skillsResult;
@@ -708,6 +773,30 @@ export class DefaultResourceLoader implements ResourceLoader {
 			return theme;
 		});
 		this.themeDiagnostics = resolvedThemes.diagnostics;
+	}
+
+	private updateAgentsFromPaths(agentPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
+		let agentsResult: { agents: AgentDefinition[]; diagnostics: ResourceDiagnostic[] };
+		if (this.noAgents && agentPaths.length === 0) {
+			agentsResult = { agents: [], diagnostics: [] };
+		} else {
+			agentsResult = loadAgents({
+				cwd: this.cwd,
+				agentDir: this.agentDir,
+				agentPaths,
+				includeBuiltins: !this.noAgents,
+			});
+		}
+		const resolvedAgents = this.agentsOverride ? this.agentsOverride(agentsResult) : agentsResult;
+		this.agents = resolvedAgents.agents.map((agent) => ({
+			...agent,
+			sourceInfo:
+				this.findSourceInfoForPath(agent.filePath, this.extensionAgentSourceInfos, metadataByPath) ??
+				agent.sourceInfo ??
+				this.getDefaultSourceInfoForPath(agent.filePath),
+		}));
+		this.agentDiagnostics = resolvedAgents.diagnostics;
+		this.agentRegistry = new AgentRegistry(this.agents, this.agentDiagnostics);
 	}
 
 	private applyExtensionSourceInfo(extensions: Extension[], metadataByPath: Map<string, PathMetadata>): void {
@@ -786,12 +875,15 @@ export class DefaultResourceLoader implements ResourceLoader {
 			join(this.agentDir, "prompts"),
 			join(this.agentDir, "themes"),
 			join(this.agentDir, "extensions"),
+			join(this.agentDir, "agents"),
+			join(dirname(this.agentDir), "agents"),
 		];
 		const projectRoots = [
 			join(this.cwd, CONFIG_DIR_NAME, "skills"),
 			join(this.cwd, CONFIG_DIR_NAME, "prompts"),
 			join(this.cwd, CONFIG_DIR_NAME, "themes"),
 			join(this.cwd, CONFIG_DIR_NAME, "extensions"),
+			join(this.cwd, CONFIG_DIR_NAME, "agents"),
 		];
 
 		for (const root of agentRoots) {

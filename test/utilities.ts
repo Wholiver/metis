@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { Agent } from "@earendil-works/metis-agent-core";
 import { getModel, type OAuthCredentials, type OAuthProvider } from "@earendil-works/metis-ai/compat";
 import { getOAuthApiKey } from "@earendil-works/metis-ai/oauth";
+import { AgentRegistry } from "../src/core/agent-definition.ts";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { createEventBus } from "../src/core/event-bus.ts";
@@ -214,11 +215,15 @@ export function createTestResourceLoader(options: CreateTestResourceLoaderOption
 		runtime: createExtensionRuntime(),
 	};
 
+	const agentRegistry = new AgentRegistry();
+
 	return {
 		getExtensions: () => extensionsResult,
 		getSkills: () => ({ skills: [], diagnostics: [] }),
 		getPrompts: () => ({ prompts: [], diagnostics: [] }),
 		getThemes: () => ({ themes: [], diagnostics: [] }),
+		getAgents: () => ({ agents: agentRegistry.getAll(), diagnostics: [] }),
+		getAgentRegistry: () => agentRegistry,
 		getAgentsFiles: () => ({ agentsFiles: [] }),
 		getSystemPrompt: () => undefined,
 		getAppendSystemPrompt: () => [],

@@ -35,7 +35,7 @@ import {
 	createReadOnlyTools,
 	createReadTool,
 	createVideoTool,
-	createSubagentTool,
+	createSpawnAgentTool,
 	createWebSearchTool,
 	createWebFetchTool,
 	createAskUserTool,
@@ -330,7 +330,7 @@ export {
 	createGrepTool,
 	createFindTool,
 	createLsTool,
-	createSubagentTool,
+	createSpawnAgentTool,
 	createWebSearchTool,
 	createWebFetchTool,
 	createAskUserTool,
@@ -464,7 +464,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Legacy memory/log bookkeeping tools remain explicit-only. query_memory_db is
 	// active so the model can retrieve durable knowledge on demand in any host.
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "subagent", "websearch", "webfetch", "video", "update_plan", "ask_user", "read_plan", "query_memory_db"];
+	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "video", "update_plan", "ask_user", "read_plan", "query_memory_db"];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;

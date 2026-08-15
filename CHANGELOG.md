@@ -6,11 +6,12 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## [1.0.3] - 2026-08-15
 
-### Desktop Theme & UI Polish
+### Multi-Agent Orchestration & Desktop Polish
 
-- Added comprehensive Desktop theme support and visual styling refinement.
-- Updated renderer catalogs, theme toggling, and layout consistency.
-- Added desktop theme regression test coverage.
+- Introduced hierarchical subagent spawning (`spawn_agent`), agent management, and spawn guard mechanisms.
+- Added isolated worktree and sanitized environment execution for subagents.
+- Added TerminalBench adapter, headless benchmark runner, and trace collection.
+- Refined Desktop theme styling, renderer catalogs, and message turn interactions.
 
 ## [1.0.2] - 2026-08-14
 

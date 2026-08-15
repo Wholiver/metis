@@ -1,0 +1,99 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        node-version:
+          - 22
+          - 24
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: npm-shrinkwrap.json
+
+      - name: Restore vendored build artifacts
+        shell: node {0}
+        run: |
+          const { execFileSync } = require("node:child_process");
+          const { cpSync, mkdtempSync, rmSync, writeFileSync } = require("node:fs");
+          const { tmpdir } = require("node:os");
+          const { join } = require("node:path");
+
+          void (async () => {
+            const packageName = "@wholiver_hu/metis";
+            const version = require(`${process.cwd()}/package.json`).version;
+            const registryBase = "https://registry.npmjs.org/@wholiver_hu%2fmetis";
+            let metadata = await fetch(`${registryBase}/${encodeURIComponent(version)}`);
+
+            if (!metadata.ok) {
+              console.log(`${packageName}@${version} is not published; restoring vendor artifacts from latest.`);
+              metadata = await fetch(`${registryBase}/latest`);
+            }
+            if (!metadata.ok) {
+              throw new Error(`Unable to resolve published vendor artifacts: HTTP ${metadata.status}`);
+            }
+
+            const manifest = await metadata.json();
+            const tarball = await fetch(manifest.dist.tarball);
+            if (!tarball.ok) {
+              throw new Error(`Unable to download published package: HTTP ${tarball.status}`);
+            }
+
+            const workdir = mkdtempSync(join(tmpdir(), "metis-vendor-"));
+            try {
+              const archive = join(workdir, "package.tgz");
+              writeFileSync(archive, Buffer.from(await tarball.arrayBuffer()));
+              execFileSync("tar", ["-xzf", archive, "-C", workdir], { stdio: "inherit" });
+
+              for (const name of ["metis-tui", "metis-ai", "metis-agent-core"]) {
+                const source = join(
+                  workdir,
+                  "package",
+                  "node_modules",
+                  "@earendil-works",
+                  name,
+                  "dist",
+                );
+                const target = join(process.cwd(), "vendor", name, "dist");
+                rmSync(target, { recursive: true, force: true });
+                cpSync(source, target, { recursive: true });
+              }
+            } finally {
+              rmSync(workdir, { recursive: true, force: true });
+            }
+          })();
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build
+        run: npm run build
+
+      - name: Run test suite (Unit & Mock E2E Integration)
+        run: npm test

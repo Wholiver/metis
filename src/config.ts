@@ -560,6 +560,11 @@ export function getSessionsDir(): string {
 	return join(getAgentDir(), "sessions");
 }
 
+/** Get path to user's custom agents directory */
+export function getUserAgentsDir(): string {
+	return join(getAgentDir(), "agents");
+}
+
 /** Get path to debug log file */
 export function getDebugLogPath(): string {
 	return join(getAgentDir(), `${APP_NAME}-debug.log`);

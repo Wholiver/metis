@@ -24,6 +24,7 @@
 	"files": [
 		"dist",
 		"docs",
+		"adapters",
 		"examples",
 		"containerization.md",
 		"CHANGELOG.md",

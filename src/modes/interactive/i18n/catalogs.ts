@@ -6,6 +6,8 @@ export const en = {
 	"command.settings": "Open settings menu",
 	"command.language": "Select interface language",
 	"command.model": "Select model (opens selector UI)",
+	"command.mode": "Switch workflow mode: build or read-only plan",
+	"command.agents": "List loaded and built-in agent roles and permissions",
 	"command.scoped-models": "Enable/disable models for Ctrl+P cycling",
 	"command.export": "Export session (HTML default, or specify path: .html/.jsonl)",
 	"command.import": "Import and resume a session from a JSONL file",
@@ -116,6 +118,7 @@ export type TranslationCatalog = Record<MessageKey, TranslationValue>;
 
 const zhCN: TranslationCatalog = {
 	"command.settings": "打开设置菜单", "command.language": "选择界面语言", "command.model": "选择模型（打开选择界面）",
+	"command.mode": "切换工作流模式：build 或只读 plan", "command.agents": "列出已加载及内置的 Agent 角色与权限",
 	"command.scoped-models": "启用或禁用用于 Ctrl+P 切换的模型", "command.export": "导出会话（默认 HTML，也可指定 .html/.jsonl 路径）",
 	"command.import": "导入 JSONL 会话并继续", "command.share": "将会话作为私密 GitHub gist 分享", "command.copy": "复制 Agent 上一条消息",
 	"command.name": "设置会话显示名称", "command.session": "显示会话信息和统计", "command.changelog": "显示更新日志",
@@ -149,6 +152,7 @@ const zhCN: TranslationCatalog = {
 const zhTW: TranslationCatalog = {
 	...zhCN,
 	"command.settings": "開啟設定選單", "command.language": "選擇介面語言", "command.model": "選擇模型（開啟選擇介面）",
+	"command.mode": "切換工作流程模式：build 或唯讀 plan", "command.agents": "列出已載入及內建的 Agent 角色與權限",
 	"command.scoped-models": "啟用或停用用於 Ctrl+P 切換的模型", "command.export": "匯出工作階段（預設 HTML，也可指定 .html/.jsonl 路徑）",
 	"command.import": "匯入 JSONL 工作階段並繼續", "command.copy": "複製 Agent 上一則訊息", "command.name": "設定工作階段顯示名稱",
 	"command.session": "顯示工作階段資訊和統計", "command.changelog": "顯示更新紀錄", "command.hotkeys": "顯示全部鍵盤快速鍵",

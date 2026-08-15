@@ -100,6 +100,7 @@ export function getCatalogs(): Readonly<Record<ResolvedUiLanguage, TranslationCa
 
 const BUILTIN_COMMAND_KEYS: Partial<Record<string, MessageKey>> = {
 	settings: "command.settings", language: "command.language", model: "command.model",
+	mode: "command.mode", agents: "command.agents",
 	"scoped-models": "command.scoped-models", export: "command.export", import: "command.import",
 	share: "command.share", copy: "command.copy", name: "command.name", session: "command.session",
 	changelog: "command.changelog", hotkeys: "command.hotkeys", fork: "command.fork", clone: "command.clone",

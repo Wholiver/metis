@@ -161,9 +161,22 @@ export interface ParsedModelResult {
 	warning: string | undefined;
 }
 
-function buildFallbackModel(provider: string, modelId: string, availableModels: Model<Api>[]): Model<Api> | undefined {
+function buildFallbackModel(provider: string, modelId: string, availableModels: Model<Api>[], baseUrl?: string): Model<Api> | undefined {
 	const providerModels = availableModels.filter((m) => m.provider === provider);
-	if (providerModels.length === 0) return undefined;
+	if (providerModels.length === 0) {
+		return {
+			id: modelId,
+			name: modelId,
+			provider,
+			api: "openai-completions",
+			baseUrl: baseUrl ?? "https://api.openai.com/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 128000,
+			maxTokens: 4096,
+		} as unknown as Model<Api>;
+	}
 
 	const defaultId = defaultModelPerProvider[provider as KnownProvider];
 	const baseModel = defaultId
@@ -174,6 +187,7 @@ function buildFallbackModel(provider: string, modelId: string, availableModels: 
 		...baseModel,
 		id: modelId,
 		name: modelId,
+		...(baseUrl ? { baseUrl } : {}),
 	};
 }
 
@@ -364,10 +378,11 @@ export interface ResolveCliModelResult {
 export function resolveCliModel(options: {
 	cliProvider?: string;
 	cliModel?: string;
+	cliBaseUrl?: string;
 	cliThinking?: ThinkingLevel;
 	modelRegistry: ModelRegistry;
 }): ResolveCliModelResult {
-	const { cliProvider, cliModel, cliThinking, modelRegistry } = options;
+	const { cliProvider, cliModel, cliBaseUrl, cliThinking, modelRegistry } = options;
 
 	if (!cliModel) {
 		return { model: undefined, warning: undefined, error: undefined };
@@ -376,7 +391,7 @@ export function resolveCliModel(options: {
 	// Important: use *all* models here, not just models with pre-configured auth.
 	// This allows "--api-key" to be used for first-time setup.
 	const availableModels = modelRegistry.getAll();
-	if (availableModels.length === 0) {
+	if (availableModels.length === 0 && !cliBaseUrl) {
 		return {
 			model: undefined,
 			warning: undefined,
@@ -390,8 +405,8 @@ export function resolveCliModel(options: {
 		providerMap.set(m.provider.toLowerCase(), m.provider);
 	}
 
-	let provider = cliProvider ? providerMap.get(cliProvider.toLowerCase()) : undefined;
-	if (cliProvider && !provider) {
+	let provider = cliProvider ? (providerMap.get(cliProvider.toLowerCase()) ?? (cliBaseUrl ? cliProvider : undefined)) : undefined;
+	if (cliProvider && !provider && !cliBaseUrl) {
 		return {
 			model: undefined,
 			warning: undefined,
@@ -400,10 +415,6 @@ export function resolveCliModel(options: {
 	}
 
 	// If no explicit --provider, try to interpret "provider/model" format first.
-	// When the prefix before the first slash matches a known provider, prefer that
-	// interpretation over matching models whose IDs literally contain slashes
-	// (e.g. "zai/glm-5" should resolve to provider=zai, model=glm-5, not to a
-	// vercel-ai-gateway model with id "zai/glm-5").
 	let pattern = cliModel;
 	let inferredProvider = false;
 
@@ -421,19 +432,18 @@ export function resolveCliModel(options: {
 	}
 
 	// If no provider was inferred from the slash, try exact matches without provider inference.
-	// This handles models whose IDs naturally contain slashes (e.g. OpenRouter-style IDs).
 	if (!provider) {
 		const lower = cliModel.toLowerCase();
 		const exact = availableModels.find(
 			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
 		);
 		if (exact) {
-			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
+			const finalModel = cliBaseUrl ? { ...exact, baseUrl: cliBaseUrl } : exact;
+			return { model: finalModel, warning: undefined, thinkingLevel: undefined, error: undefined };
 		}
 	}
 
 	if (cliProvider && provider) {
-		// If both were provided, tolerate --model <provider>/<pattern> by stripping the provider prefix
 		const prefix = `${provider}/`;
 		if (cliModel.toLowerCase().startsWith(prefix.toLowerCase())) {
 			pattern = cliModel.substring(prefix.length);
@@ -446,11 +456,6 @@ export function resolveCliModel(options: {
 	});
 
 	if (model) {
-		// If provider inference matched an unauthenticated provider/model pair, prefer
-		// one exact raw model-id match that is authenticated. This keeps
-		// "provider/model" syntax preferred when usable, but handles models whose
-		// literal id starts with a known provider name (for example
-		// commandcode model id "xiaomi/mimo-v2.5-pro").
 		if (inferredProvider) {
 			const rawExactMatches = availableModels.filter(
 				(m) => m.id.toLowerCase() === cliModel.toLowerCase() && !modelsAreEqual(m, model),
@@ -458,8 +463,9 @@ export function resolveCliModel(options: {
 			if (rawExactMatches.length > 0 && !modelRegistry.hasConfiguredAuth(model)) {
 				const authenticatedRawMatches = rawExactMatches.filter((m) => modelRegistry.hasConfiguredAuth(m));
 				if (authenticatedRawMatches.length === 1) {
+					const finalModel = cliBaseUrl ? { ...authenticatedRawMatches[0], baseUrl: cliBaseUrl } : authenticatedRawMatches[0];
 					return {
-						model: authenticatedRawMatches[0],
+						model: finalModel,
 						thinkingLevel: undefined,
 						warning: undefined,
 						error: undefined,
@@ -467,28 +473,26 @@ export function resolveCliModel(options: {
 				}
 			}
 		}
-		return { model, thinkingLevel, warning, error: undefined };
+		const finalModel = cliBaseUrl ? { ...model, baseUrl: cliBaseUrl } : model;
+		return { model: finalModel, thinkingLevel, warning, error: undefined };
 	}
 
-	// If we inferred a provider from the slash but found no match within that provider,
-	// fall back to matching the full input as a raw model id across all models.
-	// This handles OpenRouter-style IDs like "openai/gpt-4o:extended" where "openai"
-	// looks like a provider but the full string is actually a model id on openrouter.
 	if (inferredProvider) {
 		const lower = cliModel.toLowerCase();
 		const exact = availableModels.find(
 			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
 		);
 		if (exact) {
-			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
+			const finalModel = cliBaseUrl ? { ...exact, baseUrl: cliBaseUrl } : exact;
+			return { model: finalModel, warning: undefined, thinkingLevel: undefined, error: undefined };
 		}
-		// Also try parseModelPattern on the full input against all models
 		const fallback = parseModelPattern(cliModel, availableModels, {
 			allowInvalidThinkingLevelFallback: false,
 		});
 		if (fallback.model) {
+			const finalModel = cliBaseUrl ? { ...fallback.model, baseUrl: cliBaseUrl } : fallback.model;
 			return {
-				model: fallback.model,
+				model: finalModel,
 				thinkingLevel: fallback.thinkingLevel,
 				warning: fallback.warning,
 				error: undefined,
@@ -496,10 +500,8 @@ export function resolveCliModel(options: {
 		}
 	}
 
-	if (provider) {
-		// Parse thinking level suffix from the pattern before building the fallback model,
-		// but only when --thinking is not explicitly provided.
-		// e.g. "zai-org/GLM-5.1-FP8:high" → modelId="zai-org/GLM-5.1-FP8", fallbackThinking="high"
+	const effectiveProvider = provider ?? (cliBaseUrl ? "openai" : undefined);
+	if (effectiveProvider || cliBaseUrl) {
 		let fallbackPattern = pattern;
 		let fallbackThinking: ThinkingLevel | undefined;
 		if (!cliThinking) {
@@ -513,14 +515,14 @@ export function resolveCliModel(options: {
 			}
 		}
 
-		const fallbackModel = buildFallbackModel(provider, fallbackPattern, availableModels);
+		const fallbackModel = buildFallbackModel(effectiveProvider ?? "openai", fallbackPattern, availableModels, cliBaseUrl);
 		if (fallbackModel) {
 			const requestedThinking = cliThinking ?? fallbackThinking;
 			const model =
 				requestedThinking && requestedThinking !== "off" ? { ...fallbackModel, reasoning: true } : fallbackModel;
 			const fallbackWarning = warning
-				? `${warning} Model "${fallbackPattern}" not found for provider "${provider}". Using custom model id.`
-				: `Model "${fallbackPattern}" not found for provider "${provider}". Using custom model id.`;
+				? `${warning} Model "${fallbackPattern}" not found for provider "${effectiveProvider ?? "openai"}". Using custom model id.`
+				: (cliBaseUrl ? undefined : `Model "${fallbackPattern}" not found for provider "${effectiveProvider}". Using custom model id.`);
 			return { model, thinkingLevel: fallbackThinking, warning: fallbackWarning, error: undefined };
 		}
 	}
@@ -551,6 +553,7 @@ export interface InitialModelResult {
 export async function findInitialModel(options: {
 	cliProvider?: string;
 	cliModel?: string;
+	cliBaseUrl?: string;
 	scopedModels: ScopedModel[];
 	isContinuing: boolean;
 	defaultProvider?: string;
@@ -561,6 +564,7 @@ export async function findInitialModel(options: {
 	const {
 		cliProvider,
 		cliModel,
+		cliBaseUrl,
 		scopedModels,
 		isContinuing,
 		defaultProvider,
@@ -577,6 +581,7 @@ export async function findInitialModel(options: {
 		const resolved = resolveCliModel({
 			cliProvider,
 			cliModel,
+			cliBaseUrl,
 			modelRegistry,
 		});
 		if (resolved.error) {

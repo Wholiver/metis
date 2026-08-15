@@ -2914,6 +2914,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/agents") {
+				this.editor.setText("");
+				this.handleAgentsCommand();
+				return;
+			}
 			if (text === "/scoped-models") {
 				this.editor.setText("");
 				await this.showModelsSelector();
@@ -6212,6 +6217,46 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private handleAgentsCommand(): void {
+		const loader = this.session.resourceLoader;
+		const { agents } = loader?.getAgents ? loader.getAgents() : { agents: [] };
+
+		if (!agents || agents.length === 0) {
+			this.showStatus("No agents loaded.");
+			return;
+		}
+
+		let markdown = `
+| Agent | Description | Allowed Tools | Model / Thinking | Scope |
+|-------|-------------|---------------|------------------|-------|
+`;
+		for (const agent of agents) {
+			const name = `**\`${agent.name}\`**`;
+			const desc = agent.description.replace(/\n+/g, " ").trim();
+			let tools = "*(all configured)*";
+			if (agent.tools && agent.tools.length > 0) {
+				tools = agent.tools.map((t: string) => `\`${t}\``).join(", ");
+			}
+			if (agent.disallowedTools && agent.disallowedTools.length > 0) {
+				tools += ` (disallowed: ${agent.disallowedTools.map((t: string) => `\`${t}\``).join(", ")})`;
+			}
+			let modelStr = agent.model ? `\`${agent.model}\`` : "*(default)*";
+			if (agent.thinking) {
+				modelStr += ` [thinking: ${agent.thinking}]`;
+			}
+			const scope = `\`${agent.source}\``;
+			markdown += `| ${name} | ${desc} | ${tools} | ${modelStr} | ${scope} |\n`;
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", `Available Agent Roles (${agents.length})`)), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Markdown(markdown.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}

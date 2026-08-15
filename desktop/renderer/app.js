@@ -2019,15 +2019,20 @@ function getToolIconHref(toolName) {
 	if (name.includes("video") || name.includes("media") || name.includes("frame")) return "#i-video";
 	if (name.includes("webfetch") || name.includes("url") || name.includes("page")) return "#i-globe";
 	if (name.includes("search") || name === "find" || name === "grep") return "#i-search";
+	if (name === "read_plan" || name.includes("read_plan")) return "#i-file";
 	if (name.includes("file") || name === "read" || name === "write" || name === "edit" || name.includes("replace")) return "#i-file";
 	if (name.includes("command") || name === "bash" || name === "exec" || name.includes("shell")) return "#i-terminal";
-	if (name.includes("log")) return "#i-list";
+	if (name.includes("log") || name === "list_agents") return "#i-list";
 	if (name === "ls" || name.includes("list_dir") || name.includes("folder")) return "#i-folder";
-	if (name.includes("subagent") || name.includes("intent") || name.includes("brain")) return "#i-brain";
+	if (name === "wait_agent") return "#i-clock";
+	if (name === "kill_agent") return "#i-trash";
+	if (name === "message_agent") return "#i-chat";
+	if (name.includes("spawn_agent") || name.includes("subagent")) return "#i-branch";
+	if (name.includes("intent") || name.includes("brain") || name.includes("memory")) return "#i-brain";
 	return "#i-wrench";
 }
 
-function formatToolDisplayName(toolName, status) {
+function formatToolDisplayName(toolName, status, args = {}) {
 	const name = (toolName || "").toLowerCase();
 	const isRunning = status === "Running" || status === "Pending" || status === "Awaiting Approval";
 	const isError = status === "Error" || status === "Denied";
@@ -2041,6 +2046,11 @@ function formatToolDisplayName(toolName, status) {
 		if (isRunning) return "Fetching Page...";
 		if (isError) return "Fetch Failed";
 		return "Fetched Page";
+	}
+	if (name === "read_plan") {
+		if (isRunning) return uiText("toolReadingPlan") || "Reading Plan…";
+		if (isError) return "Plan Read Failed";
+		return uiText("toolReadPlan") || "Read Plan";
 	}
 	if (name === "read" || name.includes("read_file") || name.includes("view_file") || name.includes("read_resource")) {
 		if (isRunning) return "Reading File...";
@@ -2067,10 +2077,46 @@ function formatToolDisplayName(toolName, status) {
 		if (isError) return "Search Failed";
 		return "Searched Codebase";
 	}
-	if (name.includes("subagent") || name.includes("agent")) {
-		if (isRunning) return "Starting Agent...";
-		if (isError) return "Agent Failed";
-		return "Agent Started";
+	if (name === "list_agents") {
+		if (isRunning) return uiText("toolListingAgents") || "Listing Agents…";
+		if (isError) return "Failed Listing Agents";
+		return uiText("toolListedAgents") || "Listed Agents";
+	}
+	if (name === "wait_agent") {
+		if (isRunning) return uiText("toolWaitingAgent") || "Waiting for Agent…";
+		if (isError) return "Failed Waiting Agent";
+		return uiText("toolWaitedAgent") || "Waited for Agent";
+	}
+	if (name === "kill_agent") {
+		if (isRunning) return uiText("toolKillingAgent") || "Terminating Agent…";
+		if (isError) return "Failed Terminating Agent";
+		return uiText("toolKilledAgent") || "Terminated Agent";
+	}
+	if (name === "message_agent") {
+		if (isRunning) return uiText("toolMessagingAgent") || "Messaging Agent…";
+		if (isError) return "Failed Messaging Agent";
+		return uiText("toolMessagedAgent") || "Messaged Agent";
+	}
+	if (name === "query_memory_db") {
+		if (isRunning) return uiText("toolQueryingMemory") || "Querying Memory…";
+		if (isError) return "Query Memory Failed";
+		return uiText("toolQueriedMemory") || "Queried Memory";
+	}
+	if (name.includes("spawn_agent") || name.includes("subagent")) {
+		const targetAgent = args?.agent ? String(args.agent) : "";
+		if (isRunning) {
+			return targetAgent
+				? uiText("toolSpawningAgent", { agent: targetAgent })
+				: "Spawning Agent…";
+		}
+		if (isError) {
+			return targetAgent
+				? uiText("toolAgentFailed", { agent: targetAgent })
+				: "Agent Failed";
+		}
+		return targetAgent
+			? uiText("toolSpawnedAgent", { agent: targetAgent })
+			: "Spawned Agent";
 	}
 	const formatted = (toolName || "Tool")
 		.replaceAll("_", " ")
@@ -2540,7 +2586,7 @@ function updateOrCreateAssistantMessage(existingArticle, message, messages, inde
 					if (nameEl) {
 						const nameClass = `tool-name ${isRunning ? "shimmering" : ""}`;
 						if (nameEl.className !== nameClass) nameEl.className = nameClass;
-						const displayName = formatToolDisplayName(part.name, status);
+						const displayName = formatToolDisplayName(part.name, status, part.arguments);
 						if (nameEl.textContent !== displayName) nameEl.textContent = displayName;
 					}
 
@@ -2718,12 +2764,18 @@ function renderSubagentCompletionCard(item) {
 	card.dataset.jobId = item.progress.jobId;
 	card.dataset.state = item.progress.state;
 
+	const targetAgent = args.agent ? String(args.agent) : "";
+	const displayTask = String(args.task || args.title || uiText("subagentTask"));
+	const displayTitle = targetAgent
+		? `${targetAgent}: ${displayTask}`
+		: displayTask;
+
 	const header = document.createElement("div");
 	header.className = "tool-header-bar subagent-tool-header";
 	header.setAttribute("role", "button");
 	header.setAttribute("tabindex", "0");
 	header.setAttribute("aria-expanded", "false");
-	header.setAttribute("aria-label", `${uiText("subagentTask")}: ${String(args.title || uiText("subagentTask"))}`);
+	header.setAttribute("aria-label", `${uiText("subagentTask")}: ${displayTitle}`);
 
 	const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 	icon.innerHTML = '<use href="#i-branch"/>';
@@ -2731,7 +2783,7 @@ function renderSubagentCompletionCard(item) {
 
 	const title = document.createElement("span");
 	title.className = "tool-name";
-	title.textContent = String(args.title || uiText("subagentTask"));
+	title.textContent = displayTitle;
 
 	const duration = formatSubagentDuration(item.progress.durationMs);
 	const durationEl = document.createElement("span");
@@ -2763,16 +2815,24 @@ function renderSubagentCompletionCard(item) {
 
 	const task = document.createElement("p");
 	task.className = "subagent-tool-task";
-	task.textContent = String(args.task || uiText("subagentTaskDetail"));
-	task.title = String(args.task || "");
+	task.textContent = String(args.task || args.title || uiText("subagentTaskDetail"));
+	task.title = String(args.task || args.title || "");
 
 	const meta = document.createElement("div");
 	meta.className = "subagent-tool-meta";
 	const mode = document.createElement("span");
 	mode.textContent = uiText("subagentBackground");
+	if (args.mode === "sync") mode.textContent = uiText("subagentModeSync");
+	if (args.mode === "async") mode.textContent = uiText("subagentModeAsync");
 	const job = document.createElement("code");
 	job.textContent = `ID #${item.progress.jobId}`;
 	meta.append(mode, job);
+	if (args.worktree) {
+		const wt = document.createElement("span");
+		wt.className = "subagent-tool-worktree";
+		wt.textContent = `${uiText("subagentWorktree")}: ${args.worktree}`;
+		meta.append(wt);
+	}
 	if (duration) {
 		const elapsed = document.createElement("span");
 		elapsed.className = "subagent-tool-duration";
@@ -2834,7 +2894,7 @@ function renderToolCallBlock(part, message, messages) {
 
 	const nameEl = document.createElement("span");
 	nameEl.className = `tool-name ${isRunning ? "shimmering" : ""}`;
-	nameEl.textContent = formatToolDisplayName(part.name, status);
+	nameEl.textContent = formatToolDisplayName(part.name, status, part.arguments);
 
 	const durationEl = document.createElement("span");
 	durationEl.className = "tool-duration";

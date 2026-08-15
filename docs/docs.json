@@ -75,6 +75,10 @@
         {
           "title": "Custom Providers",
           "path": "custom-provider.md"
+        },
+        {
+          "title": "Multi-Agent System",
+          "path": "agents.md"
         }
       ]
     },
@@ -88,7 +92,7 @@
       ]
     },
     {
-      "title": "Programmatic Usage",
+      "title": "Programmatic Usage & Evaluation",
       "items": [
         {
           "title": "SDK",
@@ -101,6 +105,10 @@
         {
           "title": "JSON Event Stream Mode",
           "path": "json.md"
+        },
+        {
+          "title": "TerminalBench & Harbor Evaluation",
+          "path": "terminalbench.md"
         },
         {
           "title": "TUI Components",

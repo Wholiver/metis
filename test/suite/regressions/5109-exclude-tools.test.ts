@@ -57,7 +57,7 @@ describe("regression #5109: exclude tools", () => {
 			"edit",
 			"query_memory_db",
 			"read_plan",
-			"subagent",
+			"spawn_agent",
 			"update_plan",
 			"webfetch",
 			"websearch",

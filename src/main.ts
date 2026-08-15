@@ -18,6 +18,7 @@ import { createProjectTrustContext } from "./cli/project-trust.ts";
 import { selectSession } from "./cli/session-picker.ts";
 import { shouldRunFirstTimeSetup, showFirstTimeSetup, showStartupSelector } from "./cli/startup-ui.ts";
 import { CONFIG_DIR_NAME, ENV_SESSION_DIR, expandTildePath, getAgentDir, getPackageDir, VERSION } from "./config.ts";
+import { resolveAgentConfig } from "./core/agent-definition.ts";
 import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.ts";
 import {
 	type AgentSessionRuntimeDiagnostic,
@@ -376,6 +377,7 @@ function buildSessionOptions(
 		const resolved = resolveCliModel({
 			cliProvider: parsed.provider,
 			cliModel: parsed.model,
+			cliBaseUrl: parsed.baseUrl || process.env.METIS_BASE_URL || process.env.OPENAI_BASE_URL,
 			cliThinking: parsed.thinking,
 			modelRegistry,
 		});
@@ -545,6 +547,22 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	time("parseArgs");
 
+	if (parsed.depth !== undefined) {
+		process.env.METIS_AGENT_DEPTH = String(parsed.depth);
+	}
+	if (parsed.parentId !== undefined) {
+		process.env.METIS_PARENT_AGENT_ID = parsed.parentId;
+	}
+	if (parsed.rootRunId !== undefined) {
+		process.env.METIS_ROOT_RUN_ID = parsed.rootRunId;
+	}
+	if (parsed.agent !== undefined) {
+		process.env.METIS_AGENT_NAME = parsed.agent;
+	}
+	if (parsed.baseUrl !== undefined) {
+		process.env.METIS_BASE_URL = parsed.baseUrl;
+	}
+
 	if (parsed.version) {
 		console.log(VERSION);
 		process.exit(0);
@@ -613,7 +631,7 @@ export async function main(args: string[], options?: MainOptions) {
 			sessionManager = SessionManager.open(missingSessionCwdIssue.sessionFile!, sessionDir, selectedCwd);
 		} else {
 			console.error(chalk.red(new MissingSessionCwdError(missingSessionCwdIssue).message));
-			process.exit(1);
+			process.exit(2);
 		}
 	}
 	if (parsed.name !== undefined) {
@@ -731,6 +749,63 @@ export async function main(args: string[], options?: MainOptions) {
 			settingsManager,
 		);
 		diagnostics.push(...sessionOptionDiagnostics);
+
+		if (parsed.agent) {
+			const agentRegistry = resourceLoader.getAgentRegistry();
+			const agentDef = agentRegistry.get(parsed.agent);
+			if (!agentDef) {
+				diagnostics.push({
+					type: "error",
+					message: `Agent "${parsed.agent}" not found in AgentRegistry.`,
+				});
+			} else {
+				const resolvedConfig = resolveAgentConfig({
+					agent: agentDef,
+					parentConfig: {
+						model: parsed.model,
+						provider: parsed.provider,
+						thinking: parsed.thinking,
+						tools: sessionOptions.tools,
+					},
+				});
+
+				let agentPrompt = `You are acting as the specialized named agent "${resolvedConfig.name}".\n\n${resolvedConfig.systemPrompt}`;
+				if (parsed.agentContext) {
+					agentPrompt += `\n\n[Agent Context / State]\n${parsed.agentContext}`;
+				}
+				resourceLoader.getAppendSystemPrompt().unshift(agentPrompt);
+
+				if (resolvedConfig.tools) {
+					sessionOptions.tools = resolvedConfig.tools;
+				}
+
+				if (!parsed.model && resolvedConfig.model) {
+					const resolved = resolveCliModel({
+						cliProvider: resolvedConfig.provider,
+						cliModel: resolvedConfig.model,
+						cliBaseUrl: parsed.baseUrl || process.env.METIS_BASE_URL || process.env.OPENAI_BASE_URL,
+						cliThinking: resolvedConfig.thinking,
+						modelRegistry,
+					});
+					if (resolved.model) {
+						sessionOptions.model = resolved.model;
+						if (resolved.thinkingLevel) {
+							sessionOptions.thinkingLevel = resolved.thinkingLevel;
+						}
+					}
+				}
+
+				if (!parsed.thinking && resolvedConfig.thinking) {
+					sessionOptions.thinkingLevel = resolvedConfig.thinking;
+				}
+
+				if (resolvedConfig.env) {
+					for (const [k, v] of Object.entries(resolvedConfig.env)) {
+						process.env[k] = v;
+					}
+				}
+			}
+		}
 
 		if (parsed.apiKey) {
 			if (!sessionOptions.model) {
@@ -886,6 +961,7 @@ export async function main(args: string[], options?: MainOptions) {
 			messages: parsed.messages,
 			initialMessage,
 			initialImages,
+			outputFinalAnswer: parsed.outputFinalAnswer,
 		});
 		stopThemeWatcher();
 		restoreStdout();

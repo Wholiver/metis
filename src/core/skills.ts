@@ -1,11 +1,15 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import ignore from "ignore";
 import { basename, dirname, join, relative, resolve, sep } from "path";
+import { fileURLToPath } from "url";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { parseFrontmatter } from "../utils/frontmatter.ts";
 import { canonicalizePath, resolvePath } from "../utils/paths.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /** Max name length per spec */
 const MAX_NAME_LENGTH = 64;
@@ -85,6 +89,35 @@ export interface LoadSkillsResult {
 	diagnostics: ResourceDiagnostic[];
 }
 
+/** Built-in Autoprompt Skill (Feat 31) */
+export const BUILTIN_AUTOPROMPT_DESCRIPTION =
+	"Autonomous orchestration skill that analyzes complex goals, formulates phased execution plans, and coordinates specialized subagents (coordinator, planner, implementer, reviewer, verifier) via spawn_agent.";
+
+export function getBuiltinAutopromptFilePath(): string {
+	const candidates = [
+		resolve(__dirname, "builtins/skills/autoprompt/SKILL.md"),
+		resolve(__dirname, "../core/builtins/skills/autoprompt/SKILL.md"),
+		resolve(process.cwd(), "src/core/builtins/skills/autoprompt/SKILL.md"),
+	];
+	for (const candidate of candidates) {
+		if (existsSync(candidate)) {
+			return candidate;
+		}
+	}
+	return resolve(__dirname, "builtins/skills/autoprompt/SKILL.md");
+}
+
+export const BUILTIN_AUTOPROMPT_SKILL: Skill = {
+	name: "autoprompt",
+	description: BUILTIN_AUTOPROMPT_DESCRIPTION,
+	filePath: getBuiltinAutopromptFilePath(),
+	baseDir: dirname(getBuiltinAutopromptFilePath()),
+	sourceInfo: createSyntheticSourceInfo(getBuiltinAutopromptFilePath(), { source: "builtin", scope: "user" }),
+	disableModelInvocation: false,
+};
+
+export const BUILTIN_SKILLS: Skill[] = [BUILTIN_AUTOPROMPT_SKILL];
+
 /**
  * Validate skill name per Agent Skills spec.
  * Returns array of validation error messages (empty if valid).
@@ -145,6 +178,12 @@ function createSkillSourceInfo(filePath: string, baseDir: string, source: string
 			return createSyntheticSourceInfo(filePath, {
 				source: "local",
 				scope: "project",
+				baseDir,
+			});
+		case "builtin":
+			return createSyntheticSourceInfo(filePath, {
+				source: "builtin",
+				scope: "user",
 				baseDir,
 			});
 		case "path":
@@ -370,11 +409,13 @@ export interface LoadSkillsOptions {
 	/** Working directory for project-local skills. */
 	cwd: string;
 	/** Agent config directory for global skills. */
-	agentDir: string;
+	agentDir?: string;
 	/** Explicit skill paths (files or directories) */
-	skillPaths: string[];
+	skillPaths?: string[];
 	/** Include default skills directories. */
-	includeDefaults: boolean;
+	includeDefaults?: boolean;
+	/** Include built-in skills. Default: false for raw loadSkills, true for ResourceLoader */
+	includeBuiltins?: boolean;
 }
 
 /**
@@ -382,7 +423,7 @@ export interface LoadSkillsOptions {
  * Returns skills and any validation diagnostics.
  */
 export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
-	const { agentDir, skillPaths, includeDefaults } = options;
+	const { agentDir, skillPaths = [], includeDefaults, includeBuiltins } = options;
 
 	// Resolve agentDir - if not provided, use default from config
 	const resolvedCwd = resolvePath(options.cwd);
@@ -393,42 +434,42 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 	const allDiagnostics: ResourceDiagnostic[] = [];
 	const collisionDiagnostics: ResourceDiagnostic[] = [];
 
-	function addSkills(result: LoadSkillsResult) {
-		allDiagnostics.push(...result.diagnostics);
-		for (const skill of result.skills) {
-			// Resolve symlinks to detect duplicate files
-			const realPath = canonicalizePath(skill.filePath);
+	function addSkill(skill: Skill) {
+		// Resolve symlinks to detect duplicate files
+		const realPath = canonicalizePath(skill.filePath);
 
-			// Skip silently if we've already loaded this exact file (via symlink)
-			if (realPathSet.has(realPath)) {
-				continue;
-			}
+		// Skip silently if we've already loaded this exact file (via symlink)
+		if (realPathSet.has(realPath)) {
+			return;
+		}
 
-			const existing = skillMap.get(skill.name);
-			if (existing) {
-				collisionDiagnostics.push({
-					type: "collision",
-					message: `name "${skill.name}" collision`,
-					path: skill.filePath,
-					collision: {
-						resourceType: "skill",
-						name: skill.name,
-						winnerPath: existing.filePath,
-						loserPath: skill.filePath,
-					},
-				});
-			} else {
-				skillMap.set(skill.name, skill);
-				realPathSet.add(realPath);
-			}
+		const existing = skillMap.get(skill.name);
+		if (existing) {
+			collisionDiagnostics.push({
+				type: "collision",
+				message: `name "${skill.name}" collision`,
+				path: skill.filePath,
+				collision: {
+					resourceType: "skill",
+					name: skill.name,
+					winnerPath: existing.filePath,
+					loserPath: skill.filePath,
+				},
+			});
+		} else {
+			skillMap.set(skill.name, skill);
+			realPathSet.add(realPath);
 		}
 	}
 
-	if (includeDefaults) {
-		addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", true));
-		addSkills(loadSkillsFromDirInternal(resolve(resolvedCwd, CONFIG_DIR_NAME, "skills"), "project", true));
+	function addSkills(result: LoadSkillsResult) {
+		allDiagnostics.push(...result.diagnostics);
+		for (const skill of result.skills) {
+			addSkill(skill);
+		}
 	}
 
+	// 1. Explicit / Package skill paths (highest priority, ordered by package manager precedence)
 	const userSkillsDir = join(resolvedAgentDir, "skills");
 	const projectSkillsDir = resolve(resolvedCwd, CONFIG_DIR_NAME, "skills");
 
@@ -464,16 +505,39 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 			} else if (stats.isFile() && resolvedPath.endsWith(".md")) {
 				const result = loadSkillFromFile(resolvedPath, source);
 				if (result.skill) {
-					addSkills({ skills: [result.skill], diagnostics: result.diagnostics });
-				} else {
-					allDiagnostics.push(...result.diagnostics);
+					addSkill(result.skill);
 				}
+				allDiagnostics.push(...result.diagnostics);
 			} else {
 				allDiagnostics.push({ type: "warning", message: "skill path is not a markdown file", path: resolvedPath });
 			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "failed to read skill path";
 			allDiagnostics.push({ type: "warning", message, path: resolvedPath });
+		}
+	}
+
+	// 2. Project & User default directories (when includeDefaults is true)
+	if (includeDefaults) {
+		addSkills(loadSkillsFromDirInternal(resolve(resolvedCwd, CONFIG_DIR_NAME, "skills"), "project", true));
+		addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", true));
+	}
+
+	// 3. Built-in skills (lowest priority, added if not overridden by custom skills)
+	if (includeBuiltins) {
+		const builtinPath = getBuiltinAutopromptFilePath();
+		if (existsSync(builtinPath)) {
+			const res = loadSkillFromFile(builtinPath, "builtin");
+			if (res.skill) {
+				addSkill(res.skill);
+			} else {
+				addSkill(BUILTIN_AUTOPROMPT_SKILL);
+			}
+			allDiagnostics.push(...res.diagnostics);
+		} else {
+			for (const builtin of BUILTIN_SKILLS) {
+				addSkill(builtin);
+			}
 		}
 	}
 
