@@ -52,6 +52,7 @@
 		"@earendil-works/metis-tui": "file:vendor/metis-tui",
 		"@huggingface/transformers": "4.2.0",
 		"@silvia-odwyer/photon-node": "0.3.4",
+		"better-sqlite3": "^13.0.3",
 		"chalk": "5.6.2",
 		"cheerio": "^1.2.0",
 		"cross-spawn": "7.0.6",
