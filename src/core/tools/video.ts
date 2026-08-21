@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { access, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -409,7 +409,7 @@ const defaultVideoOperations: VideoOperations = {
 		return { duration, width: video.width, height: video.height, frameRate: frameRate && frameRate > 0 ? frameRate : undefined, hasAudio: streams.some((stream) => stream.codec_type === "audio"), hasSubtitles: streams.some((stream) => stream.codec_type === "subtitle") };
 	},
 	async createStoryboard(path, frameTimes, signal) {
-		const workDir = join(tmpdir(), `metis-video-sheet-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const workDir = join(tmpdir(), `metis-video-sheet-${Date.now()}-${randomBytes(4).toString("hex")}`);
 		await mkdir(workDir, { recursive: true });
 		try {
 			const cells: string[] = [];
@@ -436,7 +436,7 @@ const defaultVideoOperations: VideoOperations = {
 		}
 	},
 	async createFrames(path, frameTimes, crop, signal) {
-		const workDir = join(tmpdir(), `metis-video-frames-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const workDir = join(tmpdir(), `metis-video-frames-${Date.now()}-${randomBytes(4).toString("hex")}`);
 		await mkdir(workDir, { recursive: true });
 		try {
 			const images: Buffer[] = [];
@@ -463,7 +463,7 @@ const defaultVideoOperations: VideoOperations = {
 	},
 	async createMotionComposite(path, start, end, count = MOTION_DEFAULT_FRAME_COUNT, crop, signal) {
 		const numFrames = Math.max(MOTION_MIN_FRAME_COUNT, Math.min(MOTION_MAX_FRAME_COUNT, count || MOTION_DEFAULT_FRAME_COUNT));
-		const workDir = join(tmpdir(), `metis-video-motion-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const workDir = join(tmpdir(), `metis-video-motion-${Date.now()}-${randomBytes(4).toString("hex")}`);
 		await mkdir(workDir, { recursive: true });
 		try {
 			const frameTimes = motionFrameTimesForRange({ start, end }, numFrames);
@@ -610,7 +610,7 @@ const defaultVideoOperations: VideoOperations = {
 		}
 	},
 	async transcribe(path, range, language, signal) {
-		const workDir = join(tmpdir(), `metis-video-audio-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const workDir = join(tmpdir(), `metis-video-audio-${Date.now()}-${randomBytes(4).toString("hex")}`);
 		const wavPath = join(workDir, "audio.wav");
 		await mkdir(workDir, { recursive: true });
 		try {
