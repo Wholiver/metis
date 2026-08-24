@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="src/modes/interactive/assets/metis-pixel-mark-white-on-black.png" />
-    <img src="src/modes/interactive/assets/metis-pixel-mark.png" width="144" alt="Metis 像素标志" />
-  </picture>
+  <img src="docs/images/metis-readme-icon.png" width="144" alt="Metis 应用图标" />
 </p>
 
 <p align="center">
@@ -12,6 +9,7 @@
 <p align="center">
   <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&amp;logoColor=white" /></a>
   <a href="https://www.npmjs.com/package/@wholiver_hu/metis"><img alt="npm 版本" src="https://img.shields.io/npm/v/%40wholiver_hu%2Fmetis?label=npm&amp;color=CB3837" /></a>
+  <a href="https://github.com/Wholiver/metis/releases/latest"><img alt="最新 GitHub Release" src="https://img.shields.io/github/v/release/Wholiver/metis?label=release&amp;color=24292F" /></a>
   <a href="https://nodejs.org/"><img alt="Node.js 22.19.0 或更高版本" src="https://img.shields.io/badge/Node.js-%3E%3D22.19.0-339933?logo=nodedotjs&amp;logoColor=white" /></a>
   <a href="#许可证"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4C1" /></a>
 </p>
@@ -25,12 +23,6 @@
   <a href="#主要能力">主要能力</a> ·
   <a href="#工作方式">工作方式</a> ·
   <a href="#文档">文档</a>
-</p>
-
----
-
-<p align="center">
-  <img src="docs/images/metis-desktop.zh-CN.png" width="100%" alt="Metis Desktop 中文工作区" />
 </p>
 
 ## 快速开始
@@ -63,11 +55,13 @@ metis
 ## 主要能力
 
 - **Plan 与 Build 工作流** — 在只读 Plan 模式中安全调查，再由 Build 模式按已确认方案执行，并持久保存检查清单。
+- **面向 macOS 与 Windows 的 React 桌面端** — 在基于 Vite 重构的工作区中管理对话、计划、交互提问、附件、模型、Provider、会话与 Subagent 活动。
 - **持久记忆与恢复** — 检索可复用的项目知识；中断、上下文压缩或会话重载后继续工作。
 - **灵活的模型与认证** — 使用内置订阅登录、API Key Provider，或带模型发现能力的自定义 OpenAI 兼容 Provider。
 - **桌面工作区** — 通过选择器、剪贴板或拖放添加图片、视频、文本及其他文件，并以图形界面管理 Provider 和会话。
 - **原生命名递归多智能体体系** — 内置具名 Agent 角色（`coordinator`、`planner`、`implementer`、`reviewer`、`verifier`），支持 L0→L4 递归委派、工具白名单沙箱、Git Worktree 物理隔离与生命周期控制。
 - **TerminalBench 与 Harbor 评测就绪** — 无头机器可读 JSONL 执行、标准退出码（`0`/`1`/`2`）、最终回答文件隔离、全链路 Trace/Token/Cost 聚合以及官方 Python 适配器。
+- **性能工作流** — 针对实现、调试、评审、重构、研究与文档任务选择专用框架，采用自适应 T0–T3 层级、独立评审与证据门禁。
 - **视频证据** — 通过元数据、时间戳故事板、有序运动样本、高清帧、字幕与本地转录检查视频。
 - **可扩展核心** — 加载 TypeScript Extensions、Agent Skills、Prompt Templates、Themes 与 Metis Packages；通过 Print、JSON、RPC、Server 或 Node.js SDK 集成。
 - **经过验证的执行** — 协调 Subagents、保持工具结果顺序、运行相关检查，并逐项对照原始要求交付。
@@ -98,26 +92,13 @@ Metis 会在 Prompt、完整 Step、上下文压缩、错误、中止及完成�
 
 </details>
 
-<details>
-<summary><strong>性能样例</strong></summary>
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/metis-speed.zh-CN.dark.png" />
-    <img src="docs/images/metis-speed.zh-CN.png" width="100%" alt="Metis 与 OpenCode 的用户实测任务完成时间对比" />
-  </picture>
-</p>
-
-在一次相同任务的用户实测中，Metis 用时 1 分 30 秒，OpenCode 用时 3 分 30 秒，未观察到准确率差异。这只是单次对比，并非通用基准；实际结果取决于任务、模型、工具与运行环境。
-
-</details>
-
 ## 文档
 
 | 主题 | 指南 |
 | --- | --- |
 | 安装、认证与首次运行 | [快速入门](docs/quickstart.md) |
 | 命令与交互式使用 | [使用 Metis](docs/usage.md) |
+| 桌面端开发与 Windows | [Desktop 前端](docs/desktop-frontend-development.md) · [Windows](docs/windows.md) |
 | Provider 与自定义模型 | [Providers](docs/providers.md) · [Custom models](docs/models.md) |
 | 具名多智能体体系 | [多智能体与递归委派](docs/agents.md) |
 | 基准评测与无头模式 | [TerminalBench 与 Harbor 适配](docs/terminalbench.md) |
@@ -137,6 +118,7 @@ npm run build                 # 编译 TypeScript 并复制运行时资源
 npm test                      # 运行 Vitest 测试套件
 npm run clean                 # 删除编译输出
 npm run build:binary          # 构建独立二进制文件
+npm --prefix desktop run build # 构建 React/Vite Desktop Renderer
 ```
 
 软件包从 `@wholiver_hu/metis` 导出 Node.js SDK，并从 `@wholiver_hu/metis/rpc-entry` 导出 RPC 入口。

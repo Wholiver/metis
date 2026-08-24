@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="src/modes/interactive/assets/metis-pixel-mark-white-on-black.png" />
-    <img src="src/modes/interactive/assets/metis-pixel-mark.png" width="144" alt="Metis pixel mark" />
-  </picture>
+  <img src="docs/images/metis-readme-icon.png" width="144" alt="Metis app icon" />
 </p>
 
 <p align="center">
@@ -12,6 +9,7 @@
 <p align="center">
   <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/language-TypeScript-3178C6?logo=typescript&amp;logoColor=white" /></a>
   <a href="https://www.npmjs.com/package/@wholiver_hu/metis"><img alt="npm version" src="https://img.shields.io/npm/v/%40wholiver_hu%2Fmetis?label=npm&amp;color=CB3837" /></a>
+  <a href="https://github.com/Wholiver/metis/releases/latest"><img alt="latest GitHub release" src="https://img.shields.io/github/v/release/Wholiver/metis?label=release&amp;color=24292F" /></a>
   <a href="https://nodejs.org/"><img alt="Node.js 22.19.0 or newer" src="https://img.shields.io/badge/Node.js-%3E%3D22.19.0-339933?logo=nodedotjs&amp;logoColor=white" /></a>
   <a href="#license"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4C1" /></a>
 </p>
@@ -25,12 +23,6 @@
   <a href="#highlights">Highlights</a> ·
   <a href="#how-metis-works">How it works</a> ·
   <a href="#documentation">Documentation</a>
-</p>
-
----
-
-<p align="center">
-  <img src="docs/images/metis-desktop.png" width="100%" alt="Metis Desktop workspace" />
 </p>
 
 ## Quick start
@@ -63,11 +55,13 @@ Use `/login` for supported subscription providers, or configure an API key. Run 
 ## Highlights
 
 - **Plan and Build workflows** — investigate safely in read-only Plan mode, then execute an approved proposal with a persistent checklist in Build mode.
+- **React Desktop for macOS and Windows** — use the redesigned Vite-powered workspace for conversations, plans, interactive questions, attachments, models, providers, sessions, and subagent activity.
 - **Durable memory and recovery** — search reusable project knowledge and resume work after interruption, compaction, or session reload.
 - **Flexible models and authentication** — use built-in subscription login, API-key providers, or custom OpenAI-compatible providers with model discovery.
 - **Desktop workspace** — attach images, videos, text, and other files through the picker, clipboard, or drag and drop; manage providers and sessions graphically.
 - **Recursive Multi-Agent System** — native named agent definitions (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`), L0→L4 recursive delegation, role-based tool sandboxing, physical Git Worktree isolation, and deterministic lifecycle control.
 - **TerminalBench & Harbor Ready** — headless machine-readable JSONL execution, standardized exit codes (`0`/`1`/`2`), final answer separation, full trace aggregation, and official Python harness adapters.
+- **Performance workflows** — route implementation, debugging, review, refactoring, research, and documentation through task-specific frameworks, adaptive T0–T3 tiers, independent review, and evidence gates.
 - **Video evidence** — inspect local video through metadata, timestamped storyboards, ordered motion samples, high-resolution frames, subtitles, and local transcription.
 - **Extensible core** — add TypeScript extensions, Agent Skills, prompt templates, themes, and Metis packages; integrate through print, JSON, RPC, Server, or the Node.js SDK.
 - **Verified execution** — coordinate subagents, preserve tool-result ordering, run relevant checks, and compare delivery against the original request.
@@ -98,26 +92,13 @@ Use `/memory status|on|off|run|search|forget|reset`. Proposal artifacts and long
 
 </details>
 
-<details>
-<summary><strong>Performance example</strong></summary>
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/metis-speed.dark.png" />
-    <img src="docs/images/metis-speed.png" width="100%" alt="User test comparing Metis and OpenCode task completion time" />
-  </picture>
-</p>
-
-In one user test on the same task, Metis finished in 1 minute 30 seconds and OpenCode in 3 minutes 30 seconds, with no observed accuracy difference. This single comparison is not a universal benchmark; results depend on the task, model, tools, and environment.
-
-</details>
-
 ## Documentation
 
 | Topic | Guide |
 | --- | --- |
 | Install, authenticate, and start | [Quickstart](docs/quickstart.md) |
 | Commands and interactive usage | [Using Metis](docs/usage.md) |
+| Desktop development and Windows | [Desktop frontend](docs/desktop-frontend-development.md) · [Windows](docs/windows.md) |
 | Providers and custom models | [Providers](docs/providers.md) · [Custom models](docs/models.md) |
 | Multi-Agent System | [Named Agents & Delegation](docs/agents.md) |
 | Benchmark & Evaluation | [TerminalBench & Harbor](docs/terminalbench.md) |
@@ -137,6 +118,7 @@ npm run build                 # Compile TypeScript and copy runtime assets
 npm test                      # Run the Vitest suite
 npm run clean                 # Remove compiled output
 npm run build:binary          # Build the standalone binary
+npm --prefix desktop run build # Build the React/Vite Desktop renderer
 ```
 
 The package exports the Node.js SDK from `@wholiver_hu/metis` and the RPC entry point from `@wholiver_hu/metis/rpc-entry`.
