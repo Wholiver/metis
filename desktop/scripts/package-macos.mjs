@@ -37,7 +37,7 @@ async function run(command, args, { logOutput = true, ...options } = {}) {
 
 async function buildIcon() {
 	await mkdir(iconsetDir, { recursive: true });
-	const svgPath = path.join(desktopDir, "renderer", "assets", "metis-pixel-mark.svg");
+	const svgPath = path.join(desktopDir, "public", "assets", "metis-app-icon-centered.svg");
 	const variants = [
 		[16, "icon_16x16.png"],
 		[32, "icon_16x16@2x.png"],
@@ -112,7 +112,7 @@ try {
 	console.log("[2/6] 构建 Desktop renderer");
 	await run("npm", ["--prefix", desktopDir, "run", "build"]);
 
-	console.log("[3/6] 生成 README SVG 应用图标");
+	console.log("[3/6] 生成应用图标");
 	await buildIcon();
 
 	console.log("[4/6] 打包内置 CLI/Server 运行时");

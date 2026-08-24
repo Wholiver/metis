@@ -69,6 +69,9 @@ if (process.platform === "win32") {
 function createAppIcon() {
 	try {
 		const candidates = [
+			path.join(__dirname, "public", "assets", "metis-app-icon-centered.svg"),
+			path.join(__dirname, "assets", "metis-app-icon-centered.svg"),
+			path.join(__dirname, "renderer", "assets", "metis-app-icon-centered.svg"),
 			path.join(__dirname, "public", "assets", "metis-pixel-mark.svg"),
 			path.join(__dirname, "assets", "metis-pixel-mark.svg"),
 			path.join(__dirname, "renderer", "assets", "metis-pixel-mark.svg"),

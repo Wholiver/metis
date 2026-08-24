@@ -94,7 +94,7 @@ async function copyTree(source, destination) {
 }
 
 async function buildIcon() {
-	await writeFile(iconPath, createMetisIco());
+	await writeFile(iconPath, await createMetisIco());
 }
 
 async function buildBundledRuntime() {

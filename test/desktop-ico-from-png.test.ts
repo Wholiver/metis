@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createIcoFromPngs, encodeRgbaPng } from "../desktop/scripts/ico-from-png.mjs";
-import { createMetisIco, renderMetisMarkPng } from "../desktop/scripts/metis-icon.mjs";
+import { createMetisIco, renderMetisAppIconPng } from "../desktop/scripts/metis-icon.mjs";
 
 describe("createIcoFromPngs", () => {
 	it("embeds PNG payloads in a valid ICO header", () => {
@@ -17,10 +17,10 @@ describe("createIcoFromPngs", () => {
 });
 
 describe("createMetisIco", () => {
-	it("renders a non-empty mark and multi-size ICO", () => {
-		const png = renderMetisMarkPng(32);
+	it("renders the canonical app icon and embeds a multi-size ICO", async () => {
+		const png = await renderMetisAppIconPng(32);
 		expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-		const ico = createMetisIco([16, 32]);
+		const ico = await createMetisIco([16, 32]);
 		expect(ico.readUInt16LE(4)).toBe(2);
 		expect(ico.length).toBeGreaterThan(100);
 	});

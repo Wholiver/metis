@@ -77,7 +77,7 @@ async function copyTree(source, destination, { materialize = process.platform ==
 }
 
 async function buildIcon() {
-	await writeFile(iconPath, createMetisIco());
+	await writeFile(iconPath, await createMetisIco());
 }
 
 async function buildBundledRuntime() {
