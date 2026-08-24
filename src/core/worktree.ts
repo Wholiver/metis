@@ -6,6 +6,54 @@ import * as path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const SNAPSHOT_MAX_BUFFER = 64 * 1024 * 1024;
+const TRANSIENT_AGENT_FILE = /^\.metis-(?:agent-task-|subagent-|agent-.*\.log$)/;
+
+function isSafeSnapshotPath(relativePath: string): boolean {
+	return Boolean(relativePath)
+		&& !path.isAbsolute(relativePath)
+		&& !relativePath.split(/[\\/]/).includes("..")
+		&& !TRANSIENT_AGENT_FILE.test(path.basename(relativePath));
+}
+
+async function copyUntrackedFiles(cwd: string, workspacePath: string): Promise<void> {
+	const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
+		cwd,
+		maxBuffer: SNAPSHOT_MAX_BUFFER,
+	});
+	for (const relativePath of stdout.split("\0").filter(isSafeSnapshotPath)) {
+		const source = path.join(cwd, relativePath);
+		const target = path.join(workspacePath, relativePath);
+		const stat = await fs.lstat(source);
+		await fs.mkdir(path.dirname(target), { recursive: true });
+		if (stat.isSymbolicLink()) {
+			await fs.symlink(await fs.readlink(source), target);
+		} else if (stat.isFile()) {
+			await fs.copyFile(source, target);
+			await fs.chmod(target, stat.mode);
+		}
+	}
+}
+
+async function seedGitWorktreeFromParent(cwd: string, workspacePath: string): Promise<void> {
+	const { stdout } = await execFileAsync("git", ["diff", "--binary", "HEAD", "--", "."], {
+		cwd,
+		maxBuffer: SNAPSHOT_MAX_BUFFER,
+	});
+	if (stdout) {
+		const patchPath = path.join(workspacePath, `.metis-worktree-snapshot-${randomBytes(3).toString("hex")}.patch`);
+		await fs.writeFile(patchPath, stdout, "utf8");
+		try {
+			await execFileAsync("git", ["apply", "--whitespace=nowarn", patchPath], {
+				cwd: workspacePath,
+				maxBuffer: SNAPSHOT_MAX_BUFFER,
+			});
+		} finally {
+			await fs.unlink(patchPath).catch(() => {});
+		}
+	}
+	await copyUntrackedFiles(cwd, workspacePath);
+}
 
 /**
  * Information representing an isolated workspace or worktree (Feat 25)
@@ -89,6 +137,7 @@ export async function createIsolatedWorkspace(
 			const targetDirName = `metis-worktree-${branchName}`;
 			const worktreePath = path.join(tmpdir(), targetDirName);
 
+			let worktreeCreated = false;
 			try {
 				// Try creating git worktree with a new branch first
 				try {
@@ -96,13 +145,16 @@ export async function createIsolatedWorkspace(
 						cwd,
 						timeout: 10000,
 					});
+					worktreeCreated = true;
 				} catch {
 					// If branch already exists, attach without -b
 					await execFileAsync("git", ["worktree", "add", worktreePath, branchName], {
 						cwd,
 						timeout: 10000,
 					});
+					worktreeCreated = true;
 				}
+				await seedGitWorktreeFromParent(cwd, worktreePath);
 
 				const cleanup = async () => {
 					if (preserveOnExit) return;
@@ -138,8 +190,12 @@ export async function createIsolatedWorkspace(
 					preserveOnExit,
 					cleanup,
 				};
-			} catch {
-				// Fall through to temporary directory mode on git worktree failure
+			} catch (error) {
+				if (worktreeCreated) {
+					await execFileAsync("git", ["worktree", "remove", "--force", worktreePath], { cwd, timeout: 10000 }).catch(() => {});
+					if (!isBranch) await execFileAsync("git", ["branch", "-D", branchName], { cwd, timeout: 5000 }).catch(() => {});
+				}
+				throw new Error(`Failed to create current-state worktree: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
 	}

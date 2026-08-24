@@ -6,14 +6,14 @@ import type { ToolDefinition } from "../extensions/types.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const optionSchema = Type.Object({
-	label: Type.String({ minLength: 1 }),
-	description: Type.String({ minLength: 1 }),
-	recommended: Type.Optional(Type.Boolean()),
+	label: Type.String({ minLength: 1, description: "Option text in the user's conversation language" }),
+	description: Type.String({ minLength: 1, description: "Tradeoff or explanation in the user's conversation language" }),
+	recommended: Type.Optional(Type.Boolean({ description: "Whether this option is recommended" })),
 });
 const questionSchema = Type.Object({
 	id: Type.String({ minLength: 1 }),
-	header: Type.String({ minLength: 1, maxLength: 48 }),
-	question: Type.String({ minLength: 1 }),
+	header: Type.String({ minLength: 1, maxLength: 48, description: "Short question title in the user's conversation language" }),
+	question: Type.String({ minLength: 1, description: "Detailed question text in the user's conversation language" }),
 	options: Type.Optional(Type.Array(optionSchema, { minItems: 2, maxItems: 3 })),
 });
 export const askUserSchema = Type.Object({ questions: Type.Array(questionSchema, { minItems: 1, maxItems: 3 }) });
@@ -25,8 +25,11 @@ export function createAskUserToolDefinition(options: AskUserToolOptions = {}): T
 		name: "ask_user",
 		label: "Ask user",
 		description: "Ask the user one to three material clarification questions and wait for structured answers. Use this instead of writing clarification questions in ordinary assistant text when repository evidence cannot resolve a decision that would materially change the result.",
-		promptSnippet: "Ask the user a material clarification question",
-		promptGuidelines: ["Use ask_user for material ambiguity that cannot be resolved from available evidence. Never write clarification questions as ordinary assistant text. Do not ask for facts that can be discovered locally."],
+		promptSnippet: "Ask the user a material clarification question in the user's conversation language",
+		promptGuidelines: [
+			"CRITICAL LANGUAGE RULE: Always write all headers, questions, option labels, and option descriptions in the user's conversation language (e.g. Chinese if the user communicates in Chinese). Never output English options or questions for non-English user interactions.",
+			"Use ask_user for material ambiguity that cannot be resolved from available evidence. Never write clarification questions as ordinary assistant text. Do not ask for facts that can be discovered locally.",
+		],
 		capabilities: { effect: "read", parallelSafe: false },
 		parameters: askUserSchema,
 		execute: async (toolCallId, input, signal) => {

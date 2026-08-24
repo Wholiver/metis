@@ -1,17 +1,19 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import {
+	attachmentPrompt,
+	classifyAttachment,
+	composeAttachmentPayload,
+	extractImageAttachments,
+	filesFromTransfer,
+	formatFileSize,
+	imageMimeType,
+	parseAttachmentPayloadText,
+	transferHasFiles,
+} from "../desktop/src/lib/attachments.ts";
 
 const require = createRequire(import.meta.url);
-const attachments = require("../desktop/renderer/attachments.js") as {
-	attachmentPrompt: (file: { kind: string; name: string; content?: string; path?: string }) => string;
-	classifyAttachment: (file: { name: string; type?: string }) => "image" | "video" | "text" | "file";
-	filesFromTransfer: (transfer: { files?: unknown[]; items?: unknown[] }) => unknown[];
-	formatFileSize: (size: number) => string;
-	imageMimeType: (file: { name: string; type?: string }) => string;
-	insertTextAtSelection: (input: Record<string, unknown>, text: string) => string;
-	transferHasFiles: (transfer: { files?: unknown[]; items?: unknown[]; types?: string[] }) => boolean;
-};
 const menu = require("../desktop/main-menu.cjs") as {
 	createApplicationMenuTemplate: (platform: string, appName?: string) => Array<{ label?: string; role?: string; submenu?: Array<{ role?: string }> }>;
 	createEditorContextMenuTemplate: (params: Record<string, unknown>) => Array<{ role?: string; enabled?: boolean; type?: string }>;
@@ -19,35 +21,48 @@ const menu = require("../desktop/main-menu.cjs") as {
 
 describe("desktop attachment helpers", () => {
 	it("classifies image, video, text, and binary files even when Windows omits MIME types", () => {
-		expect(attachments.classifyAttachment({ name: "shot.png", type: "image/png" })).toBe("image");
-		expect(attachments.classifyAttachment({ name: "recording.MP4", type: "" })).toBe("video");
-		expect(attachments.classifyAttachment({ name: "notes.md", type: "" })).toBe("text");
-		expect(attachments.classifyAttachment({ name: "archive.zip", type: "application/zip" })).toBe("file");
-		expect(attachments.imageMimeType({ name: "photo.JPG", type: "" })).toBe("image/jpeg");
+		expect(classifyAttachment({ name: "shot.png", type: "image/png" })).toBe("image");
+		expect(classifyAttachment({ name: "recording.MP4", type: "" })).toBe("video");
+		expect(classifyAttachment({ name: "notes.md", type: "" })).toBe("text");
+		expect(classifyAttachment({ name: "archive.zip", type: "application/zip" })).toBe("file");
+		expect(imageMimeType({ name: "photo.JPG", type: "" })).toBe("image/jpeg");
 	});
 
 	it("extracts files from macOS and Windows DataTransfer variants", () => {
 		const file = { name: "clip.mov" };
-		expect(attachments.filesFromTransfer({ files: [file] })).toEqual([file]);
-		expect(attachments.filesFromTransfer({ items: [{ kind: "file", getAsFile: () => file }] })).toEqual([file]);
-		expect(attachments.transferHasFiles({ types: ["Files"] })).toBe(true);
+		expect(filesFromTransfer({ files: [file] } as never)).toEqual([file]);
+		expect(filesFromTransfer({ items: [{ kind: "file", getAsFile: () => file }] } as never)).toEqual([file]);
+		expect(transferHasFiles({ types: ["Files"] } as never)).toBe(true);
 	});
 
-	it("inserts pasted text at selection without destroying surrounding input", () => {
-		const dispatchEvent = vi.fn();
-		const setSelectionRange = vi.fn();
-		const input = { value: "hello world", selectionStart: 6, selectionEnd: 11, dispatchEvent, setSelectionRange };
-		expect(attachments.insertTextAtSelection(input, "Metis")).toBe("hello Metis");
-		expect(setSelectionRange).toHaveBeenCalledWith(11, 11);
-		expect(dispatchEvent).toHaveBeenCalledOnce();
-	});
-
-	it("formats inline text and path-backed video prompts", () => {
-		expect(attachments.attachmentPrompt({ kind: "text", name: "a.txt", content: "hello" })).toContain("hello");
-		const videoPrompt = attachments.attachmentPrompt({ kind: "video", name: "demo.mp4", path: "C:\\Users\\me\\demo.mp4" });
+	it("round-trips attachment metadata while keeping model-readable context", () => {
+		const textAttachment = { id: "text-1", kind: "text" as const, name: "a.txt", content: "hello", sizeText: "5 B" };
+		expect(attachmentPrompt(textAttachment)).toContain("hello");
+		const video = { id: "video-1", kind: "video" as const, name: "demo.mp4", path: "C:\\Users\\me\\demo.mp4", sizeText: "1.0 MB" };
+		const videoPrompt = attachmentPrompt(video);
 		expect(videoPrompt).toContain("video 工具");
 		expect(videoPrompt).toContain("C:\\Users\\me\\demo.mp4");
-		expect(attachments.formatFileSize(1024 * 1024)).toBe("1.0 MB");
+		const parsed = parseAttachmentPayloadText(`Inspect this\n\n${videoPrompt}`);
+		expect(parsed.text).toBe("Inspect this");
+		expect(parsed.attachments).toEqual([video]);
+		expect(formatFileSize(1024 * 1024)).toBe("1.0 MB");
+	});
+
+	it("builds Server ImageContent and restores image previews from message history", () => {
+		const image = {
+			id: "image-1",
+			kind: "image" as const,
+			name: "shot.png",
+			sizeText: "1.0 KB",
+			mimeType: "image/png",
+			data: "iVBORw0KGgo=",
+			previewUrl: "data:image/png;base64,iVBORw0KGgo=",
+		};
+		const payload = composeAttachmentPayload("inspect", [image]);
+		expect(payload.images).toEqual([{ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" }]);
+		expect(extractImageAttachments([{ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" }])).toMatchObject([
+			{ kind: "image", previewUrl: "data:image/png;base64,iVBORw0KGgo=" },
+		]);
 	});
 });
 
@@ -77,18 +92,27 @@ describe("desktop edit menus", () => {
 });
 
 describe("desktop attachment wiring", () => {
-	it("loads helper before app and accepts every file type from plus picker", () => {
-		const html = readFileSync(new URL("../desktop/renderer/index.html", import.meta.url), "utf8");
-		expect(html.indexOf('src="attachments.js"')).toBeLessThan(html.indexOf('src="app.js"'));
-		expect(html).toMatch(/<input type="file" id="attachInput" multiple(?![^>]*accept=)/);
+	it("accepts every file type from the active React plus picker", () => {
+		const composer = readFileSync(new URL("../desktop/src/components/chat/Composer.tsx", import.meta.url), "utf8");
+		expect(composer).toContain('type="file"');
+		expect(composer).toContain("multiple");
+		expect(composer).not.toMatch(/type="file"[\s\S]{0,80}accept=/);
+		expect(composer).toContain("onClick={() => fileInputRef.current?.click()}");
+		expect(composer).toContain("data-composer-attachments");
 	});
 
-	it("wires paste and drag/drop to the unified attachment handler", () => {
-		const app = readFileSync(new URL("../desktop/renderer/app.js", import.meta.url), "utf8");
-		expect(app).toContain('addEventListener("paste"');
-		expect(app).toContain('addEventListener("dragenter"');
-		expect(app).toContain('addEventListener("drop"');
-		expect(app).toContain('handleAttachments(files, "paste")');
-		expect(app).toContain('handleAttachments(attachmentTools.filesFromTransfer(event.dataTransfer), "drop")');
+	it("wires picker, paste, drop, IPC fallback, and Server images", () => {
+		const composer = readFileSync(new URL("../desktop/src/components/chat/Composer.tsx", import.meta.url), "utf8");
+		const hook = readFileSync(new URL("../desktop/src/hooks/useMetisServer.ts", import.meta.url), "utf8");
+		const preload = readFileSync(new URL("../desktop/preload.cjs", import.meta.url), "utf8");
+		const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
+		expect(composer).toContain("onPaste={(event)");
+		expect(composer).toContain("onDragEnter={(event)");
+		expect(composer).toContain("onDrop={(event)");
+		expect(composer).toContain("filesFromTransfer(event.dataTransfer)");
+		expect(composer).toContain("desktop?.attachments?.save?.(");
+		expect(hook).toContain("...(options.images?.length ? { images: options.images } : {})");
+		expect(preload).toContain('ipcRenderer.invoke("attachment:save", attachment)');
+		expect(main).toContain('ipcMain.handle("attachment:save"');
 	});
 });

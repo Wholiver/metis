@@ -15,6 +15,8 @@ import type {
 } from "@earendil-works/metis-ai/compat";
 import { registerFauxProvider } from "@earendil-works/metis-ai/compat";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
+import type { AskUserHandler } from "../../src/core/ask-user.ts";
+import type { PerformanceAttendance } from "../../src/core/performance-runtime.ts";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
 import type { ExtensionRunner } from "../../src/core/extensions/index.ts";
 import { convertToLlm } from "../../src/core/messages.ts";
@@ -73,6 +75,8 @@ export interface HarnessOptions {
 	withConfiguredAuth?: boolean;
 	autoSessionName?: boolean;
 	collaborationMode?: "build" | "plan";
+	askUserHandler?: AskUserHandler;
+	performanceAttendance?: PerformanceAttendance;
 }
 
 export interface Harness {
@@ -180,6 +184,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		sessionManager,
 		settingsManager,
 		cwd: tempDir,
+		agentDir: tempDir,
 		modelRegistry,
 		resourceLoader,
 		baseToolsOverride: toolMap,
@@ -189,6 +194,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		extensionRunnerRef,
 		autoSessionName: options.autoSessionName,
 		collaborationMode: options.collaborationMode,
+		askUserHandler: options.askUserHandler,
+		performanceAttendance: options.performanceAttendance,
 	});
 
 	const events: AgentSessionEvent[] = [];

@@ -16,6 +16,7 @@ import type { CollaborationMode, WorkflowPlanState, WorkflowProposalState } from
 import type { AskUserRequest } from "../../core/ask-user.ts";
 import type { InstructionSourceSummary } from "../../core/system-prompt.ts";
 import type { MemoryRecordSummary, MemoryState } from "../../core/memory-coordinator.ts";
+import type { PerformanceRunSummary } from "../../core/performance-runtime.ts";
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -113,6 +114,7 @@ export interface RpcSessionState {
 	contextWindowId: string;
 	workflowPlan?: WorkflowPlanState;
 	workflowProposal?: WorkflowProposalState;
+	performanceRun?: PerformanceRunSummary;
 	pendingUserInput?: AskUserRequest;
 	instructionSources: InstructionSourceSummary[];
 	instructionDiagnostics: string[];

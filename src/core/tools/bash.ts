@@ -23,14 +23,30 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
+/** Safety net for nested agents: unbounded grep/rg was hanging sync spawn_agent trees. */
+export const DEFAULT_SUBAGENT_BASH_TIMEOUT_SECONDS = 180;
 
-function resolveTimeoutMs(timeout: number | undefined): number | undefined {
-	if (timeout === undefined) return undefined;
-	if (!Number.isFinite(timeout) || timeout <= 0) {
+function resolveSubagentDepth(env: NodeJS.ProcessEnv = process.env): number {
+	const raw = env.METIS_AGENT_DEPTH;
+	if (raw === undefined || raw === "") return 0;
+	const depth = Number(raw);
+	return Number.isFinite(depth) && depth > 0 ? depth : 0;
+}
+
+/** Resolve effective bash timeout seconds (nested subagents get a default when omitted). */
+export function resolveBashTimeoutSeconds(timeout: number | undefined, env: NodeJS.ProcessEnv = process.env): number | undefined {
+	if (timeout !== undefined) return timeout;
+	return resolveSubagentDepth(env) > 0 ? DEFAULT_SUBAGENT_BASH_TIMEOUT_SECONDS : undefined;
+}
+
+function resolveTimeoutMs(timeout: number | undefined, env: NodeJS.ProcessEnv = process.env): number | undefined {
+	const effectiveTimeout = resolveBashTimeoutSeconds(timeout, env);
+	if (effectiveTimeout === undefined) return undefined;
+	if (!Number.isFinite(effectiveTimeout) || effectiveTimeout <= 0) {
 		throw new Error("Invalid timeout: must be a finite number of seconds");
 	}
 
-	const timeoutMs = timeout * 1000;
+	const timeoutMs = effectiveTimeout * 1000;
 	if (timeoutMs > MAX_TIMEOUT_MS) {
 		throw new Error(`Invalid timeout: maximum is ${MAX_TIMEOUT_SECONDS} seconds`);
 	}
@@ -39,7 +55,9 @@ function resolveTimeoutMs(timeout: number | undefined): number | undefined {
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	timeout: Type.Optional(Type.Number({
+		description: `Timeout in seconds (optional; nested subagents default to ${DEFAULT_SUBAGENT_BASH_TIMEOUT_SECONDS}s when omitted)`,
+	})),
 });
 
 export type BashToolInput = Static<typeof bashSchema>;
@@ -82,7 +100,7 @@ export interface BashOperations {
 export function createLocalBashOperations(options?: { shellPath?: string }): BashOperations {
 	return {
 		exec: async (command, cwd, { onData, signal, timeout, env }) => {
-			const timeoutMs = resolveTimeoutMs(timeout);
+			const timeoutMs = resolveTimeoutMs(timeout, env ?? process.env);
 			if (signal?.aborted) {
 				throw new Error("aborted");
 			}
@@ -135,7 +153,9 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 					throw new Error("aborted");
 				}
 				if (timedOut) {
-					throw new Error(`timeout:${timeout}`);
+					const timedOutSeconds = timeout
+						?? (timeoutMs !== undefined ? Math.round(timeoutMs / 1000) : DEFAULT_SUBAGENT_BASH_TIMEOUT_SECONDS);
+					throw new Error(`timeout:${timedOutSeconds}`);
 				}
 				return { exitCode };
 			} finally {
@@ -298,7 +318,7 @@ export function createBashToolDefinition(
 	return {
 		name: "bash",
 		label: "bash",
-		description: `Run bash in cwd; return stdout+stderr. Tail truncates at ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first; full output goes to temp file. Optional seconds timeout.`,
+		description: `Run bash in cwd; return stdout+stderr. Tail truncates at ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first; full output goes to temp file. Optional seconds timeout (nested subagents default to ${DEFAULT_SUBAGENT_BASH_TIMEOUT_SECONDS}s).`,
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 		parameters: bashSchema,
 		async execute(

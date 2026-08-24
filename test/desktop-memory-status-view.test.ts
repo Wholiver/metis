@@ -50,6 +50,31 @@ describe("Desktop Memory status dashboard", () => {
 		expect(view.createMemoryStatusView({ enabled: true, phase: "consolidating" })).toMatchObject({ tone: "working", labelKey: "settingsMemoryStateConsolidating", summaryKey: "settingsMemorySummaryConsolidating" });
 	});
 
+	it("computes real-time decreasing pending percentage and incremental additions during extraction", () => {
+		const extracting = view.createMemoryStatusView({
+			enabled: true,
+			phase: "extracting",
+			globalCount: 2,
+			projectCount: 5,
+			pendingJobs: 75,
+			extractingTotal: 100,
+			extractingProcessed: 25,
+			extractingAdded: 5,
+			extractingSkipped: 20,
+		});
+		expect(extracting).toMatchObject({
+			tone: "working",
+			labelKey: "settingsMemoryStateExtracting",
+			pendingJobs: 75,
+			pendingPercent: 75,
+			lastRunValue: "+5",
+			lastRunDetailKey: "settingsMemoryLastRunDetail",
+			lastRunDetailVariables: { processed: 25, skipped: 20 },
+			addedPercent: 20,
+			skippedPercent: 80,
+		});
+	});
+
 	it("loads the helper before app.js and renders semantic, responsive status regions", () => {
 		const html = read("desktop/renderer/index.html");
 		const styles = read("desktop/renderer/styles.css");

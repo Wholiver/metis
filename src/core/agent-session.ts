@@ -16,6 +16,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
+import { getAgentDir } from "../config.ts";
 import type {
 	Agent,
 	AgentEvent,
@@ -118,6 +119,14 @@ import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts"
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 import { type MemoryCoordinator, type MemoryRecordSummary, type MemorySearchOptions, type MemoryState } from "./memory-coordinator.ts";
+import {
+	PerformanceRuntime,
+	summarizePerformanceRun,
+	type PerformanceAttendance,
+	type PerformanceConcurrency,
+	type PerformanceRunState,
+	type PerformanceRunSummary,
+} from "./performance-runtime.ts";
 
 // ============================================================================
 // Skill Block Parsing
@@ -204,6 +213,8 @@ export interface AgentSessionConfig {
 	sessionManager: SessionManager;
 	settingsManager: SettingsManager;
 	cwd: string;
+	/** Global Metis configuration directory. Performance governance lives here, never in cwd. */
+	agentDir?: string;
 	/** Models to cycle through with Ctrl+P (from --models flag) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 	/** Resource loader for skills, prompts, themes, context files, system prompt */
@@ -235,6 +246,8 @@ export interface AgentSessionConfig {
 	collaborationMode?: CollaborationMode;
 	/** Host-provided interactive bridge for built-in ask_user. */
 	askUserHandler?: AskUserHandler;
+	/** Whether native Performance prompts may ask the operator for run knobs. */
+	performanceAttendance?: PerformanceAttendance;
 	/** Durable advisory memory; omitted for ephemeral and subagent sessions. */
 	memoryCoordinator?: MemoryCoordinator;
 }
@@ -397,12 +410,14 @@ export class AgentSession {
 	private _instructionStack!: InstructionStack;
 	private _activeRunInstructionStack: InstructionStack | undefined;
 	private readonly _workflowRuntime = new WorkflowRuntime();
+	private readonly _performanceRuntime: PerformanceRuntime;
 	private _collaborationMode: CollaborationMode = "build";
 	/** Configured Build tool set. Plan mode derives a read-only view without replacing it. */
 	private _buildToolNames: string[] | undefined;
 
 	private _memoryCoordinator?: MemoryCoordinator;
 	private _askUserHandler?: AskUserHandler;
+	private _performanceAttendance: PerformanceAttendance;
 	private _pendingUserInput?: AskUserRequest;
 	private _subagentLaunchBatchOpen = false;
 	private _subagentPauseActive = false;
@@ -419,6 +434,7 @@ export class AgentSession {
 		this._resourceLoader = config.resourceLoader;
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
+		this._performanceRuntime = new PerformanceRuntime(config.agentDir ?? getAgentDir());
 		this._modelRegistry = config.modelRegistry;
 		this._autoSessionName = config.autoSessionName ?? false;
 		this._collaborationMode = config.collaborationMode ?? "build";
@@ -430,6 +446,7 @@ export class AgentSession {
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 		this._memoryCoordinator = config.memoryCoordinator;
 		this._askUserHandler = config.askUserHandler;
+		this._performanceAttendance = config.performanceAttendance ?? "unattended";
 		this._memoryCoordinator?.on((event) => this._emit(event));
 		this._memoryCoordinator?.start();
 
@@ -1169,6 +1186,11 @@ export class AgentSession {
 		return (await this._memoryCoordinator?.run(true)) ?? this.memoryState;
 	}
 
+	abortMemory(): MemoryState {
+		this._memoryCoordinator?.abort();
+		return this.memoryState;
+	}
+
 	searchMemory(query?: string, limit?: number, filterOptions?: MemorySearchOptions): MemoryRecordSummary[] { return this._memoryCoordinator?.search(query, limit, filterOptions) ?? []; }
 	queryMemoryDb(sql: string, params?: Array<string | number | null | undefined>): Array<Record<string, unknown>> { return this._memoryCoordinator?.query(sql, params) ?? []; }
 	forgetMemory(id: string): boolean {
@@ -1198,6 +1220,22 @@ export class AgentSession {
 	/** Latest durable conversational plan. Old sessions recover lazily without a migration write. */
 	get workflowProposal(): WorkflowProposalState | undefined {
 		return resolveWorkflowProposal(this.sessionManager.getBranch());
+	}
+
+	/** Explicit-only Performance run state for this session/process, if any. */
+	get performanceRun(): Readonly<PerformanceRunState> | undefined {
+		return this._performanceRuntime.state;
+	}
+
+	/** Safe transport view; mission text and gate evidence stay in governance files. */
+	get performanceRunSummary(): PerformanceRunSummary | undefined {
+		return summarizePerformanceRun(this._performanceRuntime.state);
+	}
+
+	private _appendPerformanceRunEntry(state: PerformanceRunState): void {
+		const entryId = this.sessionManager.appendCustomEntry("performance_run", state);
+		const entry = this.sessionManager.getEntry(entryId);
+		if (entry) this._emit({ type: "entry_appended", entry });
 	}
 
 	private _appendWorkflowPlanEntry(plan: Omit<WorkflowPlanState, "updatedAt">): void {
@@ -1261,6 +1299,234 @@ export class AgentSession {
 			return response;
 		}
 		finally { if (this._pendingUserInput?.requestId === request.requestId) this._pendingUserInput = undefined; }
+	}
+
+	/** Hosts with a visible ask surface opt into the upstream attended run chooser. */
+	setPerformanceAttendance(attendance: PerformanceAttendance): void {
+		if (this.isStreaming || this.isCompacting) throw new Error("Cannot change Performance attendance while the agent is running.");
+		this._performanceAttendance = attendance;
+	}
+
+	get performanceAttendance(): PerformanceAttendance {
+		return this._performanceAttendance;
+	}
+
+	private _parsePerformanceInvocation(text: string): {
+		mission: string;
+		concurrency?: PerformanceConcurrency;
+		maxConcurrent?: number;
+		agentSelection?: "off" | "auto" | "explicit";
+		agentModels?: Array<{ provider: string; model: string }>;
+		hasDirectives: boolean;
+	} {
+		let mission = text;
+		let concurrency: PerformanceConcurrency | undefined;
+		let maxConcurrent: number | undefined;
+		let agentSelection: "off" | "auto" | "explicit" | undefined;
+		let agentModels: Array<{ provider: string; model: string }> | undefined;
+		let hasDirectives = false;
+		const modeMatch = mission.match(/\bmode=([^\s]+)/i);
+		const leadingMode = mission.match(/^\s*(tokensaver|wide|billionaire|custom)\b/i);
+		const mode = (modeMatch?.[1] ?? leadingMode?.[1])?.toLowerCase();
+		if (mode) {
+			hasDirectives = true;
+			if (mode === "tokensaver") concurrency = "tokensaver";
+			else if (mode === "wide" || mode === "billionaire") concurrency = "wide";
+			else if (mode === "custom") concurrency = "custom";
+			else throw new Error(`Invalid Performance mode ${JSON.stringify(mode)}.`);
+			mission = mission.replace(modeMatch?.[0] ?? leadingMode![0], " ");
+		}
+		const capMatch = mission.match(/\bmax_subs=([^\s]+)/i);
+		if (capMatch) {
+			hasDirectives = true;
+			const cap = Number(capMatch[1]);
+			if (!Number.isInteger(cap) || cap < 1 || cap > 200) throw new Error(`Invalid Performance max_subs ${JSON.stringify(capMatch[1])}.`);
+			if (concurrency !== "custom") throw new Error("max_subs requires mode=custom.");
+			maxConcurrent = cap;
+			mission = mission.replace(capMatch[0], " ");
+		}
+		if (concurrency === "custom" && maxConcurrent === undefined) throw new Error("mode=custom requires max_subs=N.");
+		const agentsMatch = mission.match(/\bagents=([^\s]+)/i);
+		if (agentsMatch) {
+			hasDirectives = true;
+			const requested = agentsMatch[1]!;
+			const available = this._modelRegistry.getAvailable();
+			const resolveExact = (entry: string): Model<any> => {
+				const matches = available.filter((model) => entry === `${model.provider}/${model.id}` || entry === `${model.provider}:${model.id}` || entry === model.id);
+				if (matches.length !== 1) throw new Error(`Performance agents selector ${JSON.stringify(entry)} is not one exact configured model.`);
+				return matches[0]!;
+			};
+			if (requested === "off") agentSelection = "off";
+			else if (requested === "auto") agentSelection = "auto";
+			else {
+				const autoPool = requested.startsWith("auto:");
+				const entries = (autoPool ? requested.slice("auto:".length) : requested).split(",").filter(Boolean);
+				if (!entries.length) throw new Error("Performance agents selector requires one or more exact configured models.");
+				agentSelection = autoPool ? "auto" : "explicit";
+				agentModels = entries.map(resolveExact).map((model) => ({ provider: model.provider, model: model.id }));
+			}
+			mission = mission.replace(agentsMatch[0], " ");
+		}
+		return { mission: hasDirectives ? mission.replace(/\s+/g, " ").trim() : text, concurrency, maxConcurrent, agentSelection, agentModels, hasDirectives };
+	}
+
+	private async _resolvePerformanceStart(mission: string, invocation?: ReturnType<AgentSession["_parsePerformanceInvocation"]>): Promise<{
+		kind: "start";
+		mission: string;
+		concurrency: PerformanceConcurrency;
+		maxConcurrent: number;
+		agentSelection: "off" | "auto" | "explicit";
+		agentModels: Array<{ provider: string; model: string }>;
+		attendance: PerformanceAttendance;
+		effortCapability: "selectable" | "inherited-only" | "unsupported" | "unknown";
+		maxReasoningEffort?: string;
+	}> {
+		const requestedModels = invocation?.agentModels?.map(({ provider, model }) => this._modelRegistry.find(provider, model)).filter((model): model is Model<any> => Boolean(model)) ?? [];
+		const eligibleModels = requestedModels.length > 0
+			? requestedModels
+			: this.model
+			? [this.model, ...this._scopedModels.map((entry) => entry.model)]
+				.filter((model, index, all) => model.provider === this.model!.provider && this._modelRegistry.hasConfiguredAuth(model) && all.findIndex((candidate) => modelsAreEqual(candidate, model)) === index)
+			: [];
+		const levels = eligibleModels.flatMap((model) => getSupportedThinkingLevels(model) as ThinkingLevel[]);
+		const effortRank = (level: ThinkingLevel | undefined) => ["off", "minimal", "low", "medium", "high", "xhigh"].indexOf(level ?? "off");
+		const maxReasoningEffort = levels.reduce<ThinkingLevel | undefined>((maximum, level) => effortRank(level) > effortRank(maximum) ? level : maximum, undefined);
+		const effortCapability = !this.model
+			? "unknown"
+			: eligibleModels.some((model) => getSupportedThinkingLevels(model).length > 1) ? "selectable" : levels[0] === "off" ? "unsupported" : "inherited-only";
+		let concurrency: PerformanceConcurrency = invocation?.concurrency ?? "tokensaver";
+		let maxConcurrent = invocation?.maxConcurrent ?? (concurrency === "wide" ? 200 : 6);
+		let agentSelection: "off" | "auto" | "explicit" = invocation?.agentSelection ?? "off";
+		let agentModels = invocation?.agentModels ?? [];
+		let attendance: PerformanceAttendance = "unattended";
+		if (!invocation?.hasDirectives && this._performanceAttendance === "attended" && this._askUserHandler) {
+			attendance = "attended";
+			const isChinese = /[\u4e00-\u9fa5]/.test(mission);
+			const response = await this._askUser({
+				requestId: `performance-chooser-${randomUUID()}`,
+				toolCallId: `performance-chooser-${randomUUID()}`,
+				questions: isChinese
+					? [
+						{
+							id: "performance_concurrency",
+							header: "并发策略",
+							question: "为本次任务执行选择并发策略。",
+							options: [
+								{ label: "tokensaver（省 Token 模式）", description: "最多 6 个并发 Agent；适合日常常规任务（推荐）。", recommended: true },
+								{ label: "wide（宽并发模式）", description: "最多 200 个并发 Agent；适合大规模完全解耦的独立任务。" },
+								{ label: "custom（自定义模式）", description: "自定义并发模式；默认并发上限为 12。" },
+							],
+						},
+						{
+							id: "performance_agent_selection",
+							header: "子 Agent 策略",
+							question: "选择子 Agent 模型的调用与思考深度策略。",
+							options: [
+								{ label: "inherit（继承当前配置）", description: "子 Agent 继承当前模型与思考配置（推荐）。", recommended: true },
+								{ label: "auto-tier（按角色自动分级）", description: "根据角色等级原生自适应分配思考强度。" },
+								{ label: "custom-set（手动指定策略）", description: "保持明确的操作员指定子 Agent 策略。" },
+							],
+						},
+						{
+							id: "performance_custom_cap",
+							header: "并发上限",
+							question: "如果上一项选择了自定义模式，请选择并发 Agent 上限；否则此项将被自动忽略。",
+							options: [
+								{ label: "6", description: "保守并发上限。" },
+								{ label: "12", description: "均衡并发上限（推荐）。", recommended: true },
+								{ label: "24", description: "高并发上限（适用于独立分支）。" },
+							],
+						},
+					]
+					: [
+						{
+							id: "performance_concurrency",
+							header: "Concurrency",
+							question: "Choose parallelism for this run.",
+							options: [
+								{ label: "tokensaver", description: "Up to 6 live agents; recommended for ordinary work.", recommended: true },
+								{ label: "wide", description: "Up to 200 live agents for proven disjoint work." },
+								{ label: "custom", description: "Use custom mode; default ceiling is 12 unless host provides a numeric value." },
+							],
+						},
+						{
+							id: "performance_agent_selection",
+							header: "Agent selection",
+							question: "Choose how child model and reasoning settings are selected.",
+							options: [
+								{ label: "inherit", description: "Children inherit current model and reasoning settings.", recommended: true },
+								{ label: "auto-tier", description: "Use native role-aware reasoning effort where supported." },
+								{ label: "custom-set", description: "Keep an explicit operator-selected child-agent policy." },
+							],
+						},
+						{
+							id: "performance_custom_cap",
+							header: "Custom cap",
+							question: "If you choose custom concurrency, choose its live-agent ceiling; otherwise this answer is ignored.",
+							options: [
+								{ label: "6", description: "Conservative custom ceiling." },
+								{ label: "12", description: "Balanced custom ceiling.", recommended: true },
+								{ label: "24", description: "High custom ceiling for independently owned lanes." },
+							],
+						},
+					],
+			});
+			if (response.cancelled) throw new Error("Performance run setup cancelled by the operator.");
+			const answers = new Map(response.answers.map((answer) => [answer.id, answer.value.trim().toLowerCase()]));
+			const selectedConcurrency = answers.get("performance_concurrency") || "";
+			if (selectedConcurrency === "wide" || selectedConcurrency.includes("wide")) {
+				concurrency = "wide";
+				maxConcurrent = 200;
+			} else if (selectedConcurrency === "custom" || selectedConcurrency.includes("custom")) {
+				concurrency = "custom";
+				const capStr = answers.get("performance_custom_cap") || "";
+				const customCap = Number(capStr.replace(/[^0-9]/g, "")) || 12;
+				if (!Number.isInteger(customCap) || customCap < 1 || customCap > 200) {
+					throw new Error(`Invalid custom Performance concurrency cap ${JSON.stringify(answers.get("performance_custom_cap"))}.`);
+				}
+				maxConcurrent = customCap;
+			} else if (selectedConcurrency === "tokensaver" || selectedConcurrency.includes("tokensaver") || !selectedConcurrency) {
+				concurrency = "tokensaver";
+				maxConcurrent = 6;
+			} else {
+				throw new Error(`Invalid Performance concurrency selection ${JSON.stringify(selectedConcurrency)}.`);
+			}
+			const selectedAgents = answers.get("performance_agent_selection") || "";
+			if (selectedAgents === "auto-tier" || selectedAgents.includes("auto-tier") || selectedAgents.includes("auto")) agentSelection = "auto";
+			else if (selectedAgents === "custom-set" || selectedAgents.includes("custom-set") || selectedAgents.includes("custom")) agentSelection = "explicit";
+			else if (selectedAgents === "inherit" || selectedAgents.includes("inherit") || !selectedAgents) agentSelection = "off";
+			else throw new Error(`Invalid Performance agent selection ${JSON.stringify(selectedAgents)}.`);
+		}
+		return { kind: "start", mission, concurrency, maxConcurrent, agentSelection, agentModels, attendance, effortCapability, maxReasoningEffort };
+	}
+
+	private _getPerformanceChildModel(childRole: string): Model<any> | undefined {
+		const run = this._performanceRuntime.state;
+		if (!run || run.agentSelection === "off" || !this.model) return undefined;
+		const criticalRoles = new Set(["scope-coordinator", "planner", "reviewer", "fresh-verifier", "verifier", "juror", "goal-checker", "arbiter", "depth-prober"]);
+		const explicitCandidates = run.agentModels.map(({ provider, model }) => this._modelRegistry.find(provider, model)).filter((model): model is Model<any> => Boolean(model));
+		const candidates = (explicitCandidates.length > 0 ? explicitCandidates : [this.model, ...this._scopedModels.map((entry) => entry.model)])
+			.filter((model, index, all) => (explicitCandidates.length > 0 || model.provider === this.model!.provider) && this._modelRegistry.hasConfiguredAuth(model) && all.findIndex((candidate) => modelsAreEqual(candidate, model)) === index);
+		if (!candidates.length) return undefined;
+		if (run.agentSelection === "explicit") return candidates[Math.min(criticalRoles.has(childRole) ? 0 : 1, candidates.length - 1)];
+		if (!criticalRoles.has(childRole)) return undefined;
+		const effortRank = (model: Model<any>) => {
+			const maximum = getSupportedThinkingLevels(model).at(-1) as ThinkingLevel | undefined;
+			return ["off", "minimal", "low", "medium", "high", "xhigh"].indexOf(maximum ?? "off");
+		};
+		return candidates.reduce((best, candidate) => effortRank(candidate) > effortRank(best) ? candidate : best, this.model);
+	}
+
+	private _getPerformanceChildThinking(childRole: string): ThinkingLevel | undefined {
+		const run = this._performanceRuntime.state;
+		const selectedModel = this._getPerformanceChildModel(childRole) ?? this.model;
+		if (!run || run.agentSelection === "off" || !selectedModel) return this.thinkingLevel;
+		const levels = getSupportedThinkingLevels(selectedModel);
+		const maximum = levels.at(-1) as ThinkingLevel | undefined;
+		if (!maximum) return this.thinkingLevel;
+		const criticalRoles = new Set(["scope-coordinator", "planner", "reviewer", "fresh-verifier", "verifier", "juror", "goal-checker", "arbiter", "depth-prober"]);
+		if (criticalRoles.has(childRole)) return maximum;
+		return (levels.includes("high") ? "high" : maximum) as ThinkingLevel;
 	}
 
 	/**
@@ -1462,6 +1728,8 @@ export class AgentSession {
 		const loadedAgents = this._resourceLoader.getAgents ? this._resourceLoader.getAgents().agents : [];
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles ? this._resourceLoader.getAgentsFiles().agentsFiles : [];
 
+		const memoryOverview = this._memoryCoordinator?.getMemoryOverview();
+
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
 			sessionId: this.sessionManager.getSessionId(),
@@ -1474,6 +1742,7 @@ export class AgentSession {
 			toolSnippets,
 			promptGuidelines,
 			collaborationMode: this._collaborationMode,
+			memoryOverview,
 		};
 		this._instructionStack = buildInstructionStack(this._baseSystemPromptOptions);
 		return buildSystemPrompt(this._baseSystemPromptOptions);
@@ -1631,7 +1900,6 @@ export class AgentSession {
 				}
 			}
 
-			// Expand skill commands (/skill:name args) and prompt templates (/template args)
 			let expandedText = currentText;
 			if (expandPromptTemplates) {
 				expandedText = this._expandSkillCommand(expandedText);
@@ -1698,18 +1966,67 @@ export class AgentSession {
 				}
 			}
 
+			let proposalForExecution: WorkflowProposalState | undefined;
 			if (this._collaborationMode === "build") {
 				if (options?.workflowAction === "process_proposal") {
 					const proposal = this.workflowProposal;
 					if (!proposal) throw new Error("No durable proposal is available to Process.");
+					proposalForExecution = proposal;
 					this._beginProposalExecution(proposal);
 					proposalExecutionStarted = true;
 				} else {
 					this._resetCompletedWorkflowPlanForNewPrompt();
 				}
 			}
+			// Plan mode is intentionally read-only: it persists a conversational proposal
+			// but must not open a runnable Performance lane. Build mode always opens one
+			// for a direct task; Process binds that lane to the approved proposal itself.
+			if (
+				this._collaborationMode === "build"
+				&& currentText.trim()
+				&& !currentText.trimStart().startsWith("/")
+				&& !process.env.METIS_PERFORMANCE_RUN_ID
+			) {
+				const directInvocation = this._parsePerformanceInvocation(proposalForExecution?.markdown ?? currentText);
+				const mission = directInvocation.mission;
+				if (!mission) throw new Error("Performance task is empty after removing runtime directives.");
+				const activeTools = new Set(this.getActiveToolNames());
+				// Minimal/custom SDK tool sets may intentionally omit native governance.
+				// A built-in gate that is merely disabled is a safety failure, never a
+				// silent fallback to ungoverned Build.
+				const hasNativePerformanceGate = this.getAllTools().some((tool) => tool.name === "performance_gate");
+				const requestsNativeBuild = ["read", "write", "edit", "bash", "spawn_agent"].some((tool) => activeTools.has(tool));
+				if (hasNativePerformanceGate && requestsNativeBuild && !activeTools.has("performance_gate")) {
+					throw new Error("Performance control capability is disabled; direct Build cannot start without performance_gate.");
+				}
+				if (hasNativePerformanceGate && requestsNativeBuild) {
+					const activeRun = this._performanceRuntime.state;
+					const run = activeRun?.status === "active"
+						? this._performanceRuntime.steer(mission)
+						: this._performanceRuntime.start({
+							...(await this._resolvePerformanceStart(mission, directInvocation)),
+							capabilities: {
+								read: activeTools.has("read"),
+								write: activeTools.has("write") || activeTools.has("edit"),
+								run: activeTools.has("bash"),
+							},
+						});
+					this._appendPerformanceRunEntry(run);
+				}
+			}
+			const memoryOverview = this._memoryCoordinator?.getMemoryOverview();
+			const memoryOverviewBlock = memoryOverview ? {
+				id: "metis:memory-overview",
+				channel: "developer" as const,
+				content: memoryOverview,
+				source: "memory:overview",
+				trust: "memory" as const,
+			} : undefined;
+			const performanceContext = this._collaborationMode === "build" ? this._performanceRuntime.context() : undefined;
+
 			const stepInstructions: InstructionStack = {
 				base: this._instructionStack.base,
+				memoryOverview: memoryOverviewBlock,
 				developer: [
 					...this._instructionStack.developer,
 					...(beforeStep?.developerInstructions ?? []).map((entry, index) => ({
@@ -1721,6 +2038,13 @@ export class AgentSession {
 				],
 				context: [
 					...this._instructionStack.context,
+					...(performanceContext ? [{
+						id: "runtime:performance",
+						channel: "context" as const,
+						content: performanceContext,
+						source: "performance runtime",
+						trust: "runtime" as const,
+					}] : []),
 					...(beforeStep?.context ?? []).map((entry, index) => ({
 						...entry,
 						id: `extension:step:context:${index}:${entry.id}`,
@@ -3115,15 +3439,37 @@ export class AgentSession {
 						getRuntimeContext: () => ({
 							rootRunId: process.env.METIS_ROOT_RUN_ID,
 							currentAgentId: process.env.METIS_AGENT_ID,
+							currentAgentName: process.env.METIS_AGENT_NAME,
 							currentDepth: process.env.METIS_AGENT_DEPTH ? parseInt(process.env.METIS_AGENT_DEPTH, 10) : 0,
 							provider: this.model?.provider,
 							model: this.model?.id,
 							thinking: this.thinkingLevel,
+							getChildModel: (childRole) => {
+								const model = this._getPerformanceChildModel(childRole);
+								return model ? { provider: model.provider, model: model.id } : undefined;
+							},
+							getChildThinking: (childRole) => this._getPerformanceChildThinking(childRole),
 							skills: this._resourceLoader
 								.getSkills()
 								.skills.filter((s) => s.sourceInfo.source === "cli" || s.sourceInfo.scope === "temporary")
 								.map((s) => s.filePath),
+							env: this._performanceRuntime.state ? {
+								METIS_PERFORMANCE_RUN_ID: this._performanceRuntime.state.runId,
+								METIS_PERFORMANCE_GOVERNANCE_ROOT: this._performanceRuntime.state.governanceRoot,
+								METIS_PERFORMANCE_NONCE: this._performanceRuntime.state.nonce,
+								METIS_PERFORMANCE_MISSION_SHA256: this._performanceRuntime.state.missionSha256,
+								METIS_PERFORMANCE_MISSION_BYTES: String(this._performanceRuntime.state.missionBytes),
+							} : undefined,
 						}),
+						validateSpawn: (input, runtime, childAgentId) => {
+							const decision = this._performanceRuntime.reserveSpawn(
+								runtime?.currentAgentName ?? "root",
+								input.agent,
+								childAgentId,
+							);
+							return decision.valid ? undefined : decision.message;
+						},
+						releaseSpawn: (childAgentId) => this._performanceRuntime.releaseSpawn(childAgentId),
 						onStatusChange: (jobId, running) => this._setSubagentRunning(jobId, running),
 						sendMessage: (jobId, result) => this._queueSubagentResult(jobId, result),
 					},
@@ -3140,6 +3486,10 @@ export class AgentSession {
 								phase: "active",
 							});
 						},
+					},
+					performanceGate: {
+						runtime: () => this._performanceRuntime,
+						actor: () => ({ id: process.env.METIS_AGENT_ID ?? "root", role: process.env.METIS_AGENT_NAME ?? "root" }),
 					},
 					askUser: { handler: () => (request, signal) => this._askUser(request, signal) },
 					queryMemoryDb: { query: (sql, params) => this._memoryCoordinator?.query(sql, params) ?? [] },
@@ -3171,7 +3521,7 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "update_plan", "ask_user", "read_plan", "query_memory_db"];
+			: ["read", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "update_plan", "ask_user", "read_plan", "performance_gate", "query_memory_db"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

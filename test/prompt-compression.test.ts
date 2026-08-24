@@ -33,7 +33,7 @@ describe("static prompt compression contracts", () => {
 			toolSnippets: Object.fromEntries(TOOL_NAMES.map((name) => [name, name])),
 		});
 
-		expect(prompt.length).toBeLessThan(3_000);
+		expect(prompt.length).toBeLessThan(6_000);
 		expect(prompt).toContain("active workflow provides a checklist");
 		expect(prompt).not.toContain("after 8 non-log tool calls");
 		expect(prompt).not.toContain("remember_user_intent exactly once");

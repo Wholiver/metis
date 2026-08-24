@@ -5,6 +5,7 @@ import type { CollaborationMode, WorkflowPlanState } from "../../core/workflow-r
 import type { WorkflowProposalState } from "../../core/workflow-runtime.ts";
 import type { AskUserRequest } from "../../core/ask-user.ts";
 import type { MemoryState } from "../../core/memory-coordinator.ts";
+import type { PerformanceRunSummary } from "../../core/performance-runtime.ts";
 import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "../rpc/rpc-types.ts";
 
 export interface ServerModeOptions {
@@ -43,6 +44,7 @@ export interface ServerSessionState {
 	contextWindowId: string;
 	workflowPlan?: WorkflowPlanState;
 	workflowProposal?: WorkflowProposalState;
+	performanceRun?: PerformanceRunSummary;
 	pendingUserInput?: AskUserRequest;
 	instructionSources: InstructionSourceSummary[];
 	instructionDiagnostics: string[];

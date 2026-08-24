@@ -55,6 +55,7 @@ describe("regression #5109: exclude tools", () => {
 			"bash",
 			"dynamic_tool",
 			"edit",
+			"performance_gate",
 			"query_memory_db",
 			"read_plan",
 			"spawn_agent",

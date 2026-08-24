@@ -47,6 +47,38 @@ export {
 } from "./core/memory-coordinator.ts";
 export { validateAskUserRequest, validateAskUserResponse, type AskUserAnswer, type AskUserHandler, type AskUserOption, type AskUserQuestion, type AskUserRequest, type AskUserResponse } from "./core/ask-user.ts";
 export { extractProposedPlan, getLatestWorkflowProposal, resolveWorkflowPlan, resolveWorkflowProposal, type WorkflowPlanPhase, type WorkflowPlanState, type WorkflowPlanStep, type WorkflowProposalState } from "./core/workflow-runtime.ts";
+export {
+	PerformanceRuntime,
+	getPerformanceGovernanceRoot,
+	getPerformanceRunDirectory,
+	missionPointer,
+	summarizePerformanceRun,
+	validatePerformanceSpawn,
+	type PerformanceConcurrency,
+	type PerformanceAttendance,
+	type PerformanceEffortCapability,
+	type PerformanceAgentLease,
+	type PerformanceGate,
+	type PerformanceGateReport,
+	type PerformanceRunState,
+	type PerformanceRunSummary,
+	type PerformanceRunStatus,
+	type PerformanceSpawnDecision,
+	type PerformanceSpawnRequest,
+	type PerformanceStartInvocation,
+} from "./core/performance-runtime.ts";
+export {
+	parsePerformanceRoadmapItems,
+	performanceItemGatePolicy,
+	PERFORMANCE_ROADMAP_CATEGORIES,
+	PERFORMANCE_ROADMAP_TAGS,
+	PERFORMANCE_ROADMAP_TIERS,
+	type PerformanceItemGatePolicy,
+	type PerformanceRoadmapCategory,
+	type PerformanceRoadmapItem,
+	type PerformanceRoadmapTag,
+	type PerformanceRoadmapTier,
+} from "./core/performance-roadmap.ts";
 // Auth and model registry
 export {
 	type ApiKeyCredential,
@@ -375,11 +407,8 @@ export {
 } from "./core/ui-language.ts";
 // Skills
 export {
-	BUILTIN_AUTOPROMPT_DESCRIPTION,
-	BUILTIN_AUTOPROMPT_SKILL,
 	BUILTIN_SKILLS,
 	formatSkillsForPrompt,
-	getBuiltinAutopromptFilePath,
 	type LoadSkillsFromDirOptions,
 	type LoadSkillsResult,
 	loadSkills,

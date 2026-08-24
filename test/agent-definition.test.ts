@@ -106,9 +106,9 @@ Body text.
 	});
 });
 
-describe("Built-in 5 Standard Roles (Feat 52 & Feat 27)", () => {
-	it("contains exactly the 5 standard builtin roles", () => {
-		expect(BUILTIN_AGENTS.length).toBe(5);
+describe("Built-in Standard Roles & Specialized Personas (Feat 52 & Feat 27)", () => {
+	it("contains standard builtin roles and specialized personas", () => {
+		expect(BUILTIN_AGENTS.length).toBeGreaterThanOrEqual(5);
 		const names = BUILTIN_AGENTS.map((a) => a.name);
 		expect(names).toContain("coordinator");
 		expect(names).toContain("planner");
@@ -123,27 +123,35 @@ describe("Built-in 5 Standard Roles (Feat 52 & Feat 27)", () => {
 		expect(BUILTIN_COORDINATOR.systemPrompt).toContain("implementer");
 	});
 
-	it("planner role is read-only and cannot write or spawn", () => {
-		expect(BUILTIN_PLANNER.tools).toEqual(["read", "grep", "find", "ls"]);
+	it("planner role has planning, reproduction, and inspection tools without mutating tools", () => {
+		expect(BUILTIN_PLANNER.tools).toEqual(["read", "bash", "grep", "find", "ls", "performance_gate"]);
 		expect(BUILTIN_PLANNER.tools).not.toContain("spawn_agent");
 		expect(BUILTIN_PLANNER.tools).not.toContain("write");
 		expect(BUILTIN_PLANNER.tools).not.toContain("edit");
+		expect(BUILTIN_PLANNER.tools).toContain("bash");
 	});
 
-	it("implementer role has write and execution tools", () => {
+	it("implementer role has write and execution tools without spawn_agent", () => {
 		expect(BUILTIN_IMPLEMENTER.tools).toContain("read");
 		expect(BUILTIN_IMPLEMENTER.tools).toContain("write");
 		expect(BUILTIN_IMPLEMENTER.tools).toContain("edit");
 		expect(BUILTIN_IMPLEMENTER.tools).toContain("bash");
+		expect(BUILTIN_IMPLEMENTER.tools).toContain("performance_gate");
+		expect(BUILTIN_IMPLEMENTER.tools).not.toContain("spawn_agent");
 	});
 
-	it("reviewer role is read-only without file editing tools", () => {
-		expect(BUILTIN_REVIEWER.tools).toEqual(["read", "grep", "find", "ls"]);
+	it("reviewer role has read, bash, and inspection tools for review receipts", () => {
+		expect(BUILTIN_REVIEWER.tools).toEqual(["read", "bash", "grep", "find", "ls", "performance_gate"]);
+		expect(BUILTIN_REVIEWER.tools).not.toContain("spawn_agent");
 		expect(BUILTIN_REVIEWER.tools).not.toContain("write");
+		expect(BUILTIN_REVIEWER.tools).not.toContain("edit");
 	});
 
-	it("verifier role has test and read tools", () => {
-		expect(BUILTIN_VERIFIER.tools).toEqual(["bash", "read", "grep", "find", "ls"]);
+	it("verifier role has runtime verification and inspection tools", () => {
+		expect(BUILTIN_VERIFIER.tools).toEqual(["read", "bash", "grep", "find", "ls", "performance_gate"]);
+		expect(BUILTIN_VERIFIER.tools).not.toContain("spawn_agent");
+		expect(BUILTIN_VERIFIER.tools).not.toContain("write");
+		expect(BUILTIN_VERIFIER.tools).not.toContain("edit");
 	});
 });
 
@@ -255,13 +263,13 @@ describe("AgentRegistry (Feat 7)", () => {
 
 		expect(registry.has("PLANNER")).toBe(true);
 		expect(registry.get("Planner")?.name).toBe("planner");
-		expect(registry.getAll().length).toBe(5);
+		expect(registry.getAll().length).toBeGreaterThanOrEqual(5);
 
 		const xml = registry.toPromptXml();
 		expect(xml).toContain("<available_agents>");
 		expect(xml).toContain("<name>coordinator</name>");
 		expect(xml).toContain("<name>planner</name>");
-		expect(xml).toContain("<tools>read, grep, find, ls</tools>");
+		expect(xml).toContain("<tools>read, write, bash, edit, grep, find, ls, performance_gate</tools>");
 		expect(xml).toContain("</available_agents>");
 	});
 });
@@ -407,7 +415,7 @@ Custom prompt.
 		const { agents } = loader.getAgents();
 		const registry = loader.getAgentRegistry();
 
-		expect(agents.length).toBe(6); // 5 builtins + 1 custom
+		expect(agents.length).toBe(BUILTIN_AGENTS.length + 1); // builtins + 1 custom
 		expect(registry.has("custom")).toBe(true);
 		expect(registry.get("custom")?.description).toBe("A custom project agent");
 		expect(registry.has("planner")).toBe(true);

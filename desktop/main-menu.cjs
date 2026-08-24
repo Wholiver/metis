@@ -1,4 +1,4 @@
-const desktopI18n = require("./renderer/i18n.js");
+const desktopI18n = require("./i18n.cjs");
 
 function englishText(key, variables) {
 	return desktopI18n.t(key, "en", variables);

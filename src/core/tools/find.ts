@@ -21,7 +21,7 @@ const findSchema = Type.Object({
 	pattern: Type.String({
 		description: "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'",
 	}),
-	path: Type.Optional(Type.String({ description: "Directory to search in (default: current directory)" })),
+	path: Type.Optional(Type.String({ description: "Directory to search in (default: current directory). Prefer relative paths or specific subdirectories (e.g. '.', 'src/') for fast execution." })),
 	limit: Type.Optional(Type.Number({ description: "Maximum number of results (default: 1000)" })),
 });
 
@@ -114,8 +114,8 @@ export function createFindToolDefinition(
 	return {
 		name: "find",
 		label: "find",
-		description: `Find files by glob; return paths relative to search directory; respect .gitignore. Truncates at ${DEFAULT_LIMIT} results or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first.`,
-		promptSnippet: "Find files by glob pattern (respects .gitignore)",
+		description: `Find files by glob; return paths relative to search directory; respect .gitignore. Prefer searching within specific subdirectories or relative paths (e.g. '.', 'src/') rather than broad parent/root directories. Truncates at ${DEFAULT_LIMIT} results or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first.`,
+		promptSnippet: "Find files by glob pattern (prefer relative/subdirectories, respects .gitignore)",
 		parameters: findSchema,
 		async execute(
 			_toolCallId,

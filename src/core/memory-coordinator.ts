@@ -102,6 +102,10 @@ export interface MemoryState {
 	lastExtractionMethod?: "model" | "fallback" | "none";
 	fallbackUsed?: boolean;
 	modelFailureReason?: string;
+	extractingTotal?: number;
+	extractingProcessed?: number;
+	extractingAdded?: number;
+	extractingSkipped?: number;
 }
 
 export interface MemoryRecordSummary {
@@ -163,7 +167,7 @@ export interface MemoryCoordinatorOptions {
 	trusted: () => boolean;
 	settings: () => MemorySettings | undefined;
 	/** Test hook and the sole place a foreground session can expose its model. */
-	extract?: (checkpoint: SessionMemoryCheckpoint, signal?: AbortSignal, existingMemoryMap?: string) => Promise<MemoryCandidate[] | MemoryExtractionResult>;
+	extract?: (checkpoint: SessionMemoryCheckpoint, signal?: AbortSignal, existingMemoryMap?: string, existingMemoryOverview?: string) => Promise<MemoryCandidate[] | MemoryExtractionResult>;
 }
 
 export interface MemoryCandidate {
@@ -178,6 +182,7 @@ export interface MemoryCandidate {
 export interface MemoryExtractionResult {
 	candidates: MemoryCandidate[];
 	memoryMap?: string;
+	memoryOverview?: string;
 	failureReason?: string;
 }
 
@@ -185,6 +190,7 @@ type Listener = (event: { type: "memory_state_changed"; state: MemoryState } | {
 
 const SECRET = /(?:\b(?:sk|rk|pk)_[A-Za-z0-9_-]{16,}\b|\b(?:api[_-]?key|authorization|password|token)\s*[:=]\s*[^\s,;]+)/gi;
 const DAY = 86_400_000;
+const EXTRACTION_CONCURRENCY = 4;
 
 function hash(value: string): string {
 	return createHash("sha256").update(value).digest("hex").slice(0, 20);
@@ -227,6 +233,12 @@ export class MemoryCoordinator {
 	private readonly identity: MemoryProjectIdentity;
 	private listeners = new Set<Listener>();
 	private running = false;
+	private currentExtractionStats?: {
+		total: number;
+		processed: number;
+		added: number;
+		skipped: number;
+	};
 	private closeWhenIdle = false;
 	private disposed = false;
 	private timer?: ReturnType<typeof setInterval>;
@@ -376,12 +388,16 @@ export class MemoryCoordinator {
 		const next = this.db.prepare("SELECT MIN(due_at) AS dueAt FROM memory_jobs WHERE status IN ('pending','retry')").get() as { dueAt?: number };
 		const error = get("error");
 		return {
-			enabled, phase: enabled ? error ? "retry_wait" : "idle" : "disabled", globalCount: count("global"), projectCount: count("project") + count("checkout"), pendingJobs: pending.count,
+			enabled, phase: enabled ? (this.running ? this.state?.phase || "extracting" : (error ? "retry_wait" : "idle")) : "disabled", globalCount: count("global"), projectCount: count("project") + count("checkout"), pendingJobs: pending.count,
 			lastExtractedAt: get("lastExtractedAt"), lastConsolidatedAt: get("lastConsolidatedAt"), nextRetryAt: get("nextRetryAt"), error: get("error"),
 			nextEligibleAt: next.dueAt ? new Date(next.dueAt).toISOString() : undefined,
 			lastRunProcessed: Number(get("lastRunProcessed") ?? 0), lastRunAdded: Number(get("lastRunAdded") ?? 0), lastRunSkipped: Number(get("lastRunSkipped") ?? 0),
 			lastExtractionMethod: (get("lastExtractionMethod") as MemoryState["lastExtractionMethod"]) ?? "none",
 			fallbackUsed: get("fallbackUsed") === "true", modelFailureReason: get("modelFailureReason"),
+			extractingTotal: this.currentExtractionStats?.total,
+			extractingProcessed: this.currentExtractionStats?.processed,
+			extractingAdded: this.currentExtractionStats?.added,
+			extractingSkipped: this.currentExtractionStats?.skipped,
 		};
 	}
 
@@ -453,27 +469,69 @@ export class MemoryCoordinator {
 		let fallbackUsed = false;
 		let modelFailureReason: string | undefined;
 		try {
-			this.phase("extracting");
 			const settings = this.config();
 			const max = force ? Number.MAX_SAFE_INTEGER : settings.maxRolloutsPerSweep;
 			const oldest = new Date(Date.now() - settings.maxRolloutAgeDays * DAY).toISOString();
 			const jobs = this.db.prepare("SELECT * FROM memory_jobs WHERE status IN ('pending','retry') AND due_at <= ? AND created_at >= ? ORDER BY created_at LIMIT ?").all(force ? Number.MAX_SAFE_INTEGER : Date.now(), oldest, max) as Array<Record<string, unknown>>;
-			for (const job of jobs) {
-				const result = await this.extractJob(job, this.extractionAbortController.signal);
-				processed += 1;
-				added += result.added;
-				skipped += result.skipped;
-				fallbackUsed ||= result.fallbackUsed;
-				modelFailureReason = result.modelFailureReason ?? modelFailureReason;
+			this.currentExtractionStats = {
+				total: jobs.length,
+				processed: 0,
+				added: 0,
+				skipped: 0,
+			};
+			this.phase("extracting");
+
+			let jobIndex = 0;
+			let fatalError: unknown;
+			const abortController = this.extractionAbortController;
+
+			const worker = async () => {
+				while (jobIndex < jobs.length) {
+					if (abortController?.signal.aborted || fatalError) break;
+					const currentIndex = jobIndex++;
+					if (currentIndex >= jobs.length) break;
+					const job = jobs[currentIndex];
+					try {
+						const result = await this.extractJob(job, abortController?.signal);
+						processed += 1;
+						added += result.added;
+						skipped += result.skipped;
+						fallbackUsed ||= result.fallbackUsed;
+						modelFailureReason = result.modelFailureReason ?? modelFailureReason;
+						this.currentExtractionStats = {
+							total: jobs.length,
+							processed,
+							added,
+							skipped,
+						};
+						this.phase("extracting");
+					} catch (err) {
+						fatalError = err;
+						abortController?.abort();
+						break;
+					}
+				}
+			};
+
+			const workerCount = Math.min(EXTRACTION_CONCURRENCY, jobs.length);
+			if (workerCount > 0) {
+				const workers = Array.from({ length: workerCount }, () => worker());
+				await Promise.all(workers);
+			}
+
+			if (fatalError) {
+				throw fatalError;
 			}
 			this.storeRunStats(processed, added, skipped, fallbackUsed, modelFailureReason);
 			this.db.prepare("DELETE FROM memory_meta WHERE key IN ('error', 'nextRetryAt')").run();
 			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastExtractedAt", now());
+			this.currentExtractionStats = undefined;
 			this.phase("consolidating");
 			this.db.prepare("INSERT OR REPLACE INTO memory_meta(key, value) VALUES (?, ?)").run("lastConsolidatedAt", now());
 			this.publish(true);
 			return this.getState();
 		} catch (error) {
+			this.currentExtractionStats = undefined;
 			const message = error instanceof Error ? error.message : String(error);
 			const retry = new Date(Date.now() + 15 * 60_000).toISOString();
 			this.storeRunStats(processed, added, skipped, fallbackUsed, modelFailureReason);
@@ -484,6 +542,7 @@ export class MemoryCoordinator {
 			return this.getState();
 		} finally {
 			this.running = false;
+			this.currentExtractionStats = undefined;
 			this.extractionAbortController = undefined;
 			if (this.enabled()) this.publish();
 			if (this.closeWhenIdle) this.db.close();
@@ -504,19 +563,26 @@ export class MemoryCoordinator {
 		const checkpoint = parseJson<SessionMemoryCheckpoint>(String(job.checkpoint ?? ""), {} as SessionMemoryCheckpoint);
 		let extracted: MemoryCandidate[] = [];
 		let updatedMemoryMap: string | undefined;
+		let updatedMemoryOverview: string | undefined;
 		let modelFailureReason: string | undefined;
 		let extractionFailed = !this.options.extract;
 		const memoryMapPath = join(this.root, "memory-map.md");
+		const memoryOverviewPath = join(this.root, "memory-overview.md");
 		let existingMemoryMap: string | undefined;
+		let existingMemoryOverview: string | undefined;
 		try {
 			if (existsSync(memoryMapPath)) existingMemoryMap = readFileSync(memoryMapPath, "utf8");
 		} catch { /* ignore read error */ }
 		try {
-			const result = this.options.extract ? await this.options.extract(checkpoint, signal, existingMemoryMap) : { candidates: [], failureReason: "No background model adapter is configured." };
+			if (existsSync(memoryOverviewPath)) existingMemoryOverview = readFileSync(memoryOverviewPath, "utf8");
+		} catch { /* ignore read error */ }
+		try {
+			const result = this.options.extract ? await this.options.extract(checkpoint, signal, existingMemoryMap, existingMemoryOverview) : { candidates: [], failureReason: "No background model adapter is configured." };
 			if (Array.isArray(result)) extracted = result;
 			else {
 				extracted = result.candidates;
 				updatedMemoryMap = result.memoryMap;
+				updatedMemoryOverview = result.memoryOverview;
 				modelFailureReason = result.failureReason;
 				extractionFailed ||= Boolean(result.failureReason);
 			}
@@ -527,9 +593,16 @@ export class MemoryCoordinator {
 		}
 		if (updatedMemoryMap && typeof updatedMemoryMap === "string" && updatedMemoryMap.trim().length > 0) {
 			try {
-				const temp = `${memoryMapPath}.${process.pid}.tmp`;
+				const temp = `${memoryMapPath}.${randomUUID()}.tmp`;
 				writeFileSync(temp, updatedMemoryMap.trim() + "\n", "utf8");
 				renameSync(temp, memoryMapPath);
+			} catch { /* atomic write error fallback */ }
+		}
+		if (updatedMemoryOverview && typeof updatedMemoryOverview === "string" && updatedMemoryOverview.trim().length > 0) {
+			try {
+				const temp = `${memoryOverviewPath}.${randomUUID()}.tmp`;
+				writeFileSync(temp, updatedMemoryOverview.trim() + "\n", "utf8");
+				renameSync(temp, memoryOverviewPath);
 			} catch { /* atomic write error fallback */ }
 		}
 		const fallbackUsed = extractionFailed;
@@ -681,6 +754,20 @@ export class MemoryCoordinator {
 		return rows.slice(0, 100);
 	}
 
+	getMemoryOverview(): string | undefined {
+		if (!this.enabled()) return undefined;
+		const overviewPath = join(this.root, "memory-overview.md");
+		try {
+			if (existsSync(overviewPath)) {
+				const content = readFileSync(overviewPath, "utf8").trim();
+				return content.length > 0 ? content : undefined;
+			}
+		} catch {
+			return undefined;
+		}
+		return undefined;
+	}
+
 	forget(id: string): boolean {
 		const result = this.db.prepare("DELETE FROM memory_records WHERE id = ?").run(id);
 		this.db.prepare("DELETE FROM memory_fts WHERE id = ?").run(id);
@@ -693,6 +780,8 @@ export class MemoryCoordinator {
 		this.db.exec("DELETE FROM memory_records; DELETE FROM memory_fts; DELETE FROM memory_jobs;");
 		const memoryMapPath = join(this.root, "memory-map.md");
 		try { if (existsSync(memoryMapPath)) rmSync(memoryMapPath, { force: true }); } catch { /* ignore */ }
+		const memoryOverviewPath = join(this.root, "memory-overview.md");
+		try { if (existsSync(memoryOverviewPath)) rmSync(memoryOverviewPath, { force: true }); } catch { /* ignore */ }
 		this.publish(true);
 	}
 

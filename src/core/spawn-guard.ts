@@ -1,12 +1,13 @@
 import type { ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
+import { killProcessTree } from "../utils/shell.ts";
 
 /** Default recursion and concurrency limit configurations */
 export const DEFAULT_MAX_SPAWN_DEPTH = 5;
 export const DEFAULT_MAX_CHILDREN_PER_AGENT = 8;
 export const DEFAULT_MAX_TOTAL_CHILDREN = 32;
 export const DEFAULT_MAX_CONCURRENT_AGENTS = 4;
-export const DEFAULT_AGENT_TIMEOUT_MS = 600000; // 10 minutes
+export const DEFAULT_AGENT_TIMEOUT_MS = 0; // 0 = unlimited by default
 
 export type SpawnErrorCode =
 	| "DEPTH_LIMIT_EXCEEDED"
@@ -262,19 +263,17 @@ export class SpawnGuard {
 		if (child.process && child.status === "running") {
 			try {
 				if (child.pid) {
-					// Attempt to kill process group if possible
 					try {
-						process.kill(-child.pid, signal);
+						killProcessTree(child.pid);
 						killed = true;
 					} catch {
-						// Fallback to direct PID kill
-						child.process.kill(signal);
-						killed = true;
+						// Fall through to handle kill below.
 					}
-				} else {
-					child.process.kill(signal);
-					killed = true;
 				}
+				// Always signal the ChildProcess handle too. Mocks and some platforms settle
+				// waiters via process.kill(); process-group kill alone is not enough.
+				child.process.kill(signal);
+				killed = true;
 			} catch {
 				// Process might already be dead
 			}

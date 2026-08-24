@@ -326,6 +326,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			signal?.addEventListener("abort", cancel, { once: true });
 			pendingUserInput.set(request.requestId, { resolve: finish, cancel });
 		}));
+		// RPC callers may support ask_user for model ambiguity, but prompt responses
+		// must remain non-blocking unless a protocol-level chooser handshake exists.
+		session.setPerformanceAttendance?.("unattended");
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",
@@ -463,6 +466,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					contextWindowId: session.contextWindowId,
 					workflowPlan: session.workflowPlan,
 					workflowProposal: session.workflowProposal,
+					performanceRun: session.performanceRunSummary,
 					pendingUserInput: session.pendingUserInput,
 					instructionSources: session.instructionSources,
 					instructionDiagnostics: session.instructionDiagnostics,

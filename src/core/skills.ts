@@ -89,34 +89,7 @@ export interface LoadSkillsResult {
 	diagnostics: ResourceDiagnostic[];
 }
 
-/** Built-in Autoprompt Skill (Feat 31) */
-export const BUILTIN_AUTOPROMPT_DESCRIPTION =
-	"Autonomous orchestration skill that analyzes complex goals, formulates phased execution plans, and coordinates specialized subagents (coordinator, planner, implementer, reviewer, verifier) via spawn_agent.";
-
-export function getBuiltinAutopromptFilePath(): string {
-	const candidates = [
-		resolve(__dirname, "builtins/skills/autoprompt/SKILL.md"),
-		resolve(__dirname, "../core/builtins/skills/autoprompt/SKILL.md"),
-		resolve(process.cwd(), "src/core/builtins/skills/autoprompt/SKILL.md"),
-	];
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) {
-			return candidate;
-		}
-	}
-	return resolve(__dirname, "builtins/skills/autoprompt/SKILL.md");
-}
-
-export const BUILTIN_AUTOPROMPT_SKILL: Skill = {
-	name: "autoprompt",
-	description: BUILTIN_AUTOPROMPT_DESCRIPTION,
-	filePath: getBuiltinAutopromptFilePath(),
-	baseDir: dirname(getBuiltinAutopromptFilePath()),
-	sourceInfo: createSyntheticSourceInfo(getBuiltinAutopromptFilePath(), { source: "builtin", scope: "user" }),
-	disableModelInvocation: false,
-};
-
-export const BUILTIN_SKILLS: Skill[] = [BUILTIN_AUTOPROMPT_SKILL];
+export const BUILTIN_SKILLS: Skill[] = [];
 
 /**
  * Validate skill name per Agent Skills spec.
@@ -525,19 +498,8 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 
 	// 3. Built-in skills (lowest priority, added if not overridden by custom skills)
 	if (includeBuiltins) {
-		const builtinPath = getBuiltinAutopromptFilePath();
-		if (existsSync(builtinPath)) {
-			const res = loadSkillFromFile(builtinPath, "builtin");
-			if (res.skill) {
-				addSkill(res.skill);
-			} else {
-				addSkill(BUILTIN_AUTOPROMPT_SKILL);
-			}
-			allDiagnostics.push(...res.diagnostics);
-		} else {
-			for (const builtin of BUILTIN_SKILLS) {
-				addSkill(builtin);
-			}
+		for (const builtin of BUILTIN_SKILLS) {
+			addSkill(builtin);
 		}
 	}
 

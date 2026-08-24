@@ -47,6 +47,6 @@ describe("Desktop flat accent palette", () => {
 		expect(styles).toContain("mask-image: linear-gradient");
 		expect(styles).toContain("--btn-primary-bg: #363636;");
 		expect(styles).toContain("--btn-primary-bg: #e3e3e0;");
-		expect(styles).toContain("background: #ececeb !important;");
+		expect(styles).toContain("background: var(--canvas) !important;");
 	});
 });

@@ -23,7 +23,7 @@ import {
 
 const grepSchema = Type.Object({
 	pattern: Type.String({ description: "Search pattern (regex or literal string)" }),
-	path: Type.Optional(Type.String({ description: "Directory or file to search (default: current directory)" })),
+	path: Type.Optional(Type.String({ description: "Directory or file to search (default: current directory). Prefer relative paths or specific subdirectories (e.g. '.', 'src/') for fast execution." })),
 	glob: Type.Optional(Type.String({ description: "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'" })),
 	ignoreCase: Type.Optional(Type.Boolean({ description: "Case-insensitive search (default: false)" })),
 	literal: Type.Optional(
@@ -128,8 +128,8 @@ export function createGrepToolDefinition(
 	return {
 		name: "grep",
 		label: "grep",
-		description: `Search contents; return matching lines with paths+line numbers; respect .gitignore. Truncates at ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first; lines at ${GREP_MAX_LINE_LENGTH} chars.`,
-		promptSnippet: "Search file contents for patterns (respects .gitignore)",
+		description: `Search contents; return matching lines with paths+line numbers; respect .gitignore. Prefer searching within specific subdirectories or relative paths (e.g. '.', 'src/') rather than broad parent/root directories. Truncates at ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first; lines at ${GREP_MAX_LINE_LENGTH} chars.`,
+		promptSnippet: "Search file contents for patterns (prefer relative/subdirectories, respects .gitignore)",
 		parameters: grepSchema,
 		async execute(
 			_toolCallId,

@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -136,6 +137,29 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 			await cleanupIsolatedWorkspace(ws);
 			expect(existsSync(ws.workspacePath)).toBe(false);
 		});
+
+		it("seeds auto worktrees from tracked edits and untracked parent files", async () => {
+			const repo = mkdtempSync(join(tmpdir(), "metis-dirty-worktree-"));
+			tempDirs.push(repo);
+			execFileSync("git", ["init"], { cwd: repo });
+			execFileSync("git", ["config", "user.email", "metis@example.test"], { cwd: repo });
+			execFileSync("git", ["config", "user.name", "Metis Test"], { cwd: repo });
+			await fs.writeFile(join(repo, "README.md"), "committed\n");
+			execFileSync("git", ["add", "README.md"], { cwd: repo });
+			execFileSync("git", ["commit", "-m", "initial"], { cwd: repo });
+
+			await fs.writeFile(join(repo, "README.md"), "dirty parent edit\n");
+			await fs.mkdir(join(repo, "src"), { recursive: true });
+			await fs.writeFile(join(repo, "src/index.ts"), "export const current = true;\n");
+
+			const ws = await createIsolatedWorkspace({ cwd: repo, worktree: "auto", agentId: "snapshot" });
+			tempDirs.push(ws.workspacePath);
+
+			expect(await fs.readFile(join(ws.workspacePath, "README.md"), "utf8")).toBe("dirty parent edit\n");
+			expect(await fs.readFile(join(ws.workspacePath, "src/index.ts"), "utf8")).toContain("current = true");
+			await cleanupIsolatedWorkspace(ws);
+			expect(existsSync(ws.workspacePath)).toBe(false);
+		});
 	});
 
 	describe("Environment Variable Security & Blacklist (Feat 24)", () => {
@@ -232,7 +256,7 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 	});
 
 	describe("Integration with spawn_agent tool", () => {
-		it("spawns child in isolated workspace and cleans up on completion", async () => {
+		it("spawns child in isolated workspace and retains successful output", async () => {
 			const mockChild = createMockChildProcess();
 			spawnMock.mockReturnValue(mockChild);
 
@@ -273,7 +297,8 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 			expect(passedEnv.METIS_ROOT_RUN_ID).toBe("run-wt-001");
 			expect(passedEnv.LD_PRELOAD).toBeUndefined();
 
-			// Simulate child process success
+			// Simulate a child edit and successful completion.
+			await fs.writeFile(join(isolatedPath, "child-change.txt"), "retained output\n");
 			mockChild.stdout.emit("data", Buffer.from("Refactored queries cleanly."));
 			mockChild.emit("close", 0);
 
@@ -283,10 +308,13 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 			expect(payload.status).toBe("success");
 			expect(payload.agent).toBe("implementer");
 			expect(payload.worktree).toBe(isolatedPath);
+			expect(payload.worktreeRetained).toBe(true);
 
-			// Worktree should be cleaned up after process close
+			// Successful isolated output must remain available to the parent.
 			await new Promise((r) => setTimeout(r, 30));
-			expect(existsSync(isolatedPath)).toBe(false);
+			expect(existsSync(isolatedPath)).toBe(true);
+			expect(await fs.readFile(join(isolatedPath, "child-change.txt"), "utf8")).toBe("retained output\n");
+			rmSync(isolatedPath, { recursive: true, force: true });
 		});
 	});
 });

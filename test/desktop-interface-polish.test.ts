@@ -229,7 +229,7 @@ describe("desktop interface polish contracts", () => {
 		expect(styles).toMatch(/\[data-purpose="main-chat"\] \.cot-title\s*\{[\s\S]*?color:\s*var\(--ink-soft\);[\s\S]*?font-weight:\s*560/);
 		expect(styles).toMatch(/\.cot-content-inner > \.tool-card\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none/);
 		expect(styles).toMatch(/\.tool-duration\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums;[\s\S]*?text-align:\s*right/);
-		expect(styles).toMatch(/\.tool-header-bar\s*\{[\s\S]*?min-height:\s*34px;[\s\S]*?transition-property:\s*background-color, color/);
+		expect(styles).toMatch(/\.tool-header-bar\s*\{[\s\S]*?min-height:\s*26px;[\s\S]*?transition-property:\s*color/);
 		expect(styles).toMatch(/\.tool-name\.shimmering\s*\{[\s\S]*?animation:\s*none/);
 		expect(app).toContain('header.setAttribute("aria-expanded", "false")');
 		expect(app).toContain('cotHeader.setAttribute("tabindex", "0")');
@@ -262,7 +262,7 @@ describe("desktop interface polish contracts", () => {
 		expect(app).toContain('uiText("subagentDuration", { duration })');
 		expect(app).toContain('header.setAttribute("aria-expanded", "false")');
 		expect(styles).toMatch(/\[data-purpose="main-chat"\] \.subagent-tool-card \.subagent-tool-header\s*\{[\s\S]*?grid-template-columns:\s*20px minmax\(84px, max-content\) auto auto 12px/);
-		expect(styles).toMatch(/\[data-purpose="main-chat"\] \.tool-icon\s*\{[\s\S]*?width:\s*20px;[\s\S]*?padding:\s*2\.5px;[\s\S]*?background-color:\s*transparent;[\s\S]*?stroke-width:\s*2/);
+		expect(styles).toMatch(/\[data-purpose="main-chat"\] \.tool-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?padding:\s*0;[\s\S]*?background-color:\s*transparent;[\s\S]*?stroke-width:\s*2/);
 		expect(styles).toMatch(/\.subagent-tool-duration\s*\{\s*font-variant-numeric:\s*tabular-nums/);
 		expect(styles).not.toContain(".subagent-completion-card");
 		expect(styles).not.toMatch(/\.subagent-tool-card\.running[^}]*animation:/);
@@ -397,8 +397,8 @@ describe("desktop interface polish contracts", () => {
 	it("keeps wider Token trails distinguishable and their dates readable", () => {
 		expect(styles).not.toMatch(/\[data-purpose="channel-list"\]\s*\{[\s\S]*?width:\s*360px\s*!important/);
 		expect(styles).toMatch(/\[data-purpose="channel-list"\]\s*\{[\s\S]*?width:\s*300px\s*!important;[\s\S]*?min-width:\s*300px\s*!important/);
-		expect(styles).toMatch(/\.conversation-time\s*\{[\s\S]*?color:\s*#4b5563\s*!important;[\s\S]*?font-weight:\s*550\s*!important/);
-		expect(styles).toMatch(/\.conversation-item\.active \.conversation-time\s*\{[\s\S]*?color:\s*#303846\s*!important/);
+		expect(styles).toMatch(/\.conversation-time\s*\{[\s\S]*?color:\s*var\(--ink-faint\)\s*!important;[\s\S]*?font-weight:\s*400\s*!important/);
+		expect(styles).toMatch(/\.conversation-item\.active \.conversation-time\s*\{[\s\S]*?color:\s*var\(--ink-soft\)\s*!important/);
 	});
 
 	it("coalesces renderer work without changing visual timing or structure", () => {
@@ -413,5 +413,23 @@ describe("desktop interface polish contracts", () => {
 		expect(styles).toContain("contain-intrinsic-size: auto 38px");
 		expect(app).toContain("const stableThroughIndex = hasActiveWork ? currentTurnStart : activeMessages.length - 1");
 		expect(app).toContain("existingArticle.metisRenderedMessage === message");
+	});
+
+	it("enforces border reduction, 2-tier radius system, and concentric nesting", () => {
+		expect(styles).toContain("--radius-lg: 14px;");
+		expect(styles).toContain("--radius-md: 10px;");
+		expect(styles).toContain("--radius-sm: 8px;");
+		expect(styles).toContain("--radius-xs: 6px;");
+		expect(styles).toContain("--radius-full: 50%;");
+		expect(styles).toMatch(/\[data-purpose="main-chat"\] > header\s*\{[\s\S]*?border-bottom:\s*0\s*!important/);
+		expect(styles).toMatch(/\[data-purpose="channel-list"\] > :first-child\s*\{[\s\S]*?border-bottom:\s*0\s*!important/);
+		expect(styles).toMatch(/\.primary-button,[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+		expect(styles).toMatch(/\.secondary-button,[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+		expect(styles).toMatch(/\.user-bubble\s*\{[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*var\(--radius-lg\)/);
+		expect(styles).toMatch(/\.turn-files-summary\s*\{[\s\S]*?width:\s*fit-content;[\s\S]*?border:\s*0/);
+		expect(styles).toMatch(/\.turn-files-summary-header\s*\{[\s\S]*?height:\s*26px;[\s\S]*?border-radius:\s*var\(--radius-sm\);[\s\S]*?background:\s*var\(--surface-soft\)/);
+		expect(app).toContain('iconEl.setAttribute("class", "turn-files-summary-icon")');
+		expect(styles).toMatch(/\.turn-files-summary-item\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+		expect(styles).toMatch(/\.project-switch-capsule\s*\{[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
 	});
 });

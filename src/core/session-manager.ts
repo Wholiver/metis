@@ -684,6 +684,7 @@ function usageTokenTotal(usage: {
  */
 export interface SessionListOptions {
 	includeMessageText?: boolean;
+	includeSubagents?: boolean;
 }
 
 interface SessionInfoCacheEntry {
@@ -846,6 +847,18 @@ async function buildSessionInfo(
 		}
 
 		if (!header) return null;
+
+		// Filter out subagent worker sessions from UI listings unless explicitly requested
+		const isSubagentSession =
+			Boolean((header as unknown as { agent?: unknown }).agent) ||
+			Boolean((header as unknown as { depth?: unknown }).depth && Number((header as unknown as { depth?: unknown }).depth) > 0) ||
+			Boolean((header as unknown as { parentId?: unknown }).parentId) ||
+			Boolean((header as unknown as { rootRunId?: unknown }).rootRunId) ||
+			firstMessage.includes(".metis-agent-task-");
+
+		if (isSubagentSession && options?.includeSubagents !== true) {
+			return null;
+		}
 
 		const cwd = typeof header.cwd === "string" ? header.cwd : "";
 		const parentSessionPath = header.parentSession;
@@ -1133,12 +1146,15 @@ export class SessionManager {
 	_persist(entry: SessionEntry): void {
 		if (!this.persist || !this.sessionFile) return;
 
-		const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
-		if (!hasAssistant) {
+		const hasConversationMessage = this.fileEntries.some(
+			(e) => e.type === "message" && (e.message.role === "user" || e.message.role === "assistant"),
+		);
+		if (!hasConversationMessage) {
 			if (this.flushed) {
 				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
 			} else {
-				// Mark as not flushed so when assistant arrives, all entries get written
+				// Keep empty sessions ephemeral. Once a user or assistant message arrives,
+				// all preceding setup entries are written with that first message.
 				this.flushed = false;
 			}
 			return;
@@ -1596,13 +1612,15 @@ export class SessionManager {
 			this.sessionFile = newSessionFile;
 			this._buildIndex();
 
-			// Only write the file now if it contains an assistant message.
+			// Write the file as soon as the branch contains a conversation message.
 			// Otherwise defer to _persist(), which creates the file on the
-			// first assistant response, matching the newSession() contract
+			// first user or assistant message, matching the newSession() contract
 			// and avoiding the duplicate-header bug when _persist()'s
-			// no-assistant guard later resets flushed to false.
-			const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
-			if (hasAssistant) {
+			// no-message guard later resets flushed to false.
+			const hasConversationMessage = this.fileEntries.some(
+				(e) => e.type === "message" && (e.message.role === "user" || e.message.role === "assistant"),
+			);
+			if (hasConversationMessage) {
 				this._rewriteFile();
 				this.flushed = true;
 			} else {

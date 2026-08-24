@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.0] - 2026-08-24
+
+### React Desktop, Performance Modes & Runtime Hardening
+
+- Rebuilt Metis Desktop with React and Vite, including refreshed conversation, plan, Ask, settings, model, mode, subagent, and workspace flows.
+- Added animated assistant state assets and expanded Desktop localization, runtime integrity checks, and packaging support.
+- Added performance modes, framework-aware execution guidance, roadmap/runtime coordination, and performance gate tooling.
+- Strengthened session memory, branching, agent spawning, worktree safety, RPC/Server contracts, and regression coverage.
+
 ## [1.0.3] - 2026-08-15
 
 ### Multi-Agent Orchestration & Desktop Polish

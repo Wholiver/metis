@@ -1684,6 +1684,7 @@ export class InteractiveMode {
 	private async bindCurrentSessionExtensions(): Promise<void> {
 		const uiContext = this.createExtensionUIContext();
 		this.session.setAskUserHandler((request, signal) => this.showAskUser(request, signal));
+		this.session.setPerformanceAttendance("attended");
 		await this.session.bindExtensions({
 			uiContext,
 			mode: "tui",

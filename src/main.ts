@@ -776,7 +776,9 @@ export async function main(args: string[], options?: MainOptions) {
 				resourceLoader.getAppendSystemPrompt().unshift(agentPrompt);
 
 				if (resolvedConfig.tools) {
-					sessionOptions.tools = resolvedConfig.tools;
+					sessionOptions.tools = process.env.METIS_PERFORMANCE_RUN_ID
+						? [...new Set([...resolvedConfig.tools, "performance_gate"])]
+						: resolvedConfig.tools;
 				}
 
 				if (!parsed.model && resolvedConfig.model) {

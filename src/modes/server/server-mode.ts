@@ -41,6 +41,7 @@ const DEFAULT_HOSTNAME = "127.0.0.1";
 const DEFAULT_PORT = 4096;
 const MAX_BODY_BYTES = 10 * 1024 * 1024;
 const HEARTBEAT_MS = 25_000;
+const SESSION_REPLACEMENT_BUSY_MESSAGE = "Agent is running or compacting context. Wait for the current run to finish.";
 
 type JsonObject = Record<string, unknown>;
 
@@ -108,6 +109,11 @@ export async function startServerMode(
 		const value = await loadDesktopWorkStats(sessionDir);
 		desktopWorkStatsCache = { loadedAt: Date.now(), value };
 		return value;
+	};
+	const ensureSessionCanBeReplaced = (): void => {
+		if (session.isStreaming || session.isCompacting) {
+			throw new HttpError(409, "session_busy", SESSION_REPLACEMENT_BUSY_MESSAGE);
+		}
 	};
 
 	const serializeEvent = (event: object): string => {
@@ -260,6 +266,7 @@ export async function startServerMode(
 			signal?.addEventListener("abort", cancel, { once: true });
 			pendingUserInput.set(request.requestId, { resolve: finish, cancel });
 		}));
+		session.setPerformanceAttendance?.("attended");
 		extensionStatuses.clear();
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(),
@@ -494,18 +501,21 @@ export async function startServerMode(
 			if (collaborationMode !== undefined && collaborationMode !== "build" && collaborationMode !== "plan") {
 				return sendError(response, 400, "invalid_request", "collaborationMode must be build or plan");
 			}
+			ensureSessionCanBeReplaced();
 			const result = await runtimeHost.newSession({ cwd, parentSession: body?.parentSession, collaborationMode });
 			return sendJson(response, 200, result);
 		}
 		if (method === "POST" && url.pathname === "/session/switch") {
 			const body = await readJsonBody<{ sessionPath?: string }>(request);
 			if (!body?.sessionPath) return sendError(response, 400, "invalid_request", "sessionPath is required");
+			ensureSessionCanBeReplaced();
 			const result = await runtimeHost.switchSession(body.sessionPath);
 			return sendJson(response, 200, result);
 		}
 		if (method === "POST" && url.pathname === "/session/fork") {
 			const body = await readJsonBody<{ entryId?: string }>(request, true);
 			if (!body?.entryId) return sendError(response, 400, "invalid_request", "entryId is required");
+			ensureSessionCanBeReplaced();
 			const result = await runtimeHost.fork(body.entryId);
 			return sendJson(response, 200, result);
 		}
@@ -550,6 +560,9 @@ export async function startServerMode(
 		if (method === "POST" && url.pathname === "/memory/run") {
 			try { return sendJson(response, 200, await session.runMemory()); }
 			catch (error) { return sendError(response, 409, "session_busy", error instanceof Error ? error.message : String(error)); }
+		}
+		if (method === "POST" && url.pathname === "/memory/abort") {
+			return sendJson(response, 200, session.abortMemory());
 		}
 		if (method === "DELETE" && /^\/memory\/[^/]+$/.test(url.pathname)) {
 			try { return sendJson(response, 200, { forgotten: session.forgetMemory(decodeURIComponent(url.pathname.slice("/memory/".length))) }); }
@@ -867,6 +880,7 @@ export async function startServerMode(
 				return { command: name, provider: argument, message: `${argument} 的已保存凭据已移除` };
 			}
 			case "new": {
+				ensureSessionCanBeReplaced();
 				const result = await runtimeHost.newSession();
 				return { command: name, ...result, message: result.cancelled ? "新建会话已取消" : "新会话已创建" };
 			}
@@ -881,6 +895,7 @@ export async function startServerMode(
 					);
 					return { command: name, sessions, usage: "/resume <sessionPath>" };
 				}
+				ensureSessionCanBeReplaced();
 				const result = await runtimeHost.switchSession(argument);
 				return { command: name, ...result, message: result.cancelled ? "恢复会话已取消" : "已切换会话" };
 			}
@@ -917,6 +932,7 @@ export async function startServerMode(
 			contextWindowId: session.contextWindowId,
 			workflowPlan: session.workflowPlan,
 			workflowProposal: session.workflowProposal,
+			performanceRun: session.performanceRunSummary,
 			pendingUserInput: session.pendingUserInput,
 			instructionSources: session.instructionSources,
 			instructionDiagnostics: session.instructionDiagnostics,

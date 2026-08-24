@@ -24,6 +24,7 @@ function createRuntimeFixture() {
 		sessionName: "Server test",
 		autoCompactionEnabled: true,
 		autoRetryEnabled: true,
+		memoryState: { enabled: true, recordCount: 1, pendingJobs: 0 },
 		get pendingMessageCount() {
 			return session.steeringMessages.length + session.followUpMessages.length;
 		},
@@ -32,7 +33,17 @@ function createRuntimeFixture() {
 		getRunningSubagentIds: vi.fn(() => ["job-1"]),
 		messages: [{ role: "user", content: "hello" }],
 		agent: { waitForIdle: vi.fn(async () => {}) },
-		modelRegistry: { getAvailable: vi.fn(async () => [model]) },
+		modelRegistry: {
+			getAvailable: vi.fn(async () => [model]),
+			getAll: vi.fn(() => [model]),
+			refresh: vi.fn(),
+			authStorage: {
+				getOAuthProviders: vi.fn(() => []),
+				list: vi.fn(() => ["test"]),
+				set: vi.fn(),
+				logout: vi.fn(),
+			},
+		},
 		extensionRunner: { getRegisteredCommands: vi.fn(() => [{ name: "dream", description: "Dream mode" }]) },
 		sessionManager: {
 			getCwd: vi.fn(() => "/tmp"),
@@ -88,6 +99,8 @@ function createRuntimeFixture() {
 			session.autoRetryEnabled = enabled;
 		}),
 		settingsManager: {
+			getUiLanguage: vi.fn(() => "en"),
+			setUiLanguage: vi.fn(),
 			getDefaultProvider: vi.fn(() => undefined),
 			getDefaultModel: vi.fn(() => undefined),
 			getDefaultThinkingLevel: vi.fn(() => undefined),
@@ -102,7 +115,17 @@ function createRuntimeFixture() {
 		setFollowUpMode: vi.fn((mode: "all" | "one-at-a-time") => {
 			session.followUpMode = mode;
 		}),
+		setMemoryEnabled: vi.fn((enabled: boolean) => ({ ...session.memoryState, enabled })),
+		runMemory: vi.fn(async () => ({ ...session.memoryState, lastRunProcessed: 1 })),
+		searchMemory: vi.fn((query: string) => query ? [{ id: "memory-1", content: `match:${query}` }] : []),
+		forgetMemory: vi.fn((id: string) => id === "memory-1"),
+		resetMemory: vi.fn((confirmation: string) => {
+			if (confirmation !== "RESET_MEMORY") throw new Error("confirmation required");
+		}),
 		setSessionName: vi.fn(),
+		syncModelFromRegistry: vi.fn(),
+		exportToHtml: vi.fn(async (filePath?: string) => filePath || "/tmp/session.html"),
+		exportToJsonl: vi.fn(async (filePath?: string) => filePath || "/tmp/session.jsonl"),
 		ensureSessionName: vi.fn(async () => undefined),
 		navigateTree: vi.fn(async () => ({ cancelled: false })),
 		reload: vi.fn(async () => {}),
@@ -133,6 +156,7 @@ function createRuntimeFixture() {
 			await replaceSession();
 			return { cancelled: false, selectedText: undefined };
 		}),
+		importFromJsonl: vi.fn(async () => ({ cancelled: false })),
 		dispose: vi.fn(async () => {}),
 	};
 	return {
@@ -198,6 +222,8 @@ describe("server mode", () => {
 		expect(spec.paths).toHaveProperty("/commands");
 		expect(spec.paths).toHaveProperty("/session/command");
 		expect(spec.paths).toHaveProperty("/session/user-input/{requestId}");
+		expect(spec.paths).toHaveProperty("/config/providers");
+		expect(spec.paths).toHaveProperty("/session/model");
 
 		const expiredInput = await fetch(`${handle.address.url}/session/user-input/missing`, {
 			method: "POST",
@@ -218,8 +244,9 @@ describe("server mode", () => {
 		const commandData = (await fetch(`${handle.address.url}/commands`).then((response) => response.json())) as {
 			commands: Array<{ name: string; source: string }>;
 		};
-		expect(commandData.commands.filter((command) => command.source === "builtin")).toHaveLength(26);
-		expect(commandData.commands.map((command) => command.name)).toEqual(expect.arrayContaining(["settings", "model", "compact", "memory", "quit"]));
+		expect(commandData.commands.filter((command) => command.source === "builtin")).toHaveLength(27);
+		expect(commandData.commands.map((command) => command.name)).not.toContain("performance");
+		expect(commandData.commands.map((command) => command.name)).toEqual(expect.arrayContaining(["settings", "model", "compact", "memory", "quit", "agents"]));
 
 		const settingsCommandResponse = await fetch(`${handle.address.url}/session/command`, {
 			method: "POST",
@@ -249,6 +276,18 @@ describe("server mode", () => {
 		expect(state.collaborationMode).toBe("build");
 		expect(state.contextWindowId).toBe("window-1");
 		expect(state.autoRetryEnabled).toBe(true);
+
+		const providerModels = await fetch(`${handle.address.url}/config/providers`).then((response) => response.json());
+		expect(providerModels).toEqual({ models: [{ provider: "test", id: "model-1", name: "Test Model" }] });
+
+		const modelResponse = await fetch(`${handle.address.url}/session/model`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ provider: "test", modelId: "model-1" }),
+		});
+		expect(modelResponse.status).toBe(200);
+		expect(await modelResponse.json()).toEqual({ provider: "test", id: "model-1", name: "Test Model" });
+		expect(fixture.session.setModel).toHaveBeenCalledWith(fixture.session.model);
 
 		const initialDefaultsResponse = await fetch(`${handle.address.url}/settings/defaults`);
 		expect(initialDefaultsResponse.status).toBe(200);
@@ -443,6 +482,131 @@ describe("server mode", () => {
 			parentSession: undefined,
 			collaborationMode: "plan",
 		});
+	});
+
+	test("serves every Memory control used by Desktop settings", async () => {
+		const fixture = createRuntimeFixture();
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+
+		const stateResponse = await fetch(`${handle.address.url}/memory`);
+		expect(stateResponse.status).toBe(200);
+		expect(await stateResponse.json()).toMatchObject({ enabled: true, recordCount: 1 });
+
+		const settingResponse = await fetch(`${handle.address.url}/memory/settings`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ enabled: false }),
+		});
+		expect(settingResponse.status).toBe(200);
+		expect(fixture.session.setMemoryEnabled).toHaveBeenCalledWith(false);
+
+		const runResponse = await fetch(`${handle.address.url}/memory/run`, { method: "POST" });
+		expect(runResponse.status).toBe(200);
+		expect(fixture.session.runMemory).toHaveBeenCalledOnce();
+
+		const searchResponse = await fetch(`${handle.address.url}/memory/search?q=needle`);
+		expect(searchResponse.status).toBe(200);
+		expect(await searchResponse.json()).toEqual([{ id: "memory-1", content: "match:needle" }]);
+		expect(fixture.session.searchMemory).toHaveBeenCalledWith("needle");
+
+		const forgetResponse = await fetch(`${handle.address.url}/memory/memory-1`, { method: "DELETE" });
+		expect(forgetResponse.status).toBe(200);
+		expect(await forgetResponse.json()).toEqual({ forgotten: true });
+		expect(fixture.session.forgetMemory).toHaveBeenCalledWith("memory-1");
+
+		const resetResponse = await fetch(`${handle.address.url}/memory/reset`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ confirm: "RESET_MEMORY" }),
+		});
+		expect(resetResponse.status).toBe(200);
+		expect(fixture.session.resetMemory).toHaveBeenCalledWith("RESET_MEMORY");
+	});
+
+	test("preserves active work when a client tries to replace the session", async () => {
+		const fixture = createRuntimeFixture();
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+		fixture.session.isStreaming = true;
+
+		const requests = [
+			fetch(`${handle.address.url}/session/new`, { method: "POST" }),
+			fetch(`${handle.address.url}/session/switch`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ sessionPath: "/tmp/other.jsonl" }),
+			}),
+			fetch(`${handle.address.url}/session/fork`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ entryId: "entry-1" }),
+			}),
+		];
+		for (const response of await Promise.all(requests)) {
+			expect(response.status).toBe(409);
+			expect(await response.json()).toEqual({
+				error: {
+					code: "session_busy",
+					message: "Agent is running or compacting context. Wait for the current run to finish.",
+				},
+			});
+		}
+
+		expect(fixture.runtime.newSession).not.toHaveBeenCalled();
+		expect(fixture.runtime.switchSession).not.toHaveBeenCalled();
+		expect(fixture.runtime.fork).not.toHaveBeenCalled();
+
+		fixture.session.isStreaming = false;
+		fixture.session.isCompacting = true;
+		const compactingResponse = await fetch(`${handle.address.url}/session/switch`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ sessionPath: "/tmp/other.jsonl" }),
+		});
+		expect(compactingResponse.status).toBe(409);
+		expect(fixture.runtime.switchSession).not.toHaveBeenCalled();
+	});
+
+	test("serves session, language, credential, import, export, and reload settings actions", async () => {
+		const fixture = createRuntimeFixture();
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+		const command = (value: string) => fetch(`${handle!.address.url}/session/command`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ command: value }),
+		});
+
+		const nameResponse = await fetch(`${handle.address.url}/session/name`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name: " Renamed session " }),
+		});
+		expect(nameResponse.status).toBe(200);
+		expect(fixture.session.setSessionName).toHaveBeenCalledWith("Renamed session");
+
+		const compactResponse = await fetch(`${handle.address.url}/session/compact`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(compactResponse.status).toBe(200);
+		expect(fixture.session.compact).toHaveBeenCalledWith(undefined);
+
+		expect((await command("/language")).status).toBe(200);
+		expect((await command("/language zh-CN")).status).toBe(200);
+		expect(fixture.session.settingsManager.setUiLanguage).toHaveBeenCalledWith("zh-CN");
+		expect(await (await command("/login")).json()).toMatchObject({ providers: ["test"], oauthProviders: [] });
+		expect(await (await command("/logout")).json()).toMatchObject({ providers: ["test"] });
+		expect((await command("/logout test")).status).toBe(200);
+		expect(fixture.session.modelRegistry.authStorage.logout).toHaveBeenCalledWith("test");
+
+		const htmlPath = "/tmp/session export.html";
+		expect((await command(`/export ${htmlPath}`)).status).toBe(200);
+		expect(fixture.session.exportToHtml).toHaveBeenCalledWith(htmlPath);
+		const jsonlPath = "/tmp/session import.jsonl";
+		expect((await command(`/import ${jsonlPath}`)).status).toBe(200);
+		expect(fixture.runtime.importFromJsonl).toHaveBeenCalledWith(jsonlPath);
+		expect((await command("/reload")).status).toBe(200);
+		expect(fixture.session.reload).toHaveBeenCalledOnce();
 	});
 
 	test("starts title generation before dispatching the first Desktop prompt", async () => {

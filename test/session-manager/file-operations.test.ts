@@ -1,5 +1,5 @@
 import { constants as bufferConstants } from "buffer";
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -219,6 +219,23 @@ describe("SessionManager custom flat session directory", () => {
 		}
 		return sessionFile;
 	}
+
+	it("persists the first user message before an assistant response", async () => {
+		const session = SessionManager.create(projectA, tempDir);
+		const sessionFile = session.getSessionFile();
+		expect(sessionFile).toBeDefined();
+		expect(existsSync(sessionFile!)).toBe(false);
+
+		session.appendMessage({ role: "user", content: "survive restart", timestamp: Date.now() });
+
+		expect(existsSync(sessionFile!)).toBe(true);
+		const reopened = SessionManager.open(sessionFile!, tempDir);
+		expect(reopened.buildSessionContext().messages).toEqual([
+			expect.objectContaining({ role: "user", content: "survive restart" }),
+		]);
+		const listed = await SessionManager.list(projectA, tempDir);
+		expect(listed.map((item) => item.path)).toContain(sessionFile);
+	});
 
 	it("scopes current-folder APIs by cwd while listing all flat sessions", async () => {
 		const sessionA = createPersistedSession(projectA, "from A");

@@ -458,7 +458,7 @@ function collectAncestorAgentsSkillDirs(startDir: string): string[] {
 	return skillDirs;
 }
 
-function collectAutoPromptEntries(dir: string): string[] {
+function collectPromptFileEntries(dir: string): string[] {
 	const entries: string[] = [];
 	if (!existsSync(dir)) return entries;
 
@@ -2342,7 +2342,7 @@ export class DefaultPackageManager implements PackageManager {
 		if (projectTrusted) {
 			addResources(
 				"prompts",
-				collectAutoPromptEntries(projectDirs.prompts),
+				collectPromptFileEntries(projectDirs.prompts),
 				projectMetadata,
 				projectOverrides.prompts,
 				projectBaseDir,
@@ -2390,7 +2390,7 @@ export class DefaultPackageManager implements PackageManager {
 
 		addResources(
 			"prompts",
-			collectAutoPromptEntries(userDirs.prompts),
+			collectPromptFileEntries(userDirs.prompts),
 			userMetadata,
 			userOverrides.prompts,
 			globalBaseDir,

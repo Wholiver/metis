@@ -346,7 +346,7 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		let state = await client.getState();
 		expect(state.sessionName).toBeUndefined();
 
-		// Send a prompt first - session files are only written after first assistant message
+		// Send a prompt first so the first user message creates the session file.
 		await client.promptAndWait("Reply with just 'ok'");
 
 		// Set name

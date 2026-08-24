@@ -92,6 +92,7 @@ export function createServerOpenApiDocument() {
 			"/memory/search": { get: operation("Search advisory memory", 200, json) },
 			"/memory/settings": { put: bodyOperation("Enable or disable memory", json, 200, json) },
 			"/memory/run": { post: operation("Run idle memory consolidation", 200, json) },
+			"/memory/abort": { post: operation("Abort running memory consolidation", 200, json) },
 			"/memory/reset": { post: bodyOperation("Reset memory with explicit confirmation", json, 200, json) },
 		"/session/settings": { put: bodyOperation("Update Agent session settings", json, 200, json) },
 		"/commands": { get: operation("List built-in and loaded slash commands", 200, json) },

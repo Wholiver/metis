@@ -260,6 +260,47 @@ describe("MemoryCoordinator", () => {
 		expect(existsSync(mapFile)).toBe(false);
 	});
 
+	it("saves updated memory-overview.md from model extraction, passes existing overview, supports getMemoryOverview, and deletes it on reset", async () => {
+		const root = mkdtempSync(join(tmpdir(), "metis-memory-overview-"));
+		roots.push(root);
+		const memoryDir = join(root, "memories");
+		let passedExistingOverview: string | undefined;
+
+		const memory = new MemoryCoordinator({
+			agentDir: join(root, "agent"),
+			cwd: root,
+			trusted: () => true,
+			settings: () => ({ minRolloutIdleHours: 1, maxRolloutsPerSweep: 2 }),
+			extract: async (_checkpoint, _signal, _existingMemoryMap, existingMemoryOverview) => {
+				passedExistingOverview = existingMemoryOverview;
+				return {
+					candidates: [{ scope: "project", category: "tech_stack", kind: "fact", content: "Vue 3 with Pinia", confidence: 0.95 }],
+					memoryOverview: "# Memory Overview\n\n- [tech_stack]: Vue 3 + Pinia",
+				};
+			},
+		});
+
+		expect(memory.getMemoryOverview()).toBeUndefined();
+
+		memory.recordCheckpoint({ sessionId: "session-overview-1", reason: "completed", timestamp: new Date().toISOString() });
+		await memory.run(true);
+
+		const overviewFile = join(memoryDir, "memory-overview.md");
+		expect(existsSync(overviewFile)).toBe(true);
+		expect(passedExistingOverview).toBeUndefined();
+		expect(memory.getMemoryOverview()).toBe("# Memory Overview\n\n- [tech_stack]: Vue 3 + Pinia");
+
+		// Second run: verify previous memory-overview.md is passed to extract
+		memory.recordCheckpoint({ sessionId: "session-overview-2", reason: "completed", timestamp: new Date().toISOString() });
+		await memory.run(true);
+		expect(passedExistingOverview).toContain("# Memory Overview\n\n- [tech_stack]: Vue 3 + Pinia");
+
+		// Reset clears memory-overview.md and getMemoryOverview returns undefined
+		memory.reset("RESET_MEMORY");
+		expect(existsSync(overviewFile)).toBe(false);
+		expect(memory.getMemoryOverview()).toBeUndefined();
+	});
+
 	it("executes read-only SQL queries and blocks mutating statements", async () => {
 		const memory = coordinator();
 		memory.recordCheckpoint({
@@ -289,5 +330,98 @@ describe("MemoryCoordinator", () => {
 		expect(() => memory.query("INSERT INTO memory_meta VALUES ('k', 'v')")).toThrow(/Only read-only queries/i);
 		expect(() => memory.query("SELECT 1; DELETE FROM memory_records;")).toThrow(/mutating operations/i);
 		expect(() => memory.query("   ")).toThrow(/empty/i);
+	});
+
+	it("emits real-time extraction progress updates across checkpoints", async () => {
+		const memory = coordinator();
+		for (let i = 0; i < 3; i++) {
+			memory.recordCheckpoint({
+				sessionId: `session-progress-${i}`,
+				reason: "completed",
+				timestamp: new Date().toISOString(),
+				verification: [`procedure verified #${i}`],
+			});
+		}
+
+		const progressSnapshots: Array<{ total?: number; processed?: number; pending: number }> = [];
+		memory.on((event) => {
+			if (event.type === "memory_state_changed" && event.state.phase === "extracting") {
+				progressSnapshots.push({
+					total: event.state.extractingTotal,
+					processed: event.state.extractingProcessed,
+					pending: event.state.pendingJobs,
+				});
+			}
+		});
+
+		await memory.run(true);
+
+		expect(progressSnapshots.length).toBeGreaterThanOrEqual(3);
+		expect(progressSnapshots[0]).toMatchObject({ total: 3, processed: 0, pending: 3 });
+		expect(progressSnapshots[progressSnapshots.length - 1]).toMatchObject({ total: 3, processed: 3, pending: 0 });
+	});
+
+	it("processes checkpoints concurrently with multiple workers", async () => {
+		let maxConcurrent = 0;
+		let currentRunning = 0;
+
+		const memory = coordinator({
+			extract: async (_checkpoint, _signal) => {
+				currentRunning += 1;
+				maxConcurrent = Math.max(maxConcurrent, currentRunning);
+				await new Promise((resolve) => setTimeout(resolve, 20));
+				currentRunning -= 1;
+				return [{ scope: "project", kind: "fact", content: "Extracted parallel fact content", confidence: 0.9 }];
+			},
+		});
+
+		for (let i = 0; i < 8; i++) {
+			memory.recordCheckpoint({
+				sessionId: `session-concurrent-${i}`,
+				reason: "completed",
+				timestamp: new Date().toISOString(),
+				verification: [`procedure verified #${i}`],
+			});
+		}
+
+		const state = await memory.run(true);
+		expect(state.pendingJobs).toBe(0);
+		expect(state.lastRunProcessed).toBe(8);
+		expect(maxConcurrent).toBeGreaterThan(1);
+		expect(maxConcurrent).toBeLessThanOrEqual(4);
+	});
+
+	it("aborts unstarted concurrent jobs when extraction is aborted", async () => {
+		let callCount = 0;
+		const memory = coordinator({
+			extract: async (_checkpoint, signal) => {
+				callCount += 1;
+				await new Promise((resolve, reject) => {
+					const timer = setTimeout(resolve, 100);
+					signal?.addEventListener("abort", () => {
+						clearTimeout(timer);
+						reject(new Error("aborted"));
+					});
+				});
+				return [{ scope: "project", kind: "fact", content: "Should not finish all", confidence: 0.9 }];
+			},
+		});
+
+		for (let i = 0; i < 10; i++) {
+			memory.recordCheckpoint({
+				sessionId: `session-fail-${i}`,
+				reason: "completed",
+				timestamp: new Date().toISOString(),
+				verification: [`fail test checkpoint #${i}`],
+			});
+		}
+
+		const running = memory.run(true);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		memory.abort();
+		await expect(running).rejects.toThrow("aborted");
+		const state = memory.getState();
+		expect(state.phase).toBe("retry_wait");
+		expect(state.pendingJobs).toBeGreaterThan(0);
 	});
 });

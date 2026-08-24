@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/metis-agent-core";
@@ -42,6 +42,175 @@ describe("AgentSession prompt characterization", () => {
 		expect(visibleSessionMessages(harness).map((message) => message.role)).toEqual(["user", "assistant"]);
 		expect(getMessageText(visibleSessionMessages(harness)[0]!)).toBe("hi");
 		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("starts native Performance orchestration for every direct task", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("delegated")]);
+
+		await harness.session.prompt("Repair the parser");
+
+		expect(harness.session.performanceRun).toMatchObject({ mission: "Repair the parser", frontier: "G2", status: "active" });
+		expect(getMessageText(visibleSessionMessages(harness)[0]!)).toBe("Repair the parser");
+		expect(harness.session.performanceRun?.governanceRoot).toContain("performance-runs");
+		const roadmap = join(harness.session.performanceRun!.governanceRoot, "ROADMAP.md");
+		expect(existsSync(roadmap)).toBe(true);
+		expect(readFileSync(roadmap, "utf8")).toContain("Mission pointer:");
+		expect(harness.session.workflowPlan).toBeUndefined();
+	});
+
+	it("honors and strips native direct invocation controls", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("delegated")]);
+
+		await harness.session.prompt("mode=custom max_subs=3 agents=auto Repair the parser");
+
+		expect(harness.session.performanceRun).toMatchObject({
+			mission: "Repair the parser", concurrency: "custom", maxConcurrent: 3, agentSelection: "auto",
+		});
+	});
+
+	it("hard-stops direct Build before model work when a required capability is disabled", async () => {
+		const harness = await createHarness({ initialActiveToolNames: ["read", "write"] });
+		harnesses.push(harness);
+
+		await expect(harness.session.prompt("Repair the parser")).rejects.toThrow("control capability is disabled");
+
+		expect(harness.session.performanceRun).toBeUndefined();
+		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("appends a later direct task as steering for an active Performance run", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("second")]);
+
+		await harness.session.prompt("Repair the parser");
+		const firstRun = harness.session.performanceRun;
+		await harness.session.prompt("Add parser tests");
+
+		expect(harness.session.performanceRun).toMatchObject({ runId: firstRun?.runId, frontier: "G2" });
+		expect(readFileSync(join(firstRun!.governanceRoot, "PROMPTS.txt"), "utf8")).toContain("Add parser tests");
+	});
+
+	it("uses attended chooser selections for direct Build runs and records them", async () => {
+		const requests: string[][] = [];
+		const harness = await createHarness({
+			performanceAttendance: "attended",
+			askUserHandler: async (request) => {
+				requests.push(request.questions.map((question) => question.id));
+				return {
+					cancelled: false,
+					answers: [
+						{ id: "performance_concurrency", value: "wide", selectedLabel: "wide" },
+						{ id: "performance_agent_selection", value: "auto-tier", selectedLabel: "auto-tier" },
+						{ id: "performance_custom_cap", value: "12", selectedLabel: "12" },
+					],
+				};
+			},
+		});
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("delegated")]);
+
+		await harness.session.prompt("Repair the parser");
+
+		expect(requests).toEqual([["performance_concurrency", "performance_agent_selection", "performance_custom_cap"]]);
+		expect(harness.session.performanceRun).toMatchObject({ attendance: "attended", concurrency: "wide", maxConcurrent: 200, agentSelection: "auto" });
+		expect(readFileSync(join(harness.session.performanceRun!.governanceRoot, "GATELOG.md"), "utf8")).toContain("OPERATOR attendance=attended concurrency=wide");
+	});
+
+	it("applies an attended custom concurrency ceiling", async () => {
+		const harness = await createHarness({
+			performanceAttendance: "attended",
+			askUserHandler: async () => ({
+				cancelled: false,
+				answers: [
+					{ id: "performance_concurrency", value: "custom", selectedLabel: "custom" },
+					{ id: "performance_agent_selection", value: "inherit", selectedLabel: "inherit" },
+					{ id: "performance_custom_cap", value: "24", selectedLabel: "24" },
+				],
+			}),
+		});
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("delegated")]);
+
+		await harness.session.prompt("Repair the parser");
+
+		expect(harness.session.performanceRun).toMatchObject({ attendance: "attended", concurrency: "custom", maxConcurrent: 24, agentSelection: "off" });
+	});
+
+	it("keeps Plan mode read-only and defers Performance orchestration to Build", async () => {
+		let chooserCalls = 0;
+		const harness = await createHarness({
+			collaborationMode: "plan",
+			performanceAttendance: "attended",
+			askUserHandler: async () => {
+				chooserCalls += 1;
+				return { cancelled: true, answers: [] };
+			},
+		});
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("<proposed_plan>\n# Proposed plan\n\n1. Repair parser\n</proposed_plan>")]);
+
+		await harness.session.prompt("Repair the parser");
+
+		expect(harness.session.performanceRun).toBeUndefined();
+		expect(harness.session.workflowProposal?.markdown).toContain("Repair parser");
+		expect(harness.session.getActiveToolNames()).not.toEqual(expect.arrayContaining(["spawn_agent", "performance_gate", "write", "edit"]));
+		expect(chooserCalls).toBe(0);
+	});
+
+	it("starts Build Performance from the approved Plan proposal during Process", async () => {
+		const harness = await createHarness({ collaborationMode: "plan" });
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("<proposed_plan>\n# Approved proposal\n\nRepair parser with regression tests.\n</proposed_plan>")]);
+		await harness.session.prompt("Repair the parser");
+		const proposal = harness.session.workflowProposal;
+		expect(proposal).toBeDefined();
+
+		harness.session.setCollaborationMode("build");
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("read_plan", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("update_plan", {
+				plan: [{ step: "Repair parser", status: "in_progress" }],
+			}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("Build checklist initialized."),
+		]);
+
+		await harness.session.prompt("Process approved proposal", { workflowAction: "process_proposal" });
+
+		expect(harness.session.performanceRun?.mission).toBe(proposal?.markdown);
+		expect(harness.session.workflowPlan).toMatchObject({ phase: "active", proposalRevision: proposal?.revision });
+	});
+
+	it("cancels Process before any Build run and clears its temporary execution setup", async () => {
+		const harness = await createHarness({
+			collaborationMode: "plan",
+			performanceAttendance: "attended",
+			askUserHandler: async () => ({ cancelled: true, answers: [] }),
+		});
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("<proposed_plan>\n# Approved proposal\n\nRepair parser.\n</proposed_plan>")]);
+		await harness.session.prompt("Repair the parser");
+		harness.session.setCollaborationMode("build");
+
+		await expect(harness.session.prompt("Process approved proposal", { workflowAction: "process_proposal" })).rejects.toThrow("setup cancelled");
+
+		expect(harness.session.performanceRun).toBeUndefined();
+		expect(harness.getPendingResponseCount()).toBe(0);
+		expect(harness.session.workflowPlan?.phase).not.toBe("active");
+	});
+
+	it("does not treat removed /performance syntax as an orchestration entry", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("unknown command")]);
+
+		await harness.session.prompt("/performance Repair the parser");
+
+		expect(harness.session.performanceRun).toBeUndefined();
 	});
 
 	it("keeps Build tools configured while Plan exposes only read tools", async () => {

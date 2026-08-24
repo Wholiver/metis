@@ -56,7 +56,9 @@ describe("desktop active chat shell contracts", () => {
 		expect(appSource).not.toContain("humanizeEvent");
 		expect(appSource).toContain("document.querySelector('[data-purpose=\"main-chat\"]')");
 		expect(cssSource).toMatch(/\[data-purpose="main-chat"\] #messageScroll\s*\{[\s\S]*?flex:\s*1 1 0%/);
+		expect(cssSource).toMatch(/\[data-purpose="main-chat"\] #messageColumn\s*\{[\s\S]*?width:\s*min\(calc\(100% - 72px\), 680px\)/);
 		expect(cssSource).toMatch(/\[data-purpose="main-chat"\] \[data-purpose="composer-stack"\]\s*\{[\s\S]*?flex:\s*0 0 auto/);
+		expect(cssSource).toMatch(/\[data-purpose="main-chat"\] #composer\s*\{[\s\S]*?width:\s*min\(calc\(100% - 72px\), 680px\)/);
 		expect(cssSource).toMatch(/\[data-purpose="main-chat"\] #modelPicker,[\s\S]*?#composer\s*\{[\s\S]*?overflow:\s*visible/);
 		expect(cssSource).toMatch(/\[data-purpose="main-chat"\] #composerDropFeedback\s*\{[\s\S]*?display:\s*none[\s\S]*?opacity:\s*0/);
 		expect(cssSource).toMatch(/#composer\.is-dragging-attachments #composerDropFeedback\s*\{[\s\S]*?display:\s*flex[\s\S]*?opacity:\s*1/);

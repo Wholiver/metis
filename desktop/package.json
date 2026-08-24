@@ -1,18 +1,16 @@
 {
 	"name": "metis-desktop",
-	"version": "1.0.3",
+	"version": "1.1.0",
 	"private": true,
 	"description": "Electron desktop shell for Metis",
+	"type": "module",
 	"main": "main.cjs",
 	"scripts": {
 		"prepare:cli": "npm --prefix .. run build",
-		"prepare:renderer": "node scripts/sync-renderer-vendor.mjs",
-		"i18n:generate": "node scripts/generate-i18n-catalogs.mjs",
-		"predev": "npm run prepare:cli",
-		"dev": "npm run prepare:renderer && electron .",
+		"dev": "node scripts/dev.mjs",
 		"prestart": "npm run prepare:cli",
-		"start": "npm run prepare:renderer && electron .",
-		"build": "npm run prepare:renderer && node scripts/build.mjs",
+		"start": "node scripts/dev.mjs",
+		"build": "vite build && node scripts/build.mjs",
 		"package:mac": "node scripts/package-macos.mjs",
 		"package:win": "node scripts/package-windows.mjs",
 		"package:win:installer": "node scripts/package-windows-installer.mjs",
@@ -20,12 +18,25 @@
 	},
 	"devDependencies": {
 		"@electron/packager": "20.0.4",
+		"@types/react": "^18.3.18",
+		"@types/react-dom": "^18.3.5",
+		"@vitejs/plugin-react": "^4.3.4",
+		"autoprefixer": "^10.4.20",
 		"electron": "43.1.1",
 		"makensis": "^3.0.5",
-		"nsis": "^0.0.0"
+		"nsis": "^0.0.0",
+		"postcss": "^8.4.49",
+		"tailwindcss": "^3.4.17",
+		"typescript": "^5.7.3",
+		"vite": "^6.1.0"
 	},
 	"dependencies": {
-		"dompurify": "^3.4.12",
-		"marked": "^18.0.7"
+		"clsx": "^2.1.1",
+		"dompurify": "^3.2.4",
+		"lucide-react": "^0.475.0",
+		"marked": "^15.0.6",
+		"react": "^18.3.1",
+		"react-dom": "^18.3.1",
+		"tailwind-merge": "^3.0.1"
 	}
 }

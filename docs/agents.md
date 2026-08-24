@@ -162,7 +162,7 @@ When an agent attempts to spawn a duplicate or circular task (e.g. A → B → A
 The engine registers process-level exit and signal handlers (`SIGINT`, `SIGTERM`, `exit`). If the root or intermediate process terminates, all child process trees (PGID) are immediately and cleanly terminated.
 
 ### 4. Physical Worktree Isolation
-When multiple agents edit files concurrently, setting `worktree: "branch"` isolates edits in a temporary Git Worktree branch, preventing file locks and merge corruption. On completion, worktrees are automatically cleaned up.
+When multiple agents edit files concurrently, `worktree: "auto"` or `worktree: "branch:<name>"` creates a Git Worktree from a snapshot of the parent workspace, including its uncommitted and untracked files. This prevents file locks and merge corruption without hiding code the parent is actively editing. Successful isolated workspaces are retained so the parent can inspect and integrate child changes; failed, cancelled, and timed-out workspaces are cleaned up automatically. Retained workspaces are removed during process shutdown if the parent has not integrated them earlier.
 
 ### 5. Sensitive Environment Variable Filtering
 Child processes automatically strip dangerous injection environment variables (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, etc.), while preserving authentication keys safely.

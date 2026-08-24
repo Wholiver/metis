@@ -618,6 +618,14 @@ describe("Coding Agent Tools", () => {
 			);
 		});
 
+		it("should default timeout for nested subagents when omitted", async () => {
+			const { DEFAULT_SUBAGENT_BASH_TIMEOUT_SECONDS, resolveBashTimeoutSeconds } = await import("../src/core/tools/bash.ts");
+			expect(resolveBashTimeoutSeconds(undefined, {})).toBeUndefined();
+			expect(resolveBashTimeoutSeconds(undefined, { METIS_AGENT_DEPTH: "0" })).toBeUndefined();
+			expect(resolveBashTimeoutSeconds(undefined, { METIS_AGENT_DEPTH: "2" })).toBe(DEFAULT_SUBAGENT_BASH_TIMEOUT_SECONDS);
+			expect(resolveBashTimeoutSeconds(30, { METIS_AGENT_DEPTH: "2" })).toBe(30);
+		});
+
 		it("should include full output path for truncated timeout and abort errors", async () => {
 			for (const testCase of [
 				{ error: "timeout:5", expected: "Command timed out after 5 seconds" },

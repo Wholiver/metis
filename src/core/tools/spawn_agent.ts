@@ -14,6 +14,10 @@ import { getGlobalSpawnGuard, type SpawnGuard, type SpawnErrorCode, computeTaskH
 import { createIsolatedWorkspace, type IsolatedWorkspace } from "../worktree.ts";
 import { filterChildEnvironment, sanitizeTraceData } from "../env-sanitizer.ts";
 
+const SPAWN_PROGRESS_HEARTBEAT_MS = 5_000;
+const SPAWN_EXIT_DRAIN_GRACE_MS = 1_000;
+const SPAWN_RELEASE_RETRY_DELAYS_MS = [25, 50, 100] as const;
+
 /**
  * TypeBox Schema for spawn_agent (Feat 4, 15, 50)
  */
@@ -36,7 +40,7 @@ export const spawnAgentSchema = Type.Object({
 	),
 	worktree: Type.Optional(
 		Type.String({
-			description: "Optional isolated worktree or directory path to run the agent within ('auto', 'temp', 'branch:<name>', or relative/absolute path)",
+			description: "Optional isolated workspace ('auto', 'temp', 'branch:<name>', or relative/absolute path). Auto/branch modes snapshot the parent workspace; successful isolated workspaces are retained for integration.",
 		}),
 	),
 	force: Type.Optional(
@@ -61,11 +65,16 @@ export type SpawnAgentToolInput = Static<typeof spawnAgentSchema>;
 export interface SpawnAgentRuntimeContext {
 	rootRunId?: string;
 	currentAgentId?: string;
+	currentAgentName?: string;
 	currentDepth?: number;
 	provider?: string;
 	model?: string;
 	baseUrl?: string;
 	thinking?: ThinkingLevel;
+	/** Native orchestration may select a configured child model per role. */
+	getChildModel?: (agent: string) => { provider: string; model: string; baseUrl?: string } | undefined;
+	/** Native orchestration may select an effort per child role. */
+	getChildThinking?: (agent: string) => ThinkingLevel | undefined;
 	apiKey?: string;
 	skills?: string[];
 	extensions?: string[];
@@ -78,6 +87,10 @@ export interface SpawnAgentToolOptions {
 	getGuard?: () => SpawnGuard;
 	runtimeContext?: SpawnAgentRuntimeContext;
 	getRuntimeContext?: () => SpawnAgentRuntimeContext;
+	/** Optional runtime policy layered before generic depth/concurrency guard checks. */
+	validateSpawn?: (input: SpawnAgentToolInput, runtime: SpawnAgentRuntimeContext | undefined, childAgentId: string) => string | undefined;
+	/** Releases a successful policy reservation after a child exits or launch fails. */
+	releaseSpawn?: (childAgentId: string) => void | Promise<void>;
 	sendMessage?: (agentId: string, result: string) => void;
 	onStatusChange?: (agentId: string, running: boolean) => void;
 }
@@ -86,6 +99,8 @@ export const SPAWN_AGENT_GUIDANCE = [
 	"Delegate a specific task to a specialized named agent (e.g. planner, implementer, reviewer, verifier, or coordinator).",
 	"By default, execution is synchronous ('sync') and blocks until the agent completes, returning structured results directly.",
 	"For parallel background execution across multiple agents, set mode to 'async'.",
+	"An isolated worktree starts from a snapshot of the parent workspace, including uncommitted and untracked files.",
+	"Isolated worktrees are retained after successful completion so the parent can inspect and integrate child changes; failed or cancelled workspaces are cleaned up.",
 ].join(" ");
 
 function getMetisInvocation(): { command: string; args: string[] } {
@@ -94,8 +109,17 @@ function getMetisInvocation(): { command: string; args: string[] } {
 	const isElectron = Boolean(process.versions.electron || process.env.ELECTRON_RUN_AS_NODE);
 
 	if (currentScript && !isBunVirtualScript && existsSync(currentScript)) {
-		const nodeCmd = isElectron ? "node" : process.execPath;
-		return { command: nodeCmd, args: [currentScript] };
+		// Prefer a real Node binary under Electron. Spawning Electron-as-node is fragile and
+		// historically left orphaned child trees when parents exited uncleanly.
+		if (isElectron) {
+			const candidate = process.env.npm_node_execpath || process.env.NODE_BINARY;
+			if (candidate && existsSync(candidate)) {
+				return { command: candidate, args: [currentScript] };
+			}
+			// Fall back to ELECTRON_RUN_AS_NODE with the Electron binary.
+			return { command: process.execPath, args: [currentScript] };
+		}
+		return { command: process.execPath, args: [currentScript] };
 	}
 
 	const execName = path.basename(process.execPath).toLowerCase();
@@ -104,7 +128,7 @@ function getMetisInvocation(): { command: string; args: string[] } {
 		return { command: process.execPath, args: [] };
 	}
 
-	return { command: "metis", args: [] };
+	return { command: process.execPath || "metis", args: [] };
 }
 
 export interface ChildAgentResultPayload {
@@ -123,6 +147,7 @@ export interface ChildAgentResultPayload {
 	hint?: string;
 	exitCode?: number | null;
 	worktree?: string;
+	worktreeRetained?: boolean;
 }
 
 function attributeChildError(stderr: string, stdout: string, exitCode: number | null): { error: string; hint?: string } {
@@ -161,7 +186,7 @@ export function createSpawnAgentToolDefinition(
 		promptSnippet: "Delegate tasks to named subagents",
 		parameters: spawnAgentSchema,
 		executionMode: "sequential",
-		async execute(toolCallId, { agent, task, context, mode = "sync", worktree, force, rationale, timeoutSeconds }, _signal, _onUpdate, _ctx) {
+		async execute(toolCallId, { agent, task, context, mode = "sync", worktree, force, rationale, timeoutSeconds }, signal, _onUpdate, _ctx) {
 			const invocation = getMetisInvocation();
 			const rt = options?.getRuntimeContext?.() ?? options?.runtimeContext;
 			const guard = options?.getGuard?.() ?? options?.guard ?? getGlobalSpawnGuard();
@@ -172,6 +197,34 @@ export function createSpawnAgentToolDefinition(
 			const parentId = rt?.currentAgentId ?? process.env.METIS_AGENT_ID ?? (currentDepth === 0 ? "root" : `agent-${currentDepth}`);
 			const childSuffix = randomBytes(3).toString("hex");
 			const childAgentId = `${agent}-${childSuffix}`;
+			if (signal?.aborted) {
+				const payload: ChildAgentResultPayload = {
+					status: "error", agent, agentId: childAgentId, parentId, rootRunId, depth: childDepth,
+					error: "Agent execution cancelled before spawn.",
+				};
+				return { content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }], details: undefined };
+			}
+			const policyError = options?.validateSpawn?.({ agent, task, context, mode, worktree, force, rationale, timeoutSeconds }, rt, childAgentId);
+			if (policyError) {
+				const payload: ChildAgentResultPayload = {
+					status: "error", agent, agentId: childAgentId, parentId, rootRunId, depth: childDepth,
+					error: policyError,
+				};
+				return { content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }], details: undefined };
+			}
+			const releaseSpawnReservation = async () => {
+				if (!options?.releaseSpawn) return;
+				for (let attempt = 0; attempt <= SPAWN_RELEASE_RETRY_DELAYS_MS.length; attempt++) {
+					try {
+						await options.releaseSpawn(childAgentId);
+						return;
+					} catch {
+						const delayMs = SPAWN_RELEASE_RETRY_DELAYS_MS[attempt];
+						if (delayMs === undefined) return;
+						await new Promise((resolve) => setTimeout(resolve, delayMs));
+					}
+				}
+			};
 
 			// 1. Guard check (Feats 12, 13, 14, 15, 16)
 			const parentChain = rt?.agentChain ?? (process.env.METIS_AGENT_CHAIN ? process.env.METIS_AGENT_CHAIN.split(",") : ["root"]);
@@ -186,6 +239,7 @@ export function createSpawnAgentToolDefinition(
 			});
 
 			if (!check.valid) {
+				await releaseSpawnReservation();
 				const payload: ChildAgentResultPayload = {
 					status: "error",
 					errorCode: check.errorCode,
@@ -212,6 +266,7 @@ export function createSpawnAgentToolDefinition(
 					agentId: childAgentId,
 				});
 			} catch (err: any) {
+				await releaseSpawnReservation();
 				const payload: ChildAgentResultPayload = {
 					status: "error",
 					agent,
@@ -228,6 +283,15 @@ export function createSpawnAgentToolDefinition(
 			}
 
 			const effectiveCwd = workspace.workspacePath;
+			if (signal?.aborted) {
+				await releaseSpawnReservation();
+				await workspace.cleanup().catch(() => {});
+				const payload: ChildAgentResultPayload = {
+					status: "error", agent, agentId: childAgentId, parentId, rootRunId, depth: childDepth,
+					error: "Agent execution cancelled before process launch.",
+				};
+				return { content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }], details: undefined };
+			}
 
 			// Register to guard
 			const childChain = [...parentChain, agent];
@@ -254,7 +318,10 @@ export function createSpawnAgentToolDefinition(
 			const args: string[] = [
 				...invocation.args,
 				"--print",
+				"--mode", "json",
 				"--approve",
+				"--no-session",
+				"--collaboration-mode", "build",
 				"--agent", agent,
 				"--depth", String(childDepth),
 				"--parent-id", parentId,
@@ -266,18 +333,23 @@ export function createSpawnAgentToolDefinition(
 				args.push("--agent-context", context);
 			}
 
-			// Forward runtime provider / model / thinking / keys / skills / extensions (Feat 8, 9, 10, 39, 43)
-			if (rt?.provider) {
-				args.push("--provider", rt.provider);
+			// Forward role-aware model/effort selection before inherited runtime defaults.
+			const selectedModel = rt?.getChildModel?.(agent);
+			const childProvider = selectedModel?.provider ?? rt?.provider;
+			const childModel = selectedModel?.model ?? rt?.model;
+			const childBaseUrl = selectedModel?.baseUrl ?? rt?.baseUrl;
+			if (childProvider) {
+				args.push("--provider", childProvider);
 			}
-			if (rt?.model) {
-				args.push("--model", rt.model);
+			if (childModel) {
+				args.push("--model", childModel);
 			}
-			if (rt?.baseUrl || process.env.METIS_BASE_URL || process.env.OPENAI_BASE_URL) {
-				args.push("--base-url", rt?.baseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL!);
+			if (childBaseUrl || process.env.METIS_BASE_URL || process.env.OPENAI_BASE_URL) {
+				args.push("--base-url", childBaseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL!);
 			}
-			if (rt?.thinking) {
-				args.push("--thinking", rt.thinking);
+			const childThinking = rt?.getChildThinking?.(agent) ?? rt?.thinking;
+			if (childThinking) {
+				args.push("--thinking", childThinking);
 			}
 			if (rt?.apiKey) {
 				args.push("--api-key", rt.apiKey);
@@ -300,6 +372,7 @@ export function createSpawnAgentToolDefinition(
 				METIS_AGENT_ID: childAgentId,
 				METIS_AGENT_DEPTH: String(childDepth),
 				METIS_AGENT_CHAIN: childChain.join(","),
+				METIS_AGENT_NAME: agent,
 				ELECTRON_RUN_AS_NODE: "1",
 				...(rt?.env ?? {}),
 			});
@@ -309,16 +382,19 @@ export function createSpawnAgentToolDefinition(
 			await fs.writeFile(tempFile, task, "utf-8");
 			args.push(`@${path.basename(tempFile)}`);
 
-			const cleanupResources = async () => {
+			const cleanupResources = async (preserveWorkspace = false) => {
+				await releaseSpawnReservation();
 				try {
 					await fs.unlink(tempFile);
 				} catch {
 					// Ignore cleanup error
 				}
-				try {
-					await workspace.cleanup();
-				} catch {
-					// Ignore cleanup error
+				if (!preserveWorkspace) {
+					try {
+						await workspace.cleanup();
+					} catch {
+						// Ignore cleanup error
+					}
 				}
 			};
 
@@ -326,12 +402,169 @@ export function createSpawnAgentToolDefinition(
 				return new Promise((resolve) => {
 					let stdoutData = "";
 					let stderrData = "";
+					let lineBuffer = "";
 					let timedOut = false;
+					let cancelled = false;
+					let settled = false;
 					let timer: NodeJS.Timeout | undefined;
+					let heartbeat: NodeJS.Timeout | undefined;
+					let exitFallback: NodeJS.Timeout | undefined;
+					const startedAt = Date.now();
+
+					const liveParts: Array<{
+						type: string;
+						id: string;
+						[key: string]: any;
+					}> = [];
+					let liveFinalText = "";
+
+					const emitProgress = (text: string) => {
+						if (!_onUpdate) return;
+						_onUpdate({
+							content: [{ type: "text", text }],
+							details: undefined,
+						});
+					};
+
+					const processJsonLine = (line: string) => {
+						const trimmed = line.trim();
+						if (!trimmed || !trimmed.startsWith("{") || !trimmed.endsWith("}")) return;
+						try {
+							const evt = JSON.parse(trimmed);
+							if (!evt || typeof evt !== "object") return;
+
+							if (evt.type === "message_start" || evt.type === "message_update" || evt.type === "message_end") {
+								const msg = evt.message;
+								if (msg && msg.role === "assistant") {
+									if (Array.isArray(msg.content)) {
+										liveParts.length = 0;
+										let textAccumulator = "";
+										let partIdx = 0;
+										for (const part of msg.content) {
+											if (!part || typeof part !== "object") continue;
+											const partType = part.type;
+											if (partType === "thinking") {
+												liveParts.push({
+													type: "thinking",
+													id: part.id || `${childAgentId}-thinking-${partIdx++}`,
+													thinking: part.thinking || part.text || "",
+													durationMs: part.durationMs,
+												});
+											} else if (partType === "toolCall" || partType === "tool_use") {
+												const toolId = part.id || part.toolCallId || `${childAgentId}-tool-${partIdx++}`;
+												liveParts.push({
+													type: "toolCall",
+													id: toolId,
+													name: part.name || part.toolName || "tool",
+													arguments: part.arguments || part.input || {},
+													result: part.result
+														? {
+																content: typeof part.result === "string" ? part.result : (part.result.content || ""),
+																isError: Boolean(part.result.isError),
+															}
+														: undefined,
+													progress: part.progress || {
+														jobId: String(toolId).slice(-6),
+														state: part.result ? (part.result.isError ? "failed" : "completed") : "running",
+													},
+												});
+											} else if (partType === "text") {
+												const text = part.text || "";
+												liveParts.push({
+													type: "text",
+													id: part.id || `${childAgentId}-text-${partIdx++}`,
+													text,
+												});
+												textAccumulator += (textAccumulator ? "\n" : "") + text;
+											}
+										}
+										if (textAccumulator) {
+											liveFinalText = textAccumulator;
+										}
+									} else if (typeof msg.content === "string" && msg.content.trim()) {
+										liveFinalText = msg.content;
+									}
+								}
+							} else if (evt.type === "tool_execution_start") {
+								const toolId = evt.toolCallId || `${childAgentId}-tool-${liveParts.length}`;
+								const existing = liveParts.find((p) => p.type === "toolCall" && p.id === toolId);
+								if (existing) {
+									existing.name = evt.toolName || existing.name;
+									existing.arguments = evt.args || existing.arguments;
+									existing.progress = { jobId: String(toolId).slice(-6), state: "running" };
+								} else {
+									liveParts.push({
+										type: "toolCall",
+										id: toolId,
+										name: evt.toolName || "tool",
+										arguments: evt.args || {},
+										progress: { jobId: String(toolId).slice(-6), state: "running" },
+									});
+								}
+							} else if (evt.type === "tool_execution_end") {
+								const toolId = evt.toolCallId;
+								const existing = liveParts.find((p) => p.type === "toolCall" && p.id === toolId);
+								const resultContent = typeof evt.result === "string" ? evt.result : JSON.stringify(evt.result ?? "");
+								if (existing) {
+									existing.result = { content: resultContent, isError: Boolean(evt.isError) };
+									existing.progress = { jobId: String(toolId).slice(-6), state: evt.isError ? "failed" : "completed" };
+								} else if (toolId) {
+									liveParts.push({
+										type: "toolCall",
+										id: toolId,
+										name: evt.toolName || "tool",
+										arguments: {},
+										result: { content: resultContent, isError: Boolean(evt.isError) },
+										progress: { jobId: String(toolId).slice(-6), state: evt.isError ? "failed" : "completed" },
+									});
+								}
+							}
+						} catch {
+							// Ignore unparseable line
+						}
+					};
+
+					const emitCurrentProgress = () => {
+						const elapsedSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+						if (liveParts.length > 0) {
+							emitProgress(JSON.stringify({
+								status: "running",
+								agent,
+								agentId: childAgentId,
+								parentId,
+								rootRunId,
+								depth: childDepth,
+								pid: child.pid,
+								elapsedSec,
+								parts: liveParts,
+								result: liveFinalText || undefined,
+								message: `${agent} running (${elapsedSec}s)…`,
+							}, null, 2));
+							return;
+						}
+						const preview = stderrData.trim();
+						if (preview && !preview.startsWith("{")) {
+							emitProgress(preview.slice(-8_000));
+							return;
+						}
+						emitProgress(JSON.stringify({
+							status: "running",
+							agent,
+							agentId: childAgentId,
+							parentId,
+							rootRunId,
+							depth: childDepth,
+							pid: child.pid,
+							elapsedSec,
+							message: `${agent} running (${elapsedSec}s)…`,
+						}, null, 2));
+					};
 
 					const child = spawn(invocation.command, args, {
 						cwd: effectiveCwd,
 						env: childEnv as NodeJS.ProcessEnv,
+						// Own process group so timeout/abort can kill bash grandchildren.
+						detached: process.platform !== "win32",
 						stdio: ["ignore", "pipe", "pipe"],
 					});
 
@@ -340,7 +573,25 @@ export function createSpawnAgentToolDefinition(
 						pid: child.pid,
 					});
 
-					const effectiveTimeoutSeconds = timeoutSeconds ?? (guard.getConfig().defaultTimeoutMs / 1000);
+					emitProgress(JSON.stringify({
+						status: "started",
+						agent,
+						agentId: childAgentId,
+						parentId,
+						rootRunId,
+						depth: childDepth,
+						pid: child.pid,
+						message: `Spawned ${agent}; waiting for progress…`,
+					}, null, 2));
+
+					heartbeat = setInterval(() => {
+						emitCurrentProgress();
+					}, SPAWN_PROGRESS_HEARTBEAT_MS);
+
+					const configuredTimeoutMs = guard.getConfig().defaultTimeoutMs;
+					const effectiveTimeoutSeconds = timeoutSeconds !== undefined
+						? timeoutSeconds
+						: (configuredTimeoutMs > 0 ? configuredTimeoutMs / 1000 : 0);
 					if (effectiveTimeoutSeconds > 0) {
 						timer = setTimeout(() => {
 							timedOut = true;
@@ -349,95 +600,167 @@ export function createSpawnAgentToolDefinition(
 					}
 
 					child.stdout?.on("data", (chunk) => {
-						stdoutData += chunk.toString("utf-8");
+						const text = chunk.toString("utf-8");
+						stdoutData += text;
+						lineBuffer += text;
+
+						const lines = lineBuffer.split(/\r?\n/);
+						lineBuffer = lines.pop() ?? "";
+						for (const line of lines) {
+							processJsonLine(line);
+						}
+						emitCurrentProgress();
 					});
 
 					child.stderr?.on("data", (chunk) => {
-						stderrData += chunk.toString("utf-8");
+						const text = chunk.toString("utf-8");
+						stderrData += text;
+						emitCurrentProgress();
 					});
+
+					const finish = async (preserveWorkspace: boolean, handler: () => Promise<void> | void): Promise<void> => {
+						if (settled) return;
+						settled = true;
+						if (timer) clearTimeout(timer);
+						if (heartbeat) clearInterval(heartbeat);
+						if (exitFallback) clearTimeout(exitFallback);
+						signal?.removeEventListener("abort", cancel);
+						await cleanupResources(preserveWorkspace);
+						await handler();
+					};
+
+					const cancel = () => {
+						if (settled || cancelled) return;
+						cancelled = true;
+						guard.killChild(childAgentId, "SIGTERM");
+					};
+					signal?.addEventListener("abort", cancel, { once: true });
+					if (signal?.aborted) cancel();
 
 					child.on("error", async (error) => {
-						if (timer) clearTimeout(timer);
-						await cleanupResources();
-						const payload: ChildAgentResultPayload = {
-							status: "error",
-							agent,
-							agentId: childAgentId,
-							parentId,
-							rootRunId,
-							depth: childDepth,
-							worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
-							error: `Failed to spawn agent process: ${error.message}`,
-						};
-						guard.updateChildStatus(childAgentId, {
-							status: "error",
-							error: payload.error,
-						});
-						resolve({
-							content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }],
-							details: undefined,
-						});
-					});
-
-					child.on("close", async (exitCode) => {
-						if (timer) clearTimeout(timer);
-						await cleanupResources();
-
-						if (timedOut) {
+						await finish(false, async () => {
 							const payload: ChildAgentResultPayload = {
-								status: "timed_out",
-								errorCode: "TIMEOUT",
+								status: "error",
 								agent,
 								agentId: childAgentId,
 								parentId,
 								rootRunId,
 								depth: childDepth,
-								exitCode,
 								worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
-								error: `Agent execution timed out after ${effectiveTimeoutSeconds}s`,
+								error: `Failed to spawn agent process: ${error.message}`,
 							};
 							guard.updateChildStatus(childAgentId, {
-								status: "timed_out",
-								exitCode,
+								status: "error",
 								error: payload.error,
 							});
 							resolve({
 								content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }],
 								details: undefined,
 							});
-							return;
-						}
-
-						const isSuccess = exitCode === 0;
-						const errorAttribution = isSuccess ? { error: undefined, hint: undefined } : attributeChildError(stderrData, stdoutData, exitCode);
-						const payload: ChildAgentResultPayload = {
-							status: isSuccess ? "success" : "error",
-							agent,
-							agentId: childAgentId,
-							parentId,
-							rootRunId,
-							depth: childDepth,
-							provider: rt?.provider ?? process.env.METIS_PROVIDER,
-							model: rt?.model ?? process.env.METIS_MODEL,
-							baseUrl: rt?.baseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL,
-							exitCode,
-							worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
-							result: stdoutData.trim() || undefined,
-							error: errorAttribution.error,
-							hint: errorAttribution.hint,
-						};
-
-						guard.updateChildStatus(childAgentId, {
-							status: isSuccess ? "completed" : "error",
-							exitCode,
-							result: payload.result,
-							error: payload.error,
 						});
+					});
 
-						resolve({
-							content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }],
-							details: undefined,
+					const complete = async (exitCode: number | null) => {
+						const preserveWorkspace = !cancelled && !timedOut && exitCode === 0 && workspace.workspacePath !== cwd;
+						await finish(preserveWorkspace, async () => {
+							if (lineBuffer.trim()) {
+								processJsonLine(lineBuffer);
+							}
+
+							if (cancelled) {
+								const payload: ChildAgentResultPayload & { parts?: any[] } = {
+									status: "error",
+									agent,
+									agentId: childAgentId,
+									parentId,
+									rootRunId,
+									depth: childDepth,
+									exitCode,
+									worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
+									worktreeRetained: false,
+									parts: liveParts.length > 0 ? liveParts : undefined,
+									error: "Agent execution cancelled.",
+								};
+								guard.updateChildStatus(childAgentId, {
+									status: "error",
+									exitCode,
+									error: payload.error,
+								});
+								resolve({
+									content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }],
+									details: undefined,
+								});
+								return;
+							}
+
+							if (timedOut) {
+								const payload: ChildAgentResultPayload & { parts?: any[] } = {
+									status: "timed_out",
+									errorCode: "TIMEOUT",
+									agent,
+									agentId: childAgentId,
+									parentId,
+									rootRunId,
+									depth: childDepth,
+									exitCode,
+									worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
+									worktreeRetained: false,
+									parts: liveParts.length > 0 ? liveParts : undefined,
+									error: `Agent execution timed out after ${effectiveTimeoutSeconds}s`,
+								};
+								guard.updateChildStatus(childAgentId, {
+									status: "timed_out",
+									exitCode,
+									error: payload.error,
+								});
+								resolve({
+									content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }],
+									details: undefined,
+								});
+								return;
+							}
+
+							const isSuccess = exitCode === 0;
+							const errorAttribution = isSuccess ? { error: undefined, hint: undefined } : attributeChildError(stderrData, stdoutData, exitCode);
+							const payload: ChildAgentResultPayload & { parts?: any[] } = {
+								status: isSuccess ? "success" : "error",
+								agent,
+								agentId: childAgentId,
+								parentId,
+								rootRunId,
+								depth: childDepth,
+								provider: rt?.provider ?? process.env.METIS_PROVIDER,
+								model: rt?.model ?? process.env.METIS_MODEL,
+								baseUrl: rt?.baseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL,
+									exitCode,
+									worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
+									worktreeRetained: isSuccess && workspace.workspacePath !== cwd,
+									parts: liveParts.length > 0 ? liveParts : undefined,
+								result: liveFinalText || (stdoutData || stderrData).trim() || (isSuccess ? "(No output returned)" : undefined),
+								error: errorAttribution.error,
+								hint: errorAttribution.hint,
+							};
+							guard.updateChildStatus(childAgentId, {
+								status: isSuccess ? "completed" : "error",
+								exitCode,
+								result: payload.result,
+								error: payload.error,
+							});
+							resolve({
+								content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }],
+								details: undefined,
+							});
 						});
+					};
+
+					child.on("close", (exitCode) => {
+						void complete(exitCode);
+					});
+					child.on("exit", (exitCode) => {
+						if (settled || exitFallback) return;
+						exitFallback = setTimeout(() => {
+							void complete(exitCode);
+						}, SPAWN_EXIT_DRAIN_GRACE_MS);
 					});
 				});
 			}
@@ -465,18 +788,25 @@ export function createSpawnAgentToolDefinition(
 			}
 
 			let settled = false;
+			let cancelled = false;
+			let exitFallback: NodeJS.Timeout | undefined;
 			const settle = (): boolean => {
 				if (settled) return false;
 				settled = true;
+				if (exitFallback) clearTimeout(exitFallback);
+				signal?.removeEventListener("abort", cancel);
 				options?.onStatusChange?.(childAgentId, false);
 				return true;
 			};
+			const cancel = () => {
+				if (settled || cancelled) return;
+				cancelled = true;
+				guard.killChild(childAgentId, "SIGTERM");
+			};
 
-			child.on("close", async (exitCode) => {
+			const complete = async (exitCode: number | null) => {
 				if (!settle()) return;
-				await cleanupResources();
-
-				const isSuccess = exitCode === 0;
+				const isSuccess = !cancelled && exitCode === 0;
 				let resultContent = "(No output returned)";
 				try {
 					const content = await fs.readFile(outputFile, "utf-8");
@@ -484,8 +814,11 @@ export function createSpawnAgentToolDefinition(
 				} catch {
 					// Ignore
 				}
+				await cleanupResources(isSuccess && workspace.workspacePath !== cwd);
 
-				const errorAttribution = isSuccess ? { error: undefined, hint: undefined } : attributeChildError(resultContent, "", exitCode);
+				const errorAttribution = cancelled
+					? { error: "Agent execution cancelled.", hint: undefined }
+					: isSuccess ? { error: undefined, hint: undefined } : attributeChildError(resultContent, "", exitCode);
 				const payload: ChildAgentResultPayload = {
 					status: isSuccess ? "success" : "error",
 					agent,
@@ -498,6 +831,7 @@ export function createSpawnAgentToolDefinition(
 					baseUrl: rt?.baseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL,
 					exitCode,
 					worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
+					worktreeRetained: isSuccess && workspace.workspacePath !== cwd,
 					result: resultContent.trim() || "(No output returned)",
 					error: errorAttribution.error,
 					hint: errorAttribution.hint,
@@ -513,6 +847,16 @@ export function createSpawnAgentToolDefinition(
 				if (options?.sendMessage) {
 					options.sendMessage(childAgentId, JSON.stringify(sanitizeTraceData(payload), null, 2));
 				}
+			};
+
+			child.on("close", (exitCode) => {
+				void complete(exitCode);
+			});
+			child.on("exit", (exitCode) => {
+				if (settled || exitFallback) return;
+				exitFallback = setTimeout(() => {
+					void complete(exitCode);
+				}, SPAWN_EXIT_DRAIN_GRACE_MS);
 			});
 
 			child.on("error", async (error) => {
@@ -536,6 +880,8 @@ export function createSpawnAgentToolDefinition(
 			});
 
 			options?.onStatusChange?.(childAgentId, true);
+			signal?.addEventListener("abort", cancel, { once: true });
+			if (signal?.aborted) cancel();
 			child.unref();
 
 			const initialPayload: ChildAgentResultPayload = {

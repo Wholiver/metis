@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
 
@@ -28,11 +28,17 @@ import {
 	spawnAgentSchema,
 	type ChildAgentResultPayload,
 } from "../src/core/tools/spawn_agent.ts";
+import { setGlobalSpawnGuard, SpawnGuard } from "../src/core/spawn-guard.ts";
 
 describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 	const tempDirs: string[] = [];
 
+	beforeEach(() => {
+		setGlobalSpawnGuard(new SpawnGuard());
+	});
+
 	afterEach(() => {
+		vi.useRealTimers();
 		spawnMock.mockReset();
 		while (tempDirs.length > 0) rmSync(tempDirs.pop()!, { recursive: true, force: true });
 	});
@@ -42,6 +48,10 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		emitter.stdout = new EventEmitter();
 		emitter.stderr = new EventEmitter();
 		emitter.unref = vi.fn();
+		emitter.kill = vi.fn(() => {
+			queueMicrotask(() => emitter.emit("exit", null, "SIGKILL"));
+			return true;
+		});
 		return emitter;
 	}
 
@@ -52,6 +62,8 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(spawnAgentSchema.properties.mode).toBeDefined();
 		expect(spawnAgentSchema.properties.worktree).toBeDefined();
 		expect(SPAWN_AGENT_GUIDANCE).toContain("Delegate a specific task to a specialized named agent");
+		expect(SPAWN_AGENT_GUIDANCE).toContain("snapshot of the parent workspace");
+		expect(SPAWN_AGENT_GUIDANCE).toContain("retained after successful completion");
 	});
 
 	it("parses CLI flags for agent, depth, parent-id, root-run-id, and context", () => {
@@ -90,6 +102,13 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 				provider: "openrouter",
 				model: "anthropic/claude-3.5-sonnet",
 				thinking: "high",
+				env: {
+					METIS_PERFORMANCE_RUN_ID: "perf-001",
+					METIS_PERFORMANCE_GOVERNANCE_ROOT: "/tmp/perf-001",
+					METIS_PERFORMANCE_NONCE: "nonce-001",
+				},
+				getChildModel: (agent) => agent === "planner" ? { provider: "openrouter", model: "anthropic/claude-opus-4" } : undefined,
+				getChildThinking: (agent) => agent === "planner" ? "xhigh" : undefined,
 			},
 		});
 
@@ -106,6 +125,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(spawnMock).toHaveBeenCalledTimes(1);
 		const spawnCallArgs = spawnMock.mock.calls[0];
 		const argsPassed = spawnCallArgs[1] as string[];
+		const spawnOptions = spawnCallArgs[2] as { detached?: boolean; env?: NodeJS.ProcessEnv };
 
 		expect(argsPassed).toContain("--agent");
 		expect(argsPassed).toContain("planner");
@@ -118,10 +138,17 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(argsPassed).toContain("--provider");
 		expect(argsPassed).toContain("openrouter");
 		expect(argsPassed).toContain("--model");
-		expect(argsPassed).toContain("anthropic/claude-3.5-sonnet");
+		expect(argsPassed).toContain("anthropic/claude-opus-4");
 		expect(argsPassed).toContain("--thinking");
-		expect(argsPassed).toContain("high");
-
+		expect(argsPassed).toContain("xhigh");
+		expect(spawnOptions.env).toMatchObject({
+			METIS_PERFORMANCE_RUN_ID: "perf-001",
+			METIS_PERFORMANCE_GOVERNANCE_ROOT: "/tmp/perf-001",
+			METIS_PERFORMANCE_NONCE: "nonce-001",
+		});
+		if (process.platform !== "win32") {
+			expect(spawnOptions.detached).toBe(true);
+		}
 		// Simulate child output and normal close
 		mockChild.stdout.emit("data", Buffer.from("Planning completed successfully.\nSteps: 1, 2, 3"));
 		mockChild.emit("close", 0);
@@ -227,6 +254,38 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(delivered.agent).toBe("verifier");
 	});
 
+	it("releases an async child after exit when close never arrives", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-agent-"));
+		tempDirs.push(tempDir);
+		const statuses: Array<[string, boolean]> = [];
+		const messages: Array<[string, string]> = [];
+		const releases: string[] = [];
+		const definition = createSpawnAgentToolDefinition(tempDir, {
+			onStatusChange: (agentId, running) => statuses.push([agentId, running]),
+			sendMessage: (agentId, message) => messages.push([agentId, message]),
+			releaseSpawn: (agentId) => releases.push(agentId),
+		});
+
+		const result = await definition.execute(
+			"tool-call-async-exit-only",
+			{ agent: "reviewer", task: "Review nested work", mode: "async" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+		const initialPayload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		mockChild.emit("exit", 0, null);
+		await new Promise((resolve) => setTimeout(resolve, 1_100));
+
+		expect(statuses).toEqual([[initialPayload.agentId, true], [initialPayload.agentId, false]]);
+		expect(releases).toEqual([initialPayload.agentId]);
+		expect(messages).toHaveLength(1);
+		expect(JSON.parse(messages[0][1]).status).toBe("success");
+	});
+
 	it("enforces tool permission convergence across hierarchy (Coordinator has spawn_agent, Planner does not)", () => {
 		// Coordinator retains spawn_agent
 		const coordinatorConfig = resolveAgentConfig({
@@ -271,5 +330,134 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			depth = nextDepth;
 		}
 		expect(depth).toBe(4);
+	});
+
+	it("emits started progress immediately for sync spawn_agent", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-agent-"));
+		tempDirs.push(tempDir);
+
+		const updates: string[] = [];
+		const definition = createSpawnAgentToolDefinition(tempDir, {
+			runtimeContext: {
+				currentDepth: 0,
+				currentAgentId: "root",
+				rootRunId: "run-progress",
+			},
+		});
+
+		const executePromise = definition.execute(
+			"tool-call-progress",
+			{ agent: "scoper", task: "Write scope" },
+			new AbortController().signal,
+			(update) => {
+				const text = update.content?.[0] && update.content[0].type === "text" ? update.content[0].text : "";
+				if (text) updates.push(text);
+			},
+			undefined as never,
+		);
+
+		await new Promise((r) => setTimeout(r, 20));
+		expect(updates.some((text) => /"status": "started"/.test(text) && /scoper/.test(text))).toBe(true);
+
+		mockChild.stdout.emit("data", Buffer.from("scope ready"));
+		mockChild.emit("close", 0);
+		await executePromise;
+	});
+
+	it("settles a sync child after exit when inherited stdio prevents close", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-agent-"));
+		tempDirs.push(tempDir);
+		const releases: string[] = [];
+		const definition = createSpawnAgentToolDefinition(tempDir, {
+			releaseSpawn: (agentId) => releases.push(agentId),
+		});
+
+		const executePromise = definition.execute(
+			"tool-call-exit-only",
+			{ agent: "scope-coordinator", task: "Delegate nested work" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		mockChild.stdout.emit("data", Buffer.from("nested work complete"));
+		mockChild.emit("exit", 0, null);
+		await new Promise((resolve) => setTimeout(resolve, 1_100));
+
+		const result = await executePromise;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload.status).toBe("success");
+		expect(payload.result).toBe("nested work complete");
+		expect(releases).toEqual([payload.agentId]);
+	});
+
+	it("retries transient reservation release failures before resolving", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-agent-"));
+		tempDirs.push(tempDir);
+		const releaseSpawn = vi.fn()
+			.mockRejectedValueOnce(new Error("Performance governance is busy"))
+			.mockRejectedValueOnce(new Error("Performance governance is busy"))
+			.mockResolvedValue(undefined);
+		const definition = createSpawnAgentToolDefinition(tempDir, { releaseSpawn });
+
+		const executePromise = definition.execute(
+			"tool-call-release-retry",
+			{ agent: "scoper", task: "Retry a contended lease release" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		mockChild.emit("close", 0);
+
+		const result = await executePromise;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload.status).toBe("success");
+		expect(releaseSpawn).toHaveBeenCalledTimes(3);
+	});
+
+	it("cancels a sync child and releases its spawn reservation", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-agent-"));
+		tempDirs.push(tempDir);
+		const releases: string[] = [];
+		const controller = new AbortController();
+		const definition = createSpawnAgentToolDefinition(tempDir, {
+			releaseSpawn: (agentId) => releases.push(agentId),
+		});
+
+		const executePromise = definition.execute(
+			"tool-call-cancel",
+			{ agent: "feature-coordinator", task: "Delegate nested work", worktree: "temp" },
+			controller.signal,
+			() => {},
+			undefined as never,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		const isolatedPath = spawnMock.mock.calls[0][2].cwd as string;
+		expect(existsSync(isolatedPath)).toBe(true);
+		controller.abort();
+		await new Promise((resolve) => setTimeout(resolve, 1_100));
+
+		const result = await executePromise;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload.status).toBe("error");
+		expect(payload.error).toContain("cancelled");
+		expect(payload.worktreeRetained).toBe(false);
+		expect(existsSync(isolatedPath)).toBe(false);
+		expect(mockChild.kill).toHaveBeenCalled();
+		expect(releases).toEqual([payload.agentId]);
 	});
 });

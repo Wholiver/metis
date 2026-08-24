@@ -10,6 +10,7 @@ import { AuthStorage } from "./auth-storage.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { CollaborationMode } from "./workflow-runtime.ts";
 import type { AskUserHandler } from "./ask-user.ts";
+import type { PerformanceAttendance } from "./performance-runtime.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
@@ -46,9 +47,9 @@ import {
 	withFileMutationQueue,
 } from "./tools/index.ts";
 
-const MEMORY_EXTRACTION_PROMPT = `Extract durable coding-agent memory from this checkpoint and maintain an up-to-date Memory Map catalog.
+const MEMORY_EXTRACTION_PROMPT = `Extract durable coding-agent memory from this checkpoint, maintain an up-to-date Memory Map catalog, and produce a concise Memory Overview with a quick index.
 
-All extracted memory records and the Memory Map MUST be written in English, regardless of the conversation or checkpoint language.
+All extracted memory records, the Memory Map, and the Memory Overview MUST be written in English, regardless of the conversation or checkpoint language.
 
 Standard Categories:
 - tech_stack: Runtime environment (e.g. Node 22+), language, core dependencies, package name.
@@ -79,6 +80,11 @@ Instructions:
      - **[tech_stack]**: Runtime, dependencies, package overview...
      - **[workflows_and_commands]**: Build, test, run commands...
      - **[known_failures_and_fixes]**: Recurring pitfalls and fixes...
+5. Maintain the Memory Overview (memoryOverview):
+   - Review the existing Memory Overview provided in the context (if any) and the newly extracted knowledge from this checkpoint.
+   - Synthesize old overview points + new memory knowledge into an updated, concise Memory Overview document.
+   - Include a quick index covering key preferences, tech stack, conventions, workflows, and common pitfalls.
+   - Keep this overview short, high-density, and compact so it can be injected directly into the coding agent's system prompt without token bloat. Write strictly in English.
 
 Return strict JSON only. The JSON object format is:
 {
@@ -92,7 +98,8 @@ Return strict JSON only. The JSON object format is:
       "supersedes": ["optional array of superseded record IDs"]
     }
   ],
-  "memoryMap": "string (updated Markdown document of the Memory Map)"
+  "memoryMap": "string (updated Markdown document of the Memory Map)",
+  "memoryOverview": "string (concise updated Markdown document of the Memory Overview & Quick Index, written in English)"
 }
 
 (Returning an array of candidate objects is also accepted for backward compatibility.)
@@ -107,6 +114,7 @@ export async function extractMemoryCandidates(
 	signal?: AbortSignal,
 	stream: typeof streamSimple = streamSimple,
 	existingMemoryMap?: string,
+	existingMemoryOverview?: string,
 ): Promise<MemoryExtractionResult> {
 	if (!model) return { candidates: [], failureReason: "No model is available for background memory extraction." };
 	try {
@@ -114,6 +122,9 @@ export async function extractMemoryCandidates(
 		if (!auth.ok) return { candidates: [], failureReason: "No authentication is available for the background memory model." };
 		const tool = createQueryMemoryDbToolDefinition();
 		let userPromptText = `Checkpoint:\n${JSON.stringify(checkpoint)}`;
+		if (existingMemoryOverview && existingMemoryOverview.trim().length > 0) {
+			userPromptText += `\n\nExisting Memory Overview:\n${existingMemoryOverview.trim()}`;
+		}
 		if (existingMemoryMap && existingMemoryMap.trim().length > 0) {
 			userPromptText += `\n\nExisting Memory Map:\n${existingMemoryMap.trim()}`;
 		}
@@ -169,6 +180,7 @@ export async function extractMemoryCandidates(
 			const parsed = JSON.parse(json) as unknown;
 			let candidateList: unknown[];
 			let memoryMapText: string | undefined;
+			let memoryOverviewText: string | undefined;
 			if (Array.isArray(parsed)) {
 				candidateList = parsed;
 			} else if (parsed && typeof parsed === "object") {
@@ -179,6 +191,9 @@ export async function extractMemoryCandidates(
 				candidateList = obj.candidates;
 				if (typeof obj.memoryMap === "string" && obj.memoryMap.trim().length > 0) {
 					memoryMapText = obj.memoryMap.trim();
+				}
+				if (typeof obj.memoryOverview === "string" && obj.memoryOverview.trim().length > 0) {
+					memoryOverviewText = obj.memoryOverview.trim();
 				}
 			} else {
 				return { candidates: [], failureReason: "Background memory model returned invalid JSON structure." };
@@ -223,6 +238,7 @@ export async function extractMemoryCandidates(
 			return {
 				candidates: candidates.slice(0, 6),
 				...(memoryMapText ? { memoryMap: memoryMapText } : {}),
+				...(memoryOverviewText ? { memoryOverview: memoryOverviewText } : {}),
 			};
 		}
 	} catch (error) {
@@ -250,6 +266,8 @@ export interface CreateAgentSessionOptions {
 	collaborationMode?: CollaborationMode;
 	/** Optional interactive bridge for model-initiated clarifying questions. */
 	askUserHandler?: AskUserHandler;
+	/** Native Performance startup policy. Interactive hosts use attended; SDK defaults unattended. */
+	performanceAttendance?: PerformanceAttendance;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
@@ -464,7 +482,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Legacy memory/log bookkeeping tools remain explicit-only. query_memory_db is
 	// active so the model can retrieve durable knowledge on demand in any host.
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "video", "update_plan", "ask_user", "read_plan", "query_memory_db"];
+	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "video", "update_plan", "ask_user", "read_plan", "performance_gate", "query_memory_db"];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
@@ -622,7 +640,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			cwd,
 			trusted: () => settingsManager.isProjectTrusted(),
 			settings: () => settingsManager.getMemorySettings(),
-			extract: async (checkpoint, signal, existingMemoryMap) => extractMemoryCandidates(
+			extract: async (checkpoint, signal, existingMemoryMap, existingMemoryOverview) => extractMemoryCandidates(
 				agent.state.model,
 				modelRegistry,
 				checkpoint,
@@ -630,6 +648,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				signal,
 				streamSimple,
 				existingMemoryMap,
+				existingMemoryOverview,
 			),
 		});
 	}
@@ -638,6 +657,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionManager,
 		settingsManager,
 		cwd,
+		agentDir,
 		scopedModels: options.scopedModels,
 		resourceLoader,
 		customTools: options.customTools,
@@ -651,6 +671,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		autoSessionName: options.autoSessionName ?? true,
 		memoryCoordinator,
 		askUserHandler: options.askUserHandler,
+		performanceAttendance: options.performanceAttendance,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 

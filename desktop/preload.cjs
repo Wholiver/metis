@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		get: () => ipcRenderer.invoke("workspace:get"),
 		set: (workspacePath) => ipcRenderer.invoke("workspace:set", workspacePath),
 		select: () => ipcRenderer.invoke("workspace:select"),
+		selectParent: () => ipcRenderer.invoke("workspace:select-parent"),
+		create: (input) => ipcRenderer.invoke("workspace:create", input),
 		selectMany: () => ipcRenderer.invoke("workspace:select-many"),
 		tree: () => ipcRenderer.invoke("workspace:tree"),
 		diff: (relativePath) => ipcRenderer.invoke("workspace:diff", relativePath),
@@ -37,6 +39,7 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		deleteCustom: (providerId) => ipcRenderer.invoke("provider-config:delete-custom", providerId),
 	},
 	metis: {
+		getConnection: () => ipcRenderer.invoke("metis:get-connection"),
 		connect: (options) => ipcRenderer.invoke("metis:connect", options),
 		disconnect: () => ipcRenderer.invoke("metis:disconnect"),
 		request: (request) => ipcRenderer.invoke("metis:request", request),

@@ -102,6 +102,8 @@ describe("desktop conversation token comet", () => {
 		expect(styles).not.toContain("conversation-token-trail-canvas");
 		expect(styles).toMatch(/transition-property:\s*width/);
 		expect(styles).toMatch(/\.conversation-token-trail\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0 0 0 auto;[\s\S]*?height:\s*100%/);
+		expect(styles).toMatch(/\[data-purpose="channel-list"\] \.conversation-token-trail\s*\{[\s\S]*?rgb\(120 120 120 \/ 0\.14\)/);
+		expect(styles).toMatch(/\[data-purpose="channel-list"\] \.conversation-item\.active \.conversation-token-trail\s*\{[\s\S]*?rgb\(152 91 197 \/ 0\.20\)/);
 		expect(styles).toMatch(/\.conversation-item\.has-token-trail\s*\{[\s\S]*?overflow:\s*hidden/);
 		expect(app).not.toContain("conversationTokenTrailSvg");
 		expect(app).not.toContain("TOKEN_TRAIL_SVG");

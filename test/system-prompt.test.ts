@@ -55,22 +55,47 @@ describe("instruction stack", () => {
 		expect(prompt).toContain("active workflow provides a checklist");
 	});
 
-	test("keeps Plan conversational and Build execution-oriented", () => {
+	test("keeps Plan conversational and Build execution-oriented with unified role identity", () => {
 		const planPrompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "plan" });
 		const buildPrompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "build" });
 
-		expect(planPrompt).toContain("Plan Mode is conversational and read-only");
+		expect(planPrompt).toContain("Chief Planning Architect (Planner)");
 		expect(planPrompt).toContain("<proposed_plan>");
 		expect(planPrompt).toContain("Do not edit files, run mutating tools, or call update_plan");
-		expect(planPrompt).toContain("before each meaningful batch of read-only tool calls");
-		expect(planPrompt).toContain("Use the user's language");
-		expect(planPrompt).toContain("Do not narrate every file read");
+		expect(planPrompt).toContain("strictly forbid repetitive patterns such as '正在...', '我将...'");
 		expect(planPrompt).toContain("MUST call ask_user");
 		expect(planPrompt).toContain("Never present clarification questions as ordinary assistant text");
-		expect(buildPrompt).toContain("Plan Mode is ended");
-		expect(buildPrompt).toContain("before each meaningful batch of tool calls");
-		expect(buildPrompt).toContain("Use the user's language");
-		expect(buildPrompt).toContain("call update_plan before the first mutating tool");
-		expect(buildPrompt).toContain("call read_plan whenever its exact contents or current execution progress are not present");
+		expect(buildPrompt).toContain("Primary Coordinator & Engineering Engine (Coordinator & Executor)");
+		expect(buildPrompt).toContain("strictly forbid repetitive '正在...', '我将...'");
+		expect(buildPrompt).toContain("initialize or refresh update_plan before mutating tools");
+		expect(buildPrompt).toContain("Progress & Implementation: maintain visible progress pacing");
+	});
+
+	test("requires intermediate updates before tool execution in every mode", () => {
+		for (const collaborationMode of ["plan", "build", undefined] as const) {
+			const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode });
+			expect(prompt).toContain("First think briefly and emit one concise intermediate text update");
+			expect(prompt).toContain("before visible tool work begins");
+		}
+	});
+
+	test("renders dedicated memory_overview tag when memoryOverview is provided and omits when absent", () => {
+		const overviewContent = "# Memory Overview\n\n- [tech_stack]: Node.js with TypeScript\n- [user_preferences]: Prefers concise explanations";
+		const withOverview = buildSystemPrompt({
+			cwd: "/workspace",
+			memoryOverview: overviewContent,
+		});
+		expect(withOverview).toContain("<memory_overview>\n# Memory Overview\n\n- [tech_stack]: Node.js with TypeScript\n- [user_preferences]: Prefers concise explanations\n</memory_overview>");
+
+		const withoutOverview = buildSystemPrompt({
+			cwd: "/workspace",
+		});
+		expect(withoutOverview).not.toContain("<memory_overview>");
+
+		const withEmptyOverview = buildSystemPrompt({
+			cwd: "/workspace",
+			memoryOverview: "   \n  ",
+		});
+		expect(withEmptyOverview).not.toContain("<memory_overview>");
 	});
 });

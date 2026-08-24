@@ -1,8 +1,13 @@
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+const numberedConflictDirectoryPattern = / \d+$/;
+
+function shouldCopyRuntimeAsset(source) {
+	return !numberedConflictDirectoryPattern.test(basename(source));
+}
 
 function copyMatching(source, target, extensions) {
 	mkdirSync(target, { recursive: true });
@@ -35,7 +40,10 @@ copyMatching(
 );
 
 if (existsSync(join(root, "src/core/builtins"))) {
-	cpSync(join(root, "src/core/builtins"), join(root, "dist/core/builtins"), { recursive: true });
+	cpSync(join(root, "src/core/builtins"), join(root, "dist/core/builtins"), {
+		recursive: true,
+		filter: shouldCopyRuntimeAsset,
+	});
 }
 
 const executableExtension = process.platform === "win32" ? ".exe" : "";
