@@ -50,20 +50,28 @@ metis
 
 Use `/login` for supported subscription providers, or configure an API key. Run `metis --help` for CLI options and see the [Quickstart](docs/quickstart.md) for the complete first-run flow.
 
+```bash
+metis "Explain this repository"
+metis @src/main.ts "Review this file"
+git diff | metis -p "Review this diff"
+```
+
 </details>
 
 ## Highlights
 
 - **Plan and Build workflows** — investigate safely in read-only Plan mode, then execute an approved proposal with a persistent checklist in Build mode.
-- **React Desktop for macOS and Windows** — use the redesigned Vite-powered workspace for conversations, plans, interactive questions, attachments, models, providers, sessions, and subagent activity.
+- **React Desktop for macOS and Windows** — use the Vite-powered workspace for conversations, plans, interactive questions, file and media attachments, models, providers, sessions, and subagent activity.
 - **Durable memory and recovery** — search reusable project knowledge and resume work after interruption, compaction, or session reload.
+- **Branchable sessions** — resume and name sessions, navigate the conversation tree, fork or clone branches, compact long context, and import or export JSONL/HTML records.
 - **Flexible models and authentication** — use built-in subscription login, API-key providers, or custom OpenAI-compatible providers with model discovery.
-- **Desktop workspace** — attach images, videos, text, and other files through the picker, clipboard, or drag and drop; manage providers and sessions graphically.
 - **Recursive Multi-Agent System** — native named agent definitions (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`), L0→L4 recursive delegation, role-specific tool allowlists, optional Git Worktree isolation, and deterministic lifecycle control.
+- **Interactive and automation modes** — work in the terminal UI or run unattended through Print, JSONL, RPC, Server, and the Node.js SDK.
 - **TerminalBench & Harbor Ready** — headless machine-readable JSONL execution, standardized exit codes (`0`/`1`/`2`), final answer separation, full trace aggregation, and an included Python harness adapter.
 - **Performance workflows** — route implementation, debugging, review, refactoring, research, and documentation through task-specific frameworks, adaptive T0–T3 tiers, independent review, and evidence gates.
 - **Video evidence** — inspect local video through metadata, timestamped storyboards, ordered motion samples, high-resolution frames, subtitles, and local transcription.
-- **Extensible core** — add TypeScript extensions, Agent Skills, prompt templates, themes, and Metis packages; integrate through print, JSON, RPC, Server, or the Node.js SDK.
+- **Extensible core** — add TypeScript extensions, Agent Skills, prompt templates, themes, and Metis packages; register custom tools, commands, providers, UI, and lifecycle hooks.
+- **Explicit trust model** — project-local settings and resources require a trust decision; Metis has no built-in OS sandbox, with Docker, OpenShell, and Gondolin documented for stronger isolation.
 - **Verified execution** — coordinate subagents, preserve tool-result ordering, run relevant checks, and compare delivery against the original request.
 
 ## How Metis works
@@ -97,16 +105,17 @@ Use `/memory status|on|off|run|search|forget|reset`. Proposal artifacts and long
 | Topic | Guide |
 | --- | --- |
 | Install, authenticate, and start | [Quickstart](docs/quickstart.md) |
-| Commands and interactive usage | [Using Metis](docs/usage.md) |
-| Windows CLI setup | [Windows](docs/windows.md) |
-| Providers and custom models | [Providers](docs/providers.md) · [Custom models](docs/models.md) |
+| Commands and terminal UI | [Using Metis](docs/usage.md) · [TUI](docs/tui.md) |
+| Providers and custom models | [Providers](docs/providers.md) · [Custom models](docs/models.md) · [Custom providers](docs/custom-provider.md) |
 | Multi-Agent System | [Named Agents & Delegation](docs/agents.md) |
 | Benchmark & Evaluation | [TerminalBench & Harbor](docs/terminalbench.md) |
 | Sessions and compaction | [Sessions](docs/sessions.md) · [Compaction](docs/compaction.md) |
 | Extensions, skills, and packages | [Extensions](docs/extensions.md) · [Skills](docs/skills.md) · [Packages](docs/packages.md) |
+| Prompts and interface customization | [Prompt templates](docs/prompt-templates.md) · [Themes](docs/themes.md) · [Keybindings](docs/keybindings.md) |
 | Programmatic integration | [SDK](docs/sdk.md) · [RPC](docs/rpc.md) · [JSON](docs/json.md) |
 | Video inspection | [Video tool](docs/video.md) |
 | Security and configuration | [Security](docs/security.md) · [Settings](docs/settings.md) |
+| Platforms and isolation | [Windows](docs/windows.md) · [Termux](docs/termux.md) · [tmux](docs/tmux.md) · [Containers](docs/containerization.md) |
 
 See the [documentation index](docs/index.md) for every guide.
 

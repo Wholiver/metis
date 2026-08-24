@@ -50,20 +50,28 @@ metis
 
 支持的订阅 Provider 可通过 `/login` 登录，也可配置 API Key。运行 `metis --help` 查看全部命令行选项；完整首次使用流程见[快速入门](docs/quickstart.md)。
 
+```bash
+metis "解释这个代码仓库"
+metis @src/main.ts "检查这个文件"
+git diff | metis -p "审查这个 diff"
+```
+
 </details>
 
 ## 主要能力
 
 - **Plan 与 Build 工作流** — 在只读 Plan 模式中安全调查，再由 Build 模式按已确认方案执行，并持久保存检查清单。
-- **面向 macOS 与 Windows 的 React 桌面端** — 在基于 Vite 重构的工作区中管理对话、计划、交互提问、附件、模型、Provider、会话与 Subagent 活动。
+- **面向 macOS 与 Windows 的 React 桌面端** — 在基于 Vite 的工作区中管理对话、计划、交互提问、文件与媒体附件、模型、Provider、会话及 Subagent 活动。
 - **持久记忆与恢复** — 检索可复用的项目知识；中断、上下文压缩或会话重载后继续工作。
+- **可分支会话** — 恢复和命名会话、浏览对话树、Fork 或 Clone 分支、压缩长上下文，并导入或导出 JSONL/HTML 记录。
 - **灵活的模型与认证** — 使用内置订阅登录、API Key Provider，或带模型发现能力的自定义 OpenAI 兼容 Provider。
-- **桌面工作区** — 通过选择器、剪贴板或拖放添加图片、视频、文本及其他文件，并以图形界面管理 Provider 和会话。
 - **原生命名递归多智能体体系** — 内置具名 Agent 角色（`coordinator`、`planner`、`implementer`、`reviewer`、`verifier`），支持 L0→L4 递归委派、角色工具白名单、可选 Git Worktree 隔离与生命周期控制。
+- **交互与自动化运行模式** — 使用终端 TUI 交互，或通过 Print、JSONL、RPC、Server 和 Node.js SDK 无人值守运行。
 - **TerminalBench 与 Harbor 评测就绪** — 无头机器可读 JSONL 执行、标准退出码（`0`/`1`/`2`）、最终回答文件隔离、全链路 Trace/Token/Cost 聚合以及内置 Python Harness 适配器。
 - **性能工作流** — 针对实现、调试、评审、重构、研究与文档任务选择专用框架，采用自适应 T0–T3 层级、独立评审与证据门禁。
 - **视频证据** — 通过元数据、时间戳故事板、有序运动样本、高清帧、字幕与本地转录检查视频。
-- **可扩展核心** — 加载 TypeScript Extensions、Agent Skills、Prompt Templates、Themes 与 Metis Packages；通过 Print、JSON、RPC、Server 或 Node.js SDK 集成。
+- **可扩展核心** — 加载 TypeScript Extensions、Agent Skills、Prompt Templates、Themes 与 Metis Packages，并注册自定义工具、命令、Provider、UI 与生命周期 Hooks。
+- **明确的信任模型** — 项目级设置与资源必须经过信任确认；Metis 不内置操作系统级沙箱，需要更强隔离时可按文档使用 Docker、OpenShell 或 Gondolin。
 - **经过验证的执行** — 协调 Subagents、保持工具结果顺序、运行相关检查，并逐项对照原始要求交付。
 
 ## 工作方式
@@ -97,16 +105,17 @@ Metis 会在 Prompt、完整 Step、上下文压缩、错误、中止及完成�
 | 主题 | 指南 |
 | --- | --- |
 | 安装、认证与首次运行 | [快速入门](docs/quickstart.md) |
-| 命令与交互式使用 | [使用 Metis](docs/usage.md) |
-| Windows CLI 环境配置 | [Windows](docs/windows.md) |
-| Provider 与自定义模型 | [Providers](docs/providers.md) · [Custom models](docs/models.md) |
+| 命令与终端界面 | [使用 Metis](docs/usage.md) · [TUI](docs/tui.md) |
+| Provider 与自定义模型 | [Providers](docs/providers.md) · [Custom models](docs/models.md) · [Custom providers](docs/custom-provider.md) |
 | 具名多智能体体系 | [多智能体与递归委派](docs/agents.md) |
 | 基准评测与无头模式 | [TerminalBench 与 Harbor 适配](docs/terminalbench.md) |
 | 会话与上下文压缩 | [Sessions](docs/sessions.md) · [Compaction](docs/compaction.md) |
 | Extensions、Skills 与 Packages | [Extensions](docs/extensions.md) · [Skills](docs/skills.md) · [Packages](docs/packages.md) |
+| Prompt 与界面定制 | [Prompt templates](docs/prompt-templates.md) · [Themes](docs/themes.md) · [Keybindings](docs/keybindings.md) |
 | 程序化集成 | [SDK](docs/sdk.md) · [RPC](docs/rpc.md) · [JSON](docs/json.md) |
 | 视频检查 | [Video tool](docs/video.md) |
 | 安全与配置 | [Security](docs/security.md) · [Settings](docs/settings.md) |
+| 平台与隔离 | [Windows](docs/windows.md) · [Termux](docs/termux.md) · [tmux](docs/tmux.md) · [Containers](docs/containerization.md) |
 
 全部指南见[文档索引](docs/index.md)。
 
