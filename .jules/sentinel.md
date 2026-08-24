@@ -1,0 +1,4 @@
+## 2025-02-24 - Fix Timing Attack Vulnerability in safeEqual
+**Vulnerability:** The `safeEqual` function used in `server-mode.ts` for basic auth validation leaked the length of the expected password/token due to an early return when comparing string lengths before calling `crypto.timingSafeEqual`.
+**Learning:** Even when using cryptographic constant-time comparison functions, comparing lengths beforehand and early-returning defeats the purpose as it introduces a side-channel timing attack that can be used to infer the length of a secret.
+**Prevention:** When implementing constant-time string comparison, ensure the execution path always takes the same amount of time regardless of whether the lengths match. If lengths differ, you must still run a dummy constant-time comparison (e.g. comparing the expected buffer with itself) to mask the early exit.

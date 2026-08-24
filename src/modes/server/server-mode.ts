@@ -1147,7 +1147,14 @@ function isAuthorized(request: IncomingMessage, username: string, password: stri
 function safeEqual(actual: string, expected: string): boolean {
 	const actualBuffer = Buffer.from(actual);
 	const expectedBuffer = Buffer.from(expected);
-	return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+
+	// Ensure timing is constant regardless of length match
+	if (actualBuffer.length !== expectedBuffer.length) {
+		// Run timingSafeEqual with identical buffers to consume roughly the same time
+		crypto.timingSafeEqual(expectedBuffer, expectedBuffer);
+		return false;
+	}
+	return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
 function isLoopbackHostname(hostname: string): boolean {
