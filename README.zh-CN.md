@@ -36,7 +36,7 @@
 | macOS | Apple 芯片（`arm64`） | 下载 `Metis-*-macos-arm64.dmg`，再将 **Metis.app** 拖入**应用程序**。 |
 | Windows | `x64` | 运行 `Metis-*-win-x64-setup.exe`；或解压 `Metis-*-win-x64.zip` 后启动 **Metis.exe**。 |
 
-安装包及对应 `.sha256` 校验文件见[最新 GitHub Release](https://github.com/Wholiver/metis/releases/latest)。若 Windows SmartScreen 提示“未知发布者”，仅在文件来自官方 Release 页面且校验值一致时继续。
+安装包及对应 `.sha256` 校验文件见[最新 GitHub Release](https://github.com/Wholiver/metis/releases/latest)。当前 macOS 构建仅使用 ad-hoc 签名且未经 Apple 公证，Windows 构建也未进行代码签名。若 Gatekeeper 或 SmartScreen 提示“未知开发者/发布者”，仅在文件来自官方 Release 页面且校验值一致时继续。
 
 <details>
 <summary><strong>CLI 安装</strong></summary>
@@ -59,8 +59,8 @@ metis
 - **持久记忆与恢复** — 检索可复用的项目知识；中断、上下文压缩或会话重载后继续工作。
 - **灵活的模型与认证** — 使用内置订阅登录、API Key Provider，或带模型发现能力的自定义 OpenAI 兼容 Provider。
 - **桌面工作区** — 通过选择器、剪贴板或拖放添加图片、视频、文本及其他文件，并以图形界面管理 Provider 和会话。
-- **原生命名递归多智能体体系** — 内置具名 Agent 角色（`coordinator`、`planner`、`implementer`、`reviewer`、`verifier`），支持 L0→L4 递归委派、工具白名单沙箱、Git Worktree 物理隔离与生命周期控制。
-- **TerminalBench 与 Harbor 评测就绪** — 无头机器可读 JSONL 执行、标准退出码（`0`/`1`/`2`）、最终回答文件隔离、全链路 Trace/Token/Cost 聚合以及官方 Python 适配器。
+- **原生命名递归多智能体体系** — 内置具名 Agent 角色（`coordinator`、`planner`、`implementer`、`reviewer`、`verifier`），支持 L0→L4 递归委派、角色工具白名单、可选 Git Worktree 隔离与生命周期控制。
+- **TerminalBench 与 Harbor 评测就绪** — 无头机器可读 JSONL 执行、标准退出码（`0`/`1`/`2`）、最终回答文件隔离、全链路 Trace/Token/Cost 聚合以及内置 Python Harness 适配器。
 - **性能工作流** — 针对实现、调试、评审、重构、研究与文档任务选择专用框架，采用自适应 T0–T3 层级、独立评审与证据门禁。
 - **视频证据** — 通过元数据、时间戳故事板、有序运动样本、高清帧、字幕与本地转录检查视频。
 - **可扩展核心** — 加载 TypeScript Extensions、Agent Skills、Prompt Templates、Themes 与 Metis Packages；通过 Print、JSON、RPC、Server 或 Node.js SDK 集成。
@@ -98,7 +98,7 @@ Metis 会在 Prompt、完整 Step、上下文压缩、错误、中止及完成�
 | --- | --- |
 | 安装、认证与首次运行 | [快速入门](docs/quickstart.md) |
 | 命令与交互式使用 | [使用 Metis](docs/usage.md) |
-| 桌面端开发与 Windows | [Desktop 前端](docs/desktop-frontend-development.md) · [Windows](docs/windows.md) |
+| Windows CLI 环境配置 | [Windows](docs/windows.md) |
 | Provider 与自定义模型 | [Providers](docs/providers.md) · [Custom models](docs/models.md) |
 | 具名多智能体体系 | [多智能体与递归委派](docs/agents.md) |
 | 基准评测与无头模式 | [TerminalBench 与 Harbor 适配](docs/terminalbench.md) |
@@ -118,7 +118,8 @@ npm run build                 # 编译 TypeScript 并复制运行时资源
 npm test                      # 运行 Vitest 测试套件
 npm run clean                 # 删除编译输出
 npm run build:binary          # 构建独立二进制文件
-npm --prefix desktop run build # 构建 React/Vite Desktop Renderer
+npm --prefix desktop run dev  # 启动 React/Vite Desktop 开发环境
+npm --prefix desktop run build # 构建 Renderer 与 Electron Artifact
 ```
 
 软件包从 `@wholiver_hu/metis` 导出 Node.js SDK，并从 `@wholiver_hu/metis/rpc-entry` 导出 RPC 入口。

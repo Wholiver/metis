@@ -36,7 +36,7 @@ Desktop includes the Metis CLI and Server runtime; Node.js is not required separ
 | macOS | Apple silicon (`arm64`) | Download `Metis-*-macos-arm64.dmg`, then drag **Metis.app** to **Applications**. |
 | Windows | `x64` | Run `Metis-*-win-x64-setup.exe`, or extract `Metis-*-win-x64.zip` and launch **Metis.exe**. |
 
-Download files and matching `.sha256` checksums from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest). If Windows SmartScreen reports an unknown publisher, continue only when the file came from the official release page and its checksum matches.
+Download files and matching `.sha256` checksums from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest). Current macOS builds use ad-hoc signing and are not Apple-notarized; Windows builds are not code-signed. If Gatekeeper or SmartScreen reports an unknown developer or publisher, continue only when the file came from the official release page and its checksum matches.
 
 <details>
 <summary><strong>CLI installation</strong></summary>
@@ -59,8 +59,8 @@ Use `/login` for supported subscription providers, or configure an API key. Run 
 - **Durable memory and recovery** — search reusable project knowledge and resume work after interruption, compaction, or session reload.
 - **Flexible models and authentication** — use built-in subscription login, API-key providers, or custom OpenAI-compatible providers with model discovery.
 - **Desktop workspace** — attach images, videos, text, and other files through the picker, clipboard, or drag and drop; manage providers and sessions graphically.
-- **Recursive Multi-Agent System** — native named agent definitions (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`), L0→L4 recursive delegation, role-based tool sandboxing, physical Git Worktree isolation, and deterministic lifecycle control.
-- **TerminalBench & Harbor Ready** — headless machine-readable JSONL execution, standardized exit codes (`0`/`1`/`2`), final answer separation, full trace aggregation, and official Python harness adapters.
+- **Recursive Multi-Agent System** — native named agent definitions (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`), L0→L4 recursive delegation, role-specific tool allowlists, optional Git Worktree isolation, and deterministic lifecycle control.
+- **TerminalBench & Harbor Ready** — headless machine-readable JSONL execution, standardized exit codes (`0`/`1`/`2`), final answer separation, full trace aggregation, and an included Python harness adapter.
 - **Performance workflows** — route implementation, debugging, review, refactoring, research, and documentation through task-specific frameworks, adaptive T0–T3 tiers, independent review, and evidence gates.
 - **Video evidence** — inspect local video through metadata, timestamped storyboards, ordered motion samples, high-resolution frames, subtitles, and local transcription.
 - **Extensible core** — add TypeScript extensions, Agent Skills, prompt templates, themes, and Metis packages; integrate through print, JSON, RPC, Server, or the Node.js SDK.
@@ -98,7 +98,7 @@ Use `/memory status|on|off|run|search|forget|reset`. Proposal artifacts and long
 | --- | --- |
 | Install, authenticate, and start | [Quickstart](docs/quickstart.md) |
 | Commands and interactive usage | [Using Metis](docs/usage.md) |
-| Desktop development and Windows | [Desktop frontend](docs/desktop-frontend-development.md) · [Windows](docs/windows.md) |
+| Windows CLI setup | [Windows](docs/windows.md) |
 | Providers and custom models | [Providers](docs/providers.md) · [Custom models](docs/models.md) |
 | Multi-Agent System | [Named Agents & Delegation](docs/agents.md) |
 | Benchmark & Evaluation | [TerminalBench & Harbor](docs/terminalbench.md) |
@@ -118,7 +118,8 @@ npm run build                 # Compile TypeScript and copy runtime assets
 npm test                      # Run the Vitest suite
 npm run clean                 # Remove compiled output
 npm run build:binary          # Build the standalone binary
-npm --prefix desktop run build # Build the React/Vite Desktop renderer
+npm --prefix desktop run dev  # Start the React/Vite Desktop app in development
+npm --prefix desktop run build # Build the renderer and Electron artifact
 ```
 
 The package exports the Node.js SDK from `@wholiver_hu/metis` and the RPC entry point from `@wholiver_hu/metis/rpc-entry`.
