@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.1] - 2026-08-25
+
+### Model Catalog, Concurrent Desktop Sessions & Documentation
+
+- Expanded the bundled provider/model catalog and added catalog-aware reasoning, thinking-level, and compatibility inference with explicit configuration overrides.
+- Allowed Desktop users to switch or create conversations while another session continues running, backed by isolated sibling runtimes and updated Server/RPC session events.
+- Refreshed provider display names, OAuth branding, model synchronization tooling, and related runtime documentation.
+- Updated the English and Chinese READMEs with current installation notes, product capabilities, trust boundaries, CLI examples, and documentation links.
+
 ## [1.1.0] - 2026-08-24
 
 ### React Desktop, Performance Modes & Runtime Hardening

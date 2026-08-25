@@ -489,7 +489,6 @@ const extra = {
 	applying: ["Applying…", "正在应用…"],
 	completed: ["Completed.", "已完成。"],
 	operationFailed: ["Operation failed: {message}", "操作失败：{message}"],
-	agentBusyWait: ["Agent is running or compacting context. Wait for the current run to finish.", "Agent 正在运行或压缩上下文，请等待本轮结束"],
 	sessionSummary: ["{total} messages · {pending} queued", "{total} 条消息 · {pending} 条排队消息"],
 	noOtherSessions: ["No other sessions", "没有其他会话"],
 	noForkMessages: ["No messages available to fork", "没有可分叉消息"],

@@ -12,6 +12,7 @@
  */
 
 import * as crypto from "node:crypto";
+import { getSupportedThinkingLevels } from "@earendil-works/metis-ai/compat";
 import { type AskUserResponse, validateAskUserResponse } from "../../core/ask-user.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
@@ -519,7 +520,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "get_available_models": {
-				const models = await session.modelRegistry.getAvailable();
+				const models = (await session.modelRegistry.getAvailable()).map((model) => ({
+					...model,
+					thinkingLevels: getSupportedThinkingLevels(model),
+				}));
 				return success(id, "get_available_models", { models });
 			}
 

@@ -282,7 +282,6 @@ export function App() {
     connectServer,
     selectConversation,
     newConversation,
-    guardSessionReplacement,
     processProposal,
     refineProposal,
     respondToUserInput,
@@ -531,7 +530,6 @@ export function App() {
   const handleSelectProject = async (id: string) => {
     const targetProj = projects.find((p) => p.id === id);
     if (!targetProj || targetProj.id === activeProjectId) return;
-    if (!guardSessionReplacement()) return;
     setActiveProjectId(id);
     const desktop = (window as any).metisDesktop;
     if (desktop?.workspace?.set && targetProj?.path) {
@@ -544,7 +542,6 @@ export function App() {
   };
 
   const handleAddProject = async () => {
-    if (!guardSessionReplacement()) return;
     const desktop = (window as any).metisDesktop;
     if (!desktop?.workspace) return;
     try {
@@ -572,7 +569,6 @@ export function App() {
   };
 
   const handleChangeWorkspace = async () => {
-    if (!guardSessionReplacement()) return false;
     const desktop = (window as any).metisDesktop;
     if (!desktop?.workspace?.select) return false;
     try {
@@ -607,11 +603,11 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'n') return;
       event.preventDefault();
-      if (isConnected && !isStreaming && !isCompacting && !isLoadingSessions) void newConversation();
+      if (isConnected && !isLoadingSessions) void newConversation();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isCompacting, isConnected, isLoadingSessions, isStreaming, newConversation]);
+  }, [isConnected, isLoadingSessions, newConversation]);
 
   const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

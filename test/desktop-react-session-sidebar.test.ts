@@ -15,8 +15,6 @@ import {
   getSubagentProgress,
   mergeAssistantParts,
   reconcileSessionAgents,
-  canReplaceActiveSession,
-  SESSION_REPLACEMENT_BUSY_MESSAGE,
   sessionTitle,
   sessionToAgent,
   toMessage,
@@ -41,22 +39,18 @@ const session = {
 };
 
 describe('desktop React session sidebar', () => {
-  it('keeps active work in place while conversation replacement is blocked', () => {
-    expect(canReplaceActiveSession(false, false)).toBe(true);
-    expect(canReplaceActiveSession(true, false)).toBe(false);
-    expect(canReplaceActiveSession(false, true)).toBe(false);
-    expect(SESSION_REPLACEMENT_BUSY_MESSAGE).toBe(
-      'Agent is running or compacting context. Wait for the current run to finish.',
-    );
-
+  it('allows Desktop conversation navigation while active work continues', () => {
     const source = readFileSync(resolve(process.cwd(), 'desktop/src/hooks/useMetisServer.ts'), 'utf8');
+    const appSource = readFileSync(resolve(process.cwd(), 'desktop/src/App.tsx'), 'utf8');
+    const mainSource = readFileSync(resolve(process.cwd(), 'desktop/main.cjs'), 'utf8');
     const selectConversation = source.slice(
       source.indexOf('const selectConversation'),
       source.indexOf('const newConversation'),
     );
-    expect(selectConversation).toContain('if (!guardSessionReplacement()) return;');
-    expect(source).toContain("current === SESSION_REPLACEMENT_BUSY_MESSAGE ? current : ''");
-    expect(source).toContain("current === SESSION_REPLACEMENT_BUSY_MESSAGE ? '' : current");
+    expect(source).not.toContain('guardSessionReplacement');
+    expect(source).not.toContain('SESSION_REPLACEMENT_BUSY_MESSAGE');
+    expect(appSource).toContain('if (isConnected && !isLoadingSessions) void newConversation();');
+    expect(mainSource).toContain('"X-Metis-Desktop": "1"');
     expect(selectConversation.indexOf("await request('/session/switch', 'POST'")).toBeLessThan(
       selectConversation.indexOf('setMessages([])'),
     );
@@ -65,11 +59,8 @@ describe('desktop React session sidebar', () => {
       agents: [sessionToAgent(session)],
       activeAgentId: session.id,
       width: 260,
-      error: SESSION_REPLACEMENT_BUSY_MESSAGE,
       onSelectAgent: () => undefined,
     }));
-    expect(markup).toContain('role="alert"');
-    expect(markup).toContain(SESSION_REPLACEMENT_BUSY_MESSAGE);
     expect(markup).toContain(`data-conversation-row="${session.id}"`);
   });
 

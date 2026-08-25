@@ -159,9 +159,37 @@ function createRuntimeFixture() {
 		importFromJsonl: vi.fn(async () => ({ cancelled: false })),
 		dispose: vi.fn(async () => {}),
 	};
+	const createSiblingRuntime = (sessionId: string, sessionFile: string) => {
+		const siblingSession = {
+			...session,
+			sessionId,
+			sessionFile,
+			isStreaming: false,
+			isCompacting: false,
+			messages: [],
+		};
+		return {
+			cwd: "/tmp",
+			session: siblingSession,
+			setRebindSession: vi.fn(),
+			newSession: vi.fn(async () => ({ cancelled: false })),
+			switchSession: vi.fn(async () => ({ cancelled: false })),
+			fork: vi.fn(async () => ({ cancelled: false, selectedText: undefined })),
+			importFromJsonl: vi.fn(async () => ({ cancelled: false })),
+			dispose: vi.fn(async () => {}),
+		};
+	};
+	const switchedSibling = createSiblingRuntime("session-2", "/tmp/other.jsonl");
+	const newSibling = createSiblingRuntime("session-3", "/tmp/new.jsonl");
+	Object.assign(runtime, {
+		createSiblingForSession: vi.fn(async () => switchedSibling),
+		createSiblingNewSession: vi.fn(async () => newSibling),
+	});
 	return {
 		runtime: runtime as unknown as AgentSessionRuntime,
 		session,
+		switchedSibling,
+		newSibling,
 		emit: (event: object) => {
 			for (const listener of listeners) listener(event);
 		},
@@ -278,7 +306,9 @@ describe("server mode", () => {
 		expect(state.autoRetryEnabled).toBe(true);
 
 		const providerModels = await fetch(`${handle.address.url}/config/providers`).then((response) => response.json());
-		expect(providerModels).toEqual({ models: [{ provider: "test", id: "model-1", name: "Test Model" }] });
+		expect(providerModels).toEqual({
+			models: [{ provider: "test", id: "model-1", name: "Test Model", thinkingLevels: ["off"] }],
+		});
 
 		const modelResponse = await fetch(`${handle.address.url}/session/model`, {
 			method: "PUT",
@@ -564,6 +594,47 @@ describe("server mode", () => {
 		});
 		expect(compactingResponse.status).toBe(409);
 		expect(fixture.runtime.switchSession).not.toHaveBeenCalled();
+	});
+
+	test("lets Desktop switch and create sessions without cancelling active work", async () => {
+		const fixture = createRuntimeFixture();
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+		fixture.session.isStreaming = true;
+		const desktopHeaders = { "Content-Type": "application/json", "X-Metis-Desktop": "1" };
+
+		const switchResponse = await fetch(`${handle.address.url}/session/switch`, {
+			method: "POST",
+			headers: desktopHeaders,
+			body: JSON.stringify({ sessionPath: "/tmp/other.jsonl" }),
+		});
+		expect(switchResponse.status).toBe(200);
+		expect(await switchResponse.json()).toMatchObject({ cancelled: false, sessionId: "session-2" });
+		expect(fixture.runtime.createSiblingForSession).toHaveBeenCalledWith("/tmp/other.jsonl");
+		expect(fixture.session.abort).not.toHaveBeenCalled();
+		expect(fixture.runtime.dispose).not.toHaveBeenCalled();
+
+		const switchBackResponse = await fetch(`${handle.address.url}/session/switch`, {
+			method: "POST",
+			headers: desktopHeaders,
+			body: JSON.stringify({ sessionPath: "/tmp/session.jsonl" }),
+		});
+		expect(switchBackResponse.status).toBe(200);
+		expect(await switchBackResponse.json()).toMatchObject({ sessionId: "session-1", isStreaming: true });
+		expect(fixture.runtime.createSiblingForSession).toHaveBeenCalledTimes(1);
+
+		const newResponse = await fetch(`${handle.address.url}/session/new`, {
+			method: "POST",
+			headers: desktopHeaders,
+			body: JSON.stringify({ cwd: "/tmp", collaborationMode: "plan" }),
+		});
+		expect(newResponse.status).toBe(200);
+		expect(await newResponse.json()).toMatchObject({ cancelled: false, sessionId: "session-3" });
+		expect(fixture.runtime.createSiblingNewSession).toHaveBeenCalledWith({
+			cwd: "/tmp",
+			parentSession: undefined,
+			collaborationMode: "plan",
+		});
+		expect(fixture.session.abort).not.toHaveBeenCalled();
 	});
 
 	test("serves session, language, credential, import, export, and reload settings actions", async () => {

@@ -18,6 +18,8 @@ import type { InstructionSourceSummary } from "../../core/system-prompt.ts";
 import type { MemoryRecordSummary, MemoryState } from "../../core/memory-coordinator.ts";
 import type { PerformanceRunSummary } from "../../core/performance-runtime.ts";
 
+export type RpcModelInfo = Model<any> & { thinkingLevels: ThinkingLevel[] };
+
 // ============================================================================
 // RPC Commands (stdin)
 // ============================================================================
@@ -164,7 +166,7 @@ export type RpcResponse =
 			type: "response";
 			command: "get_available_models";
 			success: true;
-			data: { models: Model<any>[] };
+			data: { models: RpcModelInfo[] };
 	  }
 
 	// Thinking

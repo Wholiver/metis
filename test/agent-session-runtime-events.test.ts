@@ -157,6 +157,26 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		expect(events).toEqual([{ type: "session_before_switch", reason: "new", targetSessionFile: undefined }]);
 	});
 
+	it("creates a sibling runtime without shutting down or invalidating the active session", async () => {
+		const events: RecordedSessionEvent[] = [];
+		const { runtimeHost } = await createRuntimeHost((metis) => {
+			metis.on("session_shutdown", (event) => events.push(event));
+			metis.on("session_start", (event) => events.push(event));
+		});
+		const activeSession = runtimeHost.session;
+		events.length = 0;
+
+		const sibling = await runtimeHost.createSiblingNewSession({ collaborationMode: "plan" });
+
+		expect(runtimeHost.session).toBe(activeSession);
+		expect(sibling.session).not.toBe(activeSession);
+		expect(events).toEqual([]);
+		expect(activeSession.extensionRunner.createContext().cwd).toBe(activeSession.sessionManager.getCwd());
+		await sibling.session.bindExtensions({});
+		expect(events).toEqual([{ type: "session_start", reason: "new", previousSessionFile: activeSession.sessionFile }]);
+		await sibling.dispose();
+	});
+
 	it("runs beforeSessionInvalidate after session_shutdown and before rebindSession", async () => {
 		const phases: string[] = [];
 		const { runtimeHost } = await createRuntimeHost((metis) => {

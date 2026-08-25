@@ -8,11 +8,12 @@ import type {
 	Model,
 	OpenAICompletionsCompat,
 } from "@earendil-works/metis-ai/compat";
-import { getApiProvider } from "@earendil-works/metis-ai/compat";
+import { getApiProvider, getProviders, getSupportedThinkingLevels } from "@earendil-works/metis-ai/compat";
 import { getOAuthProvider } from "@earendil-works/metis-ai/oauth";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { clearApiKeyCache, ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
+import { defaultModelPerProvider } from "../src/core/model-resolver.ts";
 
 describe("ModelRegistry", () => {
 	let tempDir: string;
@@ -95,15 +96,79 @@ describe("ModelRegistry", () => {
 		messages: [],
 	};
 
-	test("exposes GPT-5.6 Luna through the local Codex subscription registry", () => {
+	test("exposes current flagship models from every updated provider catalog", () => {
 		const registry = ModelRegistry.create(authStorage, modelsJsonPath);
-		const luna = registry.getAll().find((model) => model.provider === "openai-codex" && model.id === "gpt-5.6-luna");
+		const models = registry.getAll();
+		expect(getProviders()).toEqual([
+			"amazon-bedrock",
+			"ant-ling",
+			"anthropic",
+			"azure-openai-responses",
+			"baseten",
+			"cerebras",
+			"cohere",
+			"cloudflare-ai-gateway",
+			"cloudflare-workers-ai",
+			"deepseek",
+			"fireworks",
+			"github-copilot",
+			"google",
+			"google-vertex",
+			"groq",
+			"huggingface",
+			"kimi-coding",
+			"minimax",
+			"minimax-cn",
+			"mistral",
+			"moonshotai",
+			"moonshotai-cn",
+			"nvidia",
+			"openai",
+			"openai-codex",
+			"opencode",
+			"opencode-go",
+			"openrouter",
+			"qwen-token-plan",
+			"qwen-token-plan-cn",
+			"qwen-token-plan-individual",
+			"together",
+			"vercel-ai-gateway",
+			"xai",
+			"xiaomi",
+			"xiaomi-token-plan-ams",
+			"xiaomi-token-plan-cn",
+			"xiaomi-token-plan-sgp",
+			"zai",
+			"zai-coding-cn",
+		]);
+		const luna = models.find((model) => model.provider === "openai-codex" && model.id === "gpt-5.6-luna");
 		expect(luna).toMatchObject({
-			name: "GPT-5.6-Luna",
+			name: "GPT-5.6 Luna",
 			contextWindow: 272_000,
 			maxTokens: 128_000,
 			reasoning: true,
 		});
+
+		expect(models).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ provider: "anthropic", id: "claude-opus-5" }),
+				expect.objectContaining({ provider: "openai", id: "gpt-5.6-sol" }),
+				expect.objectContaining({ provider: "google", id: "gemini-3.7-flash" }),
+				expect.objectContaining({ provider: "xai", id: "grok-4.6" }),
+				expect.objectContaining({ provider: "baseten", id: "zai-org/GLM-5.2" }),
+				expect.objectContaining({ provider: "qwen-token-plan", id: "qwen3.8-max" }),
+			]),
+		);
+	});
+
+	test("keeps every built-in provider default resolvable after catalog refresh", () => {
+		const models = ModelRegistry.create(authStorage, modelsJsonPath).getAll();
+
+		for (const [provider, modelId] of Object.entries(defaultModelPerProvider)) {
+			expect(models, `${provider}/${modelId}`).toEqual(
+				expect.arrayContaining([expect.objectContaining({ provider, id: modelId })]),
+			);
+		}
 	});
 
 	describe("baseUrl override (no custom models)", () => {
@@ -232,6 +297,56 @@ describe("ModelRegistry", () => {
 	});
 
 	describe("custom models merge behavior", () => {
+		test("infers thinking levels and transport metadata for catalog-backed custom models", () => {
+			writeRawModelsJson({
+				"custom-zai": {
+					baseUrl: "https://proxy.example.com/v1",
+					apiKey: "test-key",
+					api: "openai-completions",
+					models: [
+						{ id: "glm-5.3" },
+						{ id: "qwen3.8-max" },
+						{ id: "qwen/qwen3-next-80b-a3b-thinking" },
+						{ id: "unknown-capabilities" },
+					],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const glm = registry.find("custom-zai", "glm-5.3");
+			const qwen = registry.find("custom-zai", "qwen3.8-max");
+			const unknown = registry.find("custom-zai", "unknown-capabilities");
+
+			expect(glm?.reasoning).toBe(true);
+			expect(getSupportedThinkingLevels(glm!)).toEqual(["low", "high"]);
+			expect((glm?.compat as OpenAICompletionsCompat | undefined)?.thinkingFormat).toBe("zai");
+			expect(qwen?.reasoning).toBe(true);
+			expect(getSupportedThinkingLevels(qwen!)).toEqual(["off", "low", "medium", "xhigh"]);
+			expect(registry.find("custom-zai", "qwen/qwen3-next-80b-a3b-thinking")?.reasoning).toBe(true);
+			expect(unknown?.reasoning).toBe(false);
+			expect(getSupportedThinkingLevels(unknown!)).toEqual(["off"]);
+		});
+
+		test("provider defaults and explicit model opt-out override inferred thinking capabilities", () => {
+			writeRawModelsJson({
+				"custom-provider-default": {
+					baseUrl: "https://proxy.example.com/v1",
+					apiKey: "test-key",
+					api: "openai-completions",
+					reasoning: true,
+					thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null },
+					models: [{ id: "provider-reasoner" }, { id: "glm-5.3", reasoning: false }],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			expect(getSupportedThinkingLevels(registry.find("custom-provider-default", "provider-reasoner")!)).toEqual([
+				"low",
+				"high",
+			]);
+			expect(getSupportedThinkingLevels(registry.find("custom-provider-default", "glm-5.3")!)).toEqual(["off"]);
+		});
+
 		test("custom models default to multimodal input when capability is omitted", () => {
 			writeRawModelsJson({
 				"custom-openai": {
@@ -912,6 +1027,30 @@ describe("ModelRegistry", () => {
 	});
 
 	describe("dynamic provider lifecycle", () => {
+		test("dynamic custom providers infer supported thinking levels when omitted", () => {
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			registry.registerProvider("extension-provider", {
+				baseUrl: "https://proxy.example.com/v1",
+				apiKey: "test-key",
+				api: "openai-completions",
+				models: [
+					{
+						id: "glm-5.3",
+						name: "GLM 5.3",
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 128000,
+						maxTokens: 4096,
+					},
+				],
+			});
+
+			const model = registry.find("extension-provider", "glm-5.3");
+			expect(model?.reasoning).toBe(true);
+			expect(getSupportedThinkingLevels(model!)).toEqual(["low", "high"]);
+			expect((model?.compat as OpenAICompletionsCompat | undefined)?.thinkingFormat).toBe("zai");
+		});
+
 		test("getProviderDisplayName resolves registered, OAuth, built-in, and fallback names", () => {
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 

@@ -95,12 +95,6 @@ const EMPTY_AGENT: Agent = {
   time: '',
 };
 
-export const SESSION_REPLACEMENT_BUSY_MESSAGE = 'Agent is running or compacting context. Wait for the current run to finish.';
-
-export function canReplaceActiveSession(isStreaming: boolean, isCompacting: boolean): boolean {
-  return !isStreaming && !isCompacting;
-}
-
 function formatSessionTime(value: string | number): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
@@ -560,9 +554,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const activeSessionIdRef = useRef('');
   const serverInstanceIdRef = useRef('');
   const lastServerSequenceRef = useRef(0);
-  const sessionBusyRef = useRef(false);
-
-  sessionBusyRef.current = !canReplaceActiveSession(isStreaming, isCompacting);
 
   useEffect(() => {
     activeProjectRef.current = activeProject;
@@ -578,12 +569,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
     const response = await desktop.metis.request({ path, method, body, timeoutMs }) as MetisResponse<T>;
     if (!response.ok) throw responseError(response, `Request failed (${response.status})`);
     return response.data as T;
-  }, []);
-
-  const guardSessionReplacement = useCallback(() => {
-    if (!sessionBusyRef.current) return true;
-    setSessionError(SESSION_REPLACEMENT_BUSY_MESSAGE);
-    return false;
   }, []);
 
   const loadMessages = useCallback(async (expectedSessionId?: string) => {
@@ -630,7 +615,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
     });
     const nextStreaming = Boolean(state.isStreaming);
     const nextCompacting = Boolean(state.isCompacting);
-    sessionBusyRef.current = !canReplaceActiveSession(nextStreaming, nextCompacting);
     setIsStreaming(nextStreaming);
     setIsCompacting(nextCompacting);
     setCollaborationMode(state.collaborationMode || 'plan');
@@ -645,7 +629,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
   }, [request]);
 
   const loadProject = useCallback(async (project: ProjectItem, switchWhenNeeded = true) => {
-    if (switchWhenNeeded && !guardSessionReplacement()) return;
     const version = ++loadVersionRef.current;
     setIsLoadingSessions(true);
     setSessionError('');
@@ -678,7 +661,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     } finally {
       if (version === loadVersionRef.current) setIsLoadingSessions(false);
     }
-  }, [guardSessionReplacement, loadMessages, request]);
+  }, [loadMessages, request]);
 
   const connectServer = useCallback(async (options?: { baseUrl?: string; username?: string; password?: string }) => {
     const desktop = (window as any).metisDesktop;
@@ -779,7 +762,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
       if (!acceptsEvent(event)) return;
       const type = event?.type || '';
       if (['server.connected', 'message_start', 'message_update', 'message_end', 'agent_start', 'turn_start', 'tool_execution_start', 'tool_execution_end', 'user_input_request', 'session_info_changed'].includes(type)) {
-        setSessionError((current) => current === SESSION_REPLACEMENT_BUSY_MESSAGE ? current : '');
+        setSessionError('');
       }
       if (type === 'extension_ui_request') {
         void (async () => {
@@ -835,14 +818,12 @@ export function useMetisServer(activeProject?: ProjectItem) {
           }
         }
         if (!isEnd) {
-          sessionBusyRef.current = true;
           setIsStreaming(true);
         }
         if (isEnd) reconcileCurrentSession();
         return;
       }
       if (type === 'tool_execution_update') {
-        sessionBusyRef.current = true;
         setIsStreaming(true);
         const toolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : '';
         if (toolCallId) {
@@ -851,7 +832,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
         return;
       }
       if (['agent_start', 'turn_start', 'tool_execution_start', 'tool_execution_end'].includes(type)) {
-        sessionBusyRef.current = true;
         setIsStreaming(true);
         if (type === 'tool_execution_start' || type === 'tool_execution_end') reconcileCurrentSession();
         return;
@@ -859,9 +839,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
       if (type === 'agent_end') {
         flushPendingUpdate();
         if (!event.willRetry) {
-          sessionBusyRef.current = false;
           setIsStreaming(false);
-          setSessionError((current) => current === SESSION_REPLACEMENT_BUSY_MESSAGE ? '' : current);
         }
         reconcileCurrentSession();
         const project = activeProjectRef.current;
@@ -977,7 +955,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
     const agent = agentsRef.current.find((item) => item.id === agentId);
     if (!agent?.sessionPath) return;
     if (agentId === activeSessionIdRef.current) return;
-    if (!guardSessionReplacement()) return;
     setIsLoadingSessions(true);
     setSessionError('');
     try {
@@ -995,12 +972,11 @@ export function useMetisServer(activeProject?: ProjectItem) {
     } finally {
       setIsLoadingSessions(false);
     }
-  }, [guardSessionReplacement, loadMessages, request]);
+  }, [loadMessages, request]);
 
   const newConversation = useCallback(async () => {
     const project = activeProjectRef.current;
     if (!project) return false;
-    if (!guardSessionReplacement()) return false;
     setIsLoadingSessions(true);
     setSessionError('');
     try {
@@ -1018,7 +994,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
       setIsLoadingSessions(false);
       return false;
     }
-  }, [guardSessionReplacement, loadProject, request]);
+  }, [loadProject, request]);
 
   const sendMessage = useCallback(async (text: string, options: SendMessageOptions = {}) => {
     const optimistic: Message = {
@@ -1029,7 +1005,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
       ...(options.attachments?.length ? { attachments: options.attachments } : {}),
     };
     setMessages((current) => [...current, optimistic]);
-    sessionBusyRef.current = true;
     setIsStreaming(true);
     try {
       await request('/session/prompt', 'POST', {
@@ -1042,7 +1017,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
     } catch (error) {
       setMessages((current) => current.filter((message) => message.id !== optimistic.id));
       setSessionError(error instanceof Error ? error.message : String(error));
-      sessionBusyRef.current = false;
       setIsStreaming(false);
       return false;
     }
@@ -1194,7 +1168,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
     connectServer,
     selectConversation,
     newConversation,
-    guardSessionReplacement,
     processProposal,
     refineProposal,
     respondToUserInput,

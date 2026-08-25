@@ -6,7 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { ImageContent } from "@earendil-works/metis-ai";
-import { getProviders } from "@earendil-works/metis-ai/compat";
+import { getProviders, getSupportedThinkingLevels } from "@earendil-works/metis-ai/compat";
 import { APP_NAME, getShareViewerUrl, VERSION } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { type AskUserRequest, type AskUserResponse, validateAskUserResponse } from "../../core/ask-user.ts";
@@ -84,6 +84,9 @@ export async function startServerMode(
 	}
 
 	let session = runtimeHost.session;
+	const desktopRuntimesBySessionPath = new Map<string, AgentSessionRuntime>();
+	const retainedDesktopRuntimes = new Set<AgentSessionRuntime>([runtimeHost]);
+	const boundDesktopSessions = new WeakSet<object>();
 	const serverInstanceId = crypto.randomUUID();
 	let serverSequence = 0;
 	let unsubscribe: (() => void) | undefined;
@@ -115,20 +118,29 @@ export async function startServerMode(
 			throw new HttpError(409, "session_busy", SESSION_REPLACEMENT_BUSY_MESSAGE);
 		}
 	};
+	const sessionPathKey = (sessionPath: string | undefined): string | undefined => (
+		sessionPath ? path.resolve(sessionPath) : undefined
+	);
+	const rememberDesktopRuntime = (host: AgentSessionRuntime): void => {
+		const key = sessionPathKey(host.session.sessionFile);
+		if (key) desktopRuntimesBySessionPath.set(key, host);
+		retainedDesktopRuntimes.add(host);
+	};
+	const isDesktopRequest = (request: IncomingMessage): boolean => request.headers["x-metis-desktop"] === "1";
 
-	const serializeEvent = (event: object): string => {
+	const serializeEvent = (event: object, eventSessionId = session.sessionId): string => {
 		const sequence = ++serverSequence;
 		const envelope = {
 			...event,
 			serverInstanceId,
 			serverSequence: sequence,
-			serverSessionId: session.sessionId,
+			serverSessionId: eventSessionId,
 		};
 		return `id: ${serverInstanceId}:${sequence}\ndata: ${JSON.stringify(envelope)}\n\n`;
 	};
 
-	const broadcast = (event: object): void => {
-		const frame = serializeEvent(event);
+	const broadcast = (event: object, eventSessionId = session.sessionId): void => {
+		const frame = serializeEvent(event, eventSessionId);
 		for (const client of eventClients) client.write(frame);
 	};
 
@@ -137,6 +149,7 @@ export async function startServerMode(
 		defaultValue: T,
 		request: Record<string, unknown>,
 		parseResponse: (response: RpcExtensionUIResponse) => T,
+		eventSessionId = session.sessionId,
 	): Promise<T> => {
 		if (opts?.signal?.aborted) return Promise.resolve(defaultValue);
 		const id = crypto.randomUUID();
@@ -161,11 +174,11 @@ export async function startServerMode(
 					resolve(parseResponse(response));
 				},
 			});
-			broadcast({ type: "extension_ui_request", id, ...request } as RpcExtensionUIRequest);
+			broadcast({ type: "extension_ui_request", id, ...request } as RpcExtensionUIRequest, eventSessionId);
 		});
 	};
 
-	const createExtensionUIContext = (): ExtensionUIContext => ({
+	const createExtensionUIContext = (targetRuntime: AgentSessionRuntime, targetSession = targetRuntime.session): ExtensionUIContext => ({
 		select: (title, values, opts) =>
 			createDialogPromise(opts, undefined, { method: "select", title, options: values }, (response) =>
 				"cancelled" in response && response.cancelled
@@ -173,11 +186,11 @@ export async function startServerMode(
 					: "value" in response
 						? response.value
 						: undefined,
-			),
+			targetSession.sessionId),
 		confirm: (title, message, opts) =>
 			createDialogPromise(opts, false, { method: "confirm", title, message }, (response) =>
 				"confirmed" in response ? response.confirmed : false,
-			),
+			targetSession.sessionId),
 		input: (title, placeholder, opts) =>
 			createDialogPromise(opts, undefined, { method: "input", title, placeholder }, (response) =>
 				"cancelled" in response && response.cancelled
@@ -185,15 +198,15 @@ export async function startServerMode(
 					: "value" in response
 						? response.value
 						: undefined,
-			),
+			targetSession.sessionId),
 		notify(message: string, notifyType?: "info" | "warning" | "error") {
-			broadcast({ type: "extension_ui_request", id: crypto.randomUUID(), method: "notify", message, notifyType });
+			broadcast({ type: "extension_ui_request", id: crypto.randomUUID(), method: "notify", message, notifyType }, targetSession.sessionId);
 		},
 		onTerminalInput: () => () => {},
 		setStatus(statusKey: string, statusText: string | undefined) {
 			if (statusText === undefined) extensionStatuses.delete(statusKey);
 			else extensionStatuses.set(statusKey, statusText);
-			broadcast({ type: "extension_ui_request", id: crypto.randomUUID(), method: "setStatus", statusKey, statusText });
+			broadcast({ type: "extension_ui_request", id: crypto.randomUUID(), method: "setStatus", statusKey, statusText }, targetSession.sessionId);
 		},
 		setWorkingMessage(_message?: string) {},
 		setWorkingVisible(_visible: boolean) {},
@@ -208,13 +221,13 @@ export async function startServerMode(
 					widgetKey,
 					widgetLines: content,
 					widgetPlacement: widgetOptions?.placement,
-				});
+				}, targetSession.sessionId);
 			}
 		},
 		setFooter(_factory: unknown) {},
 		setHeader(_factory: unknown) {},
 		setTitle(title: string) {
-			broadcast({ type: "extension_ui_request", id: crypto.randomUUID(), method: "setTitle", title });
+			broadcast({ type: "extension_ui_request", id: crypto.randomUUID(), method: "setTitle", title }, targetSession.sessionId);
 		},
 		async custom() {
 			return undefined as never;
@@ -223,7 +236,7 @@ export async function startServerMode(
 			this.setEditorText(text);
 		},
 		setEditorText(text: string) {
-			broadcast({ type: "extension_ui_request", id: crypto.randomUUID(), method: "set_editor_text", text });
+			broadcast({ type: "extension_ui_request", id: crypto.randomUUID(), method: "set_editor_text", text }, targetSession.sessionId);
 		},
 		getEditorText: () => "",
 		editor: (title: string, prefill?: string) =>
@@ -233,7 +246,7 @@ export async function startServerMode(
 					: "value" in response
 						? response.value
 						: undefined,
-			),
+			targetSession.sessionId),
 		addAutocompleteProvider() {},
 		setEditorComponent() {},
 		getEditorComponent: () => undefined,
@@ -256,34 +269,43 @@ export async function startServerMode(
 	// broadcasts a second server.session_changed — and each broadcast costs the renderer a
 	// full session sync.
 	const bindSession = async (): Promise<void> => {
-		for (const pending of [...pendingUserInput.values()]) pending.cancel();
-		pendingUserInput.clear();
 		session = runtimeHost.session;
-		session.setAskUserHandler?.((request, signal) => new Promise<AskUserResponse>((resolve) => {
+		rememberDesktopRuntime(runtimeHost);
+		const boundRuntime = runtimeHost;
+		const boundSession = session;
+		const boundSessionId = boundSession.sessionId;
+		if (boundDesktopSessions.has(boundSession)) {
+			unsubscribe?.();
+			unsubscribe = boundSession.subscribe((event) => broadcast(event, boundSessionId));
+			broadcast({ type: "server.session_changed", properties: { sessionId: boundSessionId } }, boundSessionId);
+			return;
+		}
+		boundDesktopSessions.add(boundSession);
+		boundSession.setAskUserHandler?.((request, signal) => new Promise<AskUserResponse>((resolve) => {
 			const finish = (response: AskUserResponse) => { pendingUserInput.delete(request.requestId); signal?.removeEventListener("abort", cancel); resolve(response); };
 			const cancel = () => finish({ cancelled: true, answers: [] });
 			if (signal?.aborted) return cancel();
 			signal?.addEventListener("abort", cancel, { once: true });
 			pendingUserInput.set(request.requestId, { resolve: finish, cancel });
 		}));
-		session.setPerformanceAttendance?.("attended");
+		boundSession.setPerformanceAttendance?.("attended");
 		extensionStatuses.clear();
-		await session.bindExtensions({
-			uiContext: createExtensionUIContext(),
+		await boundSession.bindExtensions({
+			uiContext: createExtensionUIContext(boundRuntime, boundSession),
 			mode: "rpc",
 			commandContextActions: {
-				waitForIdle: () => session.agent.waitForIdle(),
-				newSession: async (newOptions) => runtimeHost.newSession(newOptions),
+				waitForIdle: () => boundSession.agent.waitForIdle(),
+				newSession: async (newOptions) => boundRuntime.newSession(newOptions),
 				fork: async (entryId, forkOptions) => {
-					const result = await runtimeHost.fork(entryId, forkOptions);
+					const result = await boundRuntime.fork(entryId, forkOptions);
 					return { cancelled: result.cancelled };
 				},
 				navigateTree: async (targetId, navigationOptions) => {
-					const result = await session.navigateTree(targetId, navigationOptions);
+					const result = await boundSession.navigateTree(targetId, navigationOptions);
 					return { cancelled: result.cancelled };
 				},
-				switchSession: (sessionPath, switchOptions) => runtimeHost.switchSession(sessionPath, switchOptions),
-				reload: () => session.reload(),
+				switchSession: (sessionPath, switchOptions) => boundRuntime.switchSession(sessionPath, switchOptions),
+				reload: () => boundSession.reload(),
 			},
 			shutdownHandler: () => void close(),
 			onError: (extensionError) => {
@@ -292,17 +314,27 @@ export async function startServerMode(
 					extensionPath: extensionError.extensionPath,
 					event: extensionError.event,
 					error: extensionError.error,
-				});
+				}, boundSessionId);
 			},
 		});
 		unsubscribe?.();
-		unsubscribe = session.subscribe((event) => {
-			broadcast(event);
+		unsubscribe = boundSession.subscribe((event) => {
+			broadcast(event, boundSessionId);
 		});
-		broadcast({ type: "server.session_changed", properties: { sessionId: session.sessionId } });
+		broadcast({ type: "server.session_changed", properties: { sessionId: boundSessionId } }, boundSessionId);
 	};
 
-	runtimeHost.setRebindSession(bindSession);
+	const configureRuntime = (host: AgentSessionRuntime): void => {
+		host.setRebindSession(async () => {
+			if (host === runtimeHost) await bindSession();
+		});
+	};
+	const activateDesktopRuntime = async (host: AgentSessionRuntime): Promise<void> => {
+		runtimeHost = host;
+		configureRuntime(host);
+		await bindSession();
+	};
+	configureRuntime(runtimeHost);
 
 	const server = createServer((request, response) => {
 		void route(request, response).catch((cause: unknown) => {
@@ -399,7 +431,11 @@ export async function startServerMode(
 			return sendJson(response, 200, { tree: session.sessionManager.getTree(), leafId: session.sessionManager.getLeafId() });
 		}
 		if (method === "GET" && url.pathname === "/config/providers") {
-			return sendJson(response, 200, { models: await session.modelRegistry.getAvailable() });
+			const models = (await session.modelRegistry.getAvailable()).map((model) => ({
+				...model,
+				thinkingLevels: getSupportedThinkingLevels(model),
+			}));
+			return sendJson(response, 200, { models });
 		}
 		if (method === "GET" && url.pathname === "/commands") {
 			return sendJson(response, 200, { commands: getCommandCatalog() });
@@ -501,6 +537,11 @@ export async function startServerMode(
 			if (collaborationMode !== undefined && collaborationMode !== "build" && collaborationMode !== "plan") {
 				return sendError(response, 400, "invalid_request", "collaborationMode must be build or plan");
 			}
+			if (isDesktopRequest(request)) {
+				const nextRuntime = await runtimeHost.createSiblingNewSession({ cwd, parentSession: body?.parentSession, collaborationMode });
+				await activateDesktopRuntime(nextRuntime);
+				return sendJson(response, 200, { cancelled: false, ...getSessionState() });
+			}
 			ensureSessionCanBeReplaced();
 			const result = await runtimeHost.newSession({ cwd, parentSession: body?.parentSession, collaborationMode });
 			return sendJson(response, 200, result);
@@ -508,6 +549,13 @@ export async function startServerMode(
 		if (method === "POST" && url.pathname === "/session/switch") {
 			const body = await readJsonBody<{ sessionPath?: string }>(request);
 			if (!body?.sessionPath) return sendError(response, 400, "invalid_request", "sessionPath is required");
+			if (isDesktopRequest(request)) {
+				const key = sessionPathKey(body.sessionPath)!;
+				const nextRuntime = desktopRuntimesBySessionPath.get(key)
+					?? await runtimeHost.createSiblingForSession(body.sessionPath);
+				await activateDesktopRuntime(nextRuntime);
+				return sendJson(response, 200, { cancelled: false, ...getSessionState() });
+			}
 			ensureSessionCanBeReplaced();
 			const result = await runtimeHost.switchSession(body.sessionPath);
 			return sendJson(response, 200, result);
@@ -853,7 +901,7 @@ export async function startServerMode(
 				} else {
 					const oauthProvider = oauthProviders.find((provider: any) => provider.id === providerId);
 					if (!oauthProvider) throw new HttpError(400, "api_key_required", `Usage: /login ${providerId} <api-key>`);
-					const ui = createExtensionUIContext();
+					const ui = createExtensionUIContext(runtimeHost, session);
 					await authStorage.login(providerId, {
 						onAuth: (info: any) => broadcast({ type: "extension_ui_request", id: crypto.randomUUID(), method: "open_url", ...info } as any),
 						onDeviceCode: (info: any) => broadcast({ type: "extension_ui_request", id: crypto.randomUUID(), method: "notify", message: `${info.verificationUri ?? info.url ?? ""}\n${info.userCode ?? info.code ?? ""}` } as any),
@@ -973,12 +1021,13 @@ export async function startServerMode(
 	}
 
 	async function submitPrompt(body: ServerPromptRequest): Promise<void> {
-		const sessionWithAutoName = session as typeof session & {
+		const promptSession = session;
+		const sessionWithAutoName = promptSession as typeof promptSession & {
 			ensureSessionName?: (options?: { prompt?: string }) => Promise<string | undefined>;
 		};
-		const isFirstUserPrompt = !session.messages.some((message: any) => message.role === "user");
+		const isFirstUserPrompt = !promptSession.messages.some((message: any) => message.role === "user");
 		const isContentPrompt = !body.message.trimStart().startsWith("/");
-		if (!session.sessionName && isFirstUserPrompt && isContentPrompt && typeof sessionWithAutoName.ensureSessionName === "function") {
+		if (!promptSession.sessionName && isFirstUserPrompt && isContentPrompt && typeof sessionWithAutoName.ensureSessionName === "function") {
 			// Desktop must start naming as soon as its first prompt is submitted. AgentSession.prompt()
 			// also requests naming later in preflight; the shared in-flight promise deduplicates it.
 			void sessionWithAutoName.ensureSessionName({ prompt: body.message });
@@ -986,7 +1035,7 @@ export async function startServerMode(
 
 		await new Promise<void>((resolve, reject) => {
 			let settled = false;
-			const promptTask = session.prompt(body.message, {
+			const promptTask = promptSession.prompt(body.message, {
 				images: normalizeImageContents(body.images),
 				streamingBehavior: body.streamingBehavior,
 				workflowAction: body.workflowAction,
@@ -1032,7 +1081,7 @@ export async function startServerMode(
 		await new Promise<void>((resolve, reject) => {
 			server.close((cause) => (cause ? reject(cause) : resolve()));
 		});
-		await runtimeHost.dispose();
+		await Promise.all([...retainedDesktopRuntimes].map((host) => host.dispose()));
 		resolveClosed();
 	}
 

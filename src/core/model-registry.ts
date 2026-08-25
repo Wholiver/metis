@@ -9,6 +9,7 @@ import {
 	type Context,
 	getModels,
 	getProviders,
+	getSupportedThinkingLevels,
 	type KnownProvider,
 	type Model,
 	type OAuthProviderInterface,
@@ -94,6 +95,7 @@ const ThinkingLevelMapSchema = Type.Object({
 	medium: Type.Optional(ThinkingLevelMapValueSchema),
 	high: Type.Optional(ThinkingLevelMapValueSchema),
 	xhigh: Type.Optional(ThinkingLevelMapValueSchema),
+	max: Type.Optional(ThinkingLevelMapValueSchema),
 });
 
 const ChatTemplateKwargScalarSchema = Type.Union([Type.String(), Type.Number(), Type.Boolean(), Type.Null()]);
@@ -206,6 +208,8 @@ const ProviderConfigSchema = Type.Object({
 	baseUrl: Type.Optional(Type.String({ minLength: 1 })),
 	apiKey: Type.Optional(Type.String({ minLength: 1 })),
 	api: Type.Optional(Type.String({ minLength: 1 })),
+	reasoning: Type.Optional(Type.Boolean()),
+	thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	compat: Type.Optional(ProviderCompatSchema),
 	authHeader: Type.Optional(Type.Boolean()),
@@ -308,6 +312,184 @@ function mergeCompat(
 	}
 
 	return merged as Model<Api>["compat"];
+}
+
+const THINKING_LEVEL_NAMES = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const DIRECT_PROVIDER_PRIORITY = [
+	"openai",
+	"openai-codex",
+	"anthropic",
+	"google",
+	"google-vertex",
+	"zai",
+	"zai-coding-cn",
+	"deepseek",
+	"xai",
+	"mistral",
+	"moonshotai",
+	"moonshotai-cn",
+	"minimax",
+	"minimax-cn",
+	"qwen-token-plan",
+	"qwen-token-plan-cn",
+	"xiaomi",
+] as const;
+
+interface CatalogThinkingCandidate {
+	model: Model<Api>;
+	provider: string;
+	fullId: string;
+	tailId: string;
+}
+
+interface ResolvedThinkingCapabilities {
+	reasoning: boolean;
+	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
+	compat?: Model<Api>["compat"];
+}
+
+let thinkingCatalogCache: CatalogThinkingCandidate[] | undefined;
+
+function normalizeCapabilityModelId(modelId: string): string {
+	return modelId.trim().toLowerCase().replace(/:+(?:free|paid|latest)$/i, "");
+}
+
+function getThinkingCatalog(): CatalogThinkingCandidate[] {
+	if (thinkingCatalogCache) return thinkingCatalogCache;
+	thinkingCatalogCache = getProviders().flatMap((provider) =>
+		(getModels(provider as KnownProvider) as Model<Api>[]).map((model) => {
+			const fullId = normalizeCapabilityModelId(model.id);
+			return { model, provider, fullId, tailId: fullId.split("/").at(-1) ?? fullId };
+		}),
+	);
+	return thinkingCatalogCache;
+}
+
+function preferredProviderScore(provider: string, modelId: string): number {
+	const familyPreferences: Array<[RegExp, readonly string[]]> = [
+		[/glm/i, ["zai", "zai-coding-cn"]],
+		[/deepseek|(?:^|\/)r1(?:-|$)/i, ["deepseek"]],
+		[/qwen|qwq/i, ["qwen-token-plan", "qwen-token-plan-cn"]],
+		[/claude/i, ["anthropic"]],
+		[/gemini/i, ["google", "google-vertex"]],
+		[/(?:^|\/)(?:gpt-|o[1-9](?:-|$))/i, ["openai", "openai-codex"]],
+		[/grok/i, ["xai"]],
+		[/kimi/i, ["moonshotai", "moonshotai-cn"]],
+		[/minimax/i, ["minimax", "minimax-cn"]],
+		[/magistral|mistral/i, ["mistral"]],
+	];
+	const family = familyPreferences.find(([pattern]) => pattern.test(modelId));
+	const familyIndex = family?.[1].indexOf(provider) ?? -1;
+	if (familyIndex >= 0) return 200 - familyIndex;
+	const directIndex = DIRECT_PROVIDER_PRIORITY.indexOf(provider as (typeof DIRECT_PROVIDER_PRIORITY)[number]);
+	return directIndex >= 0 ? 100 - directIndex : 0;
+}
+
+function findCatalogThinkingCandidate(modelId: string): CatalogThinkingCandidate | undefined {
+	const fullId = normalizeCapabilityModelId(modelId);
+	const tailId = fullId.split("/").at(-1) ?? fullId;
+	let best: { candidate: CatalogThinkingCandidate; score: number } | undefined;
+	for (const candidate of getThinkingCatalog()) {
+		let score = -1;
+		if (candidate.fullId === fullId) score = 1000;
+		else if (candidate.tailId === tailId) score = 700;
+		if (score < 0) continue;
+		if (candidate.model.reasoning) score += 250;
+		score += preferredProviderScore(candidate.provider, modelId);
+		if (!best || score > best.score) best = { candidate, score };
+	}
+	return best?.candidate;
+}
+
+function inferReasoningFromModelId(modelId: string): boolean {
+	const id = normalizeCapabilityModelId(modelId);
+	return [
+		/(?:^|[\/_-])glm-(?:4\.[5-9]|[5-9])(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])deepseek-(?:r1|reasoner|v[3-9])(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])qwq(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])qwen3(?:\.[5-9])?(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])gpt-[5-9](?:[.\/_-]|$)/,
+		/(?:^|[\/_-])o[1-9](?:[.\/_-]|$)/,
+		/(?:^|[\/_-])claude-(?:3[.-]7|[4-9])(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])gemini-(?:2[.-]5|[3-9])(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])grok-(?:3|[4-9])(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])kimi-(?:k2[.-](?:5|6|7)|k3|.*thinking)(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])minimax-m(?:2[.-][5-9]|[3-9])(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])magistral(?:[.\/_-]|$)/,
+	].some((pattern) => pattern.test(id));
+}
+
+function adaptThinkingLevelMap(candidate: Model<Api>, api: Api): Model<Api>["thinkingLevelMap"] {
+	if (candidate.api === api) return candidate.thinkingLevelMap ? { ...candidate.thinkingLevelMap } : undefined;
+	const supported = new Set(getSupportedThinkingLevels(candidate));
+	const result: Record<string, string | null> = {};
+	for (const level of THINKING_LEVEL_NAMES) {
+		if (!supported.has(level)) result[level] = null;
+		else if (level === "xhigh") result[level] = "xhigh";
+	}
+	return result as Model<Api>["thinkingLevelMap"];
+}
+
+function selectThinkingCompat(candidate: Model<Api> | undefined, api: Api, modelId: string, baseUrl: string): Model<Api>["compat"] {
+	if (candidate?.api === api && candidate.compat) {
+		const source = candidate.compat as Record<string, unknown>;
+		const selected: Record<string, unknown> = {};
+		for (const key of [
+			"supportsReasoningEffort",
+			"requiresThinkingAsText",
+			"requiresReasoningContentOnAssistantMessages",
+			"thinkingFormat",
+			"forceReasoning",
+			"forceAdaptiveThinking",
+		]) {
+			if (source[key] !== undefined) selected[key] = source[key];
+		}
+		if (Object.keys(selected).length > 0) return selected as Model<Api>["compat"];
+	}
+
+	if (api !== "openai-completions") return undefined;
+	const url = baseUrl.toLowerCase();
+	if (/openrouter|together\.ai|api\.z\.ai|open\.bigmodel\.cn/.test(url)) return undefined;
+	const id = normalizeCapabilityModelId(modelId);
+	if (/glm/.test(id)) return { thinkingFormat: "zai" } as Model<Api>["compat"];
+	if (/deepseek|(?:^|\/)r1(?:-|$)|kimi/.test(id)) {
+		return {
+			thinkingFormat: "deepseek",
+			requiresReasoningContentOnAssistantMessages: true,
+		} as Model<Api>["compat"];
+	}
+	if (/qwen|qwq/.test(id)) return { thinkingFormat: "qwen" } as Model<Api>["compat"];
+	return undefined;
+}
+
+function resolveThinkingCapabilities(options: {
+	modelId: string;
+	api: Api;
+	baseUrl: string;
+	modelReasoning?: boolean;
+	providerReasoning?: boolean;
+	modelThinkingLevelMap?: Model<Api>["thinkingLevelMap"];
+	providerThinkingLevelMap?: Model<Api>["thinkingLevelMap"];
+	modelCompat?: Model<Api>["compat"];
+	providerCompat?: Model<Api>["compat"];
+}): ResolvedThinkingCapabilities {
+	const candidate = findCatalogThinkingCandidate(options.modelId);
+	const configuredMap = options.modelThinkingLevelMap
+		? { ...options.providerThinkingLevelMap, ...options.modelThinkingLevelMap }
+		: options.providerThinkingLevelMap;
+	const reasoning =
+		options.modelReasoning ??
+		options.providerReasoning ??
+		(configuredMap ? true : candidate?.model.reasoning ?? inferReasoningFromModelId(options.modelId));
+	const inferredMap = reasoning && candidate ? adaptThinkingLevelMap(candidate.model, options.api) : undefined;
+	const inferredCompat = reasoning
+		? selectThinkingCompat(candidate?.model, options.api, options.modelId, options.baseUrl)
+		: undefined;
+	return {
+		reasoning,
+		thinkingLevelMap: configuredMap ?? inferredMap,
+		compat: mergeCompat(mergeCompat(inferredCompat, options.providerCompat), options.modelCompat),
+	};
 }
 
 /**
@@ -635,7 +817,17 @@ export class ModelRegistry {
 				const baseUrl = modelDef.baseUrl ?? providerConfig.baseUrl ?? builtInDefaults?.baseUrl;
 				if (!baseUrl) continue;
 
-				const compat = mergeCompat(providerConfig.compat, modelDef.compat);
+				const thinking = resolveThinkingCapabilities({
+					modelId: modelDef.id,
+					api: api as Api,
+					baseUrl,
+					modelReasoning: modelDef.reasoning,
+					providerReasoning: providerConfig.reasoning,
+					modelThinkingLevelMap: modelDef.thinkingLevelMap,
+					providerThinkingLevelMap: providerConfig.thinkingLevelMap,
+					modelCompat: modelDef.compat,
+					providerCompat: providerConfig.compat,
+				});
 				this.storeModelHeaders(providerName, modelDef.id, modelDef.headers);
 
 				const defaultCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -645,8 +837,8 @@ export class ModelRegistry {
 					api: api as Api,
 					provider: providerName,
 					baseUrl,
-					reasoning: modelDef.reasoning ?? false,
-					thinkingLevelMap: modelDef.thinkingLevelMap,
+					reasoning: thinking.reasoning,
+					thinkingLevelMap: thinking.thinkingLevelMap,
 					// OpenAI-compatible custom endpoints generally do not publish input
 					// capabilities. Default to multimodal so image tool results are not
 					// silently discarded; explicitly set ["text"] for text-only models.
@@ -655,7 +847,7 @@ export class ModelRegistry {
 					contextWindow: modelDef.contextWindow ?? 128000,
 					maxTokens: modelDef.maxTokens ?? 16384,
 					headers: undefined,
-					compat,
+					compat: thinking.compat,
 				} as Model<Api>);
 			}
 		}
@@ -956,6 +1148,18 @@ export class ModelRegistry {
 			// Parse and add new models
 			for (const modelDef of config.models) {
 				const api = modelDef.api || config.api;
+				const baseUrl = modelDef.baseUrl ?? config.baseUrl!;
+				const thinking = resolveThinkingCapabilities({
+					modelId: modelDef.id,
+					api: api as Api,
+					baseUrl,
+					modelReasoning: modelDef.reasoning,
+					providerReasoning: config.reasoning,
+					modelThinkingLevelMap: modelDef.thinkingLevelMap,
+					providerThinkingLevelMap: config.thinkingLevelMap,
+					modelCompat: modelDef.compat,
+					providerCompat: config.compat,
+				});
 				this.storeModelHeaders(providerName, modelDef.id, modelDef.headers);
 
 				this.models.push({
@@ -963,15 +1167,15 @@ export class ModelRegistry {
 					name: modelDef.name,
 					api: api as Api,
 					provider: providerName,
-					baseUrl: modelDef.baseUrl ?? config.baseUrl!,
-					reasoning: modelDef.reasoning,
-					thinkingLevelMap: modelDef.thinkingLevelMap,
+					baseUrl,
+					reasoning: thinking.reasoning,
+					thinkingLevelMap: thinking.thinkingLevelMap,
 					input: modelDef.input as ("text" | "image")[],
 					cost: modelDef.cost,
 					contextWindow: modelDef.contextWindow,
 					maxTokens: modelDef.maxTokens,
 					headers: undefined,
-					compat: modelDef.compat,
+					compat: thinking.compat,
 				} as Model<Api>);
 			}
 
@@ -1003,6 +1207,11 @@ export interface ProviderConfigInput {
 	baseUrl?: string;
 	apiKey?: string;
 	api?: Api;
+	/** Default thinking capability for models that do not declare it. */
+	reasoning?: boolean;
+	/** Default supported thinking levels for models that do not declare them. */
+	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
+	compat?: Model<Api>["compat"];
 	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 	headers?: Record<string, string>;
 	authHeader?: boolean;
@@ -1013,7 +1222,7 @@ export interface ProviderConfigInput {
 		name: string;
 		api?: Api;
 		baseUrl?: string;
-		reasoning: boolean;
+		reasoning?: boolean;
 		thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 		input: ("text" | "image")[];
 		cost: { input: number; output: number; cacheRead: number; cacheWrite: number };

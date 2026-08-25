@@ -1857,7 +1857,7 @@ async function metisRequest(requestPath, init = {}, server = metisServer) {
 	}
 	const method = String(init.method || "GET").toUpperCase();
 	if (!["GET", "POST", "PUT", "DELETE"].includes(method)) throw new Error(nativeText("unsupportedApiMethod"));
-	const headers = { Accept: "application/json" };
+	const headers = { Accept: "application/json", "X-Metis-Desktop": "1" };
 	if (init.body !== undefined) headers["Content-Type"] = "application/json";
 	if (server.password) {
 		headers.Authorization = `Basic ${Buffer.from(`${server.username}:${server.password}`).toString("base64")}`;
@@ -1892,7 +1892,7 @@ async function streamMetisEvents() {
 	metisEventController?.abort();
 	const controller = new AbortController();
 	metisEventController = controller;
-	const headers = { Accept: "text/event-stream" };
+	const headers = { Accept: "text/event-stream", "X-Metis-Desktop": "1" };
 	if (metisServer.password) {
 		headers.Authorization = `Basic ${Buffer.from(`${metisServer.username}:${metisServer.password}`).toString("base64")}`;
 	}

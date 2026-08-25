@@ -45,6 +45,8 @@ export interface ModelInfo {
 	id: string;
 	contextWindow: number;
 	reasoning: boolean;
+	/** Thinking levels accepted by this model after provider/model normalization. */
+	thinkingLevels: ThinkingLevel[];
 }
 
 export type RpcEventListener = (event: AgentEvent) => void;

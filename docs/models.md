@@ -40,6 +40,8 @@ Some OpenAI-compatible servers do not understand the `developer` role used for r
 
 You can set `compat` at the provider level to apply to all models, or at the model level to override a specific model. This commonly applies to Ollama, vLLM, SGLang, and similar OpenAI-compatible servers.
 
+When `reasoning` is omitted, metis matches the model ID against the built-in catalog and inherits its supported thinking levels. This also works for models discovered through custom OpenAI-compatible providers, including GLM, DeepSeek, Qwen, Claude, Gemini, GPT/o-series, Grok, Kimi, MiniMax, and Mistral families. Unknown IDs remain non-reasoning models. Explicit model settings take priority.
+
 ```json
 {
   "providers": {
@@ -200,8 +202,8 @@ If your command is slow, expensive, rate-limited, or should keep using a previou
 | `id` | Yes | — | Model identifier (passed to the API) |
 | `name` | No | `id` | Human-readable model label. Used for matching (`--model` patterns) and shown as secondary model detail text. |
 | `api` | No | provider's `api` | Override provider's API for this model |
-| `reasoning` | No | `false` | Supports extended thinking |
-| `thinkingLevelMap` | No | omitted | Maps metis thinking levels to provider values and marks unsupported levels (see below) |
+| `reasoning` | No | catalog inference, otherwise `false` | Supports extended thinking. Explicit `false` disables inference for this model. |
+| `thinkingLevelMap` | No | catalog/provider inference | Maps metis thinking levels to provider values and marks unsupported levels (see below) |
 | `input` | No | `["text", "image"]` for custom models | Input types: `["text"]` or `["text", "image"]`. Set `["text"]` explicitly for text-only custom models. |
 | `contextWindow` | No | `128000` | Context window size in tokens |
 | `maxTokens` | No | `16384` | Maximum output tokens |
@@ -215,6 +217,8 @@ Current behavior:
 ### Thinking Level Map
 
 Use `thinkingLevelMap` on a model to describe model-specific thinking controls. Keys are metis thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`.
+
+Providers may also define `reasoning` and `thinkingLevelMap`; those values become defaults for every model that does not override them.
 
 Values are tristate:
 

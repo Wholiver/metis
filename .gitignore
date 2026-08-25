@@ -21,9 +21,30 @@ skills-lock.json
 dist */
 * 2.*
 
-# metis-ai is distributed as compiled vendor code; track the OAuth callback page override.
+# metis-ai is distributed as compiled vendor code; track model catalogs and Metis OAuth branding overrides.
 !vendor/metis-ai/dist/
 vendor/metis-ai/dist/*
+!vendor/metis-ai/dist/env-api-keys.js
+!vendor/metis-ai/dist/model-catalog.d.ts
+!vendor/metis-ai/dist/model-catalog.js
+!vendor/metis-ai/dist/models.generated.d.ts
+!vendor/metis-ai/dist/models.generated.js
+!vendor/metis-ai/dist/types.d.ts
+!vendor/metis-ai/dist/providers/
+vendor/metis-ai/dist/providers/*
+!vendor/metis-ai/dist/providers/*.models.d.ts
+!vendor/metis-ai/dist/providers/*.models.js
+!vendor/metis-ai/dist/providers/all.js
+!vendor/metis-ai/dist/providers/baseten.d.ts
+!vendor/metis-ai/dist/providers/baseten.js
+!vendor/metis-ai/dist/providers/qwen-token-plan.d.ts
+!vendor/metis-ai/dist/providers/qwen-token-plan.js
+!vendor/metis-ai/dist/providers/qwen-token-plan-cn.d.ts
+!vendor/metis-ai/dist/providers/qwen-token-plan-cn.js
+!vendor/metis-ai/dist/providers/qwen-token-plan-individual.d.ts
+!vendor/metis-ai/dist/providers/qwen-token-plan-individual.js
+!vendor/metis-ai/dist/providers/data/
+!vendor/metis-ai/dist/providers/data/*.json
 !vendor/metis-ai/dist/utils/
 vendor/metis-ai/dist/utils/*
 !vendor/metis-ai/dist/utils/oauth/

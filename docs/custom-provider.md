@@ -117,7 +117,6 @@ export default async function (metis: ExtensionAPI) {
     models: payload.data.map((model) => ({
       id: model.id,
       name: model.name ?? model.id,
-      reasoning: false,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: model.context_window ?? 128000,
@@ -128,6 +127,8 @@ export default async function (metis: ExtensionAPI) {
 ```
 
 This registers the fetched models before startup finishes.
+
+When `reasoning` is omitted, registered models inherit thinking capabilities from the built-in model catalog when their IDs match. Provider-level defaults can cover private or renamed models; explicit model values override both provider defaults and catalog inference.
 
 ```typescript
 metis.registerProvider("my-llm", {
@@ -637,6 +638,15 @@ interface ProviderConfig {
   /** API type for streaming. Required at provider or model level when defining models. */
   api?: Api;
 
+  /** Default reasoning capability for models that omit it. */
+  reasoning?: boolean;
+
+  /** Default thinking levels for models that omit them. */
+  thinkingLevelMap?: Partial<Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | null>>;
+
+  /** Provider compatibility defaults, merged with per-model values. */
+  compat?: Model<Api>["compat"];
+
   /** Custom streaming implementation for non-standard APIs. */
   streamSimple?: (
     model: Model<Api>,
@@ -680,11 +690,11 @@ interface ProviderModelConfig {
   /** API endpoint URL override for this specific model. */
   baseUrl?: string;
 
-  /** Whether the model supports extended thinking. */
-  reasoning: boolean;
+  /** Whether the model supports extended thinking. Omit to infer from provider defaults or catalog metadata. */
+  reasoning?: boolean;
 
   /** Maps metis thinking levels to provider/model-specific values; null marks a level unsupported. */
-  thinkingLevelMap?: Partial<Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh", string | null>>;
+  thinkingLevelMap?: Partial<Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | null>>;
 
   /** Supported input types. */
   input: ("text" | "image")[];

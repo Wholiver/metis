@@ -183,6 +183,74 @@ export class AgentSessionRuntime {
 		this._modelFallbackMessage = result.modelFallbackMessage;
 	}
 
+	private createSibling(result: CreateAgentSessionRuntimeResult): AgentSessionRuntime {
+		return new AgentSessionRuntime(
+			result.session,
+			result.services,
+			this.createRuntime,
+			result.diagnostics,
+			result.modelFallbackMessage,
+		);
+	}
+
+	/**
+	 * Create an independently owned runtime for another persisted session.
+	 *
+	 * Unlike switchSession(), this leaves the current session attached and running.
+	 * Hosts that expose concurrent task navigation own and must dispose the sibling.
+	 */
+	async createSiblingForSession(
+		sessionPath: string,
+		options?: {
+			cwdOverride?: string;
+			projectTrustContextFactory?: (cwd: string) => ProjectTrustContext;
+		},
+	): Promise<AgentSessionRuntime> {
+		const sessionManager = SessionManager.open(sessionPath, undefined, options?.cwdOverride);
+		assertSessionCwdExists(sessionManager, this.cwd);
+		const result = await this.createRuntime({
+			cwd: sessionManager.getCwd(),
+			agentDir: this.services.agentDir,
+			sessionManager,
+			sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile: this.session.sessionFile },
+			projectTrustContext: options?.projectTrustContextFactory?.(sessionManager.getCwd()),
+		});
+		return this.createSibling(result);
+	}
+
+	/** Create an independently owned new-session runtime without replacing this runtime. */
+	async createSiblingNewSession(options?: {
+		cwd?: string;
+		parentSession?: string;
+		collaborationMode?: CollaborationMode;
+		setup?: (sessionManager: SessionManager) => Promise<void>;
+	}): Promise<AgentSessionRuntime> {
+		const targetCwd = resolve(options?.cwd ?? this.cwd);
+		if (!existsSync(targetCwd) || !statSync(targetCwd).isDirectory()) {
+			throw new Error(`Working directory does not exist: ${targetCwd}`);
+		}
+		const sessionDir = this.session.sessionManager.usesDefaultSessionDir()
+			? undefined
+			: this.session.sessionManager.getSessionDir();
+		const sessionManager = this.session.sessionManager.isPersisted()
+			? SessionManager.create(targetCwd, sessionDir)
+			: SessionManager.inMemory(targetCwd);
+		if (options?.parentSession) sessionManager.newSession({ parentSession: options.parentSession });
+
+		const result = await this.createRuntime({
+			cwd: targetCwd,
+			agentDir: this.services.agentDir,
+			sessionManager,
+			sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile: this.session.sessionFile },
+			collaborationMode: options?.collaborationMode ?? "plan",
+		});
+		if (options?.setup) {
+			await options.setup(result.session.sessionManager);
+			result.session.agent.state.messages = result.session.sessionManager.buildSessionContext().messages;
+		}
+		return this.createSibling(result);
+	}
+
 	private async finishSessionReplacement(withSession?: (ctx: ReplacedSessionContext) => Promise<void>): Promise<void> {
 		if (this.rebindSession) {
 			await this.rebindSession(this.session);

@@ -221,6 +221,8 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 			expect(model.id).toBeDefined();
 			expect(model.contextWindow).toBeGreaterThan(0);
 			expect(typeof model.reasoning).toBe("boolean");
+			expect(model.thinkingLevels.length).toBeGreaterThan(0);
+			if (!model.reasoning) expect(model.thinkingLevels).toEqual(["off"]);
 		}
 	}, 30000);
 

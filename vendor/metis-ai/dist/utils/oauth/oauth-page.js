@@ -50,6 +50,14 @@ function renderPage(options) {
       align-items: center;
       justify-content: center;
     }
+    .brand {
+      margin-bottom: 20px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
     .logo {
       width: 72px;
       height: 72px;
@@ -81,6 +89,7 @@ function renderPage(options) {
 </head>
 <body>
   <main>
+    <div class="brand">Metis</div>
     <div class="logo">${icon}</div>
     <h1>${heading}</h1>
     <p>${message}</p>
@@ -91,7 +100,7 @@ function renderPage(options) {
 }
 export function oauthSuccessHtml(message) {
     return renderPage({
-        title: "Authentication successful",
+        title: "Metis · Authentication successful",
         heading: "Authentication successful",
         message,
         icon: SUCCESS_SVG,
@@ -99,7 +108,7 @@ export function oauthSuccessHtml(message) {
 }
 export function oauthErrorHtml(message, details) {
     return renderPage({
-        title: "Authentication failed",
+        title: "Metis · Authentication failed",
         heading: "Authentication failed",
         message,
         details,
