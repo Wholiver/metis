@@ -838,7 +838,7 @@ module.exports = {
     "reactSettingsCurrentModelDescription": "Applied to the active session immediately.",
     "reactSettingsChooseModel": "Choose model",
     "reactSettingsReasoningEffort": "Reasoning effort",
-    "reactSettingsReasoningAvailability": "Availability depends on the current model.",
+    "reactSettingsReasoningAvailability": "Options reported by the current model provider.",
     "reactSettingsNewSessionDefaults": "New session defaults",
     "reactSettingsNewSessionOnly": "Used only for newly created sessions.",
     "reactSettingsDefaultModelSaved": "Default model saved.",
@@ -880,8 +880,7 @@ module.exports = {
     "reactSettingsProviderConnectionDescription": "Provider name, OpenAI-compatible endpoint and optional API key.",
     "reactSettingsApiKeyKeepPlaceholder": "API key (leave blank to keep)",
     "reactSettingsModelIdsPlaceholder": "Model IDs, separated by commas",
-    "reactSettingsEnableReasoning": "Enable reasoning effort",
-    "reactSettingsModelsDiscovered": "Available models discovered.",
+    "reactSettingsModelsDiscovered": "Available models and reasoning options discovered.",
     "reactSettingsProviderSaved": "Custom provider saved and models reloaded.",
     "reactSettingsSaveProvider": "Save provider",
     "reactSettingsProviderDeleted": "Custom provider deleted.",
@@ -1053,7 +1052,8 @@ module.exports = {
     "settingsMemoryAddedInline": "added",
     "settingsMemoryAddedDivider": "added ·",
     "settingsMemoryProcessedDivider": "processed ·",
-    "settingsMemorySkippedInline": "skipped"
+    "settingsMemorySkippedInline": "skipped",
+    "reactSettingsReasoningFromMetadata": "Reasoning options come from model metadata returned by this API."
   },
   "zh-CN": {
     "dreamOff": "记忆：已关闭",
@@ -1893,7 +1893,7 @@ module.exports = {
     "reactSettingsCurrentModelDescription": "立即应用到当前会话。",
     "reactSettingsChooseModel": "选择模型",
     "reactSettingsReasoningEffort": "推理强度",
-    "reactSettingsReasoningAvailability": "是否可用取决于当前模型。",
+    "reactSettingsReasoningAvailability": "由当前模型服务商提供的选项。",
     "reactSettingsNewSessionDefaults": "新会话默认设置",
     "reactSettingsNewSessionOnly": "仅用于新建会话。",
     "reactSettingsDefaultModelSaved": "默认模型已保存。",
@@ -1935,8 +1935,7 @@ module.exports = {
     "reactSettingsProviderConnectionDescription": "服务商名称、OpenAI 兼容接口地址和可选 API 密钥。",
     "reactSettingsApiKeyKeepPlaceholder": "API 密钥（留空则保留原值）",
     "reactSettingsModelIdsPlaceholder": "模型 ID，多个值用逗号分隔",
-    "reactSettingsEnableReasoning": "启用推理强度",
-    "reactSettingsModelsDiscovered": "已发现可用模型。",
+    "reactSettingsModelsDiscovered": "已发现可用模型及推理选项。",
     "reactSettingsProviderSaved": "自定义服务商已保存，模型已重新加载。",
     "reactSettingsSaveProvider": "保存服务商",
     "reactSettingsProviderDeleted": "自定义服务商已删除。",
@@ -2108,6 +2107,7 @@ module.exports = {
     "settingsMemoryAddedInline": "新增",
     "settingsMemoryAddedDivider": "新增 ·",
     "settingsMemoryProcessedDivider": "已处理 ·",
-    "settingsMemorySkippedInline": "已跳过"
+    "settingsMemorySkippedInline": "已跳过",
+    "reactSettingsReasoningFromMetadata": "推理选项来自该 API 返回的模型元数据。"
   }
 };

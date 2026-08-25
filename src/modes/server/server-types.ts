@@ -1,4 +1,5 @@
 import type { ImageContent } from "@earendil-works/metis-ai";
+import type { ThinkingOption } from "@earendil-works/metis-ai";
 import type { AgentSessionEvent } from "../../core/agent-session.ts";
 import type { InstructionSourceSummary } from "../../core/system-prompt.ts";
 import type { CollaborationMode, WorkflowPlanState } from "../../core/workflow-runtime.ts";
@@ -35,6 +36,7 @@ export interface ServerSessionState {
 	model: unknown;
 	thinkingLevel: string;
 	thinkingLevels: string[];
+	thinkingOptions: ThinkingOption[];
 	supportsThinking: boolean;
 	isStreaming: boolean;
 	isCompacting: boolean;

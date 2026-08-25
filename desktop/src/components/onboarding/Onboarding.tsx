@@ -52,7 +52,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
   const [customName, setCustomName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [modelIds, setModelIds] = useState('');
-  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [discoveredModels, setDiscoveredModels] = useState<Array<{ id: string; thinkingOptions: Array<{ id: string; label: string; value: string }> }>>([]);
   const [projectMode, setProjectMode] = useState<'create' | 'import'>('create');
   const [parentPath, setParentPath] = useState('');
   const [projectName, setProjectName] = useState('');
@@ -124,14 +124,14 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
     const results = await desktop?.providerConfig?.discoverModels?.({ baseUrl, apiKey });
     if (!Array.isArray(results) || results.length === 0) throw new Error('No models were returned. Enter model IDs manually.');
     setDiscoveredModels(results);
-    setModelIds(results.join(', '));
+    setModelIds(results.map((model) => model.id).join(', '));
   });
   const saveCustomProvider = () => run(async () => {
     if (!customName.trim()) throw new Error('Provider name is required');
     if (!baseUrl.trim()) throw new Error('Base URL must be a valid http or https URL');
     const ids = modelIds.split(',').map((item) => item.trim()).filter(Boolean);
     if (ids.length === 0) throw new Error('No models were returned. Enter model IDs manually.');
-    const saved = await desktop?.providerConfig?.saveCustom?.({ name: customName.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim() || undefined, modelIds: ids });
+    const saved = await desktop?.providerConfig?.saveCustom?.({ name: customName.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim() || undefined, modelIds: ids, discoveredModels });
     if (!saved?.provider) throw new Error('Creation failed');
     await request('/session/command', 'POST', { command: '/reload' });
     if (apiKey.trim()) await request('/session/command', 'POST', { command: `/login ${saved.provider} ${apiKey.trim()}` });
@@ -182,7 +182,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
     <label className="grid gap-1.5 text-[12px] font-medium text-slate-700">API Key
       <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" placeholder="Enter an API Key" className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-300/60" />
     </label>
-    <div className="flex gap-2"><button type="button" disabled={busy || !baseUrl.trim()} onClick={discoverModels} className="onboarding-secondary">Discover models</button><span className="self-center text-[11px] text-slate-500">{discoveredModels.length ? discoveredModels.join(', ') : ''}</span></div>
+    <div className="flex gap-2"><button type="button" disabled={busy || !baseUrl.trim()} onClick={discoverModels} className="onboarding-secondary">Discover models</button><span className="self-center text-[11px] text-slate-500">{discoveredModels.length ? discoveredModels.map((model) => model.id).join(', ') : ''}</span></div>
     <label className="grid gap-1.5 text-[12px] font-medium text-slate-700">Model
       <input value={modelIds} onChange={(event) => setModelIds(event.target.value)} placeholder="Enter model IDs manually; separate multiple IDs with commas" className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-300/60" />
     </label>

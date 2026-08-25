@@ -24,6 +24,9 @@ const localeTargets = {
 
 const localeOverrides = {
 	fr: {
+		reactSettingsReasoningAvailability: "Options signalées par le fournisseur du modèle actuel.",
+		reactSettingsReasoningFromMetadata: "Les options de raisonnement proviennent des métadonnées de modèle renvoyées par cette API.",
+		reactSettingsModelsDiscovered: "Modèles disponibles et options de raisonnement détectés.",
 		settingsMemoryFallbackInline: "(repli sûr utilisé)",
 		settingsMemoryExtractingEllipsis: "Extraction de la mémoire…",
 		settingsMemorySavingEllipsis: "Enregistrement de la mémoire…",
@@ -51,6 +54,9 @@ const localeOverrides = {
 		messageAgent: "Envoyer un message à {name}",
 	},
 	"zh-TW": {
+		reactSettingsReasoningAvailability: "由目前模型服務商提供的選項。",
+		reactSettingsReasoningFromMetadata: "推理選項來自該 API 回傳的模型中介資料。",
+		reactSettingsModelsDiscovered: "已發現可用模型與推理選項。",
 		settingsMemoryFallbackInline: "（已使用安全備援）",
 		settingsMemoryExtractingEllipsis: "正在提取記憶…",
 		settingsMemorySavingEllipsis: "正在儲存記憶…",
@@ -77,6 +83,9 @@ const localeOverrides = {
 		messageAgent: "給 {name} 發送訊息",
 	},
 	ja: {
+		reactSettingsReasoningAvailability: "現在のモデルプロバイダーが報告したオプションです。",
+		reactSettingsReasoningFromMetadata: "推論オプションは、この API が返すモデルのメタデータに基づきます。",
+		reactSettingsModelsDiscovered: "利用可能なモデルと推論オプションを検出しました。",
 		settingsMemoryFallbackInline: "（安全なフォールバックを使用）",
 		settingsMemoryExtractingEllipsis: "メモリを抽出中…",
 		settingsMemorySavingEllipsis: "メモリを保存中…",
@@ -102,6 +111,9 @@ const localeOverrides = {
 		messageAgent: "{name} にメッセージを送信",
 	},
 	ko: {
+		reactSettingsReasoningAvailability: "현재 모델 제공업체가 보고한 옵션입니다.",
+		reactSettingsReasoningFromMetadata: "추론 옵션은 이 API가 반환한 모델 메타데이터에서 가져옵니다.",
+		reactSettingsModelsDiscovered: "사용 가능한 모델과 추론 옵션을 찾았습니다.",
 		settingsMemoryFallbackInline: "(안전 대체 사용)",
 		settingsMemoryExtractingEllipsis: "메모리 추출 중…",
 		settingsMemorySavingEllipsis: "메모리 저장 중…",
@@ -127,6 +139,9 @@ const localeOverrides = {
 		messageAgent: "{name}에게 메시지 보내기",
 	},
 	de: {
+		reactSettingsReasoningAvailability: "Optionen, die der aktuelle Modellanbieter meldet.",
+		reactSettingsReasoningFromMetadata: "Reasoning-Optionen stammen aus den Modell-Metadaten, die diese API zurückgibt.",
+		reactSettingsModelsDiscovered: "Verfügbare Modelle und Reasoning-Optionen gefunden.",
 		settingsMemoryFallbackInline: "(sicherer Fallback verwendet)",
 		settingsMemoryExtractingEllipsis: "Speicher wird extrahiert…",
 		settingsMemorySavingEllipsis: "Speicher wird gespeichert…",
@@ -153,6 +168,9 @@ const localeOverrides = {
 		messageAgent: "Nachricht an {name} senden",
 	},
 	pt: {
+		reactSettingsReasoningAvailability: "Opções informadas pelo provedor do modelo atual.",
+		reactSettingsReasoningFromMetadata: "As opções de raciocínio vêm dos metadados de modelo retornados por esta API.",
+		reactSettingsModelsDiscovered: "Modelos disponíveis e opções de raciocínio descobertos.",
 		settingsMemoryFallbackInline: "(fallback seguro usado)",
 		settingsMemoryExtractingEllipsis: "Extraindo memória…",
 		settingsMemorySavingEllipsis: "Salvando memória…",
@@ -178,6 +196,9 @@ const localeOverrides = {
 		messageAgent: "Enviar mensagem para {name}",
 	},
 	ru: {
+		reactSettingsReasoningAvailability: "Параметры, сообщённые текущим поставщиком модели.",
+		reactSettingsReasoningFromMetadata: "Параметры рассуждения берутся из метаданных модели, которые возвращает этот API.",
+		reactSettingsModelsDiscovered: "Найдены доступные модели и параметры рассуждения.",
 		settingsMemoryFallbackInline: "(использован безопасный резервный режим)",
 		settingsMemoryExtractingEllipsis: "Извлечение памяти…",
 		settingsMemorySavingEllipsis: "Сохранение памяти…",
@@ -203,6 +224,9 @@ const localeOverrides = {
 		messageAgent: "Отправить сообщение {name}",
 	},
 	it: {
+		reactSettingsReasoningAvailability: "Opzioni segnalate dal provider del modello corrente.",
+		reactSettingsReasoningFromMetadata: "Le opzioni di ragionamento provengono dai metadati del modello restituiti da questa API.",
+		reactSettingsModelsDiscovered: "Modelli disponibili e opzioni di ragionamento rilevati.",
 		settingsMemoryFallbackInline: "(fallback sicuro utilizzato)",
 		settingsMemoryExtractingEllipsis: "Estrazione memoria…",
 		settingsMemorySavingEllipsis: "Salvataggio memoria…",
@@ -228,6 +252,9 @@ const localeOverrides = {
 		messageAgent: "Invia messaggio a {name}",
 	},
 	es: {
+		reactSettingsReasoningAvailability: "Opciones informadas por el proveedor del modelo actual.",
+		reactSettingsReasoningFromMetadata: "Las opciones de razonamiento provienen de los metadatos del modelo que devuelve esta API.",
+		reactSettingsModelsDiscovered: "Modelos disponibles y opciones de razonamiento detectados.",
 		settingsMemoryFallbackInline: "(se usó el modo seguro)",
 		settingsMemoryExtractingEllipsis: "Extrayendo memoria…",
 		settingsMemorySavingEllipsis: "Guardando memoria…",
@@ -673,7 +700,7 @@ const extra = {
 	reactSettingsCurrentModelDescription: ["Applied to the active session immediately.", "立即应用到当前会话。"],
 	reactSettingsChooseModel: ["Choose model", "选择模型"],
 	reactSettingsReasoningEffort: ["Reasoning effort", "推理强度"],
-	reactSettingsReasoningAvailability: ["Availability depends on the current model.", "是否可用取决于当前模型。"],
+	reactSettingsReasoningAvailability: ["Options reported by the current model provider.", "由当前模型服务商提供的选项。"],
 	reactSettingsNewSessionDefaults: ["New session defaults", "新会话默认设置"],
 	reactSettingsNewSessionOnly: ["Used only for newly created sessions.", "仅用于新建会话。"],
 	reactSettingsDefaultModelSaved: ["Default model saved.", "默认模型已保存。"],
@@ -716,8 +743,8 @@ const extra = {
 	reactSettingsProviderConnectionDescription: ["Provider name, OpenAI-compatible endpoint and optional API key.", "服务商名称、OpenAI 兼容接口地址和可选 API 密钥。"],
 	reactSettingsApiKeyKeepPlaceholder: ["API key (leave blank to keep)", "API 密钥（留空则保留原值）"],
 	reactSettingsModelIdsPlaceholder: ["Model IDs, separated by commas", "模型 ID，多个值用逗号分隔"],
-	reactSettingsEnableReasoning: ["Enable reasoning effort", "启用推理强度"],
-	reactSettingsModelsDiscovered: ["Available models discovered.", "已发现可用模型。"],
+	reactSettingsReasoningFromMetadata: ["Reasoning options come from model metadata returned by this API.", "推理选项来自该 API 返回的模型元数据。"],
+	reactSettingsModelsDiscovered: ["Available models and reasoning options discovered.", "已发现可用模型及推理选项。"],
 	reactSettingsProviderSaved: ["Custom provider saved and models reloaded.", "自定义服务商已保存，模型已重新加载。"],
 	reactSettingsSaveProvider: ["Save provider", "保存服务商"],
 	reactSettingsProviderDeleted: ["Custom provider deleted.", "自定义服务商已删除。"],
@@ -873,7 +900,7 @@ const extra = {
 	apiKey: ["API Key", "API Key"],
 };
 
-const obsoleteKeys = ["longestStreak", "last7DaysTokens", "toolRunning"];
+const obsoleteKeys = ["longestStreak", "last7DaysTokens", "toolRunning", "reactSettingsEnableReasoning"];
 
 const protectedTerms = [
 	/\n+\{[a-zA-Z][a-zA-Z0-9]*\}/g,

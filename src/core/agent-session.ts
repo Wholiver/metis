@@ -26,11 +26,12 @@ import type {
 	PrepareNextTurnContext,
 	ThinkingLevel,
 } from "@earendil-works/metis-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/metis-ai/compat";
+import type { AssistantMessage, ImageContent, Message, Model, TextContent, ThinkingOption } from "@earendil-works/metis-ai/compat";
 import {
 	clampThinkingLevel,
 	cleanupSessionResources,
 	getSupportedThinkingLevels,
+	getThinkingOptions,
 	isContextOverflow,
 	isRetryableAssistantError,
 	modelsAreEqual,
@@ -2591,11 +2592,17 @@ export class AgentSession {
 		return getSupportedThinkingLevels(this.model) as ThinkingLevel[];
 	}
 
+	/** Provider-native labels and values for current model. */
+	getAvailableThinkingOptions(): ThinkingOption[] {
+		if (!this.model) return [];
+		return getThinkingOptions(this.model);
+	}
+
 	/**
 	 * Check if current model supports thinking/reasoning.
 	 */
 	supportsThinking(): boolean {
-		return !!this.model?.reasoning;
+		return this.getAvailableThinkingOptions().some((option) => option.id !== "off");
 	}
 
 	private _getThinkingLevelForModelSwitch(explicitLevel?: ThinkingLevel): ThinkingLevel {

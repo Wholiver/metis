@@ -71,10 +71,27 @@ export interface Args {
 	diagnostics: Array<{ type: "warning" | "error"; message: string }>;
 }
 
-const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+/**
+ * Levels Metis itself knows about. Providers may expose their own native levels
+ * (see `thinkingOptions` on a model), so this list is not the set of accepted
+ * values — it only disambiguates `model:suffix` patterns, where an unknown
+ * suffix is far more likely to be part of the model id (`qwen3-coder:exacto`)
+ * than a thinking level.
+ */
+const KNOWN_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
+/** True for a level Metis ships built-in support for. Used for pattern suffix parsing. */
+export function isKnownThinkingLevel(level: string): level is ThinkingLevel {
+	return (KNOWN_THINKING_LEVELS as readonly string[]).includes(level);
+}
+
+/**
+ * Accepts any non-empty level so provider-native values (e.g. a provider that
+ * exposes "ultra") can be passed through `--thinking`. Validation against the
+ * active model happens later via the model's `thinkingOptions`.
+ */
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {
-	return VALID_THINKING_LEVELS.includes(level as ThinkingLevel);
+	return level.trim().length > 0;
 }
 
 export function parseArgs(args: string[]): Args {
@@ -179,7 +196,7 @@ export function parseArgs(args: string[]): Args {
 			} else {
 				result.diagnostics.push({
 					type: "warning",
-					message: `Invalid thinking level "${level}". Valid values: ${VALID_THINKING_LEVELS.join(", ")}`,
+					message: `Invalid thinking level "${level}". Provide a level exposed by the model, e.g. ${KNOWN_THINKING_LEVELS.join(", ")}`,
 				});
 			}
 		} else if (arg === "--print" || arg === "-p") {

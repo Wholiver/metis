@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Plus, ArrowUp, File as FileIcon, FileText, LoaderCircle, Maximize2, Minimize2, Video, X } from 'lucide-react';
-import { Agent, CollaborationMode, MessageAttachment, ModelOption, SendMessageOptions } from '../../types';
+import { Agent, CollaborationMode, MessageAttachment, ModelOption, SendMessageOptions, ThinkingOption } from '../../types';
 import { composerTextareaHeight, hasComposerLineBreak } from '../../lib/composer';
 import {
   classifyAttachment,
@@ -26,6 +26,7 @@ interface ComposerProps {
   isChangingModel?: boolean;
   thinkingLevel?: string;
   thinkingLevels?: string[];
+  thinkingOptions?: ThinkingOption[];
   supportsThinking?: boolean;
   onSelectThinkingLevel?: (level: string) => void | Promise<void>;
   isChangingThinking?: boolean;
@@ -105,6 +106,7 @@ export const Composer: React.FC<ComposerProps> = ({
   isChangingModel = false,
   thinkingLevel,
   thinkingLevels,
+  thinkingOptions,
   supportsThinking = false,
   onSelectThinkingLevel,
   isChangingThinking = false,
@@ -452,6 +454,7 @@ export const Composer: React.FC<ComposerProps> = ({
           loading={isChangingModel}
           thinkingLevel={thinkingLevel}
           thinkingLevels={thinkingLevels}
+          thinkingOptions={thinkingOptions}
           supportsThinking={supportsThinking}
           onSelectThinkingLevel={onSelectThinkingLevel}
           thinkingLoading={isChangingThinking}

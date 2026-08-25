@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/metis-agent-core";
-import type { Transport } from "@earendil-works/metis-ai";
+import type { ThinkingOption, Transport } from "@earendil-works/metis-ai";
 import {
 	type Component,
 	Container,
@@ -30,7 +30,7 @@ const SETTINGS_SUBMENU_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	maxPrimaryColumnWidth: 32,
 };
 
-const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
+const THINKING_DESCRIPTIONS: Partial<Record<ThinkingLevel, string>> = {
 	off: "No reasoning",
 	minimal: "Very brief reasoning (~1k tokens)",
 	low: "Light reasoning (~2k tokens)",
@@ -62,6 +62,7 @@ export interface SettingsConfig {
 	httpIdleTimeoutMs: number;
 	thinkingLevel: ThinkingLevel;
 	availableThinkingLevels: ThinkingLevel[];
+	availableThinkingOptions: ThinkingOption[];
 	currentTheme: string;
 	terminalTheme: TerminalTheme;
 	availableThemes: string[];
@@ -588,10 +589,10 @@ export class SettingsSelectorComponent extends Container {
 					new SelectSubmenu(
 						"Thinking Level",
 						"Select reasoning depth for thinking-capable models",
-						config.availableThinkingLevels.map((level) => ({
-							value: level,
-							label: level,
-							description: THINKING_DESCRIPTIONS[level],
+						config.availableThinkingOptions.map((option) => ({
+							value: option.id,
+							label: option.label,
+							description: THINKING_DESCRIPTIONS[option.id] ?? `Provider value: ${option.value}`,
 						})),
 						currentValue,
 						(value) => {

@@ -98,6 +98,12 @@ const ThinkingLevelMapSchema = Type.Object({
 	max: Type.Optional(ThinkingLevelMapValueSchema),
 });
 
+const ThinkingOptionSchema = Type.Object({
+	id: Type.String({ minLength: 1 }),
+	label: Type.String({ minLength: 1 }),
+	value: Type.String({ minLength: 1 }),
+});
+
 const ChatTemplateKwargScalarSchema = Type.Union([Type.String(), Type.Number(), Type.Boolean(), Type.Null()]);
 const ChatTemplateKwargVariableSchema = Type.Object({
 	$var: Type.Union([Type.Literal("thinking.enabled"), Type.Literal("thinking.effort")]),
@@ -166,6 +172,7 @@ const ModelDefinitionSchema = Type.Object({
 	baseUrl: Type.Optional(Type.String({ minLength: 1 })),
 	reasoning: Type.Optional(Type.Boolean()),
 	thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
+	thinkingOptions: Type.Optional(Type.Array(ThinkingOptionSchema)),
 	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
 	cost: Type.Optional(
 		Type.Object({
@@ -186,6 +193,7 @@ const ModelOverrideSchema = Type.Object({
 	name: Type.Optional(Type.String({ minLength: 1 })),
 	reasoning: Type.Optional(Type.Boolean()),
 	thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
+	thinkingOptions: Type.Optional(Type.Array(ThinkingOptionSchema)),
 	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
 	cost: Type.Optional(
 		Type.Object({
@@ -345,6 +353,7 @@ interface CatalogThinkingCandidate {
 interface ResolvedThinkingCapabilities {
 	reasoning: boolean;
 	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
+	thinkingOptions?: Model<Api>["thinkingOptions"];
 	compat?: Model<Api>["compat"];
 }
 
@@ -470,6 +479,7 @@ function resolveThinkingCapabilities(options: {
 	providerReasoning?: boolean;
 	modelThinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 	providerThinkingLevelMap?: Model<Api>["thinkingLevelMap"];
+	modelThinkingOptions?: Model<Api>["thinkingOptions"];
 	modelCompat?: Model<Api>["compat"];
 	providerCompat?: Model<Api>["compat"];
 }): ResolvedThinkingCapabilities {
@@ -480,7 +490,7 @@ function resolveThinkingCapabilities(options: {
 	const reasoning =
 		options.modelReasoning ??
 		options.providerReasoning ??
-		(configuredMap ? true : candidate?.model.reasoning ?? inferReasoningFromModelId(options.modelId));
+		(options.modelThinkingOptions ? options.modelThinkingOptions.some((option) => option.id !== "off") : configuredMap ? true : candidate?.model.reasoning ?? inferReasoningFromModelId(options.modelId));
 	const inferredMap = reasoning && candidate ? adaptThinkingLevelMap(candidate.model, options.api) : undefined;
 	const inferredCompat = reasoning
 		? selectThinkingCompat(candidate?.model, options.api, options.modelId, options.baseUrl)
@@ -488,6 +498,7 @@ function resolveThinkingCapabilities(options: {
 	return {
 		reasoning,
 		thinkingLevelMap: configuredMap ?? inferredMap,
+		thinkingOptions: options.modelThinkingOptions,
 		compat: mergeCompat(mergeCompat(inferredCompat, options.providerCompat), options.modelCompat),
 	};
 }
@@ -505,6 +516,7 @@ function applyModelOverride(model: Model<Api>, override: ModelOverride): Model<A
 	if (override.thinkingLevelMap !== undefined) {
 		result.thinkingLevelMap = { ...model.thinkingLevelMap, ...override.thinkingLevelMap };
 	}
+	if (override.thinkingOptions !== undefined) result.thinkingOptions = override.thinkingOptions.map((option) => ({ ...option }));
 	if (override.input !== undefined) result.input = override.input as ("text" | "image")[];
 	if (override.contextWindow !== undefined) result.contextWindow = override.contextWindow;
 	if (override.maxTokens !== undefined) result.maxTokens = override.maxTokens;
@@ -825,6 +837,7 @@ export class ModelRegistry {
 					providerReasoning: providerConfig.reasoning,
 					modelThinkingLevelMap: modelDef.thinkingLevelMap,
 					providerThinkingLevelMap: providerConfig.thinkingLevelMap,
+					modelThinkingOptions: modelDef.thinkingOptions,
 					modelCompat: modelDef.compat,
 					providerCompat: providerConfig.compat,
 				});
@@ -839,6 +852,7 @@ export class ModelRegistry {
 					baseUrl,
 					reasoning: thinking.reasoning,
 					thinkingLevelMap: thinking.thinkingLevelMap,
+					thinkingOptions: thinking.thinkingOptions,
 					// OpenAI-compatible custom endpoints generally do not publish input
 					// capabilities. Default to multimodal so image tool results are not
 					// silently discarded; explicitly set ["text"] for text-only models.
@@ -1157,6 +1171,7 @@ export class ModelRegistry {
 					providerReasoning: config.reasoning,
 					modelThinkingLevelMap: modelDef.thinkingLevelMap,
 					providerThinkingLevelMap: config.thinkingLevelMap,
+					modelThinkingOptions: modelDef.thinkingOptions,
 					modelCompat: modelDef.compat,
 					providerCompat: config.compat,
 				});
@@ -1170,6 +1185,7 @@ export class ModelRegistry {
 					baseUrl,
 					reasoning: thinking.reasoning,
 					thinkingLevelMap: thinking.thinkingLevelMap,
+					thinkingOptions: thinking.thinkingOptions,
 					input: modelDef.input as ("text" | "image")[],
 					cost: modelDef.cost,
 					contextWindow: modelDef.contextWindow,
@@ -1224,6 +1240,7 @@ export interface ProviderConfigInput {
 		baseUrl?: string;
 		reasoning?: boolean;
 		thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
+		thinkingOptions?: Model<Api>["thinkingOptions"];
 		input: ("text" | "image")[];
 		cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
 		contextWindow: number;
@@ -1233,10 +1250,55 @@ export interface ProviderConfigInput {
 	}>;
 }
 
-/**
- * Fetch available models from an OpenAI-compatible endpoint.
- */
-export async function fetchOtherProviderModels(baseUrl: string, apiKey?: string): Promise<string[]> {
+export interface DiscoveredProviderModel {
+	id: string;
+	thinkingOptions: NonNullable<Model<Api>["thinkingOptions"]>;
+}
+
+function thinkingOptionId(value: string): string {
+	return /^(?:off|none|disabled)$/i.test(value) ? "off" : value;
+}
+
+function normalizeThinkingOption(value: unknown): NonNullable<Model<Api>["thinkingOptions"]>[number] | undefined {
+	if (typeof value === "string" && value.trim()) {
+		const raw = value.trim();
+		return { id: thinkingOptionId(raw), label: raw, value: raw };
+	}
+	if (!value || typeof value !== "object") return undefined;
+	const item = value as Record<string, unknown>;
+	const raw = [item.value, item.id, item.name].find((candidate) => typeof candidate === "string" && candidate.trim()) as string | undefined;
+	if (!raw) return undefined;
+	const label = typeof item.label === "string" && item.label.trim() ? item.label.trim() : raw.trim();
+	return { id: thinkingOptionId(raw.trim()), label, value: raw.trim() };
+}
+
+export function extractProviderThinkingOptions(item: unknown): NonNullable<Model<Api>["thinkingOptions"]> {
+	if (!item || typeof item !== "object") return [];
+	const model = item as Record<string, any>;
+	const candidates = [
+		model.supported_reasoning_efforts,
+		model.reasoning_efforts,
+		model.supported_thinking_levels,
+		model.thinking_levels,
+		model.capabilities?.reasoning?.efforts,
+		model.capabilities?.reasoning?.levels,
+		model.capabilities?.thinking?.levels,
+		model.reasoning?.efforts,
+		model.reasoning?.levels,
+		model.thinking?.levels,
+	];
+	const exposed = candidates.find(Array.isArray) as unknown[] | undefined;
+	if (!exposed) return [];
+	const byId = new Map<string, NonNullable<Model<Api>["thinkingOptions"]>[number]>();
+	for (const value of exposed) {
+		const option = normalizeThinkingOption(value);
+		if (option && !byId.has(option.id)) byId.set(option.id, option);
+	}
+	return [...byId.values()];
+}
+
+/** Fetch model IDs and provider-native thinking metadata from an OpenAI-compatible endpoint. */
+export async function fetchOtherProviderModelCatalog(baseUrl: string, apiKey?: string): Promise<DiscoveredProviderModel[]> {
 	const cleanBaseUrl = baseUrl.trim().replace(/\/+$/, "");
 	const urlsToTry: string[] = [];
 
@@ -1277,12 +1339,17 @@ export async function fetchOtherProviderModels(baseUrl: string, apiKey?: string)
 						? data.models
 						: [];
 
-			const modelIds = items
-				.map((item: any) => (typeof item === "string" ? item : item?.id))
-				.filter((id: any): id is string => typeof id === "string" && id.trim().length > 0);
+			const models = items
+				.map((item: any) => ({
+					id: typeof item === "string" ? item.trim() : typeof item?.id === "string" ? item.id.trim() : "",
+					thinkingOptions: extractProviderThinkingOptions(item),
+				}))
+				.filter((model: DiscoveredProviderModel) => model.id.length > 0);
 
-			if (modelIds.length > 0) {
-				return Array.from(new Set(modelIds));
+			if (models.length > 0) {
+				const byId = new Map<string, DiscoveredProviderModel>();
+				for (const model of models as DiscoveredProviderModel[]) if (!byId.has(model.id)) byId.set(model.id, model);
+				return [...byId.values()];
 			}
 		} catch {
 			// Try next candidate URL
@@ -1290,6 +1357,11 @@ export async function fetchOtherProviderModels(baseUrl: string, apiKey?: string)
 	}
 
 	return [];
+}
+
+/** Backward-compatible model-ID-only discovery API. */
+export async function fetchOtherProviderModels(baseUrl: string, apiKey?: string): Promise<string[]> {
+	return (await fetchOtherProviderModelCatalog(baseUrl, apiKey)).map((model) => model.id);
 }
 
 export const CUSTOM_PROVIDER_ID_PREFIX = "custom-";
@@ -1382,6 +1454,7 @@ export function saveOtherProviderConfig(
 	baseUrl: string,
 	modelIds: string[] = [],
 	reasoning = false,
+	discoveredModels?: DiscoveredProviderModel[],
 ): void {
 	const config = readProviderConfigFile(modelsPath);
 	if (!existsSync(modelsPath)) {
@@ -1398,10 +1471,20 @@ export function saveOtherProviderConfig(
 			.map((model: any) => [model.id, model]),
 	);
 	const finalModelIds = normalizeCustomModelIds(modelIds).length > 0 ? normalizeCustomModelIds(modelIds) : ["default"];
+	const discoveredById = new Map((discoveredModels ?? []).map((model) => [model.id, model]));
 	const modelEntries = finalModelIds.map((id) => {
 		const existingModel = existingModels.get(id) as any;
 		const entry: any = { ...(existingModel || {}), id, input: existingModel?.input || ["text", "image"] };
-		if (reasoning) entry.reasoning = true;
+		if (discoveredModels !== undefined) {
+			// Discovery ran: the API's own metadata is authoritative. An empty list
+			// means the endpoint exposed no thinking levels, so thinking stays hidden
+			// instead of being guessed.
+			const options = discoveredById.get(id)?.thinkingOptions ?? [];
+			entry.reasoning = options.some((option) => option.id !== "off");
+			entry.thinkingOptions = options;
+			if (options.length > 0) entry.thinkingLevelMap = Object.fromEntries(options.map((option) => [option.id, option.value]));
+			else delete entry.thinkingLevelMap;
+		} else if (reasoning) entry.reasoning = true;
 		else delete entry.reasoning;
 		return entry;
 	});

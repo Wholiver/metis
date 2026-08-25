@@ -296,7 +296,8 @@ metis --exclude-tools ask_question
 | `METIS_CODING_AGENT_SESSION_DIR` | Override session storage directory; overridden by `--session-dir` |
 | `METIS_PACKAGE_DIR` | Override package directory, useful for Nix/Guix store paths |
 | `METIS_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |
-| `METIS_SKIP_VERSION_CHECK` | Skip the Metis version update check at startup. This prevents the `metis.dev` latest-version request |
+| `METIS_SKIP_VERSION_CHECK` | Skip the Metis version update check at startup. This prevents the GitHub `latest-version.json` request |
+| `METIS_VERSION_MANIFEST_URLS` | Comma-separated manifest URLs replacing the default GitHub update-check source |
 | `METIS_TELEMETRY` | Override install/update telemetry and provider attribution headers: `1`/`true`/`yes` or `0`/`false`/`no`. This does not disable update checks |
 | `METIS_CACHE_RETENTION` | Set to `long` for extended prompt cache where supported |
 | `VISUAL`, `EDITOR` | Fallback external editor for Ctrl+G when `externalEditor` is unset; defaults to Notepad on Windows and `nano` elsewhere |

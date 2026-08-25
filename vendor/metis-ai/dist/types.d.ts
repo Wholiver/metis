@@ -18,9 +18,17 @@ export type KnownProvider = "cohere" | "amazon-bedrock" | "ant-ling" | "anthropi
 export type ProviderId = KnownProvider | string;
 export type KnownImagesProvider = "openrouter";
 export type ImagesProviderId = KnownImagesProvider | string;
-export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | (string & {});
 export type ModelThinkingLevel = "off" | ThinkingLevel;
 export type ThinkingLevelMap = Partial<Record<ModelThinkingLevel, string | null>>;
+export interface ThinkingOption {
+    /** Stable value selected by Metis. */
+    id: ModelThinkingLevel;
+    /** Provider-native label shown to users. */
+    label: string;
+    /** Raw value sent to the provider. */
+    value: string;
+}
 export type ChatTemplateKwargValue = string | number | boolean | null | {
     $var: "thinking.enabled" | "thinking.effort";
     omitWhenOff?: boolean;
@@ -576,6 +584,8 @@ export interface Model<TApi extends Api> {
      * Missing keys use provider defaults. null marks a level as unsupported.
      */
     thinkingLevelMap?: ThinkingLevelMap;
+    /** Explicit provider-native thinking options. Empty means none were exposed. */
+    thinkingOptions?: ThinkingOption[];
     input: ("text" | "image")[];
     cost: {
         input: number;

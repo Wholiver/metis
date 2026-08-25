@@ -8,11 +8,11 @@ import type {
 	Model,
 	OpenAICompletionsCompat,
 } from "@earendil-works/metis-ai/compat";
-import { getApiProvider, getProviders, getSupportedThinkingLevels } from "@earendil-works/metis-ai/compat";
+import { getApiProvider, getProviders, getSupportedThinkingLevels, getThinkingOptions } from "@earendil-works/metis-ai/compat";
 import { getOAuthProvider } from "@earendil-works/metis-ai/oauth";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { clearApiKeyCache, ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
+import { clearApiKeyCache, extractProviderThinkingOptions, ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
 import { defaultModelPerProvider } from "../src/core/model-resolver.ts";
 
 describe("ModelRegistry", () => {
@@ -33,6 +33,25 @@ describe("ModelRegistry", () => {
 		}
 		clearApiKeyCache();
 		vi.restoreAllMocks();
+	});
+
+	test("extracts only provider-exposed native thinking options", () => {
+		expect(extractProviderThinkingOptions({
+			capabilities: { reasoning: { efforts: ["none", { value: "balanced", label: "Balanced" }, "max"] } },
+		})).toEqual([
+			{ id: "off", label: "none", value: "none" },
+			{ id: "balanced", label: "Balanced", value: "balanced" },
+			{ id: "max", label: "max", value: "max" },
+		]);
+		expect(extractProviderThinkingOptions({ id: "plain" })).toEqual([]);
+	});
+
+	test("renders provider-native labels, deduplicates aliases, and includes max", () => {
+		const model = ModelRegistry.create(authStorage, modelsJsonPath).find("openai-codex", "gpt-5.6-luna");
+		expect(model).toBeDefined();
+		const options = getThinkingOptions(model!);
+		expect(options.filter((option) => option.value === "low")).toHaveLength(1);
+		expect(options.some((option) => option.value === "max" && option.label === "Max")).toBe(true);
 	});
 
 	/** Create minimal provider config  */
@@ -318,7 +337,7 @@ describe("ModelRegistry", () => {
 			const unknown = registry.find("custom-zai", "unknown-capabilities");
 
 			expect(glm?.reasoning).toBe(true);
-			expect(getSupportedThinkingLevels(glm!)).toEqual(["low", "high"]);
+			expect(getSupportedThinkingLevels(glm!)).toEqual(["low", "high", "max"]);
 			expect((glm?.compat as OpenAICompletionsCompat | undefined)?.thinkingFormat).toBe("zai");
 			expect(qwen?.reasoning).toBe(true);
 			expect(getSupportedThinkingLevels(qwen!)).toEqual(["off", "low", "medium", "xhigh"]);
@@ -1047,7 +1066,7 @@ describe("ModelRegistry", () => {
 
 			const model = registry.find("extension-provider", "glm-5.3");
 			expect(model?.reasoning).toBe(true);
-			expect(getSupportedThinkingLevels(model!)).toEqual(["low", "high"]);
+			expect(getSupportedThinkingLevels(model!)).toEqual(["low", "high", "max"]);
 			expect((model?.compat as OpenAICompletionsCompat | undefined)?.thinkingFormat).toBe("zai");
 		});
 

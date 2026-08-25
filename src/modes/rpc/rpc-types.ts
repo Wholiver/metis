@@ -6,7 +6,7 @@
  */
 
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/metis-agent-core";
-import type { ImageContent, Model } from "@earendil-works/metis-ai";
+import type { ImageContent, Model, ThinkingOption } from "@earendil-works/metis-ai";
 import type { SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
@@ -18,7 +18,7 @@ import type { InstructionSourceSummary } from "../../core/system-prompt.ts";
 import type { MemoryRecordSummary, MemoryState } from "../../core/memory-coordinator.ts";
 import type { PerformanceRunSummary } from "../../core/performance-runtime.ts";
 
-export type RpcModelInfo = Model<any> & { thinkingLevels: ThinkingLevel[] };
+export type RpcModelInfo = Model<any> & { thinkingLevels: ThinkingLevel[]; thinkingOptions: ThinkingOption[] };
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -108,6 +108,9 @@ export interface RpcSlashCommand {
 export interface RpcSessionState {
 	model?: Model<any>;
 	thinkingLevel: ThinkingLevel;
+	thinkingLevels: ThinkingLevel[];
+	thinkingOptions: ThinkingOption[];
+	supportsThinking: boolean;
 	isStreaming: boolean;
 	isCompacting: boolean;
 	steeringMode: "all" | "one-at-a-time";

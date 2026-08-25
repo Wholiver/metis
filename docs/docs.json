@@ -88,6 +88,10 @@
         {
           "title": "Session Format",
           "path": "session-format.md"
+        },
+        {
+          "title": "Update Check",
+          "path": "update-check.md"
         }
       ]
     },

@@ -6,7 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { ImageContent } from "@earendil-works/metis-ai";
-import { getProviders, getSupportedThinkingLevels } from "@earendil-works/metis-ai/compat";
+import { getProviders, getSupportedThinkingLevels, getThinkingOptions } from "@earendil-works/metis-ai/compat";
 import { APP_NAME, getShareViewerUrl, VERSION } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { type AskUserRequest, type AskUserResponse, validateAskUserResponse } from "../../core/ask-user.ts";
@@ -23,6 +23,7 @@ import { ProjectTrustStore } from "../../core/trust-manager.ts";
 import { isUiLanguage, SUPPORTED_UI_LANGUAGES } from "../../core/ui-language.ts";
 import { getChangelogPath } from "../../utils/changelog.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
+import { getLatestMetisRelease, isNewerPackageVersion } from "../../utils/version-check.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "../rpc/rpc-types.ts";
 import { loadDesktopWorkStats, type DesktopWorkStats } from "./desktop-work-stats.ts";
@@ -368,6 +369,18 @@ export async function startServerMode(
 		if (method === "GET" && url.pathname === "/global/health") {
 			return sendJson(response, 200, { healthy: true, version: VERSION });
 		}
+		if (method === "GET" && url.pathname === "/global/update-check") {
+			const latest = await getLatestMetisRelease(VERSION);
+			if (!latest) {
+				return sendJson(response, 200, { currentVersion: VERSION, updateAvailable: false, checkFailed: true });
+			}
+			return sendJson(response, 200, {
+				currentVersion: VERSION,
+				updateAvailable: isNewerPackageVersion(latest.version, VERSION),
+				checkFailed: false,
+				latest,
+			});
+		}
 		if (method === "GET" && (url.pathname === "/doc" || url.pathname === "/openapi.json")) {
 			const document = createServerOpenApiDocument();
 			document.servers = [{ url: `http://${formatHostname(hostname)}:${advertisedPort}` }];
@@ -434,6 +447,7 @@ export async function startServerMode(
 			const models = (await session.modelRegistry.getAvailable()).map((model) => ({
 				...model,
 				thinkingLevels: getSupportedThinkingLevels(model),
+				thinkingOptions: getThinkingOptions(model),
 			}));
 			return sendJson(response, 200, { models });
 		}
@@ -679,8 +693,8 @@ export async function startServerMode(
 			if (hasThinkingPreference) {
 				if (body?.thinkingLevel === null) {
 					session.settingsManager.clearDefaultThinkingLevel();
-				} else if (["off", "minimal", "low", "medium", "high", "xhigh"].includes(body?.thinkingLevel as string)) {
-					session.settingsManager.setDefaultThinkingLevel(body?.thinkingLevel as "off" | "minimal" | "low" | "medium" | "high" | "xhigh");
+				} else if (session.getAvailableThinkingLevels().includes(body?.thinkingLevel as never)) {
+					session.settingsManager.setDefaultThinkingLevel(body?.thinkingLevel as never);
 				} else {
 					return sendError(response, 400, "invalid_request", "thinkingLevel must be a supported level or null");
 				}
@@ -959,6 +973,9 @@ export async function startServerMode(
 
 	function getSessionState(): ServerSessionState {
 		const s = session as any;
+		const thinkingOptions = typeof s.getAvailableThinkingOptions === "function"
+			? s.getAvailableThinkingOptions()
+			: session.getAvailableThinkingLevels().map((id) => ({ id, label: id, value: id }));
 		if (!session.sessionName && !session.isStreaming && session.messages.some((message: any) => message.role === "assistant")) {
 			if (typeof s.ensureSessionName === "function") {
 				void s.ensureSessionName();
@@ -971,6 +988,7 @@ export async function startServerMode(
 			model: session.model,
 			thinkingLevel: session.thinkingLevel,
 			thinkingLevels: session.getAvailableThinkingLevels(),
+			thinkingOptions,
 			supportsThinking: session.supportsThinking(),
 			isStreaming: session.isStreaming,
 			isCompacting: session.isCompacting,

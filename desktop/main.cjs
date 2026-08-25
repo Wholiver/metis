@@ -462,7 +462,7 @@ function createWindow() {
 				}
 				if (process.env.METIS_DESKTOP_CAPTURE_ADVANCED_MENU) {
 					await mainWindow.webContents.executeJavaScript(`
-						state.session = { ...state.session, supportsThinking: true, thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"], thinkingLevel: "high" };
+						state.session = { ...state.session, supportsThinking: true, thinkingLevels: ["off", "low", "medium", "high", "xhigh"], thinkingOptions: [{ id: "off", label: "None", value: "none" }, { id: "low", label: "Low", value: "low" }, { id: "medium", label: "Medium", value: "medium" }, { id: "high", label: "High", value: "high" }, { id: "xhigh", label: "Xhigh", value: "xhigh" }], thinkingLevel: "high" };
 						updateModelSelect();
 						document.querySelector('#modelTrigger')?.click();
 						document.querySelector('#advancedEntry')?.click();
@@ -1692,6 +1692,9 @@ function registerIpc() {
 	ipcMain.handle("metis:request", (_event, request) =>
 		metisRequest(request.path, { method: request.method, body: request.body, timeoutMs: request.timeoutMs }),
 	);
+	// The update manifest lookup lives in the CLI runtime (src/utils/version-check.ts),
+	// so the desktop shell forwards to the local server instead of reimplementing it.
+	ipcMain.handle("update:check", () => metisRequest("/global/update-check", { timeoutMs: 15_000 }));
 }
 
 function resolveAgentDir() {

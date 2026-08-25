@@ -56,7 +56,10 @@ import {
 	getDebugLogPath,
 	getDocsPath,
 	getModelsPath,
+	getSelfUpdateCommand,
+	getSelfUpdateUnavailableInstruction,
 	getShareViewerUrl,
+	PACKAGE_NAME,
 	VERSION,
 } from "../../config.ts";
 import { type AgentSession, type AgentSessionEvent, type PromptOptions, parseSkillBlock } from "../../core/agent-session.ts";
@@ -80,7 +83,7 @@ import { createCompactionSummaryMessage } from "../../core/messages.ts";
 import {
 	createCustomProviderId,
 	deleteCustomProviderConfig,
-	fetchOtherProviderModels,
+	fetchOtherProviderModelCatalog,
 	listCustomProviderConfigs,
 	type SavedCustomProviderConfig,
 	saveOtherProviderConfig,
@@ -4142,9 +4145,27 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	/**
+	 * Line shown under the `metis update` hint with the concrete package-manager
+	 * command for this installation, so users who cannot (or would rather not)
+	 * use the built-in updater can copy the npm command directly.
+	 */
+	private getManualUpdateCommandLine(release: LatestMetisRelease): string {
+		const packageName = release.packageName ?? PACKAGE_NAME;
+		const target = { packageName, installSpec: `${packageName}@${release.version}` };
+		const npmCommand = this.settingsManager.getGlobalSettings().npmCommand;
+		const command = getSelfUpdateCommand(PACKAGE_NAME, npmCommand, target);
+		if (command) {
+			return theme.fg("muted", "Or run manually: ") + theme.fg("accent", command.display);
+		}
+		return theme.fg("muted", getSelfUpdateUnavailableInstruction(PACKAGE_NAME, npmCommand, target));
+	}
+
 	showNewVersionNotification(release: LatestMetisRelease): void {
-		const action = theme.fg("accent", `${APP_NAME} update`);
-		const updateInstruction = theme.fg("muted", `New version ${release.version} is available. Run `) + action;
+		const updateInstruction =
+			theme.fg("muted", `New version ${release.version} is available. Run `) +
+			theme.fg("accent", `${APP_NAME} update`);
+		const manualCommandLine = this.getManualUpdateCommandLine(release);
 		const changelogUrl = "https://metis.dev/changelog";
 		const changelogLink = getCapabilities().hyperlinks
 			? hyperlink(theme.fg("accent", changelogUrl), changelogUrl)
@@ -4155,7 +4176,11 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 		this.chatContainer.addChild(
-			new Text(`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}`, 1, 0),
+			new Text(
+				`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}\n${manualCommandLine}`,
+				1,
+				0,
+			),
 		);
 		if (note) {
 			this.chatContainer.addChild(new Spacer(1));
@@ -4406,6 +4431,7 @@ export class InteractiveMode {
 					httpIdleTimeoutMs: this.settingsManager.getHttpIdleTimeoutMs(),
 					thinkingLevel: this.session.thinkingLevel,
 					availableThinkingLevels: this.session.getAvailableThinkingLevels(),
+					availableThinkingOptions: this.session.getAvailableThinkingOptions(),
 					currentTheme: this.settingsManager.getThemeSetting() || "dark",
 					terminalTheme: this.themeController.getTerminalTheme(),
 					availableThemes: getAvailableThemes(),
@@ -5479,7 +5505,7 @@ export class InteractiveMode {
 		};
 
 		try {
-			const totalSteps = 5;
+			const totalSteps = 4;
 			const customName = (
 				await dialog.showFormStep(
 					1,
@@ -5524,7 +5550,8 @@ export class InteractiveMode {
 			}
 
 			dialog.showProgressScreen("Checking endpoint", "Fetching available models…");
-			const fetchedModelIds = await fetchOtherProviderModels(baseUrl, effectiveApiKey);
+			const fetchedModels = await fetchOtherProviderModelCatalog(baseUrl, effectiveApiKey);
+			const fetchedModelIds = fetchedModels.map((model) => model.id);
 			const suggestedModelIds = fetchedModelIds.length > 0 ? fetchedModelIds : existing?.modelIds ?? ["default"];
 			const modelInput = await dialog.showFormStep(
 				4,
@@ -5540,23 +5567,12 @@ export class InteractiveMode {
 				new Set(modelInput.split(/[\n,]+/).map((id) => id.trim()).filter(Boolean)),
 			);
 			if (modelIds.length === 0) throw new Error("At least one model ID is required.");
-			const reasoningAnswer = (
-				await dialog.showFormStep(
-					5,
-					totalSteps,
-					"Capabilities",
-					"Enable thinking levels for models from this Provider? Enter yes or no.",
-					"yes",
-					existing?.reasoning === false ? "no" : "yes",
-				)
-			).trim().toLowerCase();
-			const reasoning = ["y", "yes", "true", "1"].includes(reasoningAnswer);
 			const modelsPath = this.session.modelRegistry.getModelsJsonPath() ?? getModelsPath();
 			const providerId = existing?.providerId ?? createCustomProviderId(modelsPath, customName);
 
 			if (apiKey) this.session.modelRegistry.authStorage.set(providerId, { type: "api_key", key: apiKey });
 
-			saveOtherProviderConfig(modelsPath, providerId, customName, baseUrl, modelIds, reasoning);
+			saveOtherProviderConfig(modelsPath, providerId, customName, baseUrl, modelIds, false, fetchedModels);
 
 			this.session.modelRegistry.refresh();
 

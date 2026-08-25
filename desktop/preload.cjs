@@ -60,4 +60,7 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		},
 	},
 	openExternal: (url) => ipcRenderer.invoke("external:open", url),
+	update: {
+		check: () => ipcRenderer.invoke("update:check"),
+	},
 });

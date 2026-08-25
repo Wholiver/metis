@@ -4,6 +4,8 @@ dist
 .codegraph/
 .metis/plan/
 .metis-subagent-*
+.metis-agent-task-*
+auth.json
 outputs/
 test-subagent.log
 .env
@@ -13,6 +15,7 @@ test-subagent.log
 *.bun-build
 .temp
 desktop/release/
+desktop/release */
 .agents
 .claude
 .workbuddy
@@ -21,32 +24,14 @@ skills-lock.json
 dist */
 * 2.*
 
-# metis-ai is distributed as compiled vendor code; track model catalogs and Metis OAuth branding overrides.
+# The metis-* workspace packages under vendor/ are not published to npm; they ship as
+# compiled output. Track their dist/ in full so `pnpm install && pnpm build` works from a
+# plain zip download of this repo (no submodules, no private registry).
+!vendor/metis-agent-core/dist/
 !vendor/metis-ai/dist/
-vendor/metis-ai/dist/*
-!vendor/metis-ai/dist/env-api-keys.js
-!vendor/metis-ai/dist/model-catalog.d.ts
-!vendor/metis-ai/dist/model-catalog.js
-!vendor/metis-ai/dist/models.generated.d.ts
-!vendor/metis-ai/dist/models.generated.js
-!vendor/metis-ai/dist/types.d.ts
-!vendor/metis-ai/dist/providers/
-vendor/metis-ai/dist/providers/*
-!vendor/metis-ai/dist/providers/*.models.d.ts
-!vendor/metis-ai/dist/providers/*.models.js
-!vendor/metis-ai/dist/providers/all.js
-!vendor/metis-ai/dist/providers/baseten.d.ts
-!vendor/metis-ai/dist/providers/baseten.js
-!vendor/metis-ai/dist/providers/qwen-token-plan.d.ts
-!vendor/metis-ai/dist/providers/qwen-token-plan.js
-!vendor/metis-ai/dist/providers/qwen-token-plan-cn.d.ts
-!vendor/metis-ai/dist/providers/qwen-token-plan-cn.js
-!vendor/metis-ai/dist/providers/qwen-token-plan-individual.d.ts
-!vendor/metis-ai/dist/providers/qwen-token-plan-individual.js
-!vendor/metis-ai/dist/providers/data/
-!vendor/metis-ai/dist/providers/data/*.json
-!vendor/metis-ai/dist/utils/
-vendor/metis-ai/dist/utils/*
-!vendor/metis-ai/dist/utils/oauth/
-vendor/metis-ai/dist/utils/oauth/*
-!vendor/metis-ai/dist/utils/oauth/oauth-page.js
+!vendor/metis-tui/dist/
+
+# ...but keep the noise out: source maps, Finder duplicate copies, stray tool dirs.
+vendor/*/dist/**/*.map
+vendor/*/dist/**/* 2/
+vendor/*/dist/**/.claude/

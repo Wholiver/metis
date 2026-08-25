@@ -6,6 +6,7 @@ import {
   Message,
   MessageAttachment,
   ModelOption,
+  ThinkingOption,
   PendingUserInput,
   ProjectItem,
   ServerSessionItem,
@@ -37,6 +38,7 @@ type SessionState = {
   isCompacting?: boolean;
   thinkingLevel?: string;
   thinkingLevels?: string[];
+  thinkingOptions?: ThinkingOption[];
   supportsThinking?: boolean;
   collaborationMode?: CollaborationMode;
   workflowPlan?: WorkflowPlanState;
@@ -542,6 +544,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const [isChangingModel, setIsChangingModel] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState('');
   const [thinkingLevels, setThinkingLevels] = useState<string[]>([]);
+  const [thinkingOptions, setThinkingOptions] = useState<ThinkingOption[]>([]);
   const [supportsThinking, setSupportsThinking] = useState(false);
   const [isChangingThinking, setIsChangingThinking] = useState(false);
   const [memoryState, setMemoryState] = useState<MemoryState>();
@@ -624,6 +627,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     setActiveModel(state.model);
     setThinkingLevel(state.thinkingLevel || '');
     setThinkingLevels(Array.isArray(state.thinkingLevels) ? state.thinkingLevels : []);
+    setThinkingOptions(Array.isArray(state.thinkingOptions) ? state.thinkingOptions : (state.thinkingLevels || []).map((id) => ({ id, label: id, value: id })));
     setSupportsThinking(Boolean(state.supportsThinking));
     if (state.sessionId) setActiveAgentId(state.sessionId);
   }, [request]);
@@ -1035,6 +1039,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
       const state = await request<SessionState>('/session');
       setThinkingLevel(state.thinkingLevel || '');
       setThinkingLevels(Array.isArray(state.thinkingLevels) ? state.thinkingLevels : []);
+      setThinkingOptions(Array.isArray(state.thinkingOptions) ? state.thinkingOptions : (state.thinkingLevels || []).map((id) => ({ id, label: id, value: id })));
       setSupportsThinking(Boolean(state.supportsThinking));
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : String(error));
@@ -1145,6 +1150,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     selectModel,
     thinkingLevel,
     thinkingLevels,
+    thinkingOptions,
     supportsThinking,
     isChangingThinking,
     selectThinkingLevel,

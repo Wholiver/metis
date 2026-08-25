@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Agent, CollaborationMode, MemoryState, Message, ModelOption, PendingUserInput, SendMessageOptions, UserInputResponse, WorkflowProposalState } from '../../types';
+import { Agent, CollaborationMode, MemoryState, Message, ModelOption, PendingUserInput, SendMessageOptions, ThinkingOption, UserInputResponse, WorkflowProposalState } from '../../types';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
@@ -20,6 +20,7 @@ interface ChatAreaProps {
   isChangingModel?: boolean;
   thinkingLevel?: string;
   thinkingLevels?: string[];
+  thinkingOptions?: ThinkingOption[];
   supportsThinking?: boolean;
   onSelectThinkingLevel?: (level: string) => void | Promise<void>;
   isChangingThinking?: boolean;
@@ -56,6 +57,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   isChangingModel = false,
   thinkingLevel,
   thinkingLevels,
+  thinkingOptions,
   supportsThinking = false,
   onSelectThinkingLevel,
   isChangingThinking = false,
@@ -142,6 +144,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           isChangingModel={isChangingModel}
           thinkingLevel={thinkingLevel}
           thinkingLevels={thinkingLevels}
+          thinkingOptions={thinkingOptions}
           supportsThinking={supportsThinking}
           onSelectThinkingLevel={onSelectThinkingLevel}
           isChangingThinking={isChangingThinking}

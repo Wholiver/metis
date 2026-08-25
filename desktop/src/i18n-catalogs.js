@@ -842,7 +842,7 @@
     "reactSettingsCurrentModelDescription": "Applied to the active session immediately.",
     "reactSettingsChooseModel": "Choose model",
     "reactSettingsReasoningEffort": "Reasoning effort",
-    "reactSettingsReasoningAvailability": "Availability depends on the current model.",
+    "reactSettingsReasoningAvailability": "Options reported by the current model provider.",
     "reactSettingsNewSessionDefaults": "New session defaults",
     "reactSettingsNewSessionOnly": "Used only for newly created sessions.",
     "reactSettingsDefaultModelSaved": "Default model saved.",
@@ -884,8 +884,7 @@
     "reactSettingsProviderConnectionDescription": "Provider name, OpenAI-compatible endpoint and optional API key.",
     "reactSettingsApiKeyKeepPlaceholder": "API key (leave blank to keep)",
     "reactSettingsModelIdsPlaceholder": "Model IDs, separated by commas",
-    "reactSettingsEnableReasoning": "Enable reasoning effort",
-    "reactSettingsModelsDiscovered": "Available models discovered.",
+    "reactSettingsModelsDiscovered": "Available models and reasoning options discovered.",
     "reactSettingsProviderSaved": "Custom provider saved and models reloaded.",
     "reactSettingsSaveProvider": "Save provider",
     "reactSettingsProviderDeleted": "Custom provider deleted.",
@@ -1057,7 +1056,8 @@
     "settingsMemoryAddedInline": "added",
     "settingsMemoryAddedDivider": "added ·",
     "settingsMemoryProcessedDivider": "processed ·",
-    "settingsMemorySkippedInline": "skipped"
+    "settingsMemorySkippedInline": "skipped",
+    "reactSettingsReasoningFromMetadata": "Reasoning options come from model metadata returned by this API."
   },
   "zh-CN": {
     "dreamOff": "记忆：已关闭",
@@ -1897,7 +1897,7 @@
     "reactSettingsCurrentModelDescription": "立即应用到当前会话。",
     "reactSettingsChooseModel": "选择模型",
     "reactSettingsReasoningEffort": "推理强度",
-    "reactSettingsReasoningAvailability": "是否可用取决于当前模型。",
+    "reactSettingsReasoningAvailability": "由当前模型服务商提供的选项。",
     "reactSettingsNewSessionDefaults": "新会话默认设置",
     "reactSettingsNewSessionOnly": "仅用于新建会话。",
     "reactSettingsDefaultModelSaved": "默认模型已保存。",
@@ -1939,8 +1939,7 @@
     "reactSettingsProviderConnectionDescription": "服务商名称、OpenAI 兼容接口地址和可选 API 密钥。",
     "reactSettingsApiKeyKeepPlaceholder": "API 密钥（留空则保留原值）",
     "reactSettingsModelIdsPlaceholder": "模型 ID，多个值用逗号分隔",
-    "reactSettingsEnableReasoning": "启用推理强度",
-    "reactSettingsModelsDiscovered": "已发现可用模型。",
+    "reactSettingsModelsDiscovered": "已发现可用模型及推理选项。",
     "reactSettingsProviderSaved": "自定义服务商已保存，模型已重新加载。",
     "reactSettingsSaveProvider": "保存服务商",
     "reactSettingsProviderDeleted": "自定义服务商已删除。",
@@ -2112,7 +2111,8 @@
     "settingsMemoryAddedInline": "新增",
     "settingsMemoryAddedDivider": "新增 ·",
     "settingsMemoryProcessedDivider": "已处理 ·",
-    "settingsMemorySkippedInline": "已跳过"
+    "settingsMemorySkippedInline": "已跳过",
+    "reactSettingsReasoningFromMetadata": "推理选项来自该 API 返回的模型元数据。"
   },
   "zh-TW": {
     "dreamOff": "記憶：已關閉",
@@ -2952,7 +2952,7 @@
     "reactSettingsCurrentModelDescription": "立即套用到目前會話。",
     "reactSettingsChooseModel": "選擇模型",
     "reactSettingsReasoningEffort": "推理強度",
-    "reactSettingsReasoningAvailability": "是否可用取決於當前模型。",
+    "reactSettingsReasoningAvailability": "由目前模型服務商提供的選項。",
     "reactSettingsNewSessionDefaults": "新會話預設設定",
     "reactSettingsNewSessionOnly": "僅用於新建會話。",
     "reactSettingsDefaultModelSaved": "預設模型已儲存。",
@@ -2994,8 +2994,7 @@
     "reactSettingsProviderConnectionDescription": "服務商名稱、OpenAI 相容介面位址和可選 API 金鑰。",
     "reactSettingsApiKeyKeepPlaceholder": "API 金鑰（留空則保留原值）",
     "reactSettingsModelIdsPlaceholder": "模型 ID，多個值以逗號分隔",
-    "reactSettingsEnableReasoning": "啟用推理強度",
-    "reactSettingsModelsDiscovered": "已發現可用模型。",
+    "reactSettingsModelsDiscovered": "已發現可用模型與推理選項。",
     "reactSettingsProviderSaved": "自訂服務商已儲存，模型已重新載入。",
     "reactSettingsSaveProvider": "保存服務商",
     "reactSettingsProviderDeleted": "自訂服務商已刪除。",
@@ -3167,7 +3166,8 @@
     "settingsMemoryAddedInline": "新增",
     "settingsMemoryAddedDivider": "新增 ·",
     "settingsMemoryProcessedDivider": "已處理 ·",
-    "settingsMemorySkippedInline": "已略過"
+    "settingsMemorySkippedInline": "已略過",
+    "reactSettingsReasoningFromMetadata": "推理選項來自該 API 回傳的模型中介資料。"
   },
   "ja": {
     "dreamOff": "メモリ: オフ",
@@ -4007,7 +4007,7 @@
     "reactSettingsCurrentModelDescription": "アクティブなセッションにすぐに適用されます。",
     "reactSettingsChooseModel": "モデルを選択してください",
     "reactSettingsReasoningEffort": "推論の努力",
-    "reactSettingsReasoningAvailability": "入手可能かどうかは現在のモデルによって異なります。",
+    "reactSettingsReasoningAvailability": "現在のモデルプロバイダーが報告したオプションです。",
     "reactSettingsNewSessionDefaults": "新しいセッションのデフォルト",
     "reactSettingsNewSessionOnly": "新しく作成されたセッションにのみ使用されます。",
     "reactSettingsDefaultModelSaved": "デフォルトのモデルが保存されました。",
@@ -4049,8 +4049,7 @@
     "reactSettingsProviderConnectionDescription": "プロバイダー名、OpenAI 互換エンドポイント、およびオプションの API キー。",
     "reactSettingsApiKeyKeepPlaceholder": "API キー (保持する場合は空白のままにします)",
     "reactSettingsModelIdsPlaceholder": "カンマで区切られたモデル ID",
-    "reactSettingsEnableReasoning": "推論の努力を可能にする",
-    "reactSettingsModelsDiscovered": "利用可能なモデルが見つかりました。",
+    "reactSettingsModelsDiscovered": "利用可能なモデルと推論オプションを検出しました。",
     "reactSettingsProviderSaved": "カスタムプロバイダーが保存され、モデルがリロードされました。",
     "reactSettingsSaveProvider": "プロバイダーを保存",
     "reactSettingsProviderDeleted": "カスタムプロバイダーが削除されました。",
@@ -4222,7 +4221,8 @@
     "settingsMemoryAddedInline": "追加",
     "settingsMemoryAddedDivider": "追加 ·",
     "settingsMemoryProcessedDivider": "処理済み ·",
-    "settingsMemorySkippedInline": "スキップ"
+    "settingsMemorySkippedInline": "スキップ",
+    "reactSettingsReasoningFromMetadata": "推論オプションは、この API が返すモデルのメタデータに基づきます。"
   },
   "ko": {
     "dreamOff": "메모리: 꺼짐",
@@ -5062,7 +5062,7 @@
     "reactSettingsCurrentModelDescription": "활성 세션에 즉시 적용됩니다.",
     "reactSettingsChooseModel": "모델 선택",
     "reactSettingsReasoningEffort": "추론 노력",
-    "reactSettingsReasoningAvailability": "가용성은 현재 모델에 따라 다릅니다.",
+    "reactSettingsReasoningAvailability": "현재 모델 제공업체가 보고한 옵션입니다.",
     "reactSettingsNewSessionDefaults": "새 세션 기본값",
     "reactSettingsNewSessionOnly": "새로 생성된 세션에만 사용됩니다.",
     "reactSettingsDefaultModelSaved": "기본 모델이 저장되었습니다.",
@@ -5104,8 +5104,7 @@
     "reactSettingsProviderConnectionDescription": "공급자 이름, OpenAI 호환 엔드포인트 및 선택적 API 키.",
     "reactSettingsApiKeyKeepPlaceholder": "API 키(유지하려면 비워두세요)",
     "reactSettingsModelIdsPlaceholder": "쉼표로 구분된 모델 ID",
-    "reactSettingsEnableReasoning": "추론 노력 활성화",
-    "reactSettingsModelsDiscovered": "사용 가능한 모델이 검색되었습니다.",
+    "reactSettingsModelsDiscovered": "사용 가능한 모델과 추론 옵션을 찾았습니다.",
     "reactSettingsProviderSaved": "맞춤 공급자가 저장되고 모델이 다시 로드되었습니다.",
     "reactSettingsSaveProvider": "공급자 저장",
     "reactSettingsProviderDeleted": "맞춤 제공업체가 삭제되었습니다.",
@@ -5277,7 +5276,8 @@
     "settingsMemoryAddedInline": "추가됨",
     "settingsMemoryAddedDivider": "추가됨 ·",
     "settingsMemoryProcessedDivider": "처리됨 ·",
-    "settingsMemorySkippedInline": "건너뜀"
+    "settingsMemorySkippedInline": "건너뜀",
+    "reactSettingsReasoningFromMetadata": "추론 옵션은 이 API가 반환한 모델 메타데이터에서 가져옵니다."
   },
   "es": {
     "dreamOff": "Memoria: Apagada",
@@ -6117,7 +6117,7 @@
     "reactSettingsCurrentModelDescription": "Aplicado a la sesión activa inmediatamente.",
     "reactSettingsChooseModel": "Elige modelo",
     "reactSettingsReasoningEffort": "esfuerzo de razonamiento",
-    "reactSettingsReasoningAvailability": "La disponibilidad depende del modelo actual.",
+    "reactSettingsReasoningAvailability": "Opciones informadas por el proveedor del modelo actual.",
     "reactSettingsNewSessionDefaults": "Nuevos valores predeterminados de sesión",
     "reactSettingsNewSessionOnly": "Se utiliza solo para sesiones recién creadas.",
     "reactSettingsDefaultModelSaved": "Modelo predeterminado guardado.",
@@ -6159,8 +6159,7 @@
     "reactSettingsProviderConnectionDescription": "Nombre del proveedor, punto final compatible con OpenAI y clave API opcional.",
     "reactSettingsApiKeyKeepPlaceholder": "Clave API (déjela en blanco para conservarla)",
     "reactSettingsModelIdsPlaceholder": "ID de modelo, separados por comas",
-    "reactSettingsEnableReasoning": "Habilitar el esfuerzo de razonamiento",
-    "reactSettingsModelsDiscovered": "Modelos disponibles descubiertos.",
+    "reactSettingsModelsDiscovered": "Modelos disponibles y opciones de razonamiento detectados.",
     "reactSettingsProviderSaved": "Proveedor personalizado guardado y modelos recargados.",
     "reactSettingsSaveProvider": "Guardar proveedor",
     "reactSettingsProviderDeleted": "Proveedor personalizado eliminado.",
@@ -6332,7 +6331,8 @@
     "settingsMemoryAddedInline": "añadido",
     "settingsMemoryAddedDivider": "añadido ·",
     "settingsMemoryProcessedDivider": "procesado ·",
-    "settingsMemorySkippedInline": "omitido"
+    "settingsMemorySkippedInline": "omitido",
+    "reactSettingsReasoningFromMetadata": "Las opciones de razonamiento provienen de los metadatos del modelo que devuelve esta API."
   },
   "fr": {
     "dreamOff": "Mémoire : Désactivé",
@@ -7172,7 +7172,7 @@
     "reactSettingsCurrentModelDescription": "Appliqué immédiatement à la session active.",
     "reactSettingsChooseModel": "Choisir le modèle",
     "reactSettingsReasoningEffort": "Effort de raisonnement",
-    "reactSettingsReasoningAvailability": "La disponibilité dépend du modèle actuel.",
+    "reactSettingsReasoningAvailability": "Options signalées par le fournisseur du modèle actuel.",
     "reactSettingsNewSessionDefaults": "Paramètres par défaut des nouvelles sessions",
     "reactSettingsNewSessionOnly": "Utilisé uniquement pour les sessions nouvellement créées.",
     "reactSettingsDefaultModelSaved": "Modèle par défaut enregistré.",
@@ -7214,8 +7214,7 @@
     "reactSettingsProviderConnectionDescription": "Nom du fournisseur, point de terminaison compatible OpenAI et clé API facultative.",
     "reactSettingsApiKeyKeepPlaceholder": "Clé API (laisser vide pour conserver)",
     "reactSettingsModelIdsPlaceholder": "ID de modèle, séparés par des virgules",
-    "reactSettingsEnableReasoning": "Activer l’effort de raisonnement",
-    "reactSettingsModelsDiscovered": "Modèles disponibles découverts.",
+    "reactSettingsModelsDiscovered": "Modèles disponibles et options de raisonnement détectés.",
     "reactSettingsProviderSaved": "Fournisseur personnalisé enregistré et modèles rechargés.",
     "reactSettingsSaveProvider": "Enregistrer le fournisseur",
     "reactSettingsProviderDeleted": "Fournisseur personnalisé supprimé.",
@@ -7387,7 +7386,8 @@
     "settingsMemoryAddedInline": "ajouté",
     "settingsMemoryAddedDivider": "ajouté ·",
     "settingsMemoryProcessedDivider": "traité ·",
-    "settingsMemorySkippedInline": "ignoré"
+    "settingsMemorySkippedInline": "ignoré",
+    "reactSettingsReasoningFromMetadata": "Les options de raisonnement proviennent des métadonnées de modèle renvoyées par cette API."
   },
   "de": {
     "dreamOff": "Speicher: Aus",
@@ -8227,7 +8227,7 @@
     "reactSettingsCurrentModelDescription": "Wird sofort auf die aktive Sitzung angewendet.",
     "reactSettingsChooseModel": "Modell auswählen",
     "reactSettingsReasoningEffort": "Argumentationsaufwand",
-    "reactSettingsReasoningAvailability": "Die Verfügbarkeit hängt vom aktuellen Modell ab.",
+    "reactSettingsReasoningAvailability": "Optionen, die der aktuelle Modellanbieter meldet.",
     "reactSettingsNewSessionDefaults": "Neue Sitzungsvorgaben",
     "reactSettingsNewSessionOnly": "Wird nur für neu erstellte Sitzungen verwendet.",
     "reactSettingsDefaultModelSaved": "Standardmodell gespeichert.",
@@ -8269,8 +8269,7 @@
     "reactSettingsProviderConnectionDescription": "Anbietername, OpenAI-kompatibler Endpunkt und optionaler API-Schlüssel.",
     "reactSettingsApiKeyKeepPlaceholder": "API-Schlüssel (zum Behalten leer lassen)",
     "reactSettingsModelIdsPlaceholder": "Modell-IDs, durch Kommas getrennt",
-    "reactSettingsEnableReasoning": "Ermöglichen Sie Argumentationsbemühungen",
-    "reactSettingsModelsDiscovered": "Verfügbare Modelle entdeckt.",
+    "reactSettingsModelsDiscovered": "Verfügbare Modelle und Reasoning-Optionen gefunden.",
     "reactSettingsProviderSaved": "Benutzerdefinierter Anbieter gespeichert und Modelle neu geladen.",
     "reactSettingsSaveProvider": "Anbieter speichern",
     "reactSettingsProviderDeleted": "Benutzerdefinierter Anbieter gelöscht.",
@@ -8442,7 +8441,8 @@
     "settingsMemoryAddedInline": "hinzugefügt",
     "settingsMemoryAddedDivider": "hinzugefügt ·",
     "settingsMemoryProcessedDivider": "verarbeitet ·",
-    "settingsMemorySkippedInline": "übersprungen"
+    "settingsMemorySkippedInline": "übersprungen",
+    "reactSettingsReasoningFromMetadata": "Reasoning-Optionen stammen aus den Modell-Metadaten, die diese API zurückgibt."
   },
   "pt": {
     "dreamOff": "Memória: Desligado",
@@ -9282,7 +9282,7 @@
     "reactSettingsCurrentModelDescription": "Aplicado imediatamente à sessão ativa.",
     "reactSettingsChooseModel": "Escolha o modelo",
     "reactSettingsReasoningEffort": "Esforço de raciocínio",
-    "reactSettingsReasoningAvailability": "A disponibilidade depende do modelo atual.",
+    "reactSettingsReasoningAvailability": "Opções informadas pelo provedor do modelo atual.",
     "reactSettingsNewSessionDefaults": "Novos padrões de sessão",
     "reactSettingsNewSessionOnly": "Usado apenas para sessões recém-criadas.",
     "reactSettingsDefaultModelSaved": "Modelo padrão salvo.",
@@ -9324,8 +9324,7 @@
     "reactSettingsProviderConnectionDescription": "Nome do provedor, endpoint compatível com OpenAI e chave de API opcional.",
     "reactSettingsApiKeyKeepPlaceholder": "Chave API (deixe em branco para manter)",
     "reactSettingsModelIdsPlaceholder": "IDs de modelo, separados por vírgulas",
-    "reactSettingsEnableReasoning": "Habilite o esforço de raciocínio",
-    "reactSettingsModelsDiscovered": "Modelos disponíveis descobertos.",
+    "reactSettingsModelsDiscovered": "Modelos disponíveis e opções de raciocínio descobertos.",
     "reactSettingsProviderSaved": "Provedor personalizado salvo e modelos recarregados.",
     "reactSettingsSaveProvider": "Salvar provedor",
     "reactSettingsProviderDeleted": "Provedor personalizado excluído.",
@@ -9497,7 +9496,8 @@
     "settingsMemoryAddedInline": "adicionado",
     "settingsMemoryAddedDivider": "adicionado ·",
     "settingsMemoryProcessedDivider": "processado ·",
-    "settingsMemorySkippedInline": "ignorado"
+    "settingsMemorySkippedInline": "ignorado",
+    "reactSettingsReasoningFromMetadata": "As opções de raciocínio vêm dos metadados de modelo retornados por esta API."
   },
   "ru": {
     "dreamOff": "Память: Выкл.",
@@ -10337,7 +10337,7 @@
     "reactSettingsCurrentModelDescription": "Применяется к активному сеансу немедленно.",
     "reactSettingsChooseModel": "Выберите модель",
     "reactSettingsReasoningEffort": "Усилие рассуждения",
-    "reactSettingsReasoningAvailability": "Доступность зависит от текущей модели.",
+    "reactSettingsReasoningAvailability": "Параметры, сообщённые текущим поставщиком модели.",
     "reactSettingsNewSessionDefaults": "Новые настройки сеанса по умолчанию",
     "reactSettingsNewSessionOnly": "Используется только для вновь созданных сеансов.",
     "reactSettingsDefaultModelSaved": "Модель по умолчанию сохранена.",
@@ -10379,8 +10379,7 @@
     "reactSettingsProviderConnectionDescription": "Имя поставщика, конечная точка, совместимая с OpenAI, и дополнительный ключ API.",
     "reactSettingsApiKeyKeepPlaceholder": "Ключ API (оставьте пустым, чтобы сохранить)",
     "reactSettingsModelIdsPlaceholder": "Идентификаторы моделей, разделенные запятыми.",
-    "reactSettingsEnableReasoning": "Включить рассуждения",
-    "reactSettingsModelsDiscovered": "Обнаружены доступные модели.",
+    "reactSettingsModelsDiscovered": "Найдены доступные модели и параметры рассуждения.",
     "reactSettingsProviderSaved": "Пользовательский поставщик сохранен, модели перезагружены.",
     "reactSettingsSaveProvider": "Сохранить поставщика",
     "reactSettingsProviderDeleted": "Пользовательский поставщик удален.",
@@ -10552,7 +10551,8 @@
     "settingsMemoryAddedInline": "добавлено",
     "settingsMemoryAddedDivider": "добавлено ·",
     "settingsMemoryProcessedDivider": "обработано ·",
-    "settingsMemorySkippedInline": "пропущено"
+    "settingsMemorySkippedInline": "пропущено",
+    "reactSettingsReasoningFromMetadata": "Параметры рассуждения берутся из метаданных модели, которые возвращает этот API."
   },
   "it": {
     "dreamOff": "Memoria: disattivata",
@@ -11392,7 +11392,7 @@
     "reactSettingsCurrentModelDescription": "Applicato immediatamente alla sessione attiva.",
     "reactSettingsChooseModel": "Scegli il modello",
     "reactSettingsReasoningEffort": "Sforzo di ragionamento",
-    "reactSettingsReasoningAvailability": "La disponibilità dipende dal modello attuale.",
+    "reactSettingsReasoningAvailability": "Opzioni segnalate dal provider del modello corrente.",
     "reactSettingsNewSessionDefaults": "Impostazioni predefinite della nuova sessione",
     "reactSettingsNewSessionOnly": "Utilizzato solo per le sessioni appena create.",
     "reactSettingsDefaultModelSaved": "Modello predefinito salvato.",
@@ -11434,8 +11434,7 @@
     "reactSettingsProviderConnectionDescription": "Nome del provider, endpoint compatibile con OpenAI e chiave API opzionale.",
     "reactSettingsApiKeyKeepPlaceholder": "Chiave API (lascia vuoto per mantenerlo)",
     "reactSettingsModelIdsPlaceholder": "ID modello, separati da virgole",
-    "reactSettingsEnableReasoning": "Abilita lo sforzo di ragionamento",
-    "reactSettingsModelsDiscovered": "Modelli disponibili scoperti.",
+    "reactSettingsModelsDiscovered": "Modelli disponibili e opzioni di ragionamento rilevati.",
     "reactSettingsProviderSaved": "Provider personalizzato salvato e modelli ricaricati.",
     "reactSettingsSaveProvider": "Salva fornitore",
     "reactSettingsProviderDeleted": "Provider personalizzato eliminato.",
@@ -11607,6 +11606,7 @@
     "settingsMemoryAddedInline": "aggiunto",
     "settingsMemoryAddedDivider": "aggiunto ·",
     "settingsMemoryProcessedDivider": "elaborato ·",
-    "settingsMemorySkippedInline": "saltato"
+    "settingsMemorySkippedInline": "saltato",
+    "reactSettingsReasoningFromMetadata": "Le opzioni di ragionamento provengono dai metadati del modello restituiti da questa API."
   }
 }));

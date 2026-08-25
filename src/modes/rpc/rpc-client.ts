@@ -6,7 +6,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/metis-agent-core";
-import type { ImageContent } from "@earendil-works/metis-ai";
+import type { ImageContent, ThinkingOption } from "@earendil-works/metis-ai";
 import type { SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
@@ -47,6 +47,8 @@ export interface ModelInfo {
 	reasoning: boolean;
 	/** Thinking levels accepted by this model after provider/model normalization. */
 	thinkingLevels: ThinkingLevel[];
+	/** Provider-native thinking options displayed by clients. */
+	thinkingOptions: ThinkingOption[];
 }
 
 export type RpcEventListener = (event: AgentEvent) => void;

@@ -288,6 +288,7 @@ describe("server mode", () => {
 			cwd: string;
 			sessionId: string;
 			thinkingLevels: string[];
+			thinkingOptions: Array<{ id: string; label: string; value: string }>;
 			supportsThinking: boolean;
 			followUpMessages: string[];
 			runningSubagentIds: string[];
@@ -298,6 +299,7 @@ describe("server mode", () => {
 		expect(state.sessionId).toBe("session-1");
 		expect(state.cwd).toBe("/tmp");
 		expect(state.thinkingLevels).toEqual(["off", "low", "medium", "high"]);
+		expect(state.thinkingOptions.map((option) => option.id)).toEqual(state.thinkingLevels);
 		expect(state.supportsThinking).toBe(true);
 		expect(state.followUpMessages).toEqual(["follow-up queued"]);
 		expect(state.runningSubagentIds).toEqual(["job-1"]);
@@ -307,7 +309,7 @@ describe("server mode", () => {
 
 		const providerModels = await fetch(`${handle.address.url}/config/providers`).then((response) => response.json());
 		expect(providerModels).toEqual({
-			models: [{ provider: "test", id: "model-1", name: "Test Model", thinkingLevels: ["off"] }],
+			models: [{ provider: "test", id: "model-1", name: "Test Model", thinkingLevels: ["off"], thinkingOptions: [] }],
 		});
 
 		const modelResponse = await fetch(`${handle.address.url}/session/model`, {

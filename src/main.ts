@@ -764,7 +764,7 @@ export async function main(args: string[], options?: MainOptions) {
 					parentConfig: {
 						model: parsed.model,
 						provider: parsed.provider,
-						thinking: parsed.thinking,
+						thinking: parsed.thinking as any,
 						tools: sessionOptions.tools,
 					},
 				});

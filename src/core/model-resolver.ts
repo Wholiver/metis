@@ -6,7 +6,7 @@ import type { ThinkingLevel } from "@earendil-works/metis-agent-core";
 import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@earendil-works/metis-ai";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
-import { isValidThinkingLevel } from "../cli/args.ts";
+import { isKnownThinkingLevel } from "../cli/args.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 
@@ -229,7 +229,7 @@ export function parseModelPattern(
 	const prefix = pattern.substring(0, lastColonIndex);
 	const suffix = pattern.substring(lastColonIndex + 1);
 
-	if (isValidThinkingLevel(suffix)) {
+	if (isKnownThinkingLevel(suffix)) {
 		// Valid thinking level - recurse on prefix and use this level
 		const result = parseModelPattern(prefix, availableModels, options);
 		if (result.model) {
@@ -303,7 +303,7 @@ export async function resolveModelScopeWithDiagnostics(
 
 			if (colonIdx !== -1) {
 				const suffix = pattern.substring(colonIdx + 1);
-				if (isValidThinkingLevel(suffix)) {
+				if (isKnownThinkingLevel(suffix)) {
 					thinkingLevel = suffix;
 					globPattern = pattern.substring(0, colonIdx);
 				}
@@ -512,7 +512,7 @@ export function resolveCliModel(options: {
 			const lastColon = pattern.lastIndexOf(":");
 			if (lastColon !== -1) {
 				const suffix = pattern.substring(lastColon + 1);
-				if (isValidThinkingLevel(suffix)) {
+				if (isKnownThinkingLevel(suffix)) {
 					fallbackPattern = pattern.substring(0, lastColon);
 					fallbackThinking = suffix;
 				}

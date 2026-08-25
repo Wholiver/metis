@@ -1,4 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/metis-agent-core";
+import type { ThinkingOption } from "@earendil-works/metis-ai";
 import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@earendil-works/metis-tui";
 import { getSelectListTheme } from "../theme/theme.ts";
 import { t } from "../i18n/index.ts";
@@ -9,7 +10,7 @@ const THINKING_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	maxPrimaryColumnWidth: 32,
 };
 
-const LEVEL_DESCRIPTION_KEYS = {
+const LEVEL_DESCRIPTION_KEYS: Partial<Record<ThinkingLevel, string>> = {
 	off: "thinking.off",
 	minimal: "thinking.minimal",
 	low: "thinking.low",
@@ -26,16 +27,16 @@ export class ThinkingSelectorComponent extends Container {
 
 	constructor(
 		currentLevel: ThinkingLevel,
-		availableLevels: ThinkingLevel[],
+		availableOptions: ThinkingOption[],
 		onSelect: (level: ThinkingLevel) => void,
 		onCancel: () => void,
 	) {
 		super();
 
-		const thinkingLevels: SelectItem[] = availableLevels.map((level) => ({
-			value: level,
-			label: level,
-			description: t(LEVEL_DESCRIPTION_KEYS[level]),
+		const thinkingLevels: SelectItem[] = availableOptions.map((option) => ({
+			value: option.id,
+			label: option.label,
+			description: LEVEL_DESCRIPTION_KEYS[option.id] ? t(LEVEL_DESCRIPTION_KEYS[option.id]! as any) : `Provider value: ${option.value}`,
 		}));
 
 		// Add top border

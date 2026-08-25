@@ -34,6 +34,40 @@ function normalizeModelIds(modelIds) {
 	return [...new Set((Array.isArray(modelIds) ? modelIds : []).map((id) => String(id || "").trim()).filter(Boolean))];
 }
 
+function normalizeThinkingOption(value) {
+	if (typeof value === "string" && value.trim()) {
+		const raw = value.trim();
+		return { id: /^(?:off|none|disabled)$/i.test(raw) ? "off" : raw, label: raw, value: raw };
+	}
+	if (!value || typeof value !== "object") return undefined;
+	const raw = [value.value, value.id, value.name].find((candidate) => typeof candidate === "string" && candidate.trim());
+	if (!raw) return undefined;
+	return {
+		id: /^(?:off|none|disabled)$/i.test(raw) ? "off" : raw.trim(),
+		label: typeof value.label === "string" && value.label.trim() ? value.label.trim() : raw.trim(),
+		value: raw.trim(),
+	};
+}
+
+function extractProviderThinkingOptions(item) {
+	if (!item || typeof item !== "object") return [];
+	const candidates = [
+		item.supported_reasoning_efforts, item.reasoning_efforts,
+		item.supported_thinking_levels, item.thinking_levels,
+		item.capabilities?.reasoning?.efforts, item.capabilities?.reasoning?.levels,
+		item.capabilities?.thinking?.levels, item.reasoning?.efforts,
+		item.reasoning?.levels, item.thinking?.levels,
+	];
+	const exposed = candidates.find(Array.isArray);
+	if (!exposed) return [];
+	const byId = new Map();
+	for (const value of exposed) {
+		const option = normalizeThinkingOption(value);
+		if (option && !byId.has(option.id)) byId.set(option.id, option);
+	}
+	return [...byId.values()];
+}
+
 function summarizeProvider(providerId, provider, modelsPath) {
 	const models = Array.isArray(provider.models) ? provider.models : [];
 	return {
@@ -42,6 +76,10 @@ function summarizeProvider(providerId, provider, modelsPath) {
 		name: String(provider.name || providerId).trim(),
 		baseUrl: String(provider.baseUrl || "").trim(),
 		reasoning: models.some((model) => model && typeof model === "object" && model.reasoning === true),
+		models: models.map((model) => ({
+			id: typeof model === "string" ? model : String(model?.id || ""),
+			thinkingOptions: Array.isArray(model?.thinkingOptions) ? model.thinkingOptions : [],
+		})).filter((model) => model.id),
 		modelIds: normalizeModelIds(models.map((model) => typeof model === "string" ? model : model?.id)),
 		modelsPath,
 	};
@@ -108,8 +146,15 @@ async function discoverCustomProviderModels(baseUrl, apiKey, options = {}) {
 			if (!response.ok) continue;
 			const data = await response.json();
 			const items = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
-			const modelIds = normalizeModelIds(items.map((item) => typeof item === "string" ? item : item?.id));
-			if (modelIds.length > 0) return modelIds;
+			const models = items.map((item) => ({
+				id: typeof item === "string" ? item.trim() : typeof item?.id === "string" ? item.id.trim() : "",
+				thinkingOptions: extractProviderThinkingOptions(item),
+			})).filter((model) => model.id);
+			if (models.length > 0) {
+				const byId = new Map();
+				for (const model of models) if (!byId.has(model.id)) byId.set(model.id, model);
+				return [...byId.values()];
+			}
 		} catch {}
 	}
 	return [];
@@ -139,13 +184,26 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 		: {};
 	const existingModels = Array.isArray(existing.models) ? existing.models : [];
 	let modelIds = normalizeModelIds(config.modelIds);
-	if (modelIds.length === 0 && apiKey) modelIds = await discoverCustomProviderModels(baseUrl, apiKey, options);
+	let discoveredModels = Array.isArray(config.discoveredModels) ? config.discoveredModels : undefined;
+	if (modelIds.length === 0 && apiKey) {
+		discoveredModels = await discoverCustomProviderModels(baseUrl, apiKey, options);
+		modelIds = discoveredModels.map((model) => model.id);
+	}
 	if (modelIds.length === 0) modelIds = normalizeModelIds(existingModels.map((model) => typeof model === "string" ? model : model?.id));
 	if (modelIds.length === 0) modelIds = ["default"];
 	const modelsById = new Map(existingModels.filter((model) => model && typeof model === "object").map((model) => [model.id, model]));
+	const discoveredById = new Map((discoveredModels || []).map((model) => [model.id, model]));
 	const models = modelIds.map((id) => {
 		const model = { ...(modelsById.get(id) || {}), id, input: modelsById.get(id)?.input || ["text", "image"] };
-		if (reasoning) model.reasoning = true;
+		if (discoveredModels !== undefined) {
+			// Discovery ran: the API's own metadata is authoritative. An empty list
+			// means the endpoint exposed no thinking levels, so thinking stays hidden.
+			const thinkingOptions = discoveredById.get(id)?.thinkingOptions || [];
+			model.reasoning = thinkingOptions.some((option) => option.id !== "off");
+			model.thinkingOptions = thinkingOptions;
+			if (thinkingOptions.length > 0) model.thinkingLevelMap = Object.fromEntries(thinkingOptions.map((option) => [option.id, option.value]));
+			else delete model.thinkingLevelMap;
+		} else if (reasoning) model.reasoning = true;
 		else delete model.reasoning;
 		return model;
 	});
@@ -174,6 +232,7 @@ module.exports = {
 	CUSTOM_PROVIDER_ID_PREFIX,
 	deleteCustomProviderConfig,
 	discoverCustomProviderModels,
+	extractProviderThinkingOptions,
 	isCustomProviderId,
 	listCustomProviderConfigs,
 	saveCustomProviderConfig,

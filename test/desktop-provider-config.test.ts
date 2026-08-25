@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const require = createRequire(import.meta.url);
 const providerConfig = require("../desktop/provider-config.cjs") as {
 	deleteCustomProviderConfig(agentDir: string, providerId: string): Promise<boolean>;
-	discoverCustomProviderModels(baseUrl: string, apiKey: string, options?: { fetchImpl?: typeof fetch }): Promise<string[]>;
+	discoverCustomProviderModels(baseUrl: string, apiKey: string, options?: { fetchImpl?: typeof fetch }): Promise<Array<{ id: string; thinkingOptions: Array<{ id: string; label: string; value: string }> }>>;
 	listCustomProviderConfigs(agentDir: string): Promise<Array<Record<string, unknown>>>;
 	saveCustomProviderConfig(
 		agentDir: string,
@@ -31,7 +31,7 @@ describe("Desktop custom Provider configuration", () => {
 	it("creates multiple providers and discovers models automatically", async () => {
 		const fetchImpl = vi.fn().mockResolvedValue({
 			ok: true,
-			json: async () => ({ data: [{ id: "model-a" }, { id: "model-b" }, { id: "model-a" }] }),
+			json: async () => ({ data: [{ id: "model-a", supported_reasoning_efforts: ["none", "low", { value: "max", label: "Maximum" }] }, { id: "model-b" }, { id: "model-a" }] }),
 		});
 
 		const first = await providerConfig.saveCustomProviderConfig(
@@ -107,11 +107,33 @@ describe("Desktop custom Provider configuration", () => {
 
 		await expect(
 			providerConfig.discoverCustomProviderModels("https://proxy.example", "secret", { fetchImpl }),
-		).resolves.toEqual(["alpha"]);
+		).resolves.toEqual([{ id: "alpha", thinkingOptions: [] }]);
 		expect(fetchImpl.mock.calls.map((call) => call[0])).toEqual([
 			"https://proxy.example/v1/models",
 			"https://proxy.example/models",
 		]);
 		expect(fetchImpl.mock.calls[0]?.[1]?.headers.Authorization).toBe("Bearer secret");
+	});
+
+	it("persists only reasoning options explicitly exposed by each model", async () => {
+		const fetchImpl = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({ data: [
+				{ id: "native", capabilities: { reasoning: { efforts: ["disabled", { id: "balanced", label: "Balanced" }] } } },
+				{ id: "plain" },
+			] }),
+		});
+
+		await providerConfig.saveCustomProviderConfig(agentDir, {
+			name: "Native",
+			baseUrl: "https://native.example/v1",
+			apiKey: "secret",
+		}, { fetchImpl });
+
+		const config = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
+		expect(config.providers["custom-native"].models).toMatchObject([
+			{ id: "native", reasoning: true, thinkingOptions: [{ id: "off", label: "disabled", value: "disabled" }, { id: "balanced", label: "Balanced", value: "balanced" }] },
+			{ id: "plain", reasoning: false, thinkingOptions: [] },
+		]);
 	});
 });

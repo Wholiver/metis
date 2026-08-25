@@ -15,7 +15,7 @@ import { useMetisServer } from './hooks/useMetisServer';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { Onboarding, shouldShowOnboarding } from './components/onboarding/Onboarding';
 import { SkillCommand } from './components/chat/SkillPicker';
-import { Agent, Message, ModelOption, PendingUserInput, ProjectItem, WorkflowPlanState } from './types';
+import { Agent, Message, ModelOption, PendingUserInput, ProjectItem, ThinkingOption, WorkflowPlanState } from './types';
 
 const PROJECTS_STORAGE_KEY = 'metis.desktop.projects.v1';
 const ACTIVE_PROJECT_STORAGE_KEY = 'metis.desktop.activeProject.v1';
@@ -53,6 +53,13 @@ const MODEL_SWITCHER_CAPTURE_MODELS: ModelOption[] = [
   { provider: 'openai-codex', id: 'gpt-5.6-codex', name: 'GPT-5.6 Codex', reasoning: true },
   { provider: 'anthropic', id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true },
   { provider: 'google', id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', reasoning: true },
+];
+const MODEL_SWITCHER_CAPTURE_THINKING_OPTIONS: ThinkingOption[] = [
+  { id: 'off', label: 'None', value: 'none' },
+  { id: 'low', label: 'Low', value: 'low' },
+  { id: 'medium', label: 'Medium', value: 'medium' },
+  { id: 'high', label: 'High', value: 'high' },
+  { id: 'xhigh', label: 'Xhigh', value: 'xhigh' },
 ];
 
 const SKILL_PICKER_CAPTURE_SKILLS: SkillCommand[] = [
@@ -259,6 +266,7 @@ export function App() {
     selectModel,
     thinkingLevel,
     thinkingLevels,
+    thinkingOptions,
     supportsThinking,
     isChangingThinking,
     selectThinkingLevel,
@@ -403,6 +411,7 @@ export function App() {
   const displayedModels = captureModelSwitcher ? MODEL_SWITCHER_CAPTURE_MODELS : models;
   const displayedActiveModel = captureModelSwitcher ? MODEL_SWITCHER_CAPTURE_MODELS[0] : activeModel;
   const displayedThinkingLevels = captureModelSwitcher ? ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] : thinkingLevels;
+  const displayedThinkingOptions = captureModelSwitcher ? MODEL_SWITCHER_CAPTURE_THINKING_OPTIONS : thinkingOptions;
   const displayedThinkingLevel = captureModelSwitcher ? 'medium' : thinkingLevel;
   const displayedSupportsThinking = captureModelSwitcher || supportsThinking;
   const displayedWorkflowPlan = capturePlanPoints
@@ -711,6 +720,7 @@ export function App() {
         isChangingModel={isChangingModel}
         thinkingLevel={displayedThinkingLevel}
         thinkingLevels={displayedThinkingLevels}
+        thinkingOptions={displayedThinkingOptions}
         supportsThinking={displayedSupportsThinking}
         onSelectThinkingLevel={selectThinkingLevel}
         isChangingThinking={isChangingThinking}
@@ -766,6 +776,7 @@ export function App() {
         activeModel={activeModel}
         thinkingLevel={thinkingLevel}
         thinkingLevels={thinkingLevels}
+        thinkingOptions={thinkingOptions}
         supportsThinking={supportsThinking}
         collaborationMode={collaborationMode}
         activeProject={activeProject}

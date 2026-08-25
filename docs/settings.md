@@ -82,9 +82,9 @@ For VS Code, include `--wait` so metis resumes after the editor exits:
 
 ### Telemetry and update checks
 
-`enableInstallTelemetry` only controls the anonymous install/update ping to `https://metis.dev/api/report-install`. Opting out of telemetry does not disable update checks; Metis can still fetch `https://metis.dev/api/latest-version` to look for the latest version.
+`enableInstallTelemetry` only controls the anonymous install/update ping to `https://metis.dev/api/report-install`. Opting out of telemetry does not disable update checks; Metis can still fetch the `latest-version.json` manifest hosted on GitHub to look for the latest version. See [Update Check](update-check.md).
 
-Set `METIS_SKIP_VERSION_CHECK=1` to disable the Metis version update check. Use `--offline` or `METIS_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
+Set `METIS_SKIP_VERSION_CHECK=1` to disable the Metis version update check. Use `--offline` or `METIS_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry. Set `METIS_VERSION_MANIFEST_URLS` to a comma-separated list of manifest URLs to replace the default source.
 
 ### Network
 

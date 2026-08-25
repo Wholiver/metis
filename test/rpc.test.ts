@@ -40,6 +40,8 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(state.model).toBeDefined();
 		expect(state.model?.provider).toBe("anthropic");
 		expect(state.model?.id).toBe("claude-sonnet-4-5");
+		expect(state.thinkingOptions.map((option) => option.id)).toEqual(state.thinkingLevels);
+		expect(state.supportsThinking).toBe(state.thinkingOptions.some((option) => option.id !== "off"));
 		expect(state.isStreaming).toBe(false);
 		expect(state.messageCount).toBe(0);
 	}, 30000);
@@ -222,6 +224,7 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 			expect(model.contextWindow).toBeGreaterThan(0);
 			expect(typeof model.reasoning).toBe("boolean");
 			expect(model.thinkingLevels.length).toBeGreaterThan(0);
+			expect(Array.isArray(model.thinkingOptions)).toBe(true);
 			if (!model.reasoning) expect(model.thinkingLevels).toEqual(["off"]);
 		}
 	}, 30000);

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, ChevronRight, LoaderCircle } from 'lucide-react';
-import { ModelOption } from '../../types';
+import { ModelOption, ThinkingOption } from '../../types';
 
 interface ModelSwitcherProps {
   models: ModelOption[];
@@ -11,6 +11,7 @@ interface ModelSwitcherProps {
   loading?: boolean;
   thinkingLevel?: string;
   thinkingLevels?: string[];
+  thinkingOptions?: ThinkingOption[];
   supportsThinking?: boolean;
   onSelectThinkingLevel?: (level: string) => void | Promise<void>;
   thinkingLoading?: boolean;
@@ -31,6 +32,10 @@ type ReasoningMenuState = {
 
 export function modelLabel(model?: ModelOption): string {
   return model?.name?.trim() || model?.id || 'Model';
+}
+
+export function thinkingOptionLabel(options: ThinkingOption[], id?: string): string | undefined {
+  return options.find((option) => option.id === id)?.label || id;
 }
 
 function sameModel(first?: ModelOption, second?: ModelOption): boolean {
@@ -54,6 +59,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
   loading = false,
   thinkingLevel,
   thinkingLevels = [],
+  thinkingOptions,
   supportsThinking = false,
   onSelectThinkingLevel,
   thinkingLoading = false,
@@ -69,8 +75,10 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
   const menuId = useId();
   const displayModel = resolveDisplayModel(activeModel, models);
   const currentLabel = modelLabel(displayModel);
+  const activeThinkingOptions = thinkingOptions || thinkingLevels.map((id) => ({ id, label: id, value: id }));
+  const currentThinkingLabel = thinkingOptionLabel(activeThinkingOptions, thinkingLevel);
   const triggerLabel = supportsThinking && thinkingLevel && thinkingLevel !== 'off'
-    ? `${currentLabel} · ${thinkingLevel}`
+    ? `${currentLabel} · ${currentThinkingLabel}`
     : currentLabel;
   const unavailable = disabled || loading || models.length === 0;
 
@@ -97,7 +105,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
       return;
     }
     updateMenuPosition();
-  }, [isOpen, models.length, thinkingLevels.length, updateMenuPosition]);
+  }, [isOpen, models.length, activeThinkingOptions.length, updateMenuPosition]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -154,8 +162,10 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
     options[nextIndex]?.focus();
   };
 
-  const supportsModelReasoning = (model: ModelOption) => (
-    Boolean(model.reasoning) || (sameModel(model, activeModel) && supportsThinking)
+  const optionsForModel = (model: ModelOption): ThinkingOption[] => (
+    Array.isArray(model.thinkingOptions)
+      ? model.thinkingOptions
+      : sameModel(model, activeModel) ? activeThinkingOptions : []
   );
 
   const keepReasoningMenuOpen = () => {
@@ -171,7 +181,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
     keepReasoningMenuOpen();
     const rect = target.getBoundingClientRect();
     const width = 154;
-    const estimatedHeight = thinkingLevels.length * 32 + 10;
+    const estimatedHeight = optionsForModel(model).length * 32 + 10;
     const right = rect.right + 8;
     setReasoningMenu({
       model,
@@ -200,7 +210,8 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
       <p className="px-2.5 pb-1 pt-0.5 text-[11px] font-medium text-slate-400">Model</p>
       {models.map((model) => {
         const selected = sameModel(model, activeModel);
-        const showReasoning = supportsModelReasoning(model) && thinkingLevels.length > 1 && Boolean(onSelectThinkingLevel);
+        const modelThinkingOptions = optionsForModel(model);
+        const showReasoning = modelThinkingOptions.length > 1 && Boolean(onSelectThinkingLevel);
         return (
           <React.Fragment key={`${model.provider}/${model.id}`}>
             <button
@@ -220,7 +231,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
               title={`${model.provider} · ${model.id}`}
             >
               <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-800">{modelLabel(model)}</span>
-              {showReasoning && <span className="shrink-0 text-[11px] font-medium capitalize text-slate-500">{thinkingLevel}</span>}
+              {showReasoning && selected && <span className="shrink-0 text-[11px] font-medium text-slate-500">{currentThinkingLabel}</span>}
               {selected ? <Check className="h-3.5 w-3.5 flex-none text-slate-700" /> : showReasoning
                 ? <ChevronRight className="h-3.5 w-3.5 flex-none text-slate-500" />
                 : <span className="h-3.5 w-3.5 flex-none" />}
@@ -243,25 +254,25 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
       style={{ left: reasoningMenu.left, top: reasoningMenu.top, width: 154 }}
       className="fixed z-[101] overflow-hidden rounded-[14px] border border-slate-200/90 bg-white p-1 shadow-[0_10px_28px_rgba(15,23,42,0.14)]"
     >
-      {thinkingLevels.map((level) => {
-        const selectedLevel = level === thinkingLevel && sameModel(reasoningMenu.model, activeModel);
+      {optionsForModel(reasoningMenu.model).map((option) => {
+        const selectedLevel = option.id === thinkingLevel && sameModel(reasoningMenu.model, activeModel);
         return (
           <button
-            key={level}
+            key={option.id}
             type="button"
             role="menuitemradio"
             aria-checked={selectedLevel}
             disabled={thinkingLoading || disabled}
             onClick={async () => {
               if (!sameModel(reasoningMenu.model, activeModel)) await onSelectModel(reasoningMenu.model);
-              await onSelectThinkingLevel?.(level);
+              await onSelectThinkingLevel?.(option.id);
               setIsOpen(false);
               setReasoningMenu(undefined);
               requestAnimationFrame(() => triggerRef.current?.focus());
             }}
-            className="flex min-h-8 w-full items-center gap-2 rounded-[9px] px-2.5 text-left text-[12px] font-medium capitalize text-slate-700 hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none disabled:opacity-45"
+            className="flex min-h-8 w-full items-center gap-2 rounded-[9px] px-2.5 text-left text-[12px] font-medium text-slate-700 hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none disabled:opacity-45"
           >
-            <span className="flex-1">{level}</span>
+            <span className="flex-1">{option.label}</span>
             <Check className={`h-3.5 w-3.5 ${selectedLevel ? 'opacity-100' : 'opacity-0'}`} />
           </button>
         );

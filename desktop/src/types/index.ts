@@ -166,11 +166,18 @@ export interface UserInputResponse {
 
 export type CollaborationMode = 'plan' | 'build';
 
+export interface ThinkingOption {
+  id: string;
+  label: string;
+  value: string;
+}
+
 export interface ModelOption {
   provider: string;
   id: string;
   name?: string;
   reasoning?: boolean;
+  thinkingOptions?: ThinkingOption[];
 }
 
 export interface RoutineItem {

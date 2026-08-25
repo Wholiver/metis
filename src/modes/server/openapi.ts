@@ -50,6 +50,7 @@ export function createServerOpenApiDocument() {
 		servers: [{ url: "http://127.0.0.1:4096" }],
 		paths: {
 			"/global/health": { get: operation("Server health", 200, json) },
+			"/global/update-check": { get: operation("Latest Metis release from the GitHub manifest", 200, json) },
 			"/desktop/work-stats": { get: operation("Desktop work and token activity", 200, json) },
 			"/event": {
 				get: {

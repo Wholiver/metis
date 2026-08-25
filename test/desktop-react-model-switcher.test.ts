@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { modelLabel, resolveDisplayModel } from '../desktop/src/components/chat/ModelSwitcher';
+import { modelLabel, resolveDisplayModel, thinkingOptionLabel } from '../desktop/src/components/chat/ModelSwitcher';
 
 describe('desktop React model switcher', () => {
   it('uses model display names with an id fallback', () => {
@@ -16,6 +16,13 @@ describe('desktop React model switcher', () => {
 
     expect(resolveDisplayModel(staleSessionModel, [catalogModel])).toBe(catalogModel);
     expect(modelLabel(resolveDisplayModel(staleSessionModel, [catalogModel]))).toBe('Gemini 3.7 Flash Medium');
+  });
+
+  it('shows provider-native thinking labels instead of internal IDs', () => {
+    expect(thinkingOptionLabel([
+      { id: 'off', label: 'None', value: 'none' },
+      { id: 'xhigh', label: 'Maximum', value: 'max' },
+    ], 'xhigh')).toBe('Maximum');
   });
 
   it('loads models and persists session model changes through Server', () => {
@@ -43,9 +50,9 @@ describe('desktop React model switcher', () => {
     expect(switcher).toContain("event.key === 'Escape'");
     expect(switcher).toContain('data-model-switcher');
     expect(switcher).toContain('data-reasoning-menu');
-    expect(switcher).toContain('Boolean(model.reasoning) || (sameModel(model, activeModel) && supportsThinking)');
+    expect(switcher).toContain('Array.isArray(model.thinkingOptions)');
     expect(switcher).toContain('data-model-reasoning={showReasoning');
-    expect(switcher).toContain('thinkingLevels.map((level) =>');
+    expect(switcher).toContain('optionsForModel(reasoningMenu.model).map((option) =>');
     expect(switcher).not.toContain("thinkingLevels.slice(");
     expect(switcher).toContain('const [reasoningMenu, setReasoningMenu] = useState<ReasoningMenuState>()');
     expect(switcher).toContain('onMouseEnter={(event) => showReasoning ? showReasoningMenu(model, event.currentTarget)');
