@@ -43,6 +43,7 @@ if (result.ok && result.data?.updateAvailable) {
 ```
 
 `update.check()` is exposed in [`desktop/preload.cjs`](../desktop/preload.cjs) and forwards through the `update:check` IPC handler in [`desktop/main.cjs`](../desktop/main.cjs) to the local Metis server, so the desktop shell and the CLI share one implementation. The outer `{ ok, status, data, error }` envelope is the standard shape of every desktop → server request; `ok: false` means the local server could not be reached at all (not that the update check failed).
+
 ### HTTP (any frontend)
 
 ```
@@ -74,6 +75,14 @@ Distinguish the three outcomes:
 The endpoint performs a live check on every call and can take up to 10 s (the request timeout) before reporting failure. Call it on app start and on explicit user action — do not poll it on a short interval.
 
 Note that `checkFailed: true` is also what you get when the user has disabled checks, so a frontend does not need to read the environment itself.
+
+## Shipped UI
+
+Both frontends are already wired; the sections above are for anything built on top of them.
+
+**CLI** — [`src/modes/interactive/interactive-mode.ts`](../src/modes/interactive/interactive-mode.ts) calls `checkForNewMetisVersion(version)` at startup and renders `showNewVersionNotification`. The box shows `metis update` plus a second line with the concrete package-manager command for this installation, derived from `getSelfUpdateCommand` / `getSelfUpdateUnavailableInstruction` in [`src/config.ts`](../src/config.ts) — so it honours the detected install method, a custom `npmCommand` setting, and a `packageName` change in the manifest. When no managed command applies it prints the fallback instruction instead of a command that would fail.
+
+**Desktop** — [`desktop/src/hooks/useUpdateCheck.ts`](../desktop/src/hooks/useUpdateCheck.ts) owns the state (`idle | checking | available | current | failed`), runs the check once on the first connected render, and exposes a manual `checkForUpdates()`. It is rendered as the *Software update* row of Settings → About in [`SettingsDialog.tsx`](../desktop/src/components/settings/SettingsDialog.tsx). Desktop does not self-update: when an update is available a **Download** button opens `RELEASES_URL` (`https://github.com/Wholiver/metis/releases/latest`) via the `external:open` IPC. New UI strings live in [`desktop/i18n-source.cjs`](../desktop/i18n-source.cjs) under the `reactSettingsUpdate*` keys — after editing them, regenerate the catalogs with `node desktop/scripts/generate-i18n-catalogs.mjs`.
 
 ## Environment variables
 

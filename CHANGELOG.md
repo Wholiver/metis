@@ -4,6 +4,13 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.2] - 2026-08-25
+
+### Desktop Update Check
+
+- Added a Desktop update check that reads the release manifest through the existing local backend, surfacing the available version and upgrade notice in Settings.
+- Documented the manifest contract and the desktop IPC channel used to reach it.
+
 ## [1.1.1] - 2026-08-25
 
 ### Model Catalog, Concurrent Desktop Sessions & Documentation

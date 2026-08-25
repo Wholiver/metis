@@ -26,6 +26,7 @@ import {
   X,
 } from 'lucide-react';
 import type { CollaborationMode, MemoryState, ModelOption, ProjectItem, ThinkingOption } from '../../types';
+import { RELEASES_URL, type UpdateCheckState } from '../../hooks/useUpdateCheck';
 import { translateExact } from '../../i18n';
 import { modelLabel } from '../chat/ModelSwitcher';
 
@@ -50,6 +51,8 @@ type SettingsDialogProps = {
   supportsThinking: boolean;
   collaborationMode: CollaborationMode;
   activeProject?: ProjectItem;
+  updateCheck: UpdateCheckState;
+  onCheckForUpdates: () => Promise<void> | void;
   onConnectServer: (options: { baseUrl: string; username: string; password?: string }) => Promise<boolean>;
   onChangeWorkspace: () => Promise<boolean>;
   onOpenOnboarding: () => void;
@@ -416,15 +419,33 @@ export function SettingsDialog(props: SettingsDialogProps) {
     <Row label="Share session" description="Create a private GitHub Gist link."><button className={buttonClass} disabled={disabled} onClick={() => void run(async () => { const result = await command('/share', 2 * 60_000); if (!result.url) throw new Error('Server did not return a share link'); await requireDesktop(desktop?.openExternal ? () => desktop.openExternal(result.url) : undefined, 'Open share link'); }, 'Share link created.')}><ChevronRight className="h-3.5 w-3.5" />Create link</button></Row>
   </Card></>;
 
-  async function exportSession(format: 'html' | 'jsonl') {
-    const target = await requireDesktop(desktop?.sessionFile?.save ? () => desktop.sessionFile.save(format) : undefined, 'Session export');
+  async function exportSession(format: 'html' | 'jsonl') {    const target = await requireDesktop(desktop?.sessionFile?.save ? () => desktop.sessionFile.save(format) : undefined, 'Session export');
     if (!target) return false;
     await command(`/export ${target}`, 10 * 60_000);
     return true;
   }
 
+  const { updateCheck } = props;
+  const updateStatus = updateCheck.status === 'checking' ? <Status>Checking…</Status>
+    : updateCheck.status === 'available' ? <Status tone="success">Update available</Status>
+      : updateCheck.status === 'current' ? <Status tone="success">Already the latest version</Status>
+        : updateCheck.status === 'failed' ? <Status tone="danger">Check failed</Status>
+          : null;
+  const updateDescription = updateCheck.status === 'available'
+    ? `New version ${updateCheck.latestVersion || '—'} is available. Download the installer from GitHub Releases.`
+    : updateCheck.status === 'failed'
+      ? updateCheck.error || 'Could not read the release manifest. Check your network connection.'
+      : 'Compare this build against the published release manifest.';
+
   const about = <><SectionHeading title="About" description="Application information and maintenance operations." /><Card>
     <Row label="Metis Desktop" description={`Version ${appInfo.version || '—'} · ${appInfo.platform || '—'}`}><Status>{appInfo.name || 'Metis'}</Status></Row>
+    <Row label="Software update" description={updateDescription}>
+      <div className="flex items-center gap-2">
+        {updateStatus}
+        <button className={buttonClass} disabled={desktopDisabled || updateCheck.status === 'checking'} onClick={() => void props.onCheckForUpdates()}><RefreshCw className={`h-3.5 w-3.5 ${updateCheck.status === 'checking' ? 'animate-spin' : ''}`} />Check for updates</button>
+        {updateCheck.status === 'available' && <button className={buttonClass} disabled={desktopDisabled} onClick={() => void run(() => requireDesktop(desktop?.openExternal ? () => desktop.openExternal(RELEASES_URL) : undefined, 'Open releases page'), 'Opened the GitHub Releases page.')}><Download className="h-3.5 w-3.5" />Download</button>}
+      </div>
+    </Row>
     <Row label="Reload Agent resources" description="Reload extensions, Skills, themes and models."><button className={buttonClass} disabled={disabled} onClick={() => void run(() => command('/reload'), 'Agent resources reloaded.')}><RefreshCw className="h-3.5 w-3.5" />Reload</button></Row>
   </Card></>;
 

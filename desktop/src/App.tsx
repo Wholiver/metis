@@ -12,6 +12,7 @@ import {
   type SubagentHistory,
 } from './lib/subagents';
 import { useMetisServer } from './hooks/useMetisServer';
+import { useUpdateCheck } from './hooks/useUpdateCheck';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { Onboarding, shouldShowOnboarding } from './components/onboarding/Onboarding';
 import { SkillCommand } from './components/chat/SkillPicker';
@@ -294,6 +295,8 @@ export function App() {
     refineProposal,
     respondToUserInput,
   } = useMetisServer(activeProject);
+
+  const { updateCheck, checkForUpdates } = useUpdateCheck(isConnected);
 
   const [sidebarWidth, setSidebarWidth] = useState<number>(260);
   const [inspectorWidth, setInspectorWidth] = useState<number>(320);
@@ -780,6 +783,8 @@ export function App() {
         supportsThinking={supportsThinking}
         collaborationMode={collaborationMode}
         activeProject={activeProject}
+        updateCheck={updateCheck}
+        onCheckForUpdates={checkForUpdates}
         onChangeWorkspace={handleChangeWorkspace}
         onOpenOnboarding={() => { setIsSettingsOpen(false); setIsOnboardingOpen(true); }}
         onSelectModel={selectModel}
