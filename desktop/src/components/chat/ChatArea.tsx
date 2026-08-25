@@ -110,7 +110,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const showActiveProgress = localTaskPending || isStreaming || Boolean(pendingUserInput);
 
   return (
-    <main data-purpose="main-chat" className="flex-1 h-full bg-[#ffffff] flex flex-col min-w-0 overflow-hidden relative">
+    <main data-purpose="main-chat" className="flex-1 h-full bg-[#ffffff] flex flex-col min-w-[360px] overflow-hidden relative">
       <ChatHeader
         agent={agent}
         isSidebarOpen={isSidebarOpen}

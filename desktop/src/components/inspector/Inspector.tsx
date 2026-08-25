@@ -39,7 +39,7 @@ export const Inspector: React.FC<InspectorProps> = ({
   return (
     <aside
       style={{ width: `${width}px` }}
-      className="h-full bg-[#ffffff] border-l border-slate-200/80 flex flex-col overflow-hidden select-none flex-shrink-0 relative"
+      className="h-full min-w-[300px] shrink bg-[#ffffff] border-l border-slate-200/80 flex flex-col overflow-hidden select-none relative"
       aria-label="Workspace context"
       data-plan-inspector=""
     >

@@ -70,4 +70,21 @@ describe('desktop React model switcher', () => {
     expect(main).toContain('reasoningModelCount');
     expect(main).toContain('reasoningSubmenuBesideModel');
   });
+
+  it('lets wide side panels yield before the composer clips the model trigger', () => {
+    const app = readFileSync(resolve(process.cwd(), 'desktop/src/App.tsx'), 'utf8');
+    const chatArea = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/ChatArea.tsx'), 'utf8');
+    const sidebar = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/Sidebar.tsx'), 'utf8');
+    const inspector = readFileSync(resolve(process.cwd(), 'desktop/src/components/inspector/Inspector.tsx'), 'utf8');
+
+    expect(app).toContain('const MIN_SIDEBAR_WIDTH = 240');
+    expect(app).toContain('const MIN_INSPECTOR_WIDTH = 300');
+    expect(chatArea).toContain('min-w-[360px]');
+    expect(chatArea).not.toContain('flex flex-col min-w-0 overflow-hidden relative');
+    expect(sidebar).toContain('min-w-[240px] shrink');
+    expect(sidebar).not.toContain('select-none flex-shrink-0 relative');
+    expect(inspector).toContain('min-w-[300px] shrink');
+    expect(inspector).not.toContain('select-none flex-shrink-0 relative');
+    expect(240 + 300 + 360).toBeLessThan(1040);
+  });
 });

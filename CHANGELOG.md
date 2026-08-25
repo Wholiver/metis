@@ -4,6 +4,13 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.3] - 2026-08-26
+
+### Desktop Layout Resilience
+
+- Allowed wide sidebar and inspector panels to yield space before the chat composer clips its model selector.
+- Added regression coverage for minimum panel and composer widths across constrained Desktop layouts.
+
 ## [1.1.2] - 2026-08-25
 
 ### Desktop Update Check

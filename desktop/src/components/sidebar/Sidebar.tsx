@@ -46,7 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       style={{ width: `${width}px` }}
-      className="h-full bg-[#f6f7f9] border-r border-slate-200/80 flex flex-col overflow-hidden select-none flex-shrink-0 relative"
+      className="h-full min-w-[240px] shrink bg-[#f6f7f9] border-r border-slate-200/80 flex flex-col overflow-hidden select-none relative"
     >
       {/* 50px Top Header: Native traffic lights spacer + Collapse button on left, New chat (+) on right */}
       <div className="h-[50px] px-3.5 flex items-center justify-between flex-shrink-0 titlebar-drag">
