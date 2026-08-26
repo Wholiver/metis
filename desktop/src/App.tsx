@@ -24,7 +24,7 @@ const ACTIVE_PROJECT_STORAGE_KEY = 'metis.desktop.activeProject.v1';
 const MIN_SIDEBAR_WIDTH = 240;
 const MAX_SIDEBAR_WIDTH = 500;
 
-const MIN_INSPECTOR_WIDTH = 300;
+const MIN_INSPECTOR_WIDTH = 360;
 const MAX_INSPECTOR_WIDTH = 550;
 
 const PLAN_CAPTURE_MARKDOWN = `# Plan、Ask、Memory 与默认工作流升级
@@ -262,6 +262,7 @@ export function App() {
     messages,
     sendMessage,
     models,
+    refreshModels,
     activeModel,
     isChangingModel,
     selectModel,
@@ -294,12 +295,14 @@ export function App() {
     processProposal,
     refineProposal,
     respondToUserInput,
+    contextUsage,
+    tokenBreakdown,
   } = useMetisServer(activeProject);
 
   const { updateCheck, checkForUpdates } = useUpdateCheck(isConnected);
 
   const [sidebarWidth, setSidebarWidth] = useState<number>(260);
-  const [inspectorWidth, setInspectorWidth] = useState<number>(320);
+  const [inspectorWidth, setInspectorWidth] = useState<number>(360);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -743,6 +746,8 @@ export function App() {
         onRespondToUserInput={captureAsk ? async () => true : respondToUserInput}
         memoryState={memoryState}
         onOpenMemorySettings={handleOpenMemorySettings}
+        contextUsage={contextUsage}
+        tokenBreakdown={tokenBreakdown}
       />
 
       {/* 3. Right Inspector Panel */}
@@ -762,6 +767,8 @@ export function App() {
             subagents={displayedSubagents}
             onClose={() => setIsInspectorOpen(false)}
             onCollapse={() => setIsInspectorOpen(false)}
+            contextUsage={contextUsage}
+            tokenBreakdown={tokenBreakdown}
           />
         </>
       )}
@@ -799,6 +806,8 @@ export function App() {
         models={models}
         onComplete={() => setIsOnboardingOpen(false)}
         onProjectReady={handleOnboardingProject}
+        onSelectModel={selectModel}
+        onRefreshModels={refreshModels}
       />
 
       {toast && (

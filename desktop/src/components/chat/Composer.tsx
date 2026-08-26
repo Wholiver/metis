@@ -336,18 +336,24 @@ export const Composer: React.FC<ComposerProps> = ({
         </p>
       )}
 
-      {skillMenuOpen && <SkillPicker skills={skills} query={skillQuery} activeIndex={activeSkillIndex} onSelect={chooseSkill} />}
+      <div className="w-full max-w-[620px] flex flex-col items-start">
+        <div className="mb-2 flex w-full max-w-[620px] justify-start" data-mode-switcher-row="">
+          <ModeSwitcher
+            mode={collaborationMode}
+            onSelectMode={onSelectCollaborationMode}
+            disabled={disabled}
+            loading={isChangingCollaborationMode}
+          />
+        </div>
 
-      <div className="mb-2 flex w-full max-w-[620px] justify-start" data-mode-switcher-row="">
-        <ModeSwitcher
-          mode={collaborationMode}
-          onSelectMode={onSelectCollaborationMode}
-          disabled={disabled}
-          loading={isChangingCollaborationMode}
-        />
-      </div>
+        <div className="relative w-full max-w-[620px]">
+          {skillMenuOpen && (
+            <div className="absolute bottom-full mb-2 inset-x-0 z-30 pointer-events-auto">
+              <SkillPicker skills={skills} query={skillQuery} activeIndex={activeSkillIndex} onSelect={chooseSkill} />
+            </div>
+          )}
 
-      <form
+          <form
         onSubmit={handleSubmit}
         onDragEnter={(event) => {
           if (!transferHasFiles(event.dataTransfer)) return;
@@ -415,9 +421,9 @@ export const Composer: React.FC<ComposerProps> = ({
             event.preventDefault();
             void addAttachments(filesFromTransfer(event.clipboardData));
           }}
-          placeholder={`Message ${agent.name}`}
+          placeholder={collaborationMode === 'plan' ? `Message ${agent.name} (Plan)` : `Message ${agent.name}`}
           disabled={disabled}
-          aria-label={`Message ${agent.name}`}
+          aria-label={collaborationMode === 'plan' ? `Message ${agent.name} (Plan)` : `Message ${agent.name}`}
           data-composer-input=""
           className={`min-w-0 w-full resize-none bg-transparent text-[14px] leading-6 text-[#1e293b] placeholder-[#9ca3af] outline-none disabled:cursor-not-allowed ${
             isMultiline
@@ -473,6 +479,8 @@ export const Composer: React.FC<ComposerProps> = ({
           <ArrowUp className="w-4 h-4 stroke-[2.5]" data-send-icon="" />
         </button>
       </form>
+        </div>
+      </div>
     </div>
   );
 };

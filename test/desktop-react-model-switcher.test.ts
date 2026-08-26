@@ -78,13 +78,13 @@ describe('desktop React model switcher', () => {
     const inspector = readFileSync(resolve(process.cwd(), 'desktop/src/components/inspector/Inspector.tsx'), 'utf8');
 
     expect(app).toContain('const MIN_SIDEBAR_WIDTH = 240');
-    expect(app).toContain('const MIN_INSPECTOR_WIDTH = 300');
+    expect(app).toContain('const MIN_INSPECTOR_WIDTH = 360');
     expect(chatArea).toContain('min-w-[360px]');
     expect(chatArea).not.toContain('flex flex-col min-w-0 overflow-hidden relative');
     expect(sidebar).toContain('min-w-[240px] shrink');
     expect(sidebar).not.toContain('select-none flex-shrink-0 relative');
-    expect(inspector).toContain('min-w-[300px] shrink');
+    expect(inspector).toContain('min-w-[360px] shrink');
     expect(inspector).not.toContain('select-none flex-shrink-0 relative');
-    expect(240 + 300 + 360).toBeLessThan(1040);
+    expect(240 + 360 + 360).toBeLessThan(1040);
   });
 });

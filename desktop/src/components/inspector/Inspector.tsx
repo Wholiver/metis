@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { ChevronDown, PanelRightClose } from 'lucide-react';
-import { WorkflowPlanState } from '../../types';
+import { ContextUsage, TokenBreakdown, WorkflowPlanState } from '../../types';
 import { TurnFileChange } from '../../lib/turn-files';
 import { SubagentItem } from '../../lib/subagents';
 import { ChangedFiles } from './ChangedFiles';
 import { PlanPoints } from './PlanPoints';
 import { SubagentsList } from './SubagentsList';
 import { SubagentDetailView } from './SubagentDetailView';
+import { TokenUsageBar } from '../chat/TokenUsageBar';
 
 interface InspectorProps {
   workflowPlan?: WorkflowPlanState;
@@ -15,15 +16,19 @@ interface InspectorProps {
   width?: number;
   onClose?: () => void;
   onCollapse?: () => void;
+  contextUsage?: ContextUsage;
+  tokenBreakdown?: TokenBreakdown;
 }
 
 export const Inspector: React.FC<InspectorProps> = ({
   workflowPlan,
   fileChanges = [],
   subagents = [],
-  width = 320,
+  width = 360,
   onClose,
   onCollapse,
+  contextUsage,
+  tokenBreakdown,
 }) => {
   const [filesExpanded, setFilesExpanded] = useState(true);
   const [planExpanded, setPlanExpanded] = useState(true);
@@ -39,7 +44,7 @@ export const Inspector: React.FC<InspectorProps> = ({
   return (
     <aside
       style={{ width: `${width}px` }}
-      className="h-full min-w-[300px] shrink bg-[#ffffff] border-l border-slate-200/80 flex flex-col overflow-hidden select-none relative"
+      className="h-full min-w-[360px] shrink bg-[#ffffff] border-l border-slate-200/80 flex flex-col overflow-hidden select-none relative"
       aria-label="Workspace context"
       data-plan-inspector=""
     >
@@ -50,7 +55,7 @@ export const Inspector: React.FC<InspectorProps> = ({
         />
       ) : (
         <>
-          <div className="h-10 px-3.5 flex items-center justify-end flex-shrink-0 titlebar-drag">
+          <div className="h-[50px] px-3.5 flex items-center justify-end flex-shrink-0 titlebar-drag">
             <button
               onClick={onCollapse || onClose}
               className="relative w-7 h-7 rounded-lg flex items-center justify-center text-[#8e95a2] hover:bg-black/5 hover:text-[#0f172a] no-drag before:absolute before:left-1/2 before:top-1/2 before:h-10 before:w-10 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] active:scale-[0.96] transition-[color,background-color,transform]"
@@ -113,6 +118,10 @@ export const Inspector: React.FC<InspectorProps> = ({
                 />
               )}
             </section>
+          </div>
+
+          <div className="px-3.5 pb-4 pt-1 flex items-end no-drag flex-shrink-0 bg-transparent w-full">
+            <TokenUsageBar contextUsage={contextUsage} tokenBreakdown={tokenBreakdown} tooltipPlacement="top" />
           </div>
         </>
       )}

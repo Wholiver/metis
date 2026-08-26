@@ -4,6 +4,7 @@ import { Command, Sparkles } from 'lucide-react';
 export interface SkillCommand {
   name: string;
   description: string;
+  kind?: 'mode' | 'skill' | 'command';
 }
 
 interface SkillPickerProps {
@@ -29,14 +30,14 @@ export const SkillPicker: React.FC<SkillPickerProps> = ({ skills, query, activeI
 
   if (options.length === 0) {
     return (
-      <div className="pointer-events-auto mb-2 w-full max-w-[620px] rounded-[16px] border border-slate-200/90 bg-white px-3 py-2.5 text-[12px] text-slate-500" data-skill-picker="" role="status">
+      <div className="pointer-events-auto w-full max-w-[620px] rounded-[16px] border border-slate-200/90 bg-white px-3 py-2.5 text-[12px] text-slate-500 shadow-[0_12px_32px_rgba(0,0,0,0.12)]" data-skill-picker="" role="status">
         No matching skills
       </div>
     );
   }
 
   return (
-    <div className="pointer-events-auto mb-2 w-full max-w-[620px] overflow-hidden rounded-[16px] border border-slate-200/90 bg-white p-1.5" data-skill-picker="" role="listbox" aria-label="Skills">
+    <div className="pointer-events-auto w-full max-w-[620px] overflow-hidden rounded-[16px] border border-slate-200/90 bg-white p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.12)]" data-skill-picker="" role="listbox" aria-label="Skills">
       <div className="flex max-h-[240px] flex-col gap-0.5 overflow-y-auto" data-skill-picker-list="">
         {options.map((skill, index) => {
           const active = index === Math.min(activeIndex, options.length - 1);
@@ -49,7 +50,7 @@ export const SkillPicker: React.FC<SkillPickerProps> = ({ skills, query, activeI
               aria-selected={active}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => onSelect(skill)}
-              className={`flex min-h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left transition-[background-color,color,transform] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${active ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+              className={`flex min-h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left transition-[background-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${active ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
               data-skill-option={skill.name}
             >
               <span className="grid h-7 w-7 flex-none place-items-center rounded-lg bg-slate-100 text-slate-500" aria-hidden="true">

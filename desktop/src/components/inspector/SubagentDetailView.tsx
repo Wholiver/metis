@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Check, CheckCircle2, CircleAlert, Copy, FolderGit2, Loader2, Sparkles, Terminal } from 'lucide-react';
 import { useElapsedDuration } from '../../hooks/useElapsedDuration';
 import { formatSubagentDuration, SubagentItem } from '../../lib/subagents';
@@ -27,6 +27,8 @@ export const SubagentDetailView: React.FC<SubagentDetailViewProps> = ({ subagent
   };
 
   const isRunning = subagent.status === 'running';
+  const [workExpanded, setWorkExpanded] = useState(isRunning);
+  useEffect(() => setWorkExpanded(isRunning), [isRunning]);
   const liveDurationMs = useElapsedDuration(subagent.startedAt, subagent.durationMs, isRunning);
   const duration = formatSubagentDuration(liveDurationMs);
 
@@ -55,9 +57,9 @@ export const SubagentDetailView: React.FC<SubagentDetailViewProps> = ({ subagent
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-white" data-subagent-detail-view="">
-      {/* Top Header */}
-      <div className="flex h-11 items-center justify-between border-b border-slate-200/80 px-3 flex-shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
+      {/* Top Header aligned to 50px matching sidebar and chat header */}
+      <div className="h-[50px] px-3.5 flex items-center justify-between flex-shrink-0 titlebar-drag">
+        <div className="flex items-center gap-2 min-w-0 no-drag">
           <button
             type="button"
             onClick={onBack}
@@ -101,7 +103,7 @@ export const SubagentDetailView: React.FC<SubagentDetailViewProps> = ({ subagent
         <button
           type="button"
           onClick={handleCopy}
-          className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-slate-600 hover:bg-black/5 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
+          className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-slate-600 hover:bg-black/5 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50 no-drag"
           title="Copy Log"
         >
           {copied ? (
@@ -120,45 +122,18 @@ export const SubagentDetailView: React.FC<SubagentDetailViewProps> = ({ subagent
 
       {/* Main Content Area mirroring agent turn interface */}
       <div className="flex-1 overflow-y-auto p-3.5 space-y-4">
-        {/* User Turn: Assigned Task */}
-        <div className="space-y-1.5" data-subagent-task-section="">
-          <div className="flex items-center justify-between text-[11px] font-medium text-slate-400 uppercase tracking-wider px-1">
-            <span>Assigned Task</span>
-            {duration && <span className="tabular-nums font-normal">{duration}</span>}
+        {/* User Turn: Assigned Task styled like UserBubble */}
+        <div className="my-2 flex w-full min-w-0 max-w-full justify-end" data-subagent-task-section="">
+          <div className="flex max-w-[500px] flex-col items-end gap-1.5">
+            <div className="border border-slate-900 bg-white text-slate-900 px-5 py-3 rounded-[18px] rounded-br-[4px] max-w-full text-[14px] leading-relaxed shadow-xs font-normal text-left whitespace-pre-wrap break-words text-pretty">
+              <p>{subagent.task || 'No task description'}</p>
+              {subagent.context && (
+                <div className="mt-2 text-[12px] text-slate-600 whitespace-pre-wrap">
+                  {subagent.context}
+                </div>
+              )}
+            </div>
           </div>
-
-          <div className="rounded-2xl rounded-br-sm border border-slate-200 bg-slate-50/70 p-3 text-[13px] leading-relaxed text-slate-800 break-words text-pretty shadow-xs">
-            <p className="font-medium text-slate-900">{subagent.task || 'No task description'}</p>
-            {subagent.context && (
-              <div className="mt-2 pt-2 border-t border-slate-200/60 text-[12px] text-slate-600 whitespace-pre-wrap">
-                <span className="font-semibold text-slate-500 text-[11px] uppercase block mb-0.5">Context</span>
-                {subagent.context}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Metadata Pill Row */}
-        <div className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-slate-600 px-0.5">
-          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-            <Sparkles size={12} className="text-slate-500" />
-            <span className="capitalize">{subagent.role}</span>
-          </span>
-
-          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-            <Terminal size={12} className="text-slate-500" />
-            <span>{subagent.mode === 'async' ? 'Background (async)' : 'Foreground (sync)'}</span>
-          </span>
-
-          {subagent.worktree && (
-            <span
-              className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 max-w-[200px] truncate"
-              title={subagent.worktree}
-            >
-              <FolderGit2 size={12} className="text-slate-500 shrink-0" />
-              <span className="truncate">{subagent.worktree}</span>
-            </span>
-          )}
         </div>
 
         {/* Error Callout Banner if failed */}
@@ -174,12 +149,8 @@ export const SubagentDetailView: React.FC<SubagentDetailViewProps> = ({ subagent
           </div>
         )}
 
-        {/* Assistant Turn: Work Log & Output */}
-        <div className="space-y-3 pt-1 border-t border-slate-100" data-subagent-work-section="">
-          <div className="flex items-center justify-between text-[11px] font-medium text-slate-400 uppercase tracking-wider px-1">
-            <span>Work Log</span>
-          </div>
-
+        {/* Assistant Turn: Work Log & Output structured exactly like AssistantTurn */}
+        <div className="assistant-turn-segment w-full min-w-0 max-w-full" data-subagent-work-section="">
           {/* Assistant Work Section (folding thinking, tool groups, tool cards) */}
           {hasWorkContent && (
             <AssistantWork
@@ -187,23 +158,18 @@ export const SubagentDetailView: React.FC<SubagentDetailViewProps> = ({ subagent
               streaming={isRunning}
               durationMs={liveDurationMs}
               preserveExistingItems
+              onExpandedChange={setWorkExpanded}
             />
-          )}
-
-          {/* Live Progress Indicator when running */}
-          {isRunning && (
-            <div className="pt-1">
-              <WorkProgressIndicator
-                progress={progress}
-                idle={false}
-              />
-            </div>
           )}
 
           {/* Final Markdown Response */}
           {finalText && (
-            <div className="text-[13.5px] leading-relaxed text-slate-800 space-y-2 pt-1">
-              <MarkdownContent markdown={finalText} />
+            <div className={`turn-final-response ${!isRunning && workExpanded ? 'after-expanded-work' : ''} w-full min-w-0 max-w-full`}>
+              <div className="my-2 flex w-full min-w-0 max-w-full flex-col items-start" data-message-role="assistant">
+                <div className="w-full min-w-0 max-w-full py-0.5 text-[14.5px] font-normal leading-relaxed text-[#1e293b]">
+                  <MarkdownContent markdown={finalText} />
+                </div>
+              </div>
             </div>
           )}
 
@@ -212,6 +178,14 @@ export const SubagentDetailView: React.FC<SubagentDetailViewProps> = ({ subagent
             <div className="text-[13px] font-mono leading-relaxed text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200/70 whitespace-pre-wrap break-all">
               {subagent.rawOutput}
             </div>
+          )}
+
+          {/* Live Progress Indicator when running */}
+          {isRunning && (
+            <WorkProgressIndicator
+              progress={progress}
+              idle={false}
+            />
           )}
         </div>
       </div>

@@ -91,6 +91,31 @@ export type AssistantContentPart =
       progress?: SubagentProgress;
     };
 
+export interface MessageUsage {
+  input: number;
+  output: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  totalTokens?: number;
+  cost?: number;
+}
+
+export interface ContextUsage {
+  tokens: number | null;
+  contextWindow: number;
+  percent: number | null;
+}
+
+export interface TokenBreakdown {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+  contextWindow: number;
+  percent: number | null;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -108,6 +133,7 @@ export interface Message {
   file?: AttachmentFile;
   attachments?: MessageAttachment[];
   tags?: string[];
+  usage?: MessageUsage;
 }
 
 export interface WorkflowProposalState {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Agent, CollaborationMode, MemoryState, Message, ModelOption, PendingUserInput, SendMessageOptions, ThinkingOption, UserInputResponse, WorkflowProposalState } from '../../types';
+import { Agent, CollaborationMode, ContextUsage, MemoryState, Message, ModelOption, PendingUserInput, SendMessageOptions, ThinkingOption, TokenBreakdown, UserInputResponse, WorkflowProposalState } from '../../types';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
@@ -41,6 +41,8 @@ interface ChatAreaProps {
   onNewChat?: () => void;
   memoryState?: MemoryState;
   onOpenMemorySettings?: () => void;
+  contextUsage?: ContextUsage;
+  tokenBreakdown?: TokenBreakdown;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -78,6 +80,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onNewChat,
   memoryState,
   onOpenMemorySettings,
+  contextUsage,
+  tokenBreakdown,
 }) => {
   const [localTaskPending, setLocalTaskPending] = useState(false);
   const sawServerStreaming = useRef(false);
@@ -120,6 +124,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         onNewChat={onNewChat}
         memoryState={memoryState}
         onOpenMemorySettings={onOpenMemorySettings}
+        contextUsage={contextUsage}
+        tokenBreakdown={tokenBreakdown}
       />
       <MessageList
         messages={messages}

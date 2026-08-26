@@ -13,14 +13,18 @@ const preload = source("desktop/preload.cjs");
 const build = source("desktop/scripts/build.mjs");
 
 describe("Desktop React first-run onboarding", () => {
-	it("uses a three-step fullscreen flow and preserves legacy completion", () => {
+	it("uses a fullscreen flow with Step 0 Welcome home page, SVG branding, and preserves legacy completion", () => {
 		expect(onboarding).toContain("metis.desktopOnboardingCompleted.v3");
 		expect(onboarding).toContain("metis.desktopOnboardingCompleted.v2");
-		expect(onboarding).not.toContain("<header");
 		expect(onboarding).not.toContain("Configure later in settings");
+		expect(onboarding).toContain("step === 0");
 		expect(onboarding).toContain("step === 1");
 		expect(onboarding).toContain("step === 2");
 		expect(onboarding).toContain("step === 3");
+		expect(onboarding).toContain("bot-mask-in5s39");
+		expect(onboarding).toContain(">开始</span>");
+		expect(onboarding).toContain("detectSystemLanguage");
+		expect(onboarding).not.toContain("Your Intelligent AI Pair Programming Workspace");
 		expect(onboarding).toContain("localStorage.setItem(COMPLETED_KEY, 'true')");
 	});
 
@@ -46,18 +50,29 @@ describe("Desktop React first-run onboarding", () => {
 		expect(onboarding).not.toMatch(/localStorage\.(?:getItem|setItem)\([^)]*apiKey/i);
 	});
 
+	it("binds the active and default model upon successful credential save and unifies footer continue", () => {
+		expect(onboarding).toContain("bindModelAfterAuth");
+		expect(onboarding).toContain("request('/session/model', 'PUT'");
+		expect(onboarding).toContain("request('/settings/defaults', 'PUT'");
+		expect(onboarding).toContain("handleContinue");
+		expect(app).toContain("onSelectModel={selectModel}");
+		expect(app).toContain("onRefreshModels={refreshModels}");
+	});
+
 	it("keeps the overlay accessible and motion-reduced without generic transitions", () => {
-		expect(onboarding).toContain('max-w-3xl overflow-hidden rounded-xl border');
-		expect(onboarding).not.toContain('rounded-[28px]');
-		expect(onboarding).not.toContain('min-h-[470px]');
-		expect(onboarding).not.toContain('border-t border-slate-100');
-		expect(onboarding).toContain('rounded-2xl border border-slate-200 bg-slate-50/70 p-2');
-		expect(onboarding).toContain('min-h-10 rounded-xl');
 		expect(onboarding).toContain('role="dialog"');
 		expect(onboarding).toContain('aria-modal="true"');
 		expect(onboarding).toContain('role="tablist"');
+		expect(onboarding).not.toContain('rounded-[28px]');
+		expect(onboarding).not.toContain('min-h-[470px]');
 		expect(onboardingCss).toContain('prefers-reduced-motion: reduce');
 		expect(onboardingCss).not.toContain("transition: all");
+	});
+
+	it("integrates AI Memory toggle with backend memory settings API", () => {
+		expect(onboarding).toContain("role=\"switch\"");
+		expect(onboarding).toContain("request('/memory/settings', 'PUT'");
+		expect(onboarding).toContain("request<{ enabled?: boolean }>('/memory')");
 	});
 
 	it("exposes narrowly scoped native workspace creation APIs", () => {

@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.4] - 2026-08-26
+
+### Token Usage Metrics & Desktop Settings Upgrades
+
+- Added real-time token usage bar displaying prompt, completion, cache, and total context usage.
+- Enhanced onboarding and settings dialogs with rich provider configuration, custom base URL validation, and model switching.
+- Refined subagent inspector details and layout stability.
+
 ## [1.1.3] - 2026-08-26
 
 ### Desktop Layout Resilience

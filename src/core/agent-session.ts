@@ -57,6 +57,7 @@ import {
 	shouldCompact,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
+import { defaultModelPerProvider } from "./model-resolver.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
 import {
@@ -3565,12 +3566,31 @@ export class AgentSession {
 
 	/**
 	 * Replace the session model with the registry copy for the same provider/id.
+	 * If no model is currently selected (e.g. session started without credentials),
+	 * auto-select the first available model in the refreshed registry.
 	 * Needed after models.json changes (e.g. custom provider reasoning flag) so
 	 * supportsThinking() and thinking levels reflect the refreshed definition.
 	 */
 	syncModelFromRegistry(): void {
 		const current = this.model;
-		if (!current) return;
+		if (!current) {
+			const available = this._modelRegistry.getAll().filter((model) => this._modelRegistry.hasConfiguredAuth(model));
+			if (available.length > 0) {
+				let chosen = available[0];
+				for (const provider of Object.keys(defaultModelPerProvider) as (keyof typeof defaultModelPerProvider)[]) {
+					const defaultId = defaultModelPerProvider[provider];
+					const match = available.find((m) => m.provider === provider && m.id === defaultId);
+					if (match) {
+						chosen = match;
+						break;
+					}
+				}
+				this.agent.state.model = chosen;
+				this.setThinkingLevel(this._getThinkingLevelForModelSwitch());
+				this.settingsManager.setDefaultModelAndProvider(chosen.provider, chosen.id);
+			}
+			return;
+		}
 		const refreshed = this._modelRegistry.find(current.provider, current.id);
 		if (!refreshed) return;
 		this.agent.state.model = refreshed;

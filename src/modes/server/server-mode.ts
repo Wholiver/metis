@@ -931,7 +931,15 @@ export async function startServerMode(
 				}
 				session.modelRegistry.refresh();
 				session.syncModelFromRegistry();
-				return { command: name, provider: providerId, message: `${providerId} 登录信息已保存` };
+				if (session.model) {
+					broadcast({ type: "session_info_changed", session: getSessionState() });
+				}
+				return {
+					command: name,
+					provider: providerId,
+					model: session.model ? { provider: session.model.provider, id: session.model.id, name: session.model.name } : undefined,
+					message: `${providerId} 登录信息已保存`,
+				};
 			}
 			case "logout": {
 				const authStorage: any = session.modelRegistry.authStorage;
@@ -939,6 +947,7 @@ export async function startServerMode(
 				authStorage.logout(argument);
 				session.modelRegistry.refresh();
 				session.syncModelFromRegistry();
+				broadcast({ type: "session_info_changed", session: getSessionState() });
 				return { command: name, provider: argument, message: `${argument} 的已保存凭据已移除` };
 			}
 			case "new": {

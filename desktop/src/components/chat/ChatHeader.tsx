@@ -1,6 +1,7 @@
 import React from 'react';
 import { PanelLeftOpen, PanelRightOpen, Plus, Sparkles } from 'lucide-react';
-import { Agent, MemoryState } from '../../types';
+import { Agent, ContextUsage, MemoryState, TokenBreakdown } from '../../types';
+import { TokenUsageBar } from './TokenUsageBar';
 
 interface ChatHeaderProps {
   agent: Agent;
@@ -11,6 +12,8 @@ interface ChatHeaderProps {
   onNewChat?: () => void;
   memoryState?: MemoryState;
   onOpenMemorySettings?: () => void;
+  contextUsage?: ContextUsage;
+  tokenBreakdown?: TokenBreakdown;
 }
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -22,12 +25,14 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onNewChat,
   memoryState,
   onOpenMemorySettings,
+  contextUsage,
+  tokenBreakdown,
 }) => {
   const isMemoryActive = memoryState?.phase === 'extracting' || memoryState?.phase === 'consolidating';
 
   return (
     <div className={`h-[50px] ${!isSidebarOpen ? 'px-3.5' : 'pl-6 pr-3.5'} flex items-center justify-between flex-shrink-0 titlebar-drag`}>
-      <div className="flex items-center gap-1.5 no-drag">
+      <div className="flex items-center gap-2 min-w-0 no-drag">
         {!isSidebarOpen && (
           <>
             <div className="w-[66px] h-[16px]" />
@@ -49,17 +54,17 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             )}
           </>
         )}
-        <h1 className={`font-semibold text-[15px] text-[#0f172a] ${!isSidebarOpen ? 'ml-1.5' : ''}`}>
+        <h1 className={`font-semibold text-[15px] text-[#0f172a] truncate ${!isSidebarOpen ? 'ml-1.5' : ''}`}>
           {agent.name}
         </h1>
       </div>
 
-      <div className="flex items-center no-drag">
+      <div className="flex items-center gap-2 no-drag">
         {isMemoryActive && (
           <button
             type="button"
             onClick={onOpenMemorySettings}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium bg-emerald-50/90 text-emerald-700 border border-emerald-200/80 shadow-xs hover:bg-emerald-100 hover:border-emerald-300 transition-all cursor-pointer active:scale-[0.96] mr-2"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium bg-emerald-50/90 text-emerald-700 border border-emerald-200/80 shadow-xs hover:bg-emerald-100 hover:border-emerald-300 transition-all cursor-pointer active:scale-[0.96]"
             title="Consolidating memory… Click to view progress"
           >
             <Sparkles className="w-3.5 h-3.5 animate-spin text-emerald-600" />

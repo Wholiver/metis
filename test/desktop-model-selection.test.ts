@@ -1,14 +1,5 @@
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { resolveCustomProviderModel } = require("../desktop/renderer/model-selection.js") as {
-	resolveCustomProviderModel: (
-		previousModel: { provider?: string; id?: string; api?: string } | undefined,
-		models: Array<{ provider: string; id: string }>,
-		preferredProviderId?: string,
-	) => { provider: string; id: string } | undefined;
-};
+import { resolveCustomProviderModel } from "../desktop/src/lib/model-selection.ts";
 
 describe("desktop model selection", () => {
 	it("selects the imported custom model when the current model is the unknown placeholder", () => {

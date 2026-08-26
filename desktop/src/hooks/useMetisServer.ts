@@ -17,6 +17,8 @@ import {
   WorkflowProposalState,
   ToolCallResult,
   MemoryState,
+  ContextUsage,
+  TokenBreakdown,
 } from '../types';
 import { extractImageAttachments, parseAttachmentPayloadText } from '../lib/attachments';
 import { applyToolExecutionUpdate, extractToolResultText } from '../lib/tool-execution-update';
@@ -44,6 +46,7 @@ type SessionState = {
   workflowPlan?: WorkflowPlanState;
   workflowProposal?: WorkflowProposalState;
   pendingUserInput?: PendingUserInput;
+  contextUsage?: ContextUsage;
 };
 
 type ProviderModelsResponse = {
@@ -337,6 +340,19 @@ export function toMessage(
     message.serverTimestamp = timestamp;
   }
   if (role === 'assistant' && streaming) message.streaming = true;
+  const usageSource = (source.usage && typeof source.usage === 'object')
+    ? source.usage
+    : (raw.usage && typeof raw.usage === 'object') ? raw.usage : undefined;
+  if (usageSource) {
+    const u = usageSource as Record<string, unknown>;
+    const input = Number(u.input) || 0;
+    const output = Number(u.output) || 0;
+    const cacheRead = Number(u.cacheRead) || 0;
+    const cacheWrite = Number(u.cacheWrite) || 0;
+    const totalTokens = Number(u.totalTokens) || (input + output + cacheRead + cacheWrite);
+    const cost = Number(u.cost) || 0;
+    message.usage = { input, output, cacheRead, cacheWrite, totalTokens, cost };
+  }
   return message;
 }
 
@@ -536,7 +552,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const [workflowPlan, setWorkflowPlan] = useState<WorkflowPlanState>();
   const [workflowProposal, setWorkflowProposal] = useState<WorkflowProposalState>();
   const [pendingUserInput, setPendingUserInput] = useState<PendingUserInput>();
-  const [collaborationMode, setCollaborationMode] = useState<CollaborationMode>('plan');
+  const [collaborationMode, setCollaborationMode] = useState<CollaborationMode>('build');
   const [isCompacting, setIsCompacting] = useState(false);
   const [isChangingCollaborationMode, setIsChangingCollaborationMode] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -548,6 +564,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const [supportsThinking, setSupportsThinking] = useState(false);
   const [isChangingThinking, setIsChangingThinking] = useState(false);
   const [memoryState, setMemoryState] = useState<MemoryState>();
+  const [contextUsage, setContextUsage] = useState<ContextUsage>();
   const prevMemoryPhaseRef = useRef<string>();
   const activeProjectRef = useRef(activeProject);
   const agentsRef = useRef<Agent[]>([]);
@@ -595,6 +612,9 @@ export function useMetisServer(activeProject?: ProjectItem) {
       prevMemoryPhaseRef.current = memoryRes.phase;
       setMemoryState(memoryRes);
     }
+    if (state.contextUsage !== undefined) {
+      setContextUsage(state.contextUsage);
+    }
     const nextMessages = toMessages(
       Array.isArray(result.messages) ? result.messages : [],
       Array.isArray(result.messageTimings) ? result.messageTimings : [],
@@ -620,7 +640,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     const nextCompacting = Boolean(state.isCompacting);
     setIsStreaming(nextStreaming);
     setIsCompacting(nextCompacting);
-    setCollaborationMode(state.collaborationMode || 'plan');
+    setCollaborationMode(state.collaborationMode || 'build');
     setWorkflowPlan(state.workflowPlan);
     setWorkflowProposal(state.workflowProposal);
     setPendingUserInput(state.pendingUserInput);
@@ -631,6 +651,33 @@ export function useMetisServer(activeProject?: ProjectItem) {
     setSupportsThinking(Boolean(state.supportsThinking));
     if (state.sessionId) setActiveAgentId(state.sessionId);
   }, [request]);
+
+  const tokenBreakdown = useMemo<TokenBreakdown | undefined>(() => {
+    const contextWindow = contextUsage?.contextWindow || 128_000;
+    let latestUsage: MessageUsage | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant' && messages[i].usage) {
+        latestUsage = messages[i].usage;
+        break;
+      }
+    }
+    const input = latestUsage?.input ?? (contextUsage?.tokens ?? 0);
+    const output = latestUsage?.output ?? 0;
+    const cacheRead = latestUsage?.cacheRead ?? 0;
+    const cacheWrite = latestUsage?.cacheWrite ?? 0;
+    const total = contextUsage?.tokens ?? (input + output + cacheRead + cacheWrite);
+    const percent = contextUsage?.percent ?? (contextWindow > 0 ? (total / contextWindow) * 100 : null);
+
+    return {
+      input,
+      output,
+      cacheRead,
+      cacheWrite,
+      total,
+      contextWindow,
+      percent,
+    };
+  }, [messages, contextUsage]);
 
   const loadProject = useCallback(async (project: ProjectItem, switchWhenNeeded = true) => {
     const version = ++loadVersionRef.current;
@@ -648,7 +695,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
         if (destination) {
           await request('/session/switch', 'POST', { sessionPath: destination });
         } else {
-          await request('/session/new', 'POST', { cwd: project.path, collaborationMode: 'plan' });
+          await request('/session/new', 'POST', { cwd: project.path, collaborationMode: 'build' });
         }
         state = await request<SessionState>('/session');
       }
@@ -876,6 +923,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
         }
         const project = activeProjectRef.current;
         if (project) void loadProject(project, false);
+        void refreshModels();
       }
       if (type === 'memory_state_changed' && event.state) {
         const nextMemoryState = event.state as MemoryState;
@@ -939,21 +987,30 @@ export function useMetisServer(activeProject?: ProjectItem) {
     if (isConnected && activeProject) void loadProject(activeProject);
   }, [activeProject, isConnected, loadProject]);
 
+  const refreshModels = useCallback(async () => {
+    try {
+      const result = await request<ProviderModelsResponse>('/config/providers');
+      const nextModels = Array.isArray(result.models) ? result.models : [];
+      setModels(nextModels);
+      const state = await request<SessionState>('/session');
+      setActiveModel(state.model);
+      setThinkingLevel(state.thinkingLevel || '');
+      setThinkingLevels(Array.isArray(state.thinkingLevels) ? state.thinkingLevels : []);
+      setThinkingOptions(Array.isArray(state.thinkingOptions) ? state.thinkingOptions : (state.thinkingLevels || []).map((id) => ({ id, label: id, value: id })));
+      setSupportsThinking(Boolean(state.supportsThinking));
+      return nextModels;
+    } catch (error) {
+      return [];
+    }
+  }, [request]);
+
   useEffect(() => {
     if (!isConnected) {
       setModels([]);
       return;
     }
-    let disposed = false;
-    void request<ProviderModelsResponse>('/config/providers').then((result) => {
-      if (!disposed) setModels(Array.isArray(result.models) ? result.models : []);
-    }).catch((error) => {
-      if (!disposed) setSessionError(error instanceof Error ? error.message : String(error));
-    });
-    return () => {
-      disposed = true;
-    };
-  }, [isConnected, request]);
+    void refreshModels();
+  }, [isConnected, refreshModels]);
 
   const selectConversation = useCallback(async (agentId: string) => {
     const agent = agentsRef.current.find((item) => item.id === agentId);
@@ -984,7 +1041,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     setIsLoadingSessions(true);
     setSessionError('');
     try {
-      const state = await request<SessionState>('/session/new', 'POST', { cwd: project.path, collaborationMode: 'plan' });
+      const state = await request<SessionState>('/session/new', 'POST', { cwd: project.path, collaborationMode: 'build' });
       activeSessionIdRef.current = state.sessionId || '';
       setActiveAgentId(state.sessionId || '');
       setMessages([]);
@@ -1145,6 +1202,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     messages,
     sendMessage,
     models,
+    refreshModels,
     activeModel,
     isChangingModel,
     selectModel,
@@ -1177,5 +1235,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     processProposal,
     refineProposal,
     respondToUserInput,
+    contextUsage,
+    tokenBreakdown,
   };
 }

@@ -19,8 +19,11 @@ describe('desktop React settings', () => {
   it('retains every former settings category and wires stateful options to the Server bridge', () => {
     const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
     const main = source('desktop/main.cjs');
-    for (const tab of ['general', 'shortcuts', 'server', 'model', 'agent', 'security', 'session', 'about']) {
+    for (const tab of ['general', 'model', 'agent', 'server', 'about']) {
       expect(settings).toContain(`id: '${tab}'`);
+    }
+    for (const legacyTab of ['shortcuts', 'security', 'session']) {
+      expect(settings).toContain(`${legacyTab}:`);
     }
     for (const endpoint of ['/settings/defaults', '/session/settings', '/memory/settings', '/memory/run', '/memory/reset', '/session/name', '/session/compact']) {
       expect(settings).toContain(endpoint);

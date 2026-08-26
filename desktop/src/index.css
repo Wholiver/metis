@@ -21,7 +21,10 @@ body {
   -webkit-user-select: none;
 }
 
-[data-purpose="main-chat"] {
+:root,
+[data-purpose="main-chat"],
+[data-purpose="inspector"],
+[data-subagent-detail-view] {
   --ink: #172033;
   --ink-soft: #64748b;
   --ink-faint: #94a3b8;

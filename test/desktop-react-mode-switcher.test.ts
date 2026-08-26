@@ -6,10 +6,11 @@ function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
 }
 
-describe('desktop React collaboration mode switcher', () => {
-  it('renders an accessible Plan and Build selector above the composer', () => {
+describe('desktop React collaboration mode switching', () => {
+  it('integrates Plan and Build mode switching through slash command menu and preserves clean composer layout', () => {
     const switcher = source('desktop/src/components/chat/ModeSwitcher.tsx');
     const composer = source('desktop/src/components/chat/Composer.tsx');
+    const skillPicker = source('desktop/src/components/chat/SkillPicker.tsx');
 
     expect(switcher).toContain('role="radiogroup"');
     expect(switcher).toContain('role="radio"');
@@ -30,9 +31,17 @@ describe('desktop React collaboration mode switcher', () => {
     expect(switcher).toContain('shadow-[0_1px_3px_rgba');
     expect(switcher).toContain('font-semibold');
     expect(switcher).not.toContain('transition-all');
+
+    // ModeSwitcher button row positioned above form
     expect(composer.indexOf('<ModeSwitcher')).toBeLessThan(composer.indexOf('<form'));
     expect(composer).toContain('data-mode-switcher-row');
     expect(composer).toContain('max-w-[620px] justify-start" data-mode-switcher-row');
+
+    // Skill picker is dedicated to skills
+    expect(skillPicker).toContain('data-skill-picker');
+    expect(skillPicker).toContain('Sparkles');
+
+    // Composer container styling
     expect(composer).toContain('data-composer-shell');
     expect(composer).toContain('overflow-hidden bg-white border');
     expect(composer).toContain("'border-slate-200/90'");
