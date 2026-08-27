@@ -329,7 +329,7 @@ body {
 .work-progress-indicator {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   min-height: 20px;
   color: var(--ink-soft);
   font-size: 12px;

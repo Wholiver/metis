@@ -570,6 +570,7 @@ export class MemoryCoordinator {
 		const memoryOverviewPath = join(this.root, "memory-overview.md");
 		let existingMemoryMap: string | undefined;
 		let existingMemoryOverview: string | undefined;
+		let pendingMemoryOverview: string | undefined;
 		try {
 			if (existsSync(memoryMapPath)) existingMemoryMap = readFileSync(memoryMapPath, "utf8");
 		} catch { /* ignore read error */ }
@@ -599,16 +600,23 @@ export class MemoryCoordinator {
 			} catch { /* atomic write error fallback */ }
 		}
 		if (updatedMemoryOverview && typeof updatedMemoryOverview === "string" && updatedMemoryOverview.trim().length > 0) {
-			try {
-				const temp = `${memoryOverviewPath}.${randomUUID()}.tmp`;
-				writeFileSync(temp, updatedMemoryOverview.trim() + "\n", "utf8");
-				renameSync(temp, memoryOverviewPath);
-			} catch { /* atomic write error fallback */ }
+			pendingMemoryOverview = updatedMemoryOverview.trim() + "\n";
 		}
 		const fallbackUsed = extractionFailed;
 		const candidates = fallbackUsed ? this.deriveCandidates(checkpoint) : extracted;
 		let added = 0;
 		for (const candidate of candidates.slice(0, 6)) if (this.upsert({ ...candidate, content: redact(candidate.content) }, checkpoint.sessionId)) added += 1;
+		// memory-overview.md is embedded in the system prompt, so any rewrite invalidates
+		// the provider's prompt cache for the whole conversation. A background model
+		// rewords the overview on every checkpoint; only persist it when memory actually
+		// changed (or the overview is missing) and the bytes actually differ.
+		if (pendingMemoryOverview && (added > 0 || !existingMemoryOverview?.trim()) && pendingMemoryOverview !== existingMemoryOverview) {
+			try {
+				const temp = `${memoryOverviewPath}.${randomUUID()}.tmp`;
+				writeFileSync(temp, pendingMemoryOverview, "utf8");
+				renameSync(temp, memoryOverviewPath);
+			} catch { /* atomic write error fallback */ }
+		}
 		this.db.prepare("UPDATE memory_jobs SET status = 'done', updated_at = ? WHERE id = ?").run(now(), String(job.id));
 		return { added, skipped: Math.max(0, candidates.length - added), fallbackUsed, modelFailureReason };
 	}

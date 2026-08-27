@@ -54,9 +54,15 @@ export const PERFORMANCE_GATES = {
 } as const;
 
 /**
- * Execution Tiers (T0 - T3)
+ * Execution Tiers (Phase 0 Triage / T0 - T3)
  */
 export const EXECUTION_TIERS = {
+	CONVERSATIONAL: {
+		tier: "FAST_PATH",
+		name: "Conversational / Direct Q&A",
+		description: "Greetings, chit-chat, conceptual questions, or inquiries with no code mutation requested.",
+		path: "DIRECT_TEXT_RESPONSE (No tools, no subagents, no GATELOG/ROADMAP)",
+	},
 	T0_MINIMAL: {
 		tier: "T0",
 		name: "Minimal / Mechanical Apply",
@@ -98,7 +104,8 @@ export const NEGATIVE_ROUTING_PROTOCOLS = {
  */
 export const PERFORMANCE_MODE_INSTRUCTIONS = `
 ## Performance Engine
+- Phase 0 Admission: Direct text response for greetings/conversational questions (zero subagents, zero GATELOG/ROADMAP).
 - Gates (G1-G7): G1 Plan (trace graphs) -> G2 Roadmap -> G3.5 Depth-Lock (root cause) -> G4 TDD -> G5 Review -> G6 Two-Sided Oracle (\`fail-to-pass\` RED->GREEN ∧ \`pass-to-pass\` GREEN) -> G7 Proof.
-- Flow: T0 (Apply) / T1 (TDD) / T2 (Complex) / T3 (Fleet). Backtrack on S3 review / S4 oracle failure (max 3 loops, >=95% coverage floor).
+- Flow: T0 (Apply) / T1 (TDD) / T2 (Complex) / T3 (Fleet). Flattened dispatch for T0/T1; wave coordination with immediate convergence for T2/T3. Backtrack on S3 review / S4 oracle failure (max 3 loops, >=95% coverage floor).
 - Roles: Primary Agent (Build=direct tools; Plan=read-only). Subagents (\`spawn_agent\`): \`coordinator\` (dispatch), \`planner\` (G1 planning), \`implementer\` (G4 code/tests), \`reviewer\` (G2/G5 review), \`verifier\` (G6 verification), and specialized personas (\`scope-coordinator\`, \`feature-coordinator\`, \`depth-prober\`, \`fresh-verifier\`, \`goal-checker\`, \`arbiter\`, \`execharness-resolver\`, \`sweeper\`, \`juror\`, etc.).
 `.trim();

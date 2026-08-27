@@ -651,12 +651,25 @@ ${line(state, "FRONTIER G2")}
 		});
 	}
 
-	context(): string | undefined {
+	/**
+	 * Model-visible run context, split so that neither block changes between turns.
+	 *
+	 * `performance-protocol` holds the static role contract plus the full native
+	 * framework text (several KB) and only changes when the active framework
+	 * changes. `performance-state` holds run identity and operator settings, which
+	 * are fixed for the life of the run. Both are injected once and then served
+	 * from the provider's cached prefix.
+	 *
+	 * Everything that moves per turn (frontier, active item, leases, mission
+	 * pointer, repair requests) lives in `liveStateSummary()` and rides the
+	 * `performance_gate` / `read_plan` tool results instead — those are the calls
+	 * through which the model advances and inspects that state, so it always sees
+	 * fresh values without appending a contradicting state block every turn.
+	 */
+	contextBlocks(): Array<{ id: string; content: string }> {
 		const state = this.stateValue;
-		if (!state) return undefined;
-		const pointer = missionPointer(state);
+		if (!state) return [];
 		const activeItem = state.roadmapItems.find((item) => item.id === state.activeItemId);
-		const itemPolicy = activeItem ? performanceItemGatePolicy(activeItem) : undefined;
 		// Scope starts under plan-scope; each accepted roadmap item then carries its
 		// own full native protocol instead of relying on a lossy gate summary.
 		const framework = getPerformanceFramework(activeItem?.framework ?? "plan-scope");
@@ -664,22 +677,53 @@ ${line(state, "FRONTIER G2")}
 		const roleInstruction = role === "root"
 			? "Act as L0 Primary Coordinator. In Wave 1, dispatch scope-coordinator to generate and freeze ROADMAP.md. In Wave 2, dispatch feature-coordinator to execute feature waves (or dispatch implementer/planner directly for focused tasks). In Wave 3, dispatch sweep-coordinator or goal-checker for final convergence and verification. If subagent dispatch is unavailable or encounters an unrecoverable error, execute tools directly to accomplish the user's intent."
 			: `You are the ${role} worker. Stay inside this role's legal hierarchy and task boundary.`;
-		return [
+		const protocol = [
 			"Performance run is active for the current user task.",
-			`RUN-ID: ${state.runId}; RUN-NONCE: ${state.nonce}; frontier: ${state.frontier}; active item: ${state.activeItemId ?? "scope"}; budget: ${state.maxConcurrent}; live agents: ${state.leases.length}; governance root: ${state.governanceRoot}.`,
-			`Operator mode: ${state.attendance}; concurrency: ${state.concurrency}; agent selection: ${state.agentSelection}; effort capability: ${state.effortCapability}${state.maxReasoningEffort ? ` (max ${state.maxReasoningEffort})` : ""}.`,
-			`MISSION POINTER: ${pointer.path}; SHA-256: ${pointer.sha256}; bytes: ${pointer.bytes}.`,
 			roleInstruction,
-			state.repairRequired ? `REPAIR REQUIRED at ${state.repairRequired.gate}: ${state.repairRequired.message}` : "",
 			"G2 closing order is mandatory: (1) scoper or scope-coordinator calls performance_gate with gate=G2 after ROADMAP.md is executable, (2) only then reviewer calls gate=G2-review, (3) fresh-verifier calls gate=G2-verify. Writing a JSON receipt alone does not advance the frontier. Every Item must have stable id, category, tag, tier, framework, owned boundary, dependency IDs, launch group, integration lane, implementation, acceptance, unhappy paths, tests-first, verification, and requiresDetailedPlan.",
+			framework ? `\n# Native execution protocol: ${framework.id}\n${framework.content.trim()}` : "",
+			"Before finishing any gate role, write a non-empty receipt under <governance root>/artifacts/ then call performance_gate with verdict pass|fail|blocked and evidence set to that relative path (for example artifacts/g2-receipt.md). Do not exit after only writing the receipt. Goal-check is independent and runs only after every roadmap item is complete. Governance artifacts are outside the target workspace and must not be added to its diff.",
+			"A REPAIR_REQUIRED response from performance_gate is a schema/content repair request, never a runtime outage or blocker: repair the canonical governance artifact and retry the same gate. Claim that subagent dispatch is unavailable only after a structured spawn_agent error or timed_out payload, and quote its errorCode/error; never infer runtime availability from a rejected gate or worker report.",
+		].join("\n");
+		const runIdentity = [
+			`RUN-ID: ${state.runId}; RUN-NONCE: ${state.nonce}; budget: ${state.maxConcurrent}; governance root: ${state.governanceRoot}.`,
+			`Operator mode: ${state.attendance}; concurrency: ${state.concurrency}; agent selection: ${state.agentSelection}; effort capability: ${state.effortCapability}${state.maxReasoningEffort ? ` (max ${state.maxReasoningEffort})` : ""}.`,
+			"Live run state (frontier, active item, mission pointer, repair requests) is reported by every performance_gate and read_plan result. Trust the most recent one; call read_plan when you need it again.",
+		].join("\n");
+		return [
+			{ id: "performance-protocol", content: protocol },
+			{ id: "performance-state", content: runIdentity },
+		];
+	}
+
+	/**
+	 * Per-turn run state, delivered through tool results rather than the context
+	 * blocks so that advancing a gate appends only the tool result instead of a new
+	 * state block that contradicts the previous turn's.
+	 */
+	liveStateSummary(): string | undefined {
+		const state = this.stateValue;
+		if (!state) return undefined;
+		const pointer = missionPointer(state);
+		const activeItem = state.roadmapItems.find((item) => item.id === state.activeItemId);
+		const itemPolicy = activeItem ? performanceItemGatePolicy(activeItem) : undefined;
+		return [
+			`frontier: ${state.frontier}; active item: ${state.activeItemId ?? "scope"}; live agents: ${state.leases.length}.`,
+			`MISSION POINTER: ${pointer.path}; SHA-256: ${pointer.sha256}; bytes: ${pointer.bytes}.`,
+			state.repairRequired ? `REPAIR REQUIRED at ${state.repairRequired.gate}: ${state.repairRequired.message}` : "",
 			activeItem
 				? `Active item ${activeItem.id}: ${activeItem.category}/${activeItem.tag}/${activeItem.tier}/${activeItem.framework}. ${itemPolicy!.requiresCharacterization ? "G0 characterization is required before planning or implementation." : "No G0 characterization."} ${itemPolicy!.requiresPlan ? "G1 is required." : "G1 is skipped."} ${itemPolicy!.requiresDepthLock ? "G3.5 depth-lock follows G1." : "No G3.5 depth-lock."} ${activeItem.framework === "apply" ? "Apply admission requires an exact change specification and uses G4/G5/G6 only." : ""} ${itemPolicy!.requiredJurors ? `G7 requires ${itemPolicy!.requiredJurors} independent juror(s).` : "G7 is skipped for this framework/tier."}`
 				: "No item is active until G2 assurance accepts the structured roadmap.",
 			this.requiresConvergenceSweep() ? "After the final T3 item, dispatch one fresh sweeper. A passing sweep is required before goal-check; named findings reopen scope rather than being silently downgraded." : "",
-			framework ? `\n# Native execution protocol: ${framework.id}\n${framework.content.trim()}` : "",
-				"Before finishing any gate role, write a non-empty receipt under <governance root>/artifacts/ then call performance_gate with verdict pass|fail|blocked and evidence set to that relative path (for example artifacts/g2-receipt.md). Do not exit after only writing the receipt. Goal-check is independent and runs only after every roadmap item is complete. Governance artifacts are outside the target workspace and must not be added to its diff.",
-				"A REPAIR_REQUIRED response from performance_gate is a schema/content repair request, never a runtime outage or blocker: repair the canonical governance artifact and retry the same gate. Claim that subagent dispatch is unavailable only after a structured spawn_agent error or timed_out payload, and quote its errorCode/error; never infer runtime availability from a rejected gate or worker report.",
-			].join("\n");
+		]
+			.filter(Boolean)
+			.join("\n");
+	}
+
+	context(): string | undefined {
+		const blocks = this.contextBlocks();
+		if (!blocks.length) return undefined;
+		return [...blocks.map((block) => block.content), this.liveStateSummary() ?? ""].filter(Boolean).join("\n");
 	}
 
 	private resolveEvidence(value: string): string {

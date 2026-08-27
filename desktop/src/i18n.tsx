@@ -92,6 +92,33 @@ function translateDocument(preference: string) {
   document.querySelectorAll<HTMLElement>('[aria-label], [placeholder], [title]').forEach((element) => translateAttributes(element, preference));
 }
 
+export function useI18n() {
+  const [preference, setPreference] = useState('auto');
+
+  useEffect(() => {
+    const desktop = (window as any).metisDesktop;
+    desktop?.appInfo?.().then((info: { language?: string }) => setPreference(info?.language || 'auto')).catch(() => undefined);
+    const onChange = (event: Event) => setPreference((event as CustomEvent<string>).detail || 'auto');
+    window.addEventListener('metis:language-changed', onChange);
+    return () => window.removeEventListener('metis:language-changed', onChange);
+  }, []);
+
+  const language = resolveLanguage(preference);
+  const target = catalogs()[language] || catalogs().en || {};
+
+  const t = (keyOrText: string, variables?: Record<string, string | number>): string => {
+    let value = target[keyOrText] || catalogs().en?.[keyOrText] || translateExact(keyOrText, preference);
+    if (variables) {
+      for (const [k, v] of Object.entries(variables)) {
+        value = value.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+      }
+    }
+    return value;
+  };
+
+  return { language, preference, t };
+}
+
 export function DesktopI18nProvider({ children }: PropsWithChildren) {
   const [preference, setPreference] = useState('auto');
 

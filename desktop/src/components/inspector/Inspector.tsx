@@ -75,7 +75,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                 aria-expanded={filesExpanded}
               >
                 <span>Files Changed</span>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] leading-4 tabular-nums text-slate-500">{fileChanges.length}</span>
+                <span className="text-[13px] leading-4 tabular-nums text-slate-400 font-normal">{fileChanges.length}</span>
                 <ChevronDown size={16} strokeWidth={2} className={`ml-auto transition-transform ${filesExpanded ? '' : '-rotate-90'}`} aria-hidden="true" />
               </button>
               {filesExpanded && <ChangedFiles files={fileChanges} />}
@@ -89,7 +89,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                 aria-expanded={planExpanded}
               >
                 <span data-plan-points-title="">Plan</span>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] leading-4 tabular-nums text-slate-500">{workflowPlan?.plan.length || 0}</span>
+                <span className="text-[13px] leading-4 tabular-nums text-slate-400 font-normal">{workflowPlan?.plan.length || 0}</span>
                 <ChevronDown size={16} strokeWidth={2} className={`ml-auto transition-transform ${planExpanded ? '' : '-rotate-90'}`} aria-hidden="true" />
               </button>
               {planExpanded && <PlanPoints points={workflowPlan?.plan || []} />}
@@ -103,7 +103,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                 aria-expanded={subagentsExpanded}
               >
                 <span data-subagents-title="">Subagents</span>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] leading-4 tabular-nums text-slate-500 flex items-center gap-1">
+                <span className="text-[13px] leading-4 tabular-nums text-slate-400 font-normal flex items-center gap-1">
                   {runningSubagentsCount > 0 && (
                     <span className="h-1.5 w-1.5 rounded-full bg-blue-600 animate-pulse" />
                   )}

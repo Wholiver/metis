@@ -60,9 +60,8 @@ describe('desktop React model switcher', () => {
     expect(switcher).toContain('reasoningMenuRef.current?.contains(target)');
     expect(switcher).toContain('if (!sameModel(reasoningMenu.model, activeModel)) await onSelectModel(reasoningMenu.model);');
     expect(switcher).toContain('min-h-8');
-    expect(composer).toContain('grid-cols-[40px_minmax(0,1fr)_auto_40px]');
-    expect(composer).toContain("'col-start-3 row-start-2 self-end justify-self-end'");
-    expect(composer).toContain("'col-start-4 row-start-2 self-end'");
+    expect(composer).toContain('col-start-3 row-start-2 self-end justify-self-end');
+    expect(composer).toContain('col-start-4 row-start-2 self-end');
     expect(chatArea).toContain('onSelectModel={onSelectModel}');
     expect(main).toContain('METIS_DESKTOP_CAPTURE_MODEL_SWITCHER');
     expect(main).toContain('[capture:model-switcher]');

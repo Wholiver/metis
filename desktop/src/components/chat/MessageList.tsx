@@ -1,11 +1,13 @@
 import React, { useRef, useEffect } from 'react';
-import { Message, WorkflowProposalState } from '../../types';
+import { Message, PendingUserInput, SendMessageOptions, WorkflowProposalState } from '../../types';
 import { UserBubble } from './UserBubble';
 import { AssistantTurn } from './AssistantTurn';
+import { ChatHomeEmptyState } from './ChatHomeEmptyState';
 
 interface MessageListProps {
   messages: Message[];
   workspacePath?: string;
+  projectName?: string;
   timeDivider?: string;
   isLoading?: boolean;
   isStreaming?: boolean;
@@ -14,11 +16,13 @@ interface MessageListProps {
   onProcessProposal?: () => void;
   onRefineProposal?: (request: string) => void;
   pendingUserInput?: PendingUserInput;
+  onSendMessage?: (text: string, options?: SendMessageOptions) => boolean | void | Promise<boolean | void>;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
   messages,
   workspacePath,
+  projectName,
   timeDivider,
   isLoading = false,
   isStreaming = false,
@@ -27,6 +31,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   onProcessProposal,
   onRefineProposal,
   pendingUserInput,
+  onSendMessage,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -109,7 +114,7 @@ export const MessageList: React.FC<MessageListProps> = ({
       data-message-scroll=""
     >
       {/* Centered message lane with exact same max-w-[620px] as composer */}
-      <div className="flex w-full min-w-0 max-w-[620px] flex-col" data-message-lane="">
+      <div className={`flex w-full min-w-0 max-w-[620px] flex-col ${messages.length === 0 ? 'flex-1' : ''}`} data-message-lane="">
         {/* Centered time chip */}
         {visibleTimeDivider && (
           <div className="flex justify-center my-2 mb-4">
@@ -120,11 +125,16 @@ export const MessageList: React.FC<MessageListProps> = ({
         )}
 
         {/* Message items */}
-        <div className="flex w-full min-w-0 max-w-full flex-col">
+        <div className={`flex w-full min-w-0 max-w-full flex-col ${messages.length === 0 ? 'flex-1 justify-center items-center' : ''}`}>
           {isLoading && messages.length === 0 && (
             <p className="py-12 text-center text-[13px] text-[#94a3b8]" role="status">
               Loading conversation…
             </p>
+          )}
+          {!isLoading && messages.length === 0 && !isStreaming && !pendingUserInput && (
+            <ChatHomeEmptyState
+              projectName={projectName || workspacePath?.split('/').filter(Boolean).pop()}
+            />
           )}
           {renderGroups.map((group) =>
             group.type === 'user' ? (

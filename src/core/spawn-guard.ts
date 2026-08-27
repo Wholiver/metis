@@ -279,6 +279,14 @@ export class SpawnGuard {
 			}
 		}
 
+		if (child.cleanupWorktree) {
+			try {
+				child.cleanupWorktree().catch(() => {});
+			} catch {
+				// Ignore
+			}
+		}
+
 		this.updateChildStatus(agentId, {
 			status: "killed",
 			error: `Terminated by killChild (${signal})`,

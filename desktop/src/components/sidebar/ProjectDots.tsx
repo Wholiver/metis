@@ -18,7 +18,7 @@ export const ProjectDots: React.FC<ProjectDotsProps> = ({
   const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null);
 
   return (
-    <div className="w-full py-1 flex items-center justify-center relative no-drag" aria-label="Projects">
+    <div className="w-full py-1 flex items-center justify-center gap-1 relative no-drag select-none" aria-label="Projects">
       {projects.map((project) => {
         const isActive = project.id === activeProjectId;
         return (
@@ -29,25 +29,29 @@ export const ProjectDots: React.FC<ProjectDotsProps> = ({
             onMouseLeave={() => setHoveredProjectId(null)}
           >
             <button
+              type="button"
               onClick={() => onSelectProject(project.id)}
               aria-label={`Open project ${project.name}`}
               aria-pressed={isActive}
-              className="group w-6 h-8 grid place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 active:scale-[0.96] transition-[transform]"
+              className="group h-4 p-0.5 grid place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 active:scale-[0.96] transition-transform"
               title={project.name}
             >
-              <span style={{ backgroundColor: project.color }} className={`block transition-[width,background-color,transform,box-shadow] duration-150 ${
-                isActive
-                  ? 'w-[20px] h-[7px] rounded-full bg-[#0f172a] shadow-sm'
-                  : 'w-[7px] h-[7px] rounded-full bg-[#cbd5e1] group-hover:bg-[#94a3b8] group-hover:scale-125'
-              }`} />
+              <span
+                style={project.color ? { backgroundColor: isActive ? '#0f172a' : project.color } : undefined}
+                className={`block transition-[width,background-color,transform] duration-200 ease-out ${
+                  isActive
+                    ? 'w-3.5 h-1.5 rounded-full bg-slate-800 shadow-sm'
+                    : 'w-1.5 h-1.5 rounded-full bg-slate-300 group-hover:bg-slate-400 group-hover:scale-110'
+                }`}
+              />
             </button>
 
             {/* Hover Floating Tooltip */}
             {hoveredProjectId === project.id && (
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 bg-[#1e293b] text-white text-[10.5px] font-medium rounded-md whitespace-nowrap shadow-md pointer-events-none z-50 animate-in fade-in zoom-in-95 duration-100 flex items-center gap-1">
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900/90 backdrop-blur-sm text-white text-[11px] font-medium rounded-lg whitespace-nowrap shadow-lg pointer-events-none z-50 animate-in fade-in zoom-in-95 duration-100 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 <span>{project.name}</span>
-                {isActive && <span className="text-slate-400 text-[9.5px]">(current)</span>}
+                {isActive && <span className="text-slate-400 text-[10px]">(current)</span>}
               </div>
             )}
           </div>
@@ -56,14 +60,13 @@ export const ProjectDots: React.FC<ProjectDotsProps> = ({
 
       {/* Refined Plus Button to Add / Open Project */}
       <button
+        type="button"
         onClick={onAddProject}
         aria-label="Add project"
-        className="group w-6 h-8 rounded-full grid place-items-center text-slate-400 hover:text-slate-700 active:scale-[0.96] transition-[color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
+        className="w-4 h-4 rounded-full bg-slate-200/80 hover:bg-slate-300 text-slate-500 hover:text-slate-800 grid place-items-center active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ml-0.5"
         title="Add or open project folder"
       >
-        <span className="w-[18px] h-[18px] rounded-full border border-dashed border-slate-300 group-hover:border-slate-600 bg-white/70 group-hover:bg-white flex items-center justify-center shadow-sm transition-[border-color,background-color]">
-          <Plus className="w-3 h-3 stroke-[2.2]" />
-        </span>
+        <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
       </button>
     </div>
   );

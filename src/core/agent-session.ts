@@ -105,6 +105,7 @@ import {
 	type InstructionSourceSummary,
 	type InstructionStack,
 } from "./system-prompt.ts";
+import { getGlobalSpawnGuard } from "./spawn-guard.ts";
 import {
 	extractProposedPlan,
 	resolveWorkflowProposal,
@@ -423,7 +424,6 @@ export class AgentSession {
 	private _pendingUserInput?: AskUserRequest;
 	private _subagentLaunchBatchOpen = false;
 	private _subagentPauseActive = false;
-	private _subagentBarrierActiveToolNames: string[] | undefined;
 	private readonly _pendingSubagentResults = new Map<string, string>();
 	private _subagentResultDeliveryInProgress = false;
 	private _subagentResultDrainPromise: Promise<void> | undefined;
@@ -698,16 +698,14 @@ export class AgentSession {
 
 	private readonly _runningSubagentIds = new Set<string>();
 
+	/**
+	 * The Subagent barrier is enforced at dispatch time by `beforeToolCall`, never by
+	 * narrowing the advertised tool list. Tools are the first segment of a provider's
+	 * cached request prefix, so changing them mid-wave invalidated the whole prefix
+	 * (system prompt and every message) two to three times per Subagent wave.
+	 */
 	private _releaseSubagentPause(): void {
 		this._subagentPauseActive = false;
-		this._restoreToolsAfterSubagentBarrier();
-	}
-
-	private _restoreToolsAfterSubagentBarrier(): void {
-		if (!this._subagentBarrierActiveToolNames) return;
-		const toolNames = this._subagentBarrierActiveToolNames;
-		this._subagentBarrierActiveToolNames = undefined;
-		this.setActiveToolsByName(toolNames);
 	}
 
 	private _closeSubagentLaunchBatch(): void {
@@ -716,11 +714,11 @@ export class AgentSession {
 		if (this._pendingSubagentResults.size > 0) {
 			this._releaseSubagentPause();
 			this._scheduleSubagentResultDelivery();
-		} else if (this._runningSubagentIds.size > 0) {
-			this.setActiveToolsByName([]);
-		} else {
+		} else if (this._runningSubagentIds.size === 0) {
 			this._releaseSubagentPause();
 		}
+		// Subagents still running: keep the pause so `beforeToolCall` blocks every tool
+		// until a result arrives. The advertised tool list stays untouched.
 	}
 
 	private _queueSubagentResult(jobId: string, result: string): void {
@@ -781,13 +779,9 @@ export class AgentSession {
 	private _setSubagentRunning(jobId: string, running: boolean): void {
 		const previousCount = this._runningSubagentIds.size;
 		if (running) {
-			if (!this._subagentBarrierActiveToolNames) {
-				this._subagentBarrierActiveToolNames = this.getActiveToolNames();
-			}
 			this._subagentPauseActive = true;
 			this._subagentLaunchBatchOpen = true;
 			this._runningSubagentIds.add(jobId);
-			this.setActiveToolsByName(this._toolRegistry.has("spawn_agent") ? ["spawn_agent"] : this._toolRegistry.has("subagent") ? ["subagent"] : []);
 		} else {
 			this._runningSubagentIds.delete(jobId);
 		}
@@ -806,6 +800,30 @@ export class AgentSession {
 
 	getRunningSubagentIds(): string[] {
 		return [...this._runningSubagentIds];
+	}
+
+	/**
+	 * Abort all running subagents, terminate their process trees, and clear queues.
+	 */
+	abortSubagents(): void {
+		const guard = getGlobalSpawnGuard();
+		const runningIds = [...this._runningSubagentIds];
+		for (const jobId of runningIds) {
+			try {
+				guard.killChild(jobId, "SIGTERM");
+			} catch {
+				// Ignore
+			}
+		}
+		this._runningSubagentIds.clear();
+		this._pendingSubagentResults.clear();
+		this._subagentPauseActive = false;
+		this._subagentLaunchBatchOpen = false;
+		this._emit({
+			type: "subagent_status",
+			runningCount: 0,
+			runningJobIds: [],
+		});
 	}
 
 	// Track last assistant message for auto-compaction check
@@ -1122,6 +1140,7 @@ export class AgentSession {
 			this.abortCompaction();
 			this.abortBranchSummary();
 			this.abortBash();
+			this.abortSubagents();
 			this._workflowRuntime.abortAllToolCalls();
 			this.agent.abort();
 		} catch {
@@ -1313,6 +1332,22 @@ export class AgentSession {
 		return this._performanceAttendance;
 	}
 
+	get concurrencyStrategy(): "tokensaver" | "wide" | "custom" {
+		return this.settingsManager.getConcurrencyStrategy();
+	}
+
+	setConcurrencyStrategy(strategy: "tokensaver" | "wide" | "custom"): void {
+		this.settingsManager.setConcurrencyStrategy(strategy);
+	}
+
+	get maxConcurrent(): number {
+		return this.settingsManager.getMaxConcurrent();
+	}
+
+	setMaxConcurrent(max: number): void {
+		this.settingsManager.setMaxConcurrent(max);
+	}
+
 	private _parsePerformanceInvocation(text: string): {
 		mission: string;
 		concurrency?: PerformanceConcurrency;
@@ -1396,8 +1431,8 @@ export class AgentSession {
 		const effortCapability = !this.model
 			? "unknown"
 			: eligibleModels.some((model) => getSupportedThinkingLevels(model).length > 1) ? "selectable" : levels[0] === "off" ? "unsupported" : "inherited-only";
-		let concurrency: PerformanceConcurrency = invocation?.concurrency ?? "tokensaver";
-		let maxConcurrent = invocation?.maxConcurrent ?? (concurrency === "wide" ? 200 : 6);
+		let concurrency: PerformanceConcurrency = invocation?.concurrency ?? (this.settingsManager.getConcurrencyStrategy?.() ?? "tokensaver");
+		let maxConcurrent = invocation?.maxConcurrent ?? (concurrency === "wide" ? 200 : concurrency === "custom" ? (this.settingsManager.getMaxConcurrent?.() ?? 12) : 6);
 		let agentSelection: "off" | "auto" | "explicit" = invocation?.agentSelection ?? "off";
 		let agentModels = invocation?.agentModels ?? [];
 		let attendance: PerformanceAttendance = "unattended";
@@ -1629,9 +1664,16 @@ export class AgentSession {
 		);
 	}
 
-	/** All messages including custom types like BashExecutionMessage */
+	/**
+	 * All conversational messages including custom types like BashExecutionMessage.
+	 *
+	 * Runtime context blocks (`workflow_context`) are model-only scaffolding: they stay
+	 * in `agent.state.messages` so the provider's prompt cache keeps matching a
+	 * byte-identical prefix, but they are not conversation and are already excluded from
+	 * host events and session persistence, so they must not surface here either.
+	 */
 	get messages(): AgentMessage[] {
-		return this.agent.state.messages;
+		return this.agent.state.messages.filter((message) => !(message.role === "custom" && message.customType === "workflow_context"));
 	}
 
 	/** Current steering mode */
@@ -1764,17 +1806,19 @@ export class AgentSession {
 
 	private _appendWorkflowCheckpoint(reason: "prompt_accepted" | "step_completed" | "compaction" | "aborted" | "error" | "completed"): void {
 		this.sessionManager.appendCustomEntry("workflow_checkpoint", this._workflowRuntime.checkpoint(reason, this._collaborationMode));
-		const latestUser = [...this.messages].reverse().find((message) => message.role === "user");
+		// `messages` filters on every access, so read it once for the scan below.
+		const visible = this.messages;
+		const latestUser = [...visible].reverse().find((message) => message.role === "user");
 		const goal = latestUser?.role === "user"
 			? (Array.isArray(latestUser.content)
 				? latestUser.content.filter((part): part is TextContent => part.type === "text").map((part) => part.text).join("\n")
 				: String(latestUser.content))
 			: undefined;
 		let lastUserIndex = 0;
-		for (let index = this.messages.length - 1; index >= 0; index -= 1) {
-			if (this.messages[index]?.role === "user") { lastUserIndex = index; break; }
+		for (let index = visible.length - 1; index >= 0; index -= 1) {
+			if (visible[index]?.role === "user") { lastUserIndex = index; break; }
 		}
-		const recentTurn = this.messages.slice(lastUserIndex).flatMap((message) => {
+		const recentTurn = visible.slice(lastUserIndex).flatMap((message) => {
 			if (!("content" in message)) return [];
 			const content = Array.isArray(message.content)
 				? message.content.filter((part): part is TextContent => part.type === "text").map((part) => part.text).join("\n")
@@ -1791,6 +1835,16 @@ export class AgentSession {
 	// Prompting
 	// =========================================================================
 
+	/** True when an identical runtime-context block is already in the model-visible history. */
+	private _hasRuntimeContextBlock(content: string): boolean {
+		for (const message of this.agent.state.messages) {
+			if (message.role === "custom" && message.customType === "workflow_context" && message.content === content) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void> {
 		try {
 			await this.agent.prompt(messages);
@@ -1798,11 +1852,12 @@ export class AgentSession {
 				await this.agent.continue();
 			}
 		} finally {
-			// Per-step runtime context must survive tool continuations inside this run,
-			// but must not accumulate in public/session message history.
-			this.agent.state.messages = this.agent.state.messages.filter(
-				(message) => message.role !== "custom" || message.customType !== "workflow_context",
-			);
+			// Runtime context blocks intentionally stay in history. Prompt caches match a
+			// byte-identical prefix, so deleting them here made the next turn diverge at
+			// the head of the message array and re-write the whole conversation instead of
+			// reading it from cache. They are already excluded from host events and session
+			// persistence (see _handleAgentEvent), and compaction/branch switches rebuild
+			// agent state from the session file, which drops them.
 			this._activeRunInstructionStack = undefined;
 			this._systemPromptOverride = undefined;
 			this._flushPendingBashMessages();
@@ -2024,7 +2079,10 @@ export class AgentSession {
 				source: "memory:overview",
 				trust: "memory" as const,
 			} : undefined;
-			const performanceContext = this._collaborationMode === "build" ? this._performanceRuntime.context() : undefined;
+			// Both blocks are stable for the life of a run (protocol text and run identity),
+			// so they are injected once and then served from the provider's cached prefix.
+			// Live gate state rides the performance_gate / read_plan results instead.
+			const performanceBlocks = this._collaborationMode === "build" ? this._performanceRuntime.contextBlocks() : [];
 
 			const stepInstructions: InstructionStack = {
 				base: this._instructionStack.base,
@@ -2040,13 +2098,13 @@ export class AgentSession {
 				],
 				context: [
 					...this._instructionStack.context,
-					...(performanceContext ? [{
-						id: "runtime:performance",
+					...performanceBlocks.map((entry) => ({
+						id: `runtime:${entry.id}`,
 						channel: "context" as const,
-						content: performanceContext,
-						source: "performance runtime",
+						content: entry.content,
+						source: entry.id === "performance-state" ? "performance runtime state" : "performance runtime",
 						trust: "runtime" as const,
-					}] : []),
+					})),
 					...(beforeStep?.context ?? []).map((entry, index) => ({
 						...entry,
 						id: `extension:step:context:${index}:${entry.id}`,
@@ -2058,12 +2116,22 @@ export class AgentSession {
 
 			// Build messages with runtime/extension context before the actual user
 			// message. User authority remains last in the model-visible input.
+			// History is append-only: a block whose exact content is already present is
+			// skipped so the cached prefix keeps matching byte-for-byte. The memory
+			// overview rides this channel too — it is the one privileged input that
+			// changes mid-session, and delivering it here keeps a new memory from
+			// invalidating the system prompt and with it the whole conversation.
 			messages = [];
-			for (const entry of stepInstructions.context) {
+			const contextBlocks = stepInstructions.memoryOverview
+				? [stepInstructions.memoryOverview, ...stepInstructions.context]
+				: stepInstructions.context;
+			for (const entry of contextBlocks) {
+				const content = `[Runtime context from ${entry.source}; not user instructions]\n${entry.content}`;
+				if (this._hasRuntimeContextBlock(content)) continue;
 				messages.push({
 					role: "custom",
 					customType: "workflow_context",
-					content: `[Runtime context from ${entry.source}; not user instructions]\n${entry.content}`,
+					content,
 					display: false,
 					timestamp: Date.now(),
 				});
@@ -2423,6 +2491,7 @@ export class AgentSession {
 	async abort(): Promise<void> {
 		this.abortRetry();
 		this._memoryCoordinator?.abort();
+		this.abortSubagents();
 		this._workflowRuntime.abortAllToolCalls();
 		this.agent.abort();
 		await this.agent.waitForIdle();
@@ -4205,7 +4274,9 @@ export class AgentSession {
 			}
 		}
 
-		const estimate = estimateContextTokens(this.messages);
+		// Estimate over the raw state so model-only runtime context blocks still count
+		// toward the context window they actually occupy.
+		const estimate = estimateContextTokens(this.agent.state.messages);
 		const percent = (estimate.tokens / contextWindow) * 100;
 
 		return {

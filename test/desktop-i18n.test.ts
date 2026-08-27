@@ -45,6 +45,8 @@ const legitimateCognates = new Set([
 	"version",
 	"reactSettingsDesktop",
 	"workProgressSubagent",
+	"chatHomeSuffix",
+	"tokensUnit",
 ]);
 
 describe("Desktop translation catalogs", () => {
@@ -125,7 +127,7 @@ describe("Desktop translation coverage", () => {
 			"Delete {provider}?",
 			"{name} is unavailable in this Desktop build.",
 		]) add(value);
-		const intentionallyStable = new Set(["简体中文", "https://api.example.com/v1", "⌘ N", "Enter", "Shift Enter", "Esc", "HTML", "JSONL", "Metis Desktop", "Metis", "·", "%", "+", "—"]);
+		const intentionallyStable = new Set(["简体中文", "https://api.example.com/v1", "⌘ N", "Enter", "Shift Enter", "Esc", "HTML", "JSONL", "Metis Desktop", "Metis", "·", "%", "+", "—", "6", "12", "24", "48"]);
 		const english = new Set(Object.values(i18n.catalogs.en));
 		const missing = [...values].filter((value) => !intentionallyStable.has(value) && !english.has(value)).sort();
 		expect(missing).toEqual([]);

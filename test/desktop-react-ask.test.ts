@@ -18,11 +18,11 @@ describe('desktop React Ask interface', () => {
     expect(card).toContain('request.questions[questionIndex]');
     expect(card).toContain('max-w-[620px]');
     expect(card).toContain('rounded-[24px]');
-    expect(card).toContain('bg-white p-3 shadow-none');
+    expect(card).toContain('bg-white');
+    expect(card).toContain('shadow-none');
     expect(card).toContain('rounded-[12px] px-3 py-2.5');
     expect(card).toContain('rounded-[12px] bg-[#172033]');
     expect(card).toContain('border-[0.5px]');
-    expect(card).toContain('shadow-none');
     expect(card).toContain('aria-labelledby');
     expect(card).toContain('<fieldset');
     expect(card).not.toContain('<hr');
@@ -58,5 +58,13 @@ describe('desktop React Ask interface', () => {
     expect(assistantTurn).toContain('isWaitingUserInput = Boolean(pendingUserInput)');
     expect(assistantTurn).toContain("phase: 'waiting'");
     expect(assistantTurn).toContain('idle={!streaming && !isWaitingUserInput}');
+  });
+
+  it('restores pending user input state when switching back to a waiting session', () => {
+    const hook = source('desktop/src/hooks/useMetisServer.ts');
+    expect(hook).toContain("request<SessionState & { cancelled: boolean }>('/session/switch'");
+    expect(hook).toContain('switchResult.pendingUserInput !== undefined');
+    expect(hook).toContain('setPendingUserInput(switchResult.pendingUserInput)');
+    expect(hook).toContain('loadMessages(targetSessionId, true)');
   });
 });

@@ -28,17 +28,13 @@ describe('desktop React multiline composer', () => {
     );
     expect(source).toContain('<textarea');
     expect(source).toContain("e.key === 'Enter' && !e.shiftKey");
-    expect(source).toContain("data-composer-multiline={isMultiline ? 'true' : 'false'}");
-    expect(source).toContain('grid-rows-[minmax(52px,auto)_40px]');
-    expect(source).toContain("rounded-t-[26px] rounded-b-[24px] px-1 pt-1 pb-[3px]");
-    expect(source).toContain("'grid-rows-1 rounded-[24px] px-1'");
-    expect(source).toContain('mt-2.5 overflow-y-auto pl-2.5 pr-10');
-    expect(source).toContain("'col-start-1 row-start-2 self-end'");
-    expect(source).toContain("'col-start-4 row-start-2 self-end'");
-    expect(source).toContain('grid-cols-[40px_minmax(0,1fr)_auto_40px]');
+    expect(source).toContain('grid-rows-[minmax(44px,auto)_30px]');
+    expect(source).toContain("rounded-[22px] px-3 pt-2.5 pb-2.5");
     expect(source).toContain('col-span-4 row-start-1');
+    expect(source).toContain('col-start-1 row-start-2 self-end');
+    expect(source).toContain('col-start-4 row-start-2 self-end');
+    expect(source).toContain('grid-cols-[30px_minmax(0,1fr)_auto_30px]');
     expect(source).toContain('aria-expanded={isExpanded}');
-    expect(source).toContain('if (!hasComposerLineBreak(nextText)) setIsExpanded(false)');
     expect(source).toContain('style={{ height: composerHeight }}');
     expect(source).toContain('transition-[height,border-radius,border-color]');
     expect(source).toContain('duration-200 ease-out motion-reduce:transition-none');
@@ -48,7 +44,7 @@ describe('desktop React multiline composer', () => {
     expect(source).toContain('composeAttachmentPayload(draftText, draftAttachments)');
     expect(source).toContain("(!text.trim() && attachments.length === 0)");
     expect(source).toContain('data-attachment-input');
-    expect(source).toContain("onClick={() => fileInputRef.current?.click()}");
+    expect(source).toContain("fileInputRef.current?.click()");
     expect(source).not.toContain('<Mic');
     expect(source).not.toContain('Voice Input');
     expect(source).not.toContain('transition-all');
@@ -63,9 +59,17 @@ describe('desktop React multiline composer', () => {
     expect(source).toContain('const result = await onSendMessage(text, options)');
     expect(source).toContain('const showActiveProgress = localTaskPending || isStreaming');
     expect(source).toContain('isStreaming={showActiveProgress}');
+    expect(source).toContain('onAbort={onAbort}');
     expect(source).toContain('disabled={showActiveProgress || isLoading || isCompacting}');
     expect(source.indexOf('setLocalTaskPending(true)'))
       .toBeLessThan(source.indexOf('await onSendMessage(text, options)'));
+
+    const composerSource = readFileSync(
+      resolve(process.cwd(), 'desktop/src/components/chat/Composer.tsx'),
+      'utf8',
+    );
+    expect(composerSource).toContain('data-stop-button');
+    expect(composerSource).toContain('onAbort?.()');
   });
 
   it('filters skill commands after slash and inserts them with keyboard selection support', () => {

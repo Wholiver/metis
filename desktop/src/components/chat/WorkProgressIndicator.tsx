@@ -183,10 +183,10 @@ export const WorkProgressIndicator: React.FC<WorkProgressIndicatorProps> = ({ pr
         <img src="./assets/bloub-progress.svg" alt="" className="work-progress-fallback" />
         {idle ? (
           <img
-            src="./assets/bloub-idle.gif"
+            src="./assets/bloub-idle.svg"
             alt=""
             className="work-progress-idle"
-            data-progress-idle-gif
+            data-progress-idle-svg
           />
         ) : (
           <svg

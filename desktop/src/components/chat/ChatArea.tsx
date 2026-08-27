@@ -10,10 +10,12 @@ interface ChatAreaProps {
   agent: Agent;
   messages: Message[];
   workspacePath?: string;
+  projectName?: string;
   isSidebarOpen?: boolean;
   isInspectorOpen?: boolean;
   onToggleSidebar?: () => void;
   onSendMessage: (text: string, options?: SendMessageOptions) => boolean | void | Promise<boolean | void>;
+  onAbort?: () => void | Promise<void>;
   models: ModelOption[];
   activeModel?: ModelOption;
   onSelectModel: (model: ModelOption) => void | Promise<void>;
@@ -49,10 +51,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   agent,
   messages,
   workspacePath,
+  projectName,
   isSidebarOpen = true,
   isInspectorOpen = true,
   onToggleSidebar,
   onSendMessage,
+  onAbort,
   models,
   activeModel,
   onSelectModel,
@@ -130,6 +134,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       <MessageList
         messages={messages}
         workspacePath={workspacePath}
+        projectName={projectName}
         isLoading={isLoading}
         isStreaming={showActiveProgress}
         workflowProposal={workflowProposal}
@@ -137,6 +142,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         onProcessProposal={onProcessProposal}
         onRefineProposal={onRefineProposal}
         pendingUserInput={pendingUserInput}
+        onSendMessage={handleSendMessage}
       />
       {pendingUserInput ? (
         <UserInputCard request={pendingUserInput} onRespond={onRespondToUserInput} />
@@ -159,6 +165,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           isChangingCollaborationMode={isChangingCollaborationMode}
           skills={skills}
           disabled={showActiveProgress || isLoading || isCompacting}
+          isStreaming={showActiveProgress}
+          onAbort={onAbort}
         />
       )}
     </main>

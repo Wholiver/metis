@@ -261,6 +261,7 @@ export function App() {
     activeAgentId,
     messages,
     sendMessage,
+    abortTurn,
     models,
     refreshModels,
     activeModel,
@@ -715,11 +716,13 @@ export function App() {
         agent={activeAgent}
         messages={displayedMessages}
         workspacePath={displayedWorkspacePath}
+        projectName={activeProject?.name}
         isSidebarOpen={isSidebarOpen}
         isInspectorOpen={isInspectorOpen}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         onNewChat={newConversation}
         onSendMessage={captureLocalSend ? () => new Promise<boolean | void>(() => {}) : sendMessage}
+        onAbort={abortTurn}
         models={displayedModels}
         activeModel={displayedActiveModel}
         onSelectModel={selectModel}

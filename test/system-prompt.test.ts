@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildInstructionStack, buildSystemPrompt, compileInstructionStack } from "../src/core/system-prompt.ts";
+import { buildInstructionStack, buildSystemPrompt, compileInstructionStack, instructionStackHash } from "../src/core/system-prompt.ts";
 
 describe("instruction stack", () => {
 	test("renders trusted base and developer instructions in deterministic order", () => {
@@ -79,23 +79,29 @@ describe("instruction stack", () => {
 		}
 	});
 
-	test("renders dedicated memory_overview tag when memoryOverview is provided and omits when absent", () => {
+	test("keeps memoryOverview out of the compiled prompt while preserving its provenance", () => {
 		const overviewContent = "# Memory Overview\n\n- [tech_stack]: Node.js with TypeScript\n- [user_preferences]: Prefers concise explanations";
-		const withOverview = buildSystemPrompt({
-			cwd: "/workspace",
-			memoryOverview: overviewContent,
-		});
-		expect(withOverview).toContain("<memory_overview>\n# Memory Overview\n\n- [tech_stack]: Node.js with TypeScript\n- [user_preferences]: Prefers concise explanations\n</memory_overview>");
+		const stack = buildInstructionStack({ cwd: "/workspace", memoryOverview: overviewContent });
 
-		const withoutOverview = buildSystemPrompt({
-			cwd: "/workspace",
-		});
-		expect(withoutOverview).not.toContain("<memory_overview>");
+		// The overview is the one privileged input that changes mid-session. Compiling it
+		// into the system prompt made every new memory invalidate the cached request
+		// prefix, so WorkflowRuntime appends it as a runtime-context block instead.
+		expect(stack.memoryOverview?.content).toBe(overviewContent);
+		expect(compileInstructionStack(stack)).not.toContain(overviewContent);
+		expect(buildSystemPrompt({ cwd: "/workspace", memoryOverview: overviewContent })).toBe(
+			buildSystemPrompt({ cwd: "/workspace" }),
+		);
+		expect(instructionStackHash(stack)).toBe(instructionStackHash(buildInstructionStack({ cwd: "/workspace" })));
 
-		const withEmptyOverview = buildSystemPrompt({
-			cwd: "/workspace",
-			memoryOverview: "   \n  ",
-		});
-		expect(withEmptyOverview).not.toContain("<memory_overview>");
+		expect(buildInstructionStack({ cwd: "/workspace", memoryOverview: "   \n  " }).memoryOverview).toBeUndefined();
+	});
+
+	test("incorporates Phase 0 Intent Classification & Admission Check across base instructions and Build mode", () => {
+		const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "build" });
+		expect(prompt).toContain("Phase 0: Intent Classification & Admission Check (Triage Fast-Path)");
+		expect(prompt).toContain("Conversational / General Query / Greeting");
+		expect(prompt).toContain("First apply Phase 0 Admission Check");
+		expect(prompt).toContain("respond directly in text without mutating tools, creating ROADMAP/GATELOG files, or spawning subagents");
 	});
 });
+

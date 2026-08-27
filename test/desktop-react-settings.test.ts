@@ -145,5 +145,16 @@ describe('desktop React settings', () => {
     expect(app).toContain("metis:memory-finished");
     expect(app).toContain("Memory consolidation completed:");
   });
+
+  it('renders Concurrency strategy options and binds them to session settings', () => {
+    const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
+    expect(settings).toContain('label="Concurrency strategy"');
+    expect(settings).toContain("value={session.concurrencyStrategy || 'tokensaver'}");
+    expect(settings).toContain("concurrencyStrategy: e.target.value");
+    expect(settings).toContain('value="tokensaver"');
+    expect(settings).toContain('value="wide"');
+    expect(settings).toContain('value="custom"');
+    expect(settings).toContain('label="Concurrency limit"');
+  });
 });
 

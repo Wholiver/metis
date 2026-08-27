@@ -299,7 +299,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
             setIsOpen(true);
           }
         }}
-        className="flex h-10 min-w-0 max-w-[220px] items-center gap-1 rounded-full px-2.5 text-[12px] font-medium text-slate-500 hover:bg-black/[0.045] hover:text-slate-800 active:scale-[0.98] transition-[color,background-color,transform,opacity] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
+        className="flex h-[30px] min-w-0 max-w-[220px] items-center gap-1 rounded-full px-2 text-[12px] font-medium text-slate-500 hover:bg-black/[0.045] hover:text-slate-800 active:scale-[0.98] transition-[color,background-color,transform,opacity] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
       >
         <span className="truncate" data-model-trigger-label="">{triggerLabel}</span>
         {loading ? (

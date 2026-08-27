@@ -450,6 +450,33 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <option value="build">Build</option>
             </select>
           </Row>
+          <Row label="Concurrency strategy" description="Default subagent concurrency limit for Build mode tasks.">
+            <select
+              className={selectClass}
+              value={session.concurrencyStrategy || 'tokensaver'}
+              onChange={(e) => void updateSession({ concurrencyStrategy: e.target.value }, 'Concurrency settings saved.')}
+              disabled={disabled}
+            >
+              <option value="tokensaver">Token saver (up to 6 agents)</option>
+              <option value="wide">Wide concurrency (up to 200 agents)</option>
+              <option value="custom">Custom concurrency limit</option>
+            </select>
+          </Row>
+          {session.concurrencyStrategy === 'custom' && (
+            <Row label="Concurrency limit" description="Maximum number of live subagents when custom concurrency is selected.">
+              <select
+                className={selectClass}
+                value={String(session.maxConcurrent || 12)}
+                onChange={(e) => void updateSession({ maxConcurrent: parseInt(e.target.value, 10) || 12 }, 'Concurrency settings saved.')}
+                disabled={disabled}
+              >
+                <option value="6">6</option>
+                <option value="12">12</option>
+                <option value="24">24</option>
+                <option value="48">48</option>
+              </select>
+            </Row>
+          )}
           <Row label="Steering messages" description="How Agent receives instructions while working.">
             <select className={selectClass} value={session.steeringMode || 'one-at-a-time'} onChange={(e) => void updateSession({ steeringMode: e.target.value }, 'Steering preference saved.')} disabled={disabled}>
               <option value="one-at-a-time">One at a time</option>

@@ -316,9 +316,9 @@ describe('desktop plan preview', () => {
     }
     expect(cloudBodyPaths.size).toBe(1);
     expect(readFileSync(resolve(process.cwd(), 'desktop/public/assets/bloub-progress.svg'), 'utf8')).toContain('viewBox="-125 -125 250 250"');
-    const idleGif = resolve(process.cwd(), 'desktop/public/assets/bloub-idle.gif');
-    expect(existsSync(idleGif)).toBe(true);
-    expect(statSync(idleGif).size).toBeGreaterThan(500_000);
+    const idleSvg = resolve(process.cwd(), 'desktop/public/assets/bloub-idle.svg');
+    expect(existsSync(idleSvg)).toBe(true);
+    expect(statSync(idleSvg).size).toBeGreaterThan(1_000);
   });
 
   it('renders progress at the latest model-output tail during and after streaming', () => {
@@ -338,7 +338,7 @@ describe('desktop plan preview', () => {
     expect(indicator).toContain('data-progress-status={progress.status}');
     expect(indicator).not.toContain('data-progress-video');
     expect(indicator).not.toContain('bloub-${progress.phase}.webm');
-    expect(indicator).toContain('./assets/bloub-idle.gif');
+    expect(indicator).toContain('./assets/bloub-idle.svg');
     expect(indicator).toContain('WORK_PROGRESS_EXPRESSION_MIN_DISPLAY_MS = 2000');
     expect(indicator).toContain('WORK_PROGRESS_EXPRESSION_SETTLE_MS = 450');
     expect(indicator).toContain('WORK_PROGRESS_EXPRESSION_MORPH_MS = 420');
@@ -355,7 +355,7 @@ describe('desktop plan preview', () => {
     expect(indicator).toContain('data-progress-expression-settle-ms={WORK_PROGRESS_EXPRESSION_SETTLE_MS}');
     expect(indicator).toContain('data-progress-expression-morph-ms={WORK_PROGRESS_EXPRESSION_MORPH_MS}');
     expect(indicator).toContain('data-progress-default-svg');
-    expect(indicator).toContain('data-progress-idle-gif');
+    expect(indicator).toContain('data-progress-idle-svg');
     expect(indicator).toContain('pickWorkProgressLabel(copyState');
     expect(indicator).toContain("' shimmering'");
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
@@ -369,7 +369,7 @@ describe('desktop plan preview', () => {
     expect(css).not.toMatch(/\.work-progress-expression\s*\{[^}]*filter:/);
     expect(css).toContain('width: 32px');
     expect(css).toContain('height: 32px');
-    expect(css).toMatch(/\.work-progress-indicator\s*\{[\s\S]*?gap:\s*10px;[\s\S]*?font-size:\s*12px;[\s\S]*?font-weight:\s*400/);
+    expect(css).toMatch(/\.work-progress-indicator\s*\{[\s\S]*?gap:\s*14px;[\s\S]*?font-size:\s*12px;[\s\S]*?font-weight:\s*400/);
     expect(css).toMatch(/\.work-progress-indicator\s*\{[\s\S]*?align-items:\s*center/);
     expect(css).toContain('max-width: none');
     expect(css).toContain('position: absolute');

@@ -101,6 +101,8 @@ export interface Settings {
 	transport?: TransportSetting; // default: "auto"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
+	concurrencyStrategy?: "tokensaver" | "wide" | "custom";
+	maxConcurrent?: number;
 	theme?: string;
 	uiLanguage?: UiLanguage; // global-only TUI language preference; default: "auto"
 	compaction?: CompactionSettings;
@@ -740,6 +742,28 @@ export class SettingsManager {
 	setFollowUpMode(mode: "all" | "one-at-a-time"): void {
 		this.globalSettings.followUpMode = mode;
 		this.markModified("followUpMode");
+		this.save();
+	}
+
+	getConcurrencyStrategy(): "tokensaver" | "wide" | "custom" {
+		return this.settings.concurrencyStrategy || "tokensaver";
+	}
+
+	setConcurrencyStrategy(strategy: "tokensaver" | "wide" | "custom"): void {
+		this.globalSettings.concurrencyStrategy = strategy;
+		this.markModified("concurrencyStrategy");
+		this.save();
+	}
+
+	getMaxConcurrent(): number {
+		return typeof this.settings.maxConcurrent === "number" && this.settings.maxConcurrent > 0
+			? this.settings.maxConcurrent
+			: 12;
+	}
+
+	setMaxConcurrent(max: number): void {
+		this.globalSettings.maxConcurrent = max > 0 ? max : 12;
+		this.markModified("maxConcurrent");
 		this.save();
 	}
 

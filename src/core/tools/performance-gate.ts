@@ -33,7 +33,14 @@ export function createPerformanceGateToolDefinition(options: PerformanceGateTool
 			if (!runtime || !runtime.state) throw new Error("performance_gate requires an active Performance run.");
 			const actor = options.actor?.() ?? { id: "root", role: "root" };
 			runtime.recordGateReport({ gate: gate as Exclude<PerformanceGate, "complete" | "blocked">, itemId, actor: actor.id, role: actor.role, verdict: verdict as PerformanceVerdict, evidence });
-			return { content: [{ type: "text", text: `Performance gate verdict recorded: ${gate}.` }], details: runtime.state };
+			// The run's live state rides this result instead of a per-turn context block:
+			// the gate call is what moves the frontier, so reporting it here keeps the
+			// model current without appending a new state block ahead of every request.
+			const live = runtime.liveStateSummary();
+			const text = live
+				? `Performance gate verdict recorded: ${gate}.\n${live}`
+				: `Performance gate verdict recorded: ${gate}.`;
+			return { content: [{ type: "text", text }], details: runtime.state };
 		},
 	};
 }

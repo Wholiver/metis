@@ -45,7 +45,10 @@ describe("AgentSession Subagent execution pause", () => {
 
 		internals._setSubagentRunning("first1", true);
 		internals._setSubagentRunning("second", true);
-		expect(harness.session.getActiveToolNames()).toEqual(["subagent"]);
+		// The advertised tool list must not change: tools are the first segment of the
+		// provider's cached request prefix, so narrowing it mid-wave used to invalidate
+		// the system prompt and every message behind it. Only `beforeToolCall` gates.
+		expect(harness.session.getActiveToolNames()).toEqual(["subagent", "log", "bash"]);
 		expect(await harness.session.agent.beforeToolCall?.({
 			toolCall: { id: "log-1", name: "log", arguments: {} },
 			args: {},
@@ -56,7 +59,13 @@ describe("AgentSession Subagent execution pause", () => {
 		} as never)).toBeUndefined();
 
 		internals._closeSubagentLaunchBatch();
-		expect(harness.session.getActiveToolNames()).toEqual([]);
+		expect(harness.session.getActiveToolNames()).toEqual(["subagent", "log", "bash"]);
+		// With the batch closed and Subagents still running, every tool is blocked at
+		// dispatch time — including the launcher, which can no longer extend the batch.
+		expect(await harness.session.agent.beforeToolCall?.({
+			toolCall: { id: "subagent-3", name: "subagent", arguments: {} },
+			args: {},
+		} as never)).toMatchObject({ block: true });
 
 		internals._setSubagentRunning("first1", false);
 		internals._queueSubagentResult("first1", "first result");
@@ -148,7 +157,9 @@ describe("AgentSession Subagent execution pause", () => {
 		expect(harness.getPendingResponseCount()).toBe(1);
 		expect(getAssistantTexts(harness)).toEqual([""]);
 		expect(harness.session.messages.filter((message) => message.role === "toolResult")).toHaveLength(2);
-		expect(harness.session.getActiveToolNames()).toEqual([]);
+		// The turn ends because the launcher returns `terminate: true`, not because the
+		// tool list was emptied — so the next turn's prefix still matches this one's.
+		expect(harness.session.getActiveToolNames()).toEqual(["subagent", "log"]);
 	});
 
 	it("buffers an instant result until the launch batch closes", async () => {
@@ -167,5 +178,27 @@ describe("AgentSession Subagent execution pause", () => {
 
 		internals._closeSubagentLaunchBatch();
 		await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
+	});
+
+	it("aborts running subagents and emits subagent_status 0 on session.abort()", async () => {
+		const harness = await createHarness({
+			tools: [passiveTool("subagent"), passiveTool("log")],
+			initialActiveToolNames: ["subagent", "log"],
+		});
+		harnesses.push(harness);
+		const internals = harness.session as unknown as SubagentInternals;
+
+		internals._setSubagentRunning("sub-1", true);
+		internals._setSubagentRunning("sub-2", true);
+		expect(harness.session.getRunningSubagentCount()).toBe(2);
+
+		const events: any[] = [];
+		harness.session.subscribe((ev) => events.push(ev));
+
+		await harness.session.abort();
+
+		expect(harness.session.getRunningSubagentCount()).toBe(0);
+		expect(harness.session.getRunningSubagentIds()).toEqual([]);
+		expect(events.some((ev) => ev.type === "subagent_status" && ev.runningCount === 0)).toBe(true);
 	});
 });

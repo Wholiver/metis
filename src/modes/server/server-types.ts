@@ -42,6 +42,8 @@ export interface ServerSessionState {
 	isCompacting: boolean;
 	steeringMode: string;
 	followUpMode: string;
+	concurrencyStrategy?: "tokensaver" | "wide" | "custom";
+	maxConcurrent?: number;
 	collaborationMode: CollaborationMode;
 	contextWindowId: string;
 	workflowPlan?: WorkflowPlanState;

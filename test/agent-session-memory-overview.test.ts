@@ -9,7 +9,7 @@ import { AuthStorage } from "../src/core/auth-storage.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { getModel } from "@earendil-works/metis-ai/compat";
 
-describe("AgentSession Memory Overview Injection", () => {
+describe("AgentSession Memory Overview Delivery", () => {
 	let tempDir: string;
 	let agentDir: string;
 	let memoryDir: string;
@@ -29,7 +29,7 @@ describe("AgentSession Memory Overview Injection", () => {
 		rmSync(tempDir, { recursive: true, force: true });
 	});
 
-	it("injects <memory_overview> into system prompt when memory-overview.md exists", async () => {
+	it("keeps memory-overview.md out of the system prompt while tracking its provenance", async () => {
 		const overviewPath = join(memoryDir, "memory-overview.md");
 		writeFileSync(overviewPath, "# Memory Overview\n\n- [tech_stack]: TypeScript & Vitest\n- [user_preferences]: Prefers concise answers", "utf8");
 
@@ -54,12 +54,17 @@ describe("AgentSession Memory Overview Injection", () => {
 			resourceLoader,
 		});
 
-		expect(session.systemPrompt).toContain("<memory_overview>\n# Memory Overview\n\n- [tech_stack]: TypeScript & Vitest\n- [user_preferences]: Prefers concise answers\n</memory_overview>");
+		// The overview rides an appended runtime-context block instead of the system
+		// prompt: it is the one privileged input that changes mid-session, and embedding
+		// it here invalidated the provider's cached prefix on every new memory.
+		expect(session.systemPrompt).not.toContain("<memory_overview>");
+		expect(session.systemPrompt).not.toContain("[tech_stack]: TypeScript & Vitest");
+		expect(session.instructionSources.some((entry) => entry.source === "memory:overview")).toBe(true);
 
 		session.dispose();
 	});
 
-	it("omits <memory_overview> when memory-overview.md does not exist or is empty", async () => {
+	it("omits the overview entirely when memory-overview.md does not exist or is empty", async () => {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.create(tempDir, sessionDir);
 		const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
@@ -82,11 +87,12 @@ describe("AgentSession Memory Overview Injection", () => {
 		});
 
 		expect(session.systemPrompt).not.toContain("<memory_overview>");
+		expect(session.instructionSources.some((entry) => entry.source === "memory:overview")).toBe(false);
 
 		session.dispose();
 	});
 
-	it("dynamically picks up updated memory-overview.md across prompts", async () => {
+	it("appends an updated memory-overview.md as a runtime-context block without changing the system prompt", async () => {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.create(tempDir, sessionDir);
 		const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
@@ -109,6 +115,7 @@ describe("AgentSession Memory Overview Injection", () => {
 		});
 
 		expect(session.systemPrompt).not.toContain("<memory_overview>");
+		const promptBefore = session.systemPrompt;
 
 		// Mock streamFn for prompting
 		(session.agent as any).streamFn = async () => ({
@@ -129,7 +136,13 @@ describe("AgentSession Memory Overview Injection", () => {
 		// Execute prompt
 		await session.prompt("Hello");
 
-		expect(session.systemPrompt).toContain("<memory_overview>\n# Memory Overview v2\n- [known_failures_and_fixes]: Check null before access\n</memory_overview>");
+		expect(session.systemPrompt).toBe(promptBefore);
+		// The new overview lands in the model-visible prefix as an appended block, so the
+		// previous turns stay byte-identical and keep matching the provider's cache.
+		const modelMessages = JSON.stringify(session.agent.state.messages);
+		expect(modelMessages).toContain("[Runtime context from memory:overview; not user instructions]");
+		expect(modelMessages).toContain("# Memory Overview v2");
+		expect(session.messages.some((message) => JSON.stringify(message).includes("# Memory Overview v2"))).toBe(false);
 
 		session.dispose();
 	});

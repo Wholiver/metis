@@ -43,6 +43,8 @@ type SessionState = {
   thinkingOptions?: ThinkingOption[];
   supportsThinking?: boolean;
   collaborationMode?: CollaborationMode;
+  concurrencyStrategy?: 'tokensaver' | 'wide' | 'custom';
+  maxConcurrent?: number;
   workflowPlan?: WorkflowPlanState;
   workflowProposal?: WorkflowProposalState;
   pendingUserInput?: PendingUserInput;
@@ -591,7 +593,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     return response.data as T;
   }, []);
 
-  const loadMessages = useCallback(async (expectedSessionId?: string) => {
+  const loadMessages = useCallback(async (expectedSessionId?: string, force = false) => {
     const version = ++messageLoadVersionRef.current;
     const [state, result, memoryRes] = await Promise.all([
       request<SessionState>('/session'),
@@ -599,9 +601,15 @@ export function useMetisServer(activeProject?: ProjectItem) {
       request<MemoryState>('/memory').catch(() => undefined),
     ]);
     if (version !== messageLoadVersionRef.current) return;
-    if (expectedSessionId && state.sessionId !== expectedSessionId) return;
+    if (expectedSessionId && state.sessionId !== expectedSessionId && state.sessionFile !== expectedSessionId) {
+      const matchesAgent = agentsRef.current.some((agent) => (
+        (agent.id === expectedSessionId || agent.sessionPath === expectedSessionId) &&
+        (agent.id === state.sessionId || (state.sessionFile && agent.sessionPath === state.sessionFile))
+      ));
+      if (!matchesAgent) return;
+    }
     if (result.serverSessionId && result.serverSessionId !== state.sessionId) return;
-    if (Number.isSafeInteger(result.serverSequence)
+    if (!force && Number.isSafeInteger(result.serverSequence)
       && (result.serverSequence || 0) < lastServerSequenceRef.current) return;
     activeSessionIdRef.current = state.sessionId;
     if (result.serverInstanceId) serverInstanceIdRef.current = result.serverInstanceId;
@@ -761,7 +769,11 @@ export function useMetisServer(activeProject?: ProjectItem) {
         && event.serverSessionId
         && activeSessionIdRef.current
         && event.serverSessionId !== activeSessionIdRef.current) {
-        return false;
+        const matchesActiveAgent = agentsRef.current.some((agent) => (
+          (agent.id === activeSessionIdRef.current || agent.sessionPath === activeSessionIdRef.current) &&
+          (agent.id === event.serverSessionId || (agent.sessionPath && (event as any).sessionFile === agent.sessionPath))
+        ));
+        if (!matchesActiveAgent) return false;
       }
       if (Number.isSafeInteger(sequence)) {
         if ((sequence || 0) <= lastServerSequenceRef.current) return false;
@@ -1019,15 +1031,29 @@ export function useMetisServer(activeProject?: ProjectItem) {
     setIsLoadingSessions(true);
     setSessionError('');
     try {
-      await request('/session/switch', 'POST', { sessionPath: agent.sessionPath });
+      const switchResult = await request<SessionState & { cancelled: boolean }>('/session/switch', 'POST', { sessionPath: agent.sessionPath });
       messageLoadVersionRef.current += 1;
-      activeSessionIdRef.current = agentId;
-      setActiveAgentId(agentId);
-      setMessages([]);
-      setWorkflowPlan(undefined);
-      setWorkflowProposal(undefined);
-      setPendingUserInput(undefined);
-      await loadMessages(agentId);
+      const targetSessionId = switchResult.sessionId || agentId;
+      activeSessionIdRef.current = targetSessionId;
+      setActiveAgentId(targetSessionId);
+      if (switchResult.pendingUserInput !== undefined) {
+        setPendingUserInput(switchResult.pendingUserInput);
+      } else {
+        setPendingUserInput(undefined);
+      }
+      if (switchResult.collaborationMode) {
+        setCollaborationMode(switchResult.collaborationMode);
+      }
+      if (switchResult.workflowPlan !== undefined) {
+        setWorkflowPlan(switchResult.workflowPlan);
+      }
+      if (switchResult.workflowProposal !== undefined) {
+        setWorkflowProposal(switchResult.workflowProposal);
+      }
+      if (switchResult.model) {
+        setActiveModel(switchResult.model);
+      }
+      await loadMessages(targetSessionId, true);
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1182,6 +1208,11 @@ export function useMetisServer(activeProject?: ProjectItem) {
     return await request<MemoryState>('/memory/abort', 'POST');
   }, [request]);
 
+  const abortTurn = useCallback(async () => {
+    setIsStreaming(false);
+    return await request<{ success?: boolean }>('/session/abort', 'POST');
+  }, [request]);
+
   const refreshMemory = useCallback(async () => {
     try {
       const next = await request<MemoryState>('/memory');
@@ -1201,6 +1232,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     activeAgentId,
     messages,
     sendMessage,
+    abortTurn,
     models,
     refreshModels,
     activeModel,

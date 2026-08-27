@@ -1,10 +1,16 @@
 import { Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.ts";
+import type { PerformanceRuntime } from "../performance-runtime.ts";
 import { resolveWorkflowPlan, resolveWorkflowProposal } from "../workflow-runtime.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
+export interface ReadPlanToolOptions {
+	/** Reports the active Performance run's live state, which is not in the cached prefix. */
+	runtime?: () => PerformanceRuntime | undefined;
+}
+
 const readPlanSchema = Type.Object({});
-export function createReadPlanToolDefinition(): ToolDefinition<typeof readPlanSchema> {
+export function createReadPlanToolDefinition(options?: ReadPlanToolOptions): ToolDefinition<typeof readPlanSchema> {
 	return {
 		name: "read_plan", label: "Read plan", description: "Read the latest durable proposal and current Build execution checklist for this session branch.",
 		promptSnippet: "Read latest durable proposal and execution progress", capabilities: { effect: "read", parallelSafe: true }, parameters: readPlanSchema,
@@ -24,8 +30,12 @@ export function createReadPlanToolDefinition(): ToolDefinition<typeof readPlanSc
 					].filter(Boolean).join("\n");
 				content.push({ type: "text", text: `Current execution checklist (updated ${executionPlan.updatedAt}):\n${progress}` });
 			}
+			// Performance live state is deliberately absent from the cached request prefix,
+			// so this read is the model's way to refresh frontier / active item on demand.
+			const live = options?.runtime?.()?.liveStateSummary();
+			if (live) content.push({ type: "text", text: `Performance run live state:\n${live}` });
 			return { content, details: { proposal, executionPlan } };
 		},
 	};
 }
-export function createReadPlanTool() { return wrapToolDefinition(createReadPlanToolDefinition()); }
+export function createReadPlanTool(options?: ReadPlanToolOptions) { return wrapToolDefinition(createReadPlanToolDefinition(options)); }

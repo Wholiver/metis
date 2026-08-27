@@ -289,7 +289,7 @@ export async function startServerMode(
 			signal?.addEventListener("abort", cancel, { once: true });
 			pendingUserInput.set(request.requestId, { resolve: finish, cancel });
 		}));
-		boundSession.setPerformanceAttendance?.("attended");
+		boundSession.setPerformanceAttendance?.("unattended");
 		extensionStatuses.clear();
 		await boundSession.bindExtensions({
 			uiContext: createExtensionUIContext(boundRuntime, boundSession),
@@ -641,12 +641,16 @@ export async function startServerMode(
 				autoRetryEnabled?: unknown;
 				steeringMode?: unknown;
 				followUpMode?: unknown;
+				concurrencyStrategy?: unknown;
+				maxConcurrent?: unknown;
 			}>(request);
 			const hasAutoCompaction = body?.autoCompactionEnabled !== undefined;
 			const hasAutoRetry = body?.autoRetryEnabled !== undefined;
 			const hasSteeringMode = body?.steeringMode !== undefined;
 			const hasFollowUpMode = body?.followUpMode !== undefined;
-			if (!hasAutoCompaction && !hasAutoRetry && !hasSteeringMode && !hasFollowUpMode) {
+			const hasConcurrencyStrategy = body?.concurrencyStrategy !== undefined;
+			const hasMaxConcurrent = body?.maxConcurrent !== undefined;
+			if (!hasAutoCompaction && !hasAutoRetry && !hasSteeringMode && !hasFollowUpMode && !hasConcurrencyStrategy && !hasMaxConcurrent) {
 				return sendError(response, 400, "invalid_request", "At least one Agent setting is required");
 			}
 			if (hasAutoCompaction && typeof body?.autoCompactionEnabled !== "boolean") {
@@ -662,11 +666,20 @@ export async function startServerMode(
 			if (hasFollowUpMode && !queueModes.includes(body?.followUpMode as string)) {
 				return sendError(response, 400, "invalid_request", "followUpMode must be one of: all, one-at-a-time");
 			}
+			const concurrencyStrategies = ["tokensaver", "wide", "custom"];
+			if (hasConcurrencyStrategy && !concurrencyStrategies.includes(body?.concurrencyStrategy as string)) {
+				return sendError(response, 400, "invalid_request", "concurrencyStrategy must be one of: tokensaver, wide, custom");
+			}
+			if (hasMaxConcurrent && (typeof body?.maxConcurrent !== "number" || !Number.isInteger(body.maxConcurrent) || body.maxConcurrent < 1 || body.maxConcurrent > 200)) {
+				return sendError(response, 400, "invalid_request", "maxConcurrent must be an integer between 1 and 200");
+			}
 
 			if (hasAutoCompaction) session.setAutoCompactionEnabled(body?.autoCompactionEnabled as boolean);
 			if (hasAutoRetry) session.setAutoRetryEnabled(body?.autoRetryEnabled as boolean);
 			if (hasSteeringMode) session.setSteeringMode(body?.steeringMode as "all" | "one-at-a-time");
 			if (hasFollowUpMode) session.setFollowUpMode(body?.followUpMode as "all" | "one-at-a-time");
+			if (hasConcurrencyStrategy) session.setConcurrencyStrategy(body?.concurrencyStrategy as "tokensaver" | "wide" | "custom");
+			if (hasMaxConcurrent) session.setMaxConcurrent(body?.maxConcurrent as number);
 			return sendJson(response, 200, getSessionState());
 		}
 		if (method === "PUT" && url.pathname === "/settings/defaults") {
@@ -1003,6 +1016,8 @@ export async function startServerMode(
 			isCompacting: session.isCompacting,
 			steeringMode: session.steeringMode,
 			followUpMode: session.followUpMode,
+			concurrencyStrategy: session.concurrencyStrategy,
+			maxConcurrent: session.maxConcurrent,
 			collaborationMode: session.collaborationMode,
 			contextWindowId: session.contextWindowId,
 			workflowPlan: session.workflowPlan,
