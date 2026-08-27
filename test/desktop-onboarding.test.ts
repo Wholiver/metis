@@ -22,7 +22,7 @@ describe("Desktop React first-run onboarding", () => {
 		expect(onboarding).toContain("step === 2");
 		expect(onboarding).toContain("step === 3");
 		expect(onboarding).toContain("bot-mask-in5s39");
-		expect(onboarding).toContain(">开始</span>");
+		expect(onboarding).toContain(">Get Started</span>");
 		expect(onboarding).toContain("detectSystemLanguage");
 		expect(onboarding).not.toContain("Your Intelligent AI Pair Programming Workspace");
 		expect(onboarding).toContain("localStorage.setItem(COMPLETED_KEY, 'true')");

@@ -1321,7 +1321,17 @@
     "settingsMemoryAddedDivider": "added ·",
     "settingsMemoryProcessedDivider": "processed ·",
     "settingsMemorySkippedInline": "skipped",
-    "reactSettingsReasoningFromMetadata": "Reasoning options come from model metadata returned by this API."
+    "reactSettingsReasoningFromMetadata": "Reasoning options come from model metadata returned by this API.",
+    "onboardingHome": "Home",
+    "onboardingAiMemory": "AI Long-term Memory",
+    "onboardingAiMemoryDesc": "Automatically consolidates work experience and historical context to retrieve in future conversations.",
+    "onboardingNewProject": "New Project",
+    "onboardingOpenExistingProject": "Open Existing Project",
+    "onboardingProjectName": "Project name",
+    "onboardingSaveLocation": "Save location",
+    "onboardingCreateWorkspace": "Create & Enter Workspace",
+    "onboardingImportWorkspaceDesc": "Select a local project folder, Metis will provide project-wide Agent collaboration.",
+    "onboardingMetisLogo": "Metis logo"
   },
   "zh-CN": {
     "dreamOff": "记忆：已关闭",
@@ -2640,7 +2650,17 @@
     "settingsMemoryAddedDivider": "新增 ·",
     "settingsMemoryProcessedDivider": "已处理 ·",
     "settingsMemorySkippedInline": "已跳过",
-    "reactSettingsReasoningFromMetadata": "推理选项来自该 API 返回的模型元数据。"
+    "reactSettingsReasoningFromMetadata": "推理选项来自该 API 返回的模型元数据。",
+    "onboardingHome": "首页",
+    "onboardingAiMemory": "AI 长期记忆 (Memory)",
+    "onboardingAiMemoryDesc": "自动沉淀工作经验与历史上下文，并在后续对话中主动检索。",
+    "onboardingNewProject": "新建项目",
+    "onboardingOpenExistingProject": "打开已有项目",
+    "onboardingProjectName": "项目名称",
+    "onboardingSaveLocation": "保存位置",
+    "onboardingCreateWorkspace": "创建并进入工作区",
+    "onboardingImportWorkspaceDesc": "选择本地的项目文件夹，Metis 将为你提供全库 Agent 协同。",
+    "onboardingMetisLogo": "Metis 图标"
   },
   "zh-TW": {
     "dreamOff": "記憶：已關閉",
@@ -3959,7 +3979,17 @@
     "settingsMemoryAddedDivider": "新增 ·",
     "settingsMemoryProcessedDivider": "已處理 ·",
     "settingsMemorySkippedInline": "已略過",
-    "reactSettingsReasoningFromMetadata": "推理選項來自該 API 回傳的模型中介資料。"
+    "reactSettingsReasoningFromMetadata": "推理選項來自該 API 回傳的模型中介資料。",
+    "onboardingHome": "首頁",
+    "onboardingAiMemory": "AI 長期記憶 (Memory)",
+    "onboardingAiMemoryDesc": "自動沉澱工作經驗與歷史上下文，並在後續對話中主動檢索。",
+    "onboardingNewProject": "新增專案",
+    "onboardingOpenExistingProject": "開啟現有專案",
+    "onboardingProjectName": "專案名稱",
+    "onboardingSaveLocation": "儲存位置",
+    "onboardingCreateWorkspace": "建立並進入工作區",
+    "onboardingImportWorkspaceDesc": "選擇本機的專案資料夾，Metis 將為你提供全專案等級的 Agent 協作。",
+    "onboardingMetisLogo": "Metis 圖示"
   },
   "ja": {
     "dreamOff": "メモリ: オフ",
@@ -5278,7 +5308,17 @@
     "settingsMemoryAddedDivider": "追加 ·",
     "settingsMemoryProcessedDivider": "処理済み ·",
     "settingsMemorySkippedInline": "スキップ",
-    "reactSettingsReasoningFromMetadata": "推論オプションは、この API が返すモデルのメタデータに基づきます。"
+    "reactSettingsReasoningFromMetadata": "推論オプションは、この API が返すモデルのメタデータに基づきます。",
+    "onboardingHome": "ホーム",
+    "onboardingAiMemory": "AI 長期メモリ",
+    "onboardingAiMemoryDesc": "作業経験とコンテキストを自動的に蓄積し、今後の会話で検索します。",
+    "onboardingNewProject": "新規プロジェクト",
+    "onboardingOpenExistingProject": "既存のプロジェクトを開く",
+    "onboardingProjectName": "プロジェクト名",
+    "onboardingSaveLocation": "保存場所",
+    "onboardingCreateWorkspace": "ワークスペースを作成して開く",
+    "onboardingImportWorkspaceDesc": "ローカルのプロジェクトフォルダを選択すると、Metisがプロジェクト全体のエージェントコラボレーションを提供します。",
+    "onboardingMetisLogo": "Metis ロゴ"
   },
   "ko": {
     "dreamOff": "메모리: 꺼짐",
@@ -6597,7 +6637,17 @@
     "settingsMemoryAddedDivider": "추가됨 ·",
     "settingsMemoryProcessedDivider": "처리됨 ·",
     "settingsMemorySkippedInline": "건너뜀",
-    "reactSettingsReasoningFromMetadata": "추론 옵션은 이 API가 반환한 모델 메타데이터에서 가져옵니다."
+    "reactSettingsReasoningFromMetadata": "추론 옵션은 이 API가 반환한 모델 메타데이터에서 가져옵니다.",
+    "onboardingHome": "홈",
+    "onboardingAiMemory": "AI 장기 기억",
+    "onboardingAiMemoryDesc": "작업 경험과 이전 맥락을 자동으로 축적하여 이후 대화에서 검색합니다.",
+    "onboardingNewProject": "새 프로젝트",
+    "onboardingOpenExistingProject": "기존 프로젝트 열기",
+    "onboardingProjectName": "프로젝트 이름",
+    "onboardingSaveLocation": "저장 위치",
+    "onboardingCreateWorkspace": "작업 영역 생성 및 열기",
+    "onboardingImportWorkspaceDesc": "로컬 프로젝트 폴더를 선택하면 Metis가 프로젝트 전반의 에이전트 협업을 제공합니다.",
+    "onboardingMetisLogo": "Metis 로고"
   },
   "es": {
     "dreamOff": "Memoria: Apagada",
@@ -7916,7 +7966,17 @@
     "settingsMemoryAddedDivider": "añadido ·",
     "settingsMemoryProcessedDivider": "procesado ·",
     "settingsMemorySkippedInline": "omitido",
-    "reactSettingsReasoningFromMetadata": "Las opciones de razonamiento provienen de los metadatos del modelo que devuelve esta API."
+    "reactSettingsReasoningFromMetadata": "Las opciones de razonamiento provienen de los metadatos del modelo que devuelve esta API.",
+    "onboardingHome": "Inicio",
+    "onboardingAiMemory": "Memoria a largo plazo de IA",
+    "onboardingAiMemoryDesc": "Consolida automáticamente la experiencia laboral y el contexto histórico para recuperarlos en futuras conversaciones.",
+    "onboardingNewProject": "Nuevo proyecto",
+    "onboardingOpenExistingProject": "Abrir proyecto existente",
+    "onboardingProjectName": "Nombre del proyecto",
+    "onboardingSaveLocation": "Ubicación de guardado",
+    "onboardingCreateWorkspace": "Crear y abrir espacio de trabajo",
+    "onboardingImportWorkspaceDesc": "Selecciona una carpeta de proyecto local y Metis proporcionará colaboración de agentes en todo el proyecto.",
+    "onboardingMetisLogo": "Logotipo de Metis"
   },
   "fr": {
     "dreamOff": "Mémoire : Désactivé",
@@ -9235,7 +9295,17 @@
     "settingsMemoryAddedDivider": "ajouté ·",
     "settingsMemoryProcessedDivider": "traité ·",
     "settingsMemorySkippedInline": "ignoré",
-    "reactSettingsReasoningFromMetadata": "Les options de raisonnement proviennent des métadonnées de modèle renvoyées par cette API."
+    "reactSettingsReasoningFromMetadata": "Les options de raisonnement proviennent des métadonnées de modèle renvoyées par cette API.",
+    "onboardingHome": "Accueil",
+    "onboardingAiMemory": "Mémoire à long terme de l'IA",
+    "onboardingAiMemoryDesc": "Consolide automatiquement l'expérience de travail et le contexte historique pour les récupérer dans les conversations futures.",
+    "onboardingNewProject": "Nouveau projet",
+    "onboardingOpenExistingProject": "Ouvrir un projet existant",
+    "onboardingProjectName": "Nom du projet",
+    "onboardingSaveLocation": "Emplacement de sauvegarde",
+    "onboardingCreateWorkspace": "Créer et ouvrir l'espace de travail",
+    "onboardingImportWorkspaceDesc": "Sélectionnez un dossier de projet local, Metis fournira une collaboration d'agents à l'échelle du projet.",
+    "onboardingMetisLogo": "Logo Metis"
   },
   "de": {
     "dreamOff": "Speicher: Aus",
@@ -10554,7 +10624,17 @@
     "settingsMemoryAddedDivider": "hinzugefügt ·",
     "settingsMemoryProcessedDivider": "verarbeitet ·",
     "settingsMemorySkippedInline": "übersprungen",
-    "reactSettingsReasoningFromMetadata": "Reasoning-Optionen stammen aus den Modell-Metadaten, die diese API zurückgibt."
+    "reactSettingsReasoningFromMetadata": "Reasoning-Optionen stammen aus den Modell-Metadaten, die diese API zurückgibt.",
+    "onboardingHome": "Startseite",
+    "onboardingAiMemory": "KI-Langzeitgedächtnis",
+    "onboardingAiMemoryDesc": "Konsolidiert automatisch Arbeitserfahrung und historischen Kontext für künftige Gespräche.",
+    "onboardingNewProject": "Neues Projekt",
+    "onboardingOpenExistingProject": "Bestehendes Projekt öffnen",
+    "onboardingProjectName": "Projektname",
+    "onboardingSaveLocation": "Speicherort",
+    "onboardingCreateWorkspace": "Arbeitsbereich erstellen und öffnen",
+    "onboardingImportWorkspaceDesc": "Wählen Sie einen lokalen Projektordner aus; Metis bietet projektweite Agent-Zusammenarbeit.",
+    "onboardingMetisLogo": "Metis-Logo"
   },
   "pt": {
     "dreamOff": "Memória: Desligado",
@@ -11873,7 +11953,17 @@
     "settingsMemoryAddedDivider": "adicionado ·",
     "settingsMemoryProcessedDivider": "processado ·",
     "settingsMemorySkippedInline": "ignorado",
-    "reactSettingsReasoningFromMetadata": "As opções de raciocínio vêm dos metadados de modelo retornados por esta API."
+    "reactSettingsReasoningFromMetadata": "As opções de raciocínio vêm dos metadados de modelo retornados por esta API.",
+    "onboardingHome": "Início",
+    "onboardingAiMemory": "Memória de longo prazo da IA",
+    "onboardingAiMemoryDesc": "Consolida automaticamente a experiência de trabalho e o contexto histórico para recuperá-los em conversas futuras.",
+    "onboardingNewProject": "Novo projeto",
+    "onboardingOpenExistingProject": "Abrir projeto existente",
+    "onboardingProjectName": "Nome do projeto",
+    "onboardingSaveLocation": "Local de salvamento",
+    "onboardingCreateWorkspace": "Criar e abrir espaço de trabalho",
+    "onboardingImportWorkspaceDesc": "Selecione uma pasta de projeto local e o Metis fornecerá colaboração de agentes em todo o projeto.",
+    "onboardingMetisLogo": "Logotipo do Metis"
   },
   "ru": {
     "dreamOff": "Память: Выкл.",
@@ -13192,7 +13282,17 @@
     "settingsMemoryAddedDivider": "добавлено ·",
     "settingsMemoryProcessedDivider": "обработано ·",
     "settingsMemorySkippedInline": "пропущено",
-    "reactSettingsReasoningFromMetadata": "Параметры рассуждения берутся из метаданных модели, которые возвращает этот API."
+    "reactSettingsReasoningFromMetadata": "Параметры рассуждения берутся из метаданных модели, которые возвращает этот API.",
+    "onboardingHome": "Главная",
+    "onboardingAiMemory": "Долговременная память ИИ",
+    "onboardingAiMemoryDesc": "Автоматически сохраняет опыт работы и контекст для использования в последующих диалогах.",
+    "onboardingNewProject": "Новый проект",
+    "onboardingOpenExistingProject": "Открыть существующий проект",
+    "onboardingProjectName": "Имя проекта",
+    "onboardingSaveLocation": "Место сохранения",
+    "onboardingCreateWorkspace": "Создать и открыть рабочую область",
+    "onboardingImportWorkspaceDesc": "Выберите локальную папку проекта, и Metis обеспечит совместную работу агентов на уровне всего проекта.",
+    "onboardingMetisLogo": "Логотип Metis"
   },
   "it": {
     "dreamOff": "Memoria: disattivata",
@@ -14511,7 +14611,17 @@
     "settingsMemoryAddedDivider": "aggiunto ·",
     "settingsMemoryProcessedDivider": "elaborato ·",
     "settingsMemorySkippedInline": "saltato",
-    "reactSettingsReasoningFromMetadata": "Le opzioni di ragionamento provengono dai metadati del modello restituiti da questa API."
+    "reactSettingsReasoningFromMetadata": "Le opzioni di ragionamento provengono dai metadati del modello restituiti da questa API.",
+    "onboardingHome": "Inizio",
+    "onboardingAiMemory": "Memoria a lungo termine dell'IA",
+    "onboardingAiMemoryDesc": "Consolida automaticamente l'esperienza di lavoro e il contesto storico per recuperarli nelle conversazioni future.",
+    "onboardingNewProject": "Nuovo progetto",
+    "onboardingOpenExistingProject": "Apri progetto esistente",
+    "onboardingProjectName": "Nome del progetto",
+    "onboardingSaveLocation": "Posizione di salvataggio",
+    "onboardingCreateWorkspace": "Crea e apri area di lavoro",
+    "onboardingImportWorkspaceDesc": "Seleziona una cartella di progetto locale e Metis fornirà la collaborazione degli agenti a livello di progetto.",
+    "onboardingMetisLogo": "Logo Metis"
   }
 }));
 

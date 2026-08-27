@@ -210,8 +210,7 @@ describe("Desktop translation coverage", () => {
 		const intentionallyStable = new Set([
 			"简体中文", "https://api.example.com/v1", "⌘ N", "Enter", "Shift Enter", "Esc", "HTML", "JSONL",
 			"Metis Desktop", "Metis", "·", "%", "+", "—", "PDF", "ID #", "calendar.google.com", "M",
-			"AI 长期记忆", "AI 长期记忆 (Memory)", "bloub 动画头像", "my-awesome-project", "开启 Metis",
-			"欢迎使用 Metis", "选择本地的项目文件夹，Metis 将为你提供全库 Agent 协同", "配置 AI 凭据与记忆",
+			"bloub 动画头像", "my-awesome-project",
 		]);
 		const english = new Set(Object.values(i18n.catalogs.en));
 		const missing = [...values].filter((value) => !intentionallyStable.has(value) && /[A-Za-z]/.test(value) && !english.has(value)).sort();

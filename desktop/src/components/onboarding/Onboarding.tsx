@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, FolderOpen, LoaderCircle, Plus, Server } from 'lucide-react';
 import type { ModelOption } from '../../types';
+import { translateExact } from '../../i18n';
 import './Onboarding.css';
 
 const COMPLETED_KEY = 'metis.desktopOnboardingCompleted.v3';
@@ -81,7 +82,7 @@ function MetisBrandLogo({ className = '' }: { className?: string }) {
       height="220"
       viewBox="-125 -125 250 250"
       role="img"
-      aria-label="bloub 动画头像"
+      aria-label="Metis logo"
       xmlns="http://www.w3.org/2000/svg"
       className={`drop-shadow-lg transition-transform duration-300 hover:scale-105 ${className}`}
     >
@@ -332,7 +333,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
           </div>
 
           <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl">
-            欢迎使用 Metis
+            Welcome to Metis
           </h1>
 
           <div className="mt-8 flex flex-col items-center gap-3">
@@ -341,7 +342,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
               onClick={() => setStep(1)}
               className={ONBOARDING_BTN_CLASS}
             >
-              <span>开始</span>
+              <span>Get Started</span>
             </button>
           </div>
         </div>
@@ -351,7 +352,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
       {step === 1 && (
         <div className="flex flex-col items-center justify-center text-center max-w-xl w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
           <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl">
-            选择界面语言
+            Choose your language
           </h1>
 
           <div className="mt-8 w-full grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -383,7 +384,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
               onClick={() => setStep(0)}
               className={ONBOARDING_BTN_CLASS}
             >
-              <span>首页</span>
+              <span>Home</span>
             </button>
 
             <button
@@ -392,7 +393,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
               onClick={() => setStep(2)}
               className={ONBOARDING_BTN_CLASS}
             >
-              <span>继续</span>
+              <span>Next</span>
             </button>
           </div>
         </div>
@@ -402,7 +403,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
       {step === 2 && (
         <div className="flex flex-col items-center justify-center max-w-xl w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
           <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl text-center">
-            配置 AI 凭据与记忆
+            Configure AI credentials
           </h1>
 
           <div className="mt-8 w-full space-y-4">
@@ -487,7 +488,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                 {method === 'custom' && (
                   <>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">Name</label>
+                      <label className="text-[12.5px] font-medium text-slate-700">Provider name</label>
                       <input
                         value={customName}
                         onChange={(event) => setCustomName(event.target.value)}
@@ -496,7 +497,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">Custom Base URL</label>
+                      <label className="text-[12.5px] font-medium text-slate-700">Base URL</label>
                       <input
                         value={baseUrl}
                         onChange={(event) => setBaseUrl(event.target.value)}
@@ -549,14 +550,14 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
             <div className="space-y-0.5 rounded-[14px] border border-slate-200/80 bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.02)]">
               <div className="flex min-h-[48px] items-center justify-between gap-4 rounded-[10px] px-3.5 py-2 transition-colors hover:bg-slate-50/80">
                 <div className="min-w-0">
-                  <p className="text-[13.5px] font-medium text-slate-800">AI 长期记忆 (Memory)</p>
+                  <p className="text-[13.5px] font-medium text-slate-800">AI Long-term Memory</p>
                   <p className="mt-0.5 text-pretty text-[12px] leading-[18px] text-slate-500">
-                    自动沉淀工作经验与历史上下文，并在后续对话中主动检索。
+                    Automatically consolidates work experience and historical context to retrieve in future conversations.
                   </p>
                 </div>
                 <div className="shrink-0">
                   <Switch
-                    label="AI 长期记忆"
+                    label="AI Long-term Memory"
                     checked={memoryEnabled}
                     onChange={toggleMemory}
                     disabled={busy || !isConnected}
@@ -568,7 +569,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
 
           {feedback && (
             <p role="status" className="w-full mt-4 rounded-[10px] bg-rose-50 border border-rose-200/80 px-3.5 py-2.5 text-[12.5px] leading-5 text-rose-700 text-center">
-              {feedback}
+              {translateExact(feedback, language)}
             </p>
           )}
 
@@ -579,7 +580,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
               onClick={() => setStep(1)}
               className={ONBOARDING_BTN_CLASS}
             >
-              <span>上一步</span>
+              <span>Previous</span>
             </button>
 
             <button
@@ -589,7 +590,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
               className={ONBOARDING_BTN_CLASS}
             >
               {busy ? <LoaderCircle size={14} className="animate-spin mr-1.5 inline" /> : null}
-              <span>继续</span>
+              <span>Next</span>
             </button>
           </div>
         </div>
@@ -599,7 +600,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
       {step === 3 && (
         <div className="flex flex-col items-center justify-center max-w-xl w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
           <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl text-center">
-            设置项目工作区
+            Select a project workspace
           </h1>
 
           <div className="mt-8 w-full space-y-4">
@@ -622,7 +623,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  <Plus size={14} className="mr-1.5 inline" />新建项目
+                  <Plus size={14} className="mr-1.5 inline" />New Project
                 </button>
                 <button
                   type="button"
@@ -635,7 +636,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  <FolderOpen size={14} className="mr-1.5 inline" />打开已有项目
+                  <FolderOpen size={14} className="mr-1.5 inline" />Open Existing Project
                 </button>
               </div>
 
@@ -643,7 +644,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                 {projectMode === 'create' ? (
                   <>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">项目名称</label>
+                      <label className="text-[12.5px] font-medium text-slate-700">Project name</label>
                       <input
                         value={projectName}
                         onChange={(event) => setProjectName(event.target.value)}
@@ -652,14 +653,14 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">保存位置</label>
+                      <label className="text-[12.5px] font-medium text-slate-700">Save location</label>
                       <button
                         type="button"
                         onClick={selectParent}
                         disabled={busy}
                         className="flex h-9 w-full items-center justify-between rounded-[10px] border border-slate-200 bg-white px-3 text-[13px] text-slate-700 transition-colors hover:bg-slate-50"
                       >
-                        <span className="truncate">{parentPath || '选择目录'}</span>
+                        <span className="truncate">{parentPath || 'Select folder'}</span>
                         <FolderOpen size={15} className="shrink-0 text-slate-400" />
                       </button>
                     </div>
@@ -670,13 +671,13 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                       className="group inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[10px] border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 active:scale-[0.98] disabled:opacity-45"
                     >
                       <Plus size={14} />
-                      <span>创建并进入工作区</span>
+                      <span>Create & Enter Workspace</span>
                     </button>
                   </>
                 ) : (
                   <div className="space-y-3">
                     <p className="text-[12.5px] text-slate-500">
-                      选择本地的项目文件夹，Metis 将为你提供全库 Agent 协同
+                      Select a local project folder, Metis will provide project-wide Agent collaboration.
                     </p>
                     <button
                       type="button"
@@ -685,7 +686,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                       className="group inline-flex h-9 w-full items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 active:scale-[0.98] disabled:opacity-45"
                     >
                       <FolderOpen size={15} />
-                      <span>选择项目文件夹</span>
+                      <span>Choose Project Folder</span>
                     </button>
                   </div>
                 )}
@@ -702,7 +703,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
 
           {feedback && (
             <p role="status" className="w-full mt-4 rounded-[10px] bg-rose-50 border border-rose-200/80 px-3.5 py-2.5 text-[12.5px] leading-5 text-rose-700 text-center">
-              {feedback}
+              {translateExact(feedback, language)}
             </p>
           )}
 
@@ -713,7 +714,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
               onClick={() => setStep(2)}
               className={ONBOARDING_BTN_CLASS}
             >
-              <span>上一步</span>
+              <span>Previous</span>
             </button>
 
             <button
@@ -722,7 +723,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
               onClick={complete}
               className={ONBOARDING_BTN_CLASS}
             >
-              <span>开启 Metis</span>
+              <span>Finish & Start Coding</span>
             </button>
           </div>
         </div>

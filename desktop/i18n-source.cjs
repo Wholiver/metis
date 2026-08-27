@@ -1317,7 +1317,17 @@ module.exports = {
     "settingsMemoryAddedDivider": "added ·",
     "settingsMemoryProcessedDivider": "processed ·",
     "settingsMemorySkippedInline": "skipped",
-    "reactSettingsReasoningFromMetadata": "Reasoning options come from model metadata returned by this API."
+    "reactSettingsReasoningFromMetadata": "Reasoning options come from model metadata returned by this API.",
+    "onboardingHome": "Home",
+    "onboardingAiMemory": "AI Long-term Memory",
+    "onboardingAiMemoryDesc": "Automatically consolidates work experience and historical context to retrieve in future conversations.",
+    "onboardingNewProject": "New Project",
+    "onboardingOpenExistingProject": "Open Existing Project",
+    "onboardingProjectName": "Project name",
+    "onboardingSaveLocation": "Save location",
+    "onboardingCreateWorkspace": "Create & Enter Workspace",
+    "onboardingImportWorkspaceDesc": "Select a local project folder, Metis will provide project-wide Agent collaboration.",
+    "onboardingMetisLogo": "Metis logo"
   },
   "zh-CN": {
     "dreamOff": "记忆：已关闭",
@@ -2636,7 +2646,17 @@ module.exports = {
     "settingsMemoryAddedDivider": "新增 ·",
     "settingsMemoryProcessedDivider": "已处理 ·",
     "settingsMemorySkippedInline": "已跳过",
-    "reactSettingsReasoningFromMetadata": "推理选项来自该 API 返回的模型元数据。"
+    "reactSettingsReasoningFromMetadata": "推理选项来自该 API 返回的模型元数据。",
+    "onboardingHome": "首页",
+    "onboardingAiMemory": "AI 长期记忆 (Memory)",
+    "onboardingAiMemoryDesc": "自动沉淀工作经验与历史上下文，并在后续对话中主动检索。",
+    "onboardingNewProject": "新建项目",
+    "onboardingOpenExistingProject": "打开已有项目",
+    "onboardingProjectName": "项目名称",
+    "onboardingSaveLocation": "保存位置",
+    "onboardingCreateWorkspace": "创建并进入工作区",
+    "onboardingImportWorkspaceDesc": "选择本地的项目文件夹，Metis 将为你提供全库 Agent 协同。",
+    "onboardingMetisLogo": "Metis 图标"
   }
 };
 

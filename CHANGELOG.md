@@ -4,6 +4,13 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.6] - 2026-08-27
+
+### Onboarding Flow Refinement & Internationalization Alignment
+
+- Refined the Desktop onboarding flow layout, copy, and credential setup interactions.
+- Aligned translation catalogs and localized strings across all supported interface languages.
+
 ## [1.1.5] - 2026-08-27
 
 ### Home Cloud Empty State, Prompt Cache Prefix & Performance Hardening
