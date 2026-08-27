@@ -1,0 +1,4 @@
+## 2025-02-21 - [Prevent SQLite comment bypass in read-only SQL queries]
+**Vulnerability:** The regex checking for mutating SQL keywords (INSERT, UPDATE, DELETE, etc.) in `src/core/memory-coordinator.ts` only checked for whitespace after a semicolon before the keyword (`/;\s*(?:INSERT...)/i`). This allowed an attacker to bypass the check by injecting SQL comments between the semicolon and the mutating keyword (e.g., `; /* bypass */ UPDATE...` or `; -- bypass\n UPDATE...`).
+**Learning:** Naive regular expressions checking for specific keywords in SQL are often vulnerable to comment injection and other forms of obfuscation.
+**Prevention:** Use a more robust regular expression that explicitly accounts for and matches SQL single-line and multi-line comments between semicolons and mutating keywords, or ideally, use a proper SQL parser to validate read-only intent.

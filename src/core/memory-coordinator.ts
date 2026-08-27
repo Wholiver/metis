@@ -672,7 +672,7 @@ export class MemoryCoordinator {
 		if (!firstWord || !["SELECT", "WITH", "PRAGMA", "EXPLAIN"].includes(firstWord)) {
 			throw new Error(`Only read-only queries (SELECT, WITH, PRAGMA, EXPLAIN) are permitted. Received: ${firstWord || "unknown"}`);
 		}
-		if (/;\s*(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|VACUUM|ATTACH|DETACH)\b/i.test(normalized)) {
+		if (/;\s*(?:(?:--[^\n]*\n|\/\*[\s\S]*?\*\/)\s*)*(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|VACUUM|ATTACH|DETACH)\b/i.test(normalized)) {
 			throw new Error("Multiple statements with mutating operations are strictly forbidden.");
 		}
 
