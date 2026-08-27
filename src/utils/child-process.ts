@@ -135,3 +135,4 @@ export function waitForChildProcess(child: ChildProcess): Promise<number | null>
 		child.once("close", onClose);
 	});
 }
+

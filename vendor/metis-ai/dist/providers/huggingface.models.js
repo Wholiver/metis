@@ -4,3 +4,4 @@ import values from "./data/huggingface.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const HUGGINGFACE_MODELS = flattenModelCatalog("huggingface", values);
 //# sourceMappingURL=huggingface.models.js.map
+

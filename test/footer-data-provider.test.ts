@@ -263,3 +263,4 @@ describe("FooterDataProvider reftable branch detection", () => {
 		}
 	});
 });
+

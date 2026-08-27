@@ -64,3 +64,4 @@ describe("PlanActionsComponent", () => {
 		expect(createPlanRevisionPrompt("narrow scope")).toContain("narrow scope");
 	});
 });
+

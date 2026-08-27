@@ -49,3 +49,4 @@ describe("theme picker", () => {
 		expect(getAvailableThemesWithPaths().some((theme) => theme.name === "foo")).toBe(false);
 	});
 });
+

@@ -10,3 +10,4 @@ describe("getMetisUserAgent", () => {
 		expect(userAgent).toMatch(/^metis\/[^\s()]+ \([^;()]+;\s*[^;()]+;\s*[^()]+\)$/);
 	});
 });
+

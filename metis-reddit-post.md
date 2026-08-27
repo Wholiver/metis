@@ -36,3 +36,4 @@ If this direction interests you, a star helps, but issues, PRs, and independent 
 - Recommended title: first title above. It is personal and evidence-led without claiming universal superiority.
 - Stay available after posting. r/opensource explicitly discourages drive-by promotion.
 - Before posting, verify every benchmark-condition statement and replace any phrasing that does not sound like you.
+

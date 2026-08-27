@@ -20,3 +20,4 @@ export declare class Box implements Component {
     private applyBg;
 }
 //# sourceMappingURL=box.d.ts.map
+

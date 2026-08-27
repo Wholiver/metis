@@ -4,3 +4,4 @@ import values from "./data/nvidia.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const NVIDIA_MODELS = flattenModelCatalog("nvidia", values);
 //# sourceMappingURL=nvidia.models.js.map
+

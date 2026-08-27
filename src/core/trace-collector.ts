@@ -171,3 +171,4 @@ export function getGlobalTraceCollector(rootRunId?: string): TraceCollector {
 export function setGlobalTraceCollector(collector: TraceCollector): void {
 	globalTraceCollector = collector;
 }
+

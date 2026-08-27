@@ -124,3 +124,4 @@ export function formatAgentList(agents: AgentConfig[], maxItems: number): { text
 		remaining,
 	};
 }
+

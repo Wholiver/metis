@@ -84,3 +84,4 @@ describe("regression #3616: in-memory settings survive reload", () => {
 		});
 	});
 });
+

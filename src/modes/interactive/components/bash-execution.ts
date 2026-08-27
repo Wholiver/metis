@@ -218,3 +218,4 @@ export class BashExecutionComponent extends Container {
 		return this.command;
 	}
 }
+

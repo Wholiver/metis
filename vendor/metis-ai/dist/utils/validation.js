@@ -279,3 +279,4 @@ export function validateToolArguments(tool, toolCall) {
     throw new Error(errorMessage);
 }
 //# sourceMappingURL=validation.js.map
+

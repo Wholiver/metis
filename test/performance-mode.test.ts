@@ -203,3 +203,4 @@ describe("Performance Mode Engine & Fidelity", () => {
 		expect(sessionAgents.some((a) => a.name === "arbiter")).toBe(true);
 	});
 });
+

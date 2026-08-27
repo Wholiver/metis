@@ -87,3 +87,4 @@ describe('compiled runtime integrity', () => {
     expect(mainSource).toContain('Ignoring incomplete Metis CLI runtime');
   });
 });
+

@@ -375,3 +375,4 @@ export class ToolExecutionComponent extends Container {
 		return text;
 	}
 }
+

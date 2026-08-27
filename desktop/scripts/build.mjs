@@ -30,3 +30,4 @@ packageJson.scripts = { start: "electron ." };
 await writeFile(path.join(outputDir, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
 
 console.log(`Built Electron desktop artifact: ${outputDir}`);
+

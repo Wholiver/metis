@@ -75,3 +75,4 @@ describe('desktop React collaboration mode switching', () => {
     expect(main).toContain('optionBorderColors');
   });
 });
+

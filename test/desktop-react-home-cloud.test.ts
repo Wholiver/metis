@@ -39,3 +39,4 @@ describe('desktop React new chat home cloud avatar and heading', () => {
     expect(messageList).toContain('projectName={projectName');
   });
 });
+

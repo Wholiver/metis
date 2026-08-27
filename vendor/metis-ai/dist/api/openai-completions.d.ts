@@ -17,3 +17,4 @@ export declare const streamSimple: StreamFunction<"openai-completions", SimpleSt
 export declare function convertMessages(model: Model<"openai-completions">, context: Context, compat: ResolvedOpenAICompletionsCompat): ChatCompletionMessageParam[];
 export {};
 //# sourceMappingURL=openai-completions.d.ts.map
+

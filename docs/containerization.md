@@ -109,3 +109,4 @@ openshell sandbox download metis-sandbox /workspace/repo ./repo-out
 OpenShell providers can keep raw model API keys outside the sandbox.
 When inference routing is configured, code inside the sandbox can call `https://inference.local`, and the gateway injects the configured provider credentials upstream.
 Configure Metis to use the corresponding OpenAI-compatible or Anthropic-compatible endpoint if you want model traffic to use this route.
+

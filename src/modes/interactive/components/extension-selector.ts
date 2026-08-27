@@ -110,3 +110,4 @@ export class ExtensionSelectorComponent extends Container {
 		this.countdown?.dispose();
 	}
 }
+

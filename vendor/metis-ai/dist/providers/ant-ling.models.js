@@ -4,3 +4,4 @@ import values from "./data/ant-ling.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const ANT_LING_MODELS = flattenModelCatalog("ant-ling", values);
 //# sourceMappingURL=ant-ling.models.js.map
+

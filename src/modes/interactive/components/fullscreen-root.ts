@@ -45,3 +45,4 @@ export class FullscreenRootContainer implements Component {
 		return [...topLines, ...bottomLines];
 	}
 }
+

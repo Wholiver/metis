@@ -23,3 +23,4 @@ export function appendAssistantMessageDiagnostic(message, diagnostic) {
     message.diagnostics = [...(message.diagnostics ?? []), diagnostic];
 }
 //# sourceMappingURL=diagnostics.js.map
+

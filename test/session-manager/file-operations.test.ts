@@ -345,3 +345,4 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		expect(sm2.getHeader()?.type).toBe("session");
 	});
 });
+

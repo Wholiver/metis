@@ -4,3 +4,4 @@ import values from "./data/moonshotai-cn.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const MOONSHOTAI_CN_MODELS = flattenModelCatalog("moonshotai-cn", values);
 //# sourceMappingURL=moonshotai-cn.models.js.map
+

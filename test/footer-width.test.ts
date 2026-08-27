@@ -215,3 +215,4 @@ describe("FooterComponent width handling", () => {
     expect(stripAnsi(lines[2])).toContain("Lint: 3 warnings");
   });
 });
+

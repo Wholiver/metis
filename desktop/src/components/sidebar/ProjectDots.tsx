@@ -71,3 +71,4 @@ export const ProjectDots: React.FC<ProjectDotsProps> = ({
     </div>
   );
 };
+

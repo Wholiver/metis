@@ -137,3 +137,4 @@ describe("Desktop custom Provider configuration", () => {
 		]);
 	});
 });
+

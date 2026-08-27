@@ -68,3 +68,4 @@ export declare function mapStopReason(reason: FinishReason): StopReason;
 export declare function mapStopReasonString(reason: string): StopReason;
 export {};
 //# sourceMappingURL=google-shared.d.ts.map
+

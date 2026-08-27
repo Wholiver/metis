@@ -30,3 +30,4 @@ export default function (metis: ExtensionAPI) {
 		ctx.ui.setStatus("status-demo", check + text);
 	});
 }
+

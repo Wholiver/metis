@@ -143,3 +143,4 @@ See [Compaction](compaction.md) for branch summarization internals and extension
 Session files are JSONL and contain message entries, model changes, thinking-level changes, labels, compactions, branch summaries, and extension entries.
 
 For parsers, extensions, SDK usage, and the full SessionManager API, see [Session Format](session-format.md).
+

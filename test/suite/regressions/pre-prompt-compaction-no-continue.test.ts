@@ -73,3 +73,4 @@ describe("pre-prompt compaction regression", () => {
 		expect(harness.faux.state.callCount).toBe(1);
 	});
 });
+

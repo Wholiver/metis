@@ -46,3 +46,4 @@ describe("buildInitialMessage", () => {
 		expect(parsed.messages).toEqual(["Second message"]);
 	});
 });
+

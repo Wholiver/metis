@@ -290,3 +290,4 @@ describe("prompt cache prefix stability", () => {
 		expect(readFileSync(overviewPath, "utf8")).toBe("# Overview\n\nreact 19 noted\n");
 	});
 });
+

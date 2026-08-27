@@ -209,3 +209,4 @@ describe("SessionManager labels", () => {
 		expect(() => session.appendLabelChange("non-existent", "label")).toThrow("Entry non-existent not found");
 	});
 });
+

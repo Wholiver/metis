@@ -4,3 +4,4 @@ import values from "./data/google.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const GOOGLE_MODELS = flattenModelCatalog("google", values);
 //# sourceMappingURL=google.models.js.map
+

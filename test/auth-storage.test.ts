@@ -697,3 +697,4 @@ describe("AuthStorage", () => {
 		});
 	});
 });
+

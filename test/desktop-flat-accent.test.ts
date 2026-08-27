@@ -50,3 +50,4 @@ describe("Desktop flat accent palette", () => {
 		expect(styles).toContain("background: var(--canvas) !important;");
 	});
 });
+

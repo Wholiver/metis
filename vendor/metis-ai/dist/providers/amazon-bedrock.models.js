@@ -4,3 +4,4 @@ import values from "./data/amazon-bedrock.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const AMAZON_BEDROCK_MODELS = flattenModelCatalog("amazon-bedrock", values);
 //# sourceMappingURL=amazon-bedrock.models.js.map
+

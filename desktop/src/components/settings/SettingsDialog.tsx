@@ -908,3 +908,4 @@ function LogoutControl({ providers, disabled, translate, onLogout }: { providers
   useEffect(() => { if (!provider && providers[0]) setProvider(providers[0]); }, [provider, providers]);
   return <div className="flex w-full flex-wrap gap-2"><select className={selectClass} value={provider} onChange={(e) => setProvider(e.target.value)}>{providers.map((item) => <option key={item}>{item}</option>)}</select><button className={`${buttonClass} text-rose-700 hover:bg-rose-50`} disabled={disabled || !provider} onClick={() => { if (window.confirm(translate(`Remove saved credentials for ${provider}?`))) onLogout(provider); }}><Trash2 className="h-3.5 w-3.5" />Sign out</button></div>;
 }
+

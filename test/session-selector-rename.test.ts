@@ -109,3 +109,4 @@ describe("session selector rename", () => {
 		expect(renameSession).toHaveBeenCalledWith(sessions[0]!.path, "XOld");
 	});
 });
+

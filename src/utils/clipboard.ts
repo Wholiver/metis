@@ -125,3 +125,4 @@ export async function copyToClipboard(text: string): Promise<void> {
 		throw new Error("Failed to copy to clipboard");
 	}
 }
+

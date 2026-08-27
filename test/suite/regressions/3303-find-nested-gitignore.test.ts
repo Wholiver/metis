@@ -81,3 +81,4 @@ describe("issue #3303 nested .gitignore rules leak into sibling directories", ()
 		});
 	});
 });
+

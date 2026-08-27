@@ -109,3 +109,4 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
     console.log(`Runtime integrity check passed: ${runtimeDir}`);
   }
 }
+

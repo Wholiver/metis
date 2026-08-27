@@ -34,3 +34,4 @@ export function restoreSandboxEnv(): void {
 		// /proc/self/environ may not be readable; ignore.
 	}
 }
+

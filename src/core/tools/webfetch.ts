@@ -213,3 +213,4 @@ export function createWebFetchToolDefinition(
 export function createWebFetchTool(options?: WebFetchToolOptions): AgentTool<typeof webFetchSchema> {
 	return wrapToolDefinition(createWebFetchToolDefinition(options));
 }
+

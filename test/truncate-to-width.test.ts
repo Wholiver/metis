@@ -79,3 +79,4 @@ describe("truncateToWidth", () => {
 		expect(finalWidth + cursorWidth).toBeLessThanOrEqual(terminalWidth);
 	});
 });
+

@@ -120,3 +120,4 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({ type, className = '', 
       );
   }
 };
+

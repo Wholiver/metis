@@ -19,3 +19,4 @@ export function getModelSelectorSearchText(item: ModelSearchItem): string {
 	const name = item.name ? ` ${item.name}` : "";
 	return `${provider} ${provider}/${id} ${provider} ${id}${name}`;
 }
+

@@ -45,3 +45,4 @@ describe("AskUserComponent", () => {
 		expect(lines.join("\n")).toContain("Scope");
 	});
 });
+

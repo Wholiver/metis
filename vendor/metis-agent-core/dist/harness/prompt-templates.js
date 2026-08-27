@@ -228,3 +228,4 @@ export function formatPromptTemplateInvocation(template, args = []) {
     return substituteArgs(template.content, args);
 }
 //# sourceMappingURL=prompt-templates.js.map
+

@@ -17,3 +17,4 @@ export declare class Text implements Component {
     render(width: number): string[];
 }
 //# sourceMappingURL=text.d.ts.map
+

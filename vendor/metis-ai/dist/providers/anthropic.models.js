@@ -4,3 +4,4 @@ import values from "./data/anthropic.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const ANTHROPIC_MODELS = flattenModelCatalog("anthropic", values);
 //# sourceMappingURL=anthropic.models.js.map
+

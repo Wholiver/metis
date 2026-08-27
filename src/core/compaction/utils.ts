@@ -166,3 +166,4 @@ export function serializeConversation(messages: Message[]): string {
 // ============================================================================
 
 export const SUMMARIZATION_SYSTEM_PROMPT = `Summarize user/assistant conversation in the exact requested structure. Never continue it or answer its questions; output only the structured summary.`;
+

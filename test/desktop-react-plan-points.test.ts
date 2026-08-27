@@ -68,3 +68,4 @@ describe('desktop React plan points inspector', () => {
     expect(main).toContain('changedFilePaths');
   });
 });
+

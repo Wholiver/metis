@@ -269,3 +269,4 @@ describe("createAgentSession provider attribution headers", () => {
 		expect(headers?.["x-opencode-client"]).toBe("configured-client");
 	});
 });
+

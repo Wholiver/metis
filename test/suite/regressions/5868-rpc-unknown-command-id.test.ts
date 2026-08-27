@@ -111,3 +111,4 @@ describe("RPC unknown command responses (#5868)", () => {
 		}
 	});
 });
+

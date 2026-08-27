@@ -318,3 +318,4 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 		});
 	});
 });
+

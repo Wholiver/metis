@@ -191,3 +191,4 @@ export declare class KeybindingsManager {
 export declare function setKeybindings(keybindings: KeybindingsManager): void;
 export declare function getKeybindings(): KeybindingsManager;
 //# sourceMappingURL=keybindings.d.ts.map
+

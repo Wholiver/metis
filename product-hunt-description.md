@@ -21,3 +21,4 @@ That is one benchmark, not a claim that Metis universally makes every model bett
 Metis is MIT licensed, and I’d love feedback from people building with coding agents. What would help you evaluate it most: exact benchmark configs, per-task traces, cost and token comparisons, or orchestration ablations?
 
 Thanks for checking it out. Issues, independent benchmark runs, and contributions are especially welcome 🙌
+

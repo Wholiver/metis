@@ -482,3 +482,4 @@ describe("DefaultPackageManager git update", () => {
 		});
 	});
 });
+

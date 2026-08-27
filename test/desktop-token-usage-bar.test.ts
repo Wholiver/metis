@@ -65,3 +65,4 @@ describe('desktop token usage bar and formatting', () => {
     expect(tokenBar).toContain('bg-orange-400');
   });
 });
+

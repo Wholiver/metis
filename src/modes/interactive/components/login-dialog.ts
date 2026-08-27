@@ -280,3 +280,4 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.input.handleInput(data);
 	}
 }
+

@@ -15,3 +15,4 @@ export declare function estimateTextAndImageContentTokens(content: string | Arra
 export declare function estimateMessageTokens(message: Message): number;
 export declare function estimateContextTokens(context: Context | readonly Message[]): ContextUsageEstimate;
 //# sourceMappingURL=estimate.d.ts.map
+

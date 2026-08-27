@@ -43,3 +43,4 @@ describe("WorkflowPlanComponent", () => {
 		expect(source).toContain('if (event.toolName === "update_plan") break');
 	});
 });
+

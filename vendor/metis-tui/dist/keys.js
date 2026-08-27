@@ -1171,3 +1171,4 @@ export function decodePrintableKey(data) {
     return decodeKittyPrintable(data) ?? decodeModifyOtherKeysPrintable(data);
 }
 //# sourceMappingURL=keys.js.map
+

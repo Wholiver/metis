@@ -401,3 +401,4 @@ export function getGlobalSpawnGuard(): SpawnGuard {
 export function setGlobalSpawnGuard(guard?: SpawnGuard): void {
 	globalSpawnGuard = guard;
 }
+

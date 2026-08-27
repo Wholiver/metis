@@ -14,3 +14,4 @@ describe("desktop extension UI dialog", () => {
 		expect(app).not.toContain("window.prompt(");
 	});
 });
+

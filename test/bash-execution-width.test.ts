@@ -78,3 +78,4 @@ describe("BashExecutionComponent width handling (#2569)", () => {
 		}
 	});
 });
+

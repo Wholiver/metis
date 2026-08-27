@@ -35,3 +35,4 @@ export const ChatHomeEmptyState: React.FC<ChatHomeEmptyStateProps> = ({
     </div>
   );
 };
+

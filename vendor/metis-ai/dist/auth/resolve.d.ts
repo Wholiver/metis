@@ -24,3 +24,4 @@ export declare function resolveProviderAuth(provider: {
     auth: ProviderAuth;
 }, model: AuthModel, credentials: CredentialStore, authContext: AuthContext, overrides?: AuthResolutionOverrides): Promise<AuthResult | undefined>;
 //# sourceMappingURL=resolve.d.ts.map
+

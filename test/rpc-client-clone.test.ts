@@ -27,3 +27,4 @@ describe("RpcClient clone", () => {
 		expect(result).toEqual({ cancelled: false });
 	});
 });
+

@@ -93,3 +93,4 @@ describe("issue #5217 compaction reason on extension events", () => {
 		]);
 	});
 });
+

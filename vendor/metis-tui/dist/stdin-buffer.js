@@ -359,3 +359,4 @@ export class StdinBuffer extends EventEmitter {
     }
 }
 //# sourceMappingURL=stdin-buffer.js.map
+

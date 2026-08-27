@@ -367,3 +367,4 @@ export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Pr
 		return undefined;
 	}
 }
+

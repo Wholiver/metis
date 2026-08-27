@@ -41,3 +41,4 @@ export function buildInitialMessage({
 		initialImages: fileImages && fileImages.length > 0 ? fileImages : undefined,
 	};
 }
+

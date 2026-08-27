@@ -4,3 +4,4 @@ import values from "./data/google-vertex.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const GOOGLE_VERTEX_MODELS = flattenModelCatalog("google-vertex", values);
 //# sourceMappingURL=google-vertex.models.js.map
+

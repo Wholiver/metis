@@ -109,3 +109,4 @@ export async function listModels(modelRegistry: ModelRegistry, searchPattern?: s
 		console.log(line);
 	}
 }
+

@@ -88,3 +88,4 @@ describe('desktop React thinking block', () => {
     expect(mapped1?.parts?.[0].id).not.toBe(mapped2?.parts?.[0].id);
   });
 });
+

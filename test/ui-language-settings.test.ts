@@ -39,3 +39,4 @@ describe("SettingsManager UI language", () => {
 		expect(SettingsManager.fromStorage(storage).getUiLanguage()).toBe("fr");
 	});
 });
+

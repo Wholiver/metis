@@ -148,3 +148,4 @@ describe("isLocalPath", () => {
 		expect(isLocalPath("https://example.com")).toBe(false);
 	});
 });
+

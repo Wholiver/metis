@@ -17,3 +17,4 @@ export declare function appendAssistantMessageDiagnostic<T extends {
     diagnostics?: AssistantMessageDiagnostic[];
 }>(message: T, diagnostic: AssistantMessageDiagnostic): void;
 //# sourceMappingURL=diagnostics.d.ts.map
+

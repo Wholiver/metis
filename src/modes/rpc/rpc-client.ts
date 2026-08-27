@@ -600,3 +600,4 @@ export class RpcClient {
 		return successResponse.data as T;
 	}
 }
+

@@ -104,3 +104,4 @@ process.exit(0);
 		expect(exitCode, `Child crashed (exit ${exitCode}). stderr: ${stderr.trim()}`).toBe(0);
 	});
 });
+

@@ -364,3 +364,4 @@ describe("SpawnGuard & Lifecycle Management (Bundle 3)", () => {
 		expect(payload.error).toContain("timed out after 1s");
 	});
 });
+

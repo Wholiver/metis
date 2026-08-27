@@ -23,3 +23,4 @@ export class DynamicBorder implements Component {
 		return [this.color("─".repeat(Math.max(1, width)))];
 	}
 }
+

@@ -196,3 +196,4 @@ On native Windows, `app.suspend` has no default binding because Windows terminal
   "tui.editor.cursorWordRight": ["alt+right", "alt+w"]
 }
 ```
+

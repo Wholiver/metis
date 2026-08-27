@@ -4,3 +4,4 @@ import values from "./data/azure-openai-responses.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const AZURE_OPENAI_RESPONSES_MODELS = flattenModelCatalog("azure-openai-responses", values);
 //# sourceMappingURL=azure-openai-responses.models.js.map
+

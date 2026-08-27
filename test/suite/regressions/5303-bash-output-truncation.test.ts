@@ -77,3 +77,4 @@ describe.skipIf(process.platform === "win32")("issue #5303 bash output truncatio
 		expect(elapsed).toBeLessThan(2000);
 	});
 });
+

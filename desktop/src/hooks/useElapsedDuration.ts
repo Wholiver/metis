@@ -19,3 +19,4 @@ export function useElapsedDuration(
   const elapsedMs = Math.max(0, now - startedAt);
   return durationMs === undefined ? elapsedMs : Math.max(durationMs, elapsedMs);
 }
+

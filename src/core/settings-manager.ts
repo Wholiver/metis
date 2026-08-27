@@ -1321,3 +1321,4 @@ export class SettingsManager {
 		this.save();
 	}
 }
+

@@ -23,3 +23,4 @@ export declare class InMemorySessionStorage<TMetadata extends SessionMetadata = 
     getEntries(): Promise<SessionTreeEntry[]>;
 }
 //# sourceMappingURL=memory-storage.d.ts.map
+

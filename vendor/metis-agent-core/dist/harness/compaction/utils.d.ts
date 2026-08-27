@@ -23,3 +23,4 @@ export declare function formatFileOperations(readFiles: string[], modifiedFiles:
 /** Serialize LLM messages to plain text for summarization prompts. */
 export declare function serializeConversation(messages: Message[]): string;
 //# sourceMappingURL=utils.d.ts.map
+

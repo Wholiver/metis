@@ -116,3 +116,4 @@ export function markPathIgnoredByCloudSync(path: string): void {
 		}
 	}
 }
+

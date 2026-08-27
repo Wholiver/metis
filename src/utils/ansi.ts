@@ -58,3 +58,4 @@ export function stripAnsi(value: string): string {
 	// and doing it manually has a performance penalty.
 	return value.replace(regex, "");
 }
+

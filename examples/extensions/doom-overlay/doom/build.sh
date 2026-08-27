@@ -150,3 +150,4 @@ emcc -O2 \
 echo ""
 echo "Build complete!"
 echo "Output: $BUILD_DIR/doom.js and $BUILD_DIR/doom.wasm"
+

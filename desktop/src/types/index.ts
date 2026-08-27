@@ -259,3 +259,4 @@ export interface MemoryState {
   lastRunAt?: string;
   extractionMethod?: string;
 }
+

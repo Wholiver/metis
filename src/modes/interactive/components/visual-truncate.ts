@@ -48,3 +48,4 @@ export function truncateToVisualLines(
 
 	return { visualLines: truncatedLines, skippedCount };
 }
+

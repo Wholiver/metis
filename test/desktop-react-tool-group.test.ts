@@ -92,3 +92,4 @@ describe('desktop React Tool grouping', () => {
     expect(computeToolDiffStats(readPart, 'Completed')).toBeNull();
   });
 });
+

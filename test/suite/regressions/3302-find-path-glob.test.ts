@@ -70,3 +70,4 @@ describe("issue #3302 find returns no results for path-based glob patterns", () 
 		expect(files).toEqual(["src/foo/bar/example.spec.ts"]);
 	});
 });
+

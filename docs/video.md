@@ -40,3 +40,4 @@ If preparation fails, `transcript` returns an actionable network/filesystem mess
 ## Runtime assets
 
 The build copies FFmpeg and FFprobe into Metis' own `dist/video-bin/` directory. npm CLI and Desktop releases resolve these bundled copies before dependency install paths, so installs made with `--ignore-scripts` remain usable. Compiled Bun distributions place the same files beside the executable under `video-bin/`. Packaging fails if either binary is absent, and Desktop packaging executes both binaries before producing the DMG. These executables are GPL-3.0 licensed; see their upstream packages: [ffmpeg-static](https://github.com/eugeneware/ffmpeg-static) and [ffprobe-static](https://github.com/derhuerst/ffprobe-static).
+

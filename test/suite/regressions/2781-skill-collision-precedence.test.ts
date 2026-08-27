@@ -118,3 +118,4 @@ describe("issue #2781 skill collision precedence: user skills should override pa
 		expect(collision!.collision!.loserPath).toContain("fake-package");
 	});
 });
+

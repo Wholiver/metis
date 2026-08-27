@@ -335,3 +335,4 @@ Project settings (`.metis/settings.json`) override global settings. Nested objec
   "compaction": { "enabled": true, "reserveTokens": 8192 }
 }
 ```
+

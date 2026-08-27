@@ -124,3 +124,4 @@ describe.skipIf(process.platform !== "win32")("Windows child-process close handl
 		}
 	});
 });
+

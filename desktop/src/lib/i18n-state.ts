@@ -13,3 +13,4 @@ export function resolveLocalizedSource(current: string, previous?: LocalizedValu
     ? previous.source
     : current;
 }
+

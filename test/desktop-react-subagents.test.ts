@@ -537,3 +537,4 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(detailViewSource).toContain('<WorkProgressIndicator');
   });
 });
+

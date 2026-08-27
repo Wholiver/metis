@@ -9,3 +9,4 @@ export declare function getEntriesToFork(storage: SessionStorage, options: {
     position?: "before" | "at";
 }): Promise<SessionTreeEntry[]>;
 //# sourceMappingURL=repo-utils.d.ts.map
+

@@ -4,3 +4,4 @@ import values from "./data/xiaomi-token-plan-cn.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const XIAOMI_TOKEN_PLAN_CN_MODELS = flattenModelCatalog("xiaomi-token-plan-cn", values);
 //# sourceMappingURL=xiaomi-token-plan-cn.models.js.map
+

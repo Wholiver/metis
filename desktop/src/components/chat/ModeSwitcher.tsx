@@ -74,3 +74,4 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
     })}
   </div>
 );
+

@@ -62,3 +62,4 @@ export default function (metis: ExtensionAPI) {
 		ctx.ui.notify(`project-trust example loaded after trust resolution in ${ctx.cwd}`, "info");
 	});
 }
+

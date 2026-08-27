@@ -202,3 +202,4 @@ describe("AgentSession Subagent execution pause", () => {
 		expect(events.some((ev) => ev.type === "subagent_status" && ev.runningCount === 0)).toBe(true);
 	});
 });
+

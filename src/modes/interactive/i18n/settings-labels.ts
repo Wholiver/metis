@@ -115,3 +115,4 @@ export function translateSettingLabel(id: string, fallback: string): string {
 export function getSettingLabelCatalogs(): Readonly<Record<ResolvedUiLanguage, SettingLabels>> {
 	return catalogs;
 }
+

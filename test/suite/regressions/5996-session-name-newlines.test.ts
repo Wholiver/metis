@@ -38,3 +38,4 @@ describe("regression #5996: session names do not contain newlines", () => {
 		expect(harness.eventsOfType("session_info_changed").map((event) => event.name)).toEqual(["from extension"]);
 	});
 });
+

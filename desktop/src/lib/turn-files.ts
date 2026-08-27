@@ -124,3 +124,4 @@ export function computeToolDiffStats(
   if (change.additions === 0 && change.deletions === 0) return null;
   return { added: change.additions, removed: change.deletions };
 }
+

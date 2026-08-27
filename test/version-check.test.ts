@@ -204,3 +204,4 @@ describe("release lookup", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });
+

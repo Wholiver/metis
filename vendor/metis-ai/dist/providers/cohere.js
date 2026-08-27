@@ -12,3 +12,4 @@ export function cohereProvider() {
         api: openAICompletionsApi(),
     });
 }
+

@@ -31,3 +31,4 @@ function getMetisRuntimeIntegrityError(cliPath) {
 }
 
 module.exports = { getMetisRuntimeIntegrityError };
+

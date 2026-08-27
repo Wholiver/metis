@@ -152,3 +152,4 @@ describe("Other provider setup and login flow", () => {
 		expect(after.providers["custom-two"]).toBeDefined();
 	});
 });
+

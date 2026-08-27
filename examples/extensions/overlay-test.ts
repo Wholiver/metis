@@ -151,3 +151,4 @@ class OverlayTestComponent implements Focusable {
 	invalidate(): void {}
 	dispose(): void {}
 }
+

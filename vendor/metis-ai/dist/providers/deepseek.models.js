@@ -4,3 +4,4 @@ import values from "./data/deepseek.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const DEEPSEEK_MODELS = flattenModelCatalog("deepseek", values);
 //# sourceMappingURL=deepseek.models.js.map
+

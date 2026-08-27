@@ -15,3 +15,4 @@ export declare class UndoStack<S> {
     get length(): number;
 }
 //# sourceMappingURL=undo-stack.d.ts.map
+

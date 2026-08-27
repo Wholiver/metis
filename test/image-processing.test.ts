@@ -168,3 +168,4 @@ describe("formatDimensionNote", () => {
 		expect(note).toContain("2.00"); // scale factor
 	});
 });
+

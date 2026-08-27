@@ -4,3 +4,4 @@ import values from "./data/baseten.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const BASETEN_MODELS = flattenModelCatalog("baseten", values);
 //# sourceMappingURL=baseten.models.js.map
+

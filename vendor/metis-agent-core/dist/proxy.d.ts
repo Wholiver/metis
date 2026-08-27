@@ -67,3 +67,4 @@ export interface ProxyStreamOptions extends ProxySerializableStreamOptions {
 export declare function streamProxy(model: Model<any>, context: Context, options: ProxyStreamOptions): ProxyMessageEventStream;
 export {};
 //# sourceMappingURL=proxy.d.ts.map
+

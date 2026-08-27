@@ -63,3 +63,4 @@ describe("desktop-local session token totals", () => {
 		expect(build).toContain('"session-token-totals.cjs"');
 	});
 });
+

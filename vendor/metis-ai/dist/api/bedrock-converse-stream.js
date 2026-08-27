@@ -870,3 +870,4 @@ function createImageBlock(mimeType, data) {
     return { source: { bytes }, format };
 }
 //# sourceMappingURL=bedrock-converse-stream.js.map
+

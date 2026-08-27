@@ -20,3 +20,4 @@ export function getImagesApiProvider(api) {
     return imagesApiProviderRegistry.get(api)?.provider;
 }
 //# sourceMappingURL=images-api-registry.js.map
+

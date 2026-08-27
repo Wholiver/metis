@@ -70,3 +70,4 @@ int DG_GetKey(int *pressed, unsigned char *key) {
 void DG_SetWindowTitle(const char *title) {
   (void)title;
 }
+

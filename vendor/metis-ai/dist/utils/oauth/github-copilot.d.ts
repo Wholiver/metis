@@ -30,3 +30,4 @@ export declare function loginGitHubCopilot(options: {
 export declare const githubCopilotOAuth: OAuthAuth;
 export declare const githubCopilotOAuthProvider: OAuthProviderInterface;
 //# sourceMappingURL=github-copilot.d.ts.map
+

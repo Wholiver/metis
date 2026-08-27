@@ -107,3 +107,4 @@ This is a test skill.
 		expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
 	});
 });
+

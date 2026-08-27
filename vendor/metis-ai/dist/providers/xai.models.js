@@ -4,3 +4,4 @@ import values from "./data/xai.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const XAI_MODELS = flattenModelCatalog("xai", values);
 //# sourceMappingURL=xai.models.js.map
+

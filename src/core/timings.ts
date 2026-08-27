@@ -48,3 +48,4 @@ export function printTimings(): void {
 		printTimingGroup(`Startup Timings: ${namespace}`, timingNamespace.timings);
 	}
 }
+

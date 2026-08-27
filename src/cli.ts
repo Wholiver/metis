@@ -18,3 +18,4 @@ process.emitWarning = (() => {}) as typeof process.emitWarning;
 configureHttpDispatcher();
 
 main(process.argv.slice(2));
+

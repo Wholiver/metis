@@ -237,3 +237,4 @@ export async function showStartupInput(
 		startStartupTui(ui, settingsManager);
 	});
 }
+

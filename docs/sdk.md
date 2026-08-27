@@ -1209,3 +1209,4 @@ type Tool
 ```
 
 For extension types, see [extensions.md](extensions.md) for the full API.
+

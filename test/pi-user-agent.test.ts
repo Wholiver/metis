@@ -10,3 +10,4 @@ describe("getPiUserAgent", () => {
 		expect(userAgent).toMatch(/^metis\/[^\s()]+ \([^;()]+;\s*[^;()]+;\s*[^()]+\)$/);
 	});
 });
+

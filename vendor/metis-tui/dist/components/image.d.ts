@@ -26,3 +26,4 @@ export declare class Image implements Component {
     render(width: number): string[];
 }
 //# sourceMappingURL=image.d.ts.map
+

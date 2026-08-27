@@ -294,3 +294,4 @@ export function pickWorkProgressLabel(
     ? choices[(index + 1) % choices.length]
     : choice;
 }
+

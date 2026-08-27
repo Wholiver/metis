@@ -140,3 +140,4 @@ The built-in terminal has limited escape sequence support. Shift+Enter cannot be
 If you want the hardware cursor visible, set `METIS_HARDWARE_CURSOR=1` before running metis (disabled by default for compatibility).
 
 Consider using a dedicated terminal emulator for the best experience.
+

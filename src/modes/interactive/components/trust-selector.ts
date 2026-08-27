@@ -132,3 +132,4 @@ export class TrustSelectorComponent extends Container {
 		}
 	}
 }
+

@@ -177,3 +177,4 @@ if (entrypoint === import.meta.url) {
 		process.exitCode = 1;
 	});
 }
+

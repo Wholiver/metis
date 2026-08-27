@@ -132,3 +132,4 @@ describe("generateSummary reasoning options", () => {
 		expect(completeSimpleMock.mock.calls.map((call) => call[2]?.maxTokens)).toEqual([128000, 128000]);
 	});
 });
+

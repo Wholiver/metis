@@ -146,3 +146,4 @@ describe("blockImages setting", () => {
 		});
 	});
 });
+

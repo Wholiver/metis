@@ -97,3 +97,4 @@ export class CustomMessageComponent extends Container {
 		);
 	}
 }
+

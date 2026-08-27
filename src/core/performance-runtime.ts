@@ -966,3 +966,4 @@ ${line(state, "FRONTIER G2")}
 		appendFileSync(join(this.stateValue.governanceRoot, "GATELOG.md"), `${line(this.stateValue, `${event} agent=${agent} model=${model} effort=${effort}`)}\n`, "utf8");
 	}
 }
+

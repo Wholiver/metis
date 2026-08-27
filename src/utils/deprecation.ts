@@ -12,3 +12,4 @@ export function warnDeprecation(message: string): void {
 export function clearDeprecationWarningsForTests(): void {
 	emittedDeprecationWarnings.clear();
 }
+

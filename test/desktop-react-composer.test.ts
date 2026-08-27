@@ -132,3 +132,4 @@ describe('desktop React multiline composer', () => {
     expect(markdown).toContain('[overflow-wrap:anywhere]');
   });
 });
+

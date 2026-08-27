@@ -40,3 +40,4 @@ export declare const streamOpenAIResponses: StreamFunction<"openai-responses", O
 /** @deprecated Use `streamSimple` from `@earendil-works/metis-ai/api/openai-responses` or `openAIResponsesApi().streamSimple`. */
 export declare const streamSimpleOpenAIResponses: StreamFunction<"openai-responses", SimpleStreamOptions>;
 //# sourceMappingURL=legacy-api-aliases.d.ts.map
+

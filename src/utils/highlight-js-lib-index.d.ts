@@ -17,3 +17,4 @@ declare module "highlight.js/lib/index.js" {
 	const hljs: HighlightJs;
 	export default hljs;
 }
+

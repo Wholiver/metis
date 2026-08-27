@@ -16,3 +16,4 @@ export function opencodeGoProvider() {
     });
 }
 //# sourceMappingURL=opencode-go.js.map
+

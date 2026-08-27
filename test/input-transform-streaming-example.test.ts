@@ -82,3 +82,4 @@ describe("input-transform-streaming example", () => {
 		expect(result).toEqual({ action: "continue" });
 	});
 });
+

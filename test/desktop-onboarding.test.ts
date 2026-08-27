@@ -84,3 +84,4 @@ describe("Desktop React first-run onboarding", () => {
 		expect(build).toContain('"workspace-create.cjs"');
 	});
 });
+

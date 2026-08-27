@@ -57,3 +57,4 @@ export function assertSessionCwdExists(sessionManager: SessionCwdSource, fallbac
 		throw new MissingSessionCwdError(issue);
 	}
 }
+

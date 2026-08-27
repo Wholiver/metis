@@ -13,3 +13,4 @@ export interface ResourceDiagnostic {
 	path?: string;
 	collision?: ResourceCollision;
 }
+

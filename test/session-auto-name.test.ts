@@ -186,3 +186,4 @@ describe("sanitizeGeneratedSessionName", () => {
 		).toBe("New task");
 	});
 });
+

@@ -244,3 +244,4 @@ if (cmd === "contrast") {
 	console.log("  npx tsx test-theme-colors.ts contrast 4.5   Compute colors at ratio");
 	console.log("  npx tsx test-theme-colors.ts test file.json Test any JSON file");
 }
+

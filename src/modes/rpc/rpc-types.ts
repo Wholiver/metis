@@ -317,3 +317,4 @@ export type RpcUserInputResponse = { type: "user_input_response"; requestId: str
 // ============================================================================
 
 export type RpcCommandType = RpcCommand["type"];
+

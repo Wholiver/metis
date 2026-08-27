@@ -36,3 +36,4 @@ process.stdin.resume();
 		await expect(client.getCommands()).rejects.toThrow(/Agent process exited \(code=43 signal=null\)/);
 	});
 });
+

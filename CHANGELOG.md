@@ -377,3 +377,4 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 ### Release candidate notice
 
 `1.0.0-rc.1` is a release candidate. Public APIs, Extension events, Package metadata, and behavior may still change before the stable `1.0.0` release.
+

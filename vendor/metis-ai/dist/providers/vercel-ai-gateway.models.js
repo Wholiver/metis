@@ -4,3 +4,4 @@ import values from "./data/vercel-ai-gateway.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const VERCEL_AI_GATEWAY_MODELS = flattenModelCatalog("vercel-ai-gateway", values);
 //# sourceMappingURL=vercel-ai-gateway.models.js.map
+

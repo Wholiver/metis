@@ -4,3 +4,4 @@ import values from "./data/fireworks.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const FIREWORKS_MODELS = flattenModelCatalog("fireworks", values);
 //# sourceMappingURL=fireworks.models.js.map
+

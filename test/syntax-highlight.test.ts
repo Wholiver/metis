@@ -74,3 +74,4 @@ describe("theme syntax highlighting", () => {
 		expect(highlightCode("<div></div>", "html")[0]).toContain("\x1b[38;2;123;132;156m<\x1b[39m");
 	});
 });
+

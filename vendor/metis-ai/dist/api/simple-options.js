@@ -50,3 +50,4 @@ baseMaxTokens, modelMaxTokens, reasoningLevel, customBudgets) {
     return { maxTokens, thinkingBudget };
 }
 //# sourceMappingURL=simple-options.js.map
+

@@ -11,3 +11,4 @@ export function formatThinkingDuration(durationMs: number): string {
   const seconds = Math.floor((safeDuration % 60000) / 1000);
   return `${minutes}m ${seconds}s`;
 }
+

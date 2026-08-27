@@ -133,3 +133,4 @@ describe("startup session name", () => {
 		expect(readSessionInfoNames(dirs.sessionFile)).toEqual([]);
 	});
 });
+

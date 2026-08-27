@@ -38,3 +38,4 @@ describe("LanguageSelectorComponent", () => {
 		expect(output).toContain("✓ 日本語");
 	});
 });
+

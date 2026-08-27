@@ -209,3 +209,4 @@ describe("desktop project persistence", () => {
 		expect(restored.projects[0]?.id).toBe("one");
 	});
 });
+

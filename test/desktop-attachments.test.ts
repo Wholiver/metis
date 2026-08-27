@@ -116,3 +116,4 @@ describe("desktop attachment wiring", () => {
 		expect(main).toContain('ipcMain.handle("attachment:save"');
 	});
 });
+

@@ -87,3 +87,4 @@ jobs:
           path: windows-artifacts/*-setup.exe
           if-no-files-found: error
           retention-days: 7
+

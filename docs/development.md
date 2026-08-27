@@ -69,3 +69,4 @@ packages/
   tui/          # Terminal UI components
   coding-agent/ # CLI and interactive mode
 ```
+

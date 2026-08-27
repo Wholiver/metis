@@ -28,3 +28,4 @@ export declare function getOpenAICodexWebSocketDebugStats(sessionId: string): Op
 export declare function resetOpenAICodexWebSocketDebugStats(sessionId?: string): void;
 export declare function closeOpenAICodexWebSocketSessions(sessionId?: string): void;
 //# sourceMappingURL=openai-codex-responses.d.ts.map
+

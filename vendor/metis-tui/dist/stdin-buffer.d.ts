@@ -48,3 +48,4 @@ export declare class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
     destroy(): void;
 }
 //# sourceMappingURL=stdin-buffer.d.ts.map
+

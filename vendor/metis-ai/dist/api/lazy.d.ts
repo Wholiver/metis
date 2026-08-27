@@ -13,3 +13,4 @@ export declare function lazyStream(model: Model<Api>, setup: () => Promise<Async
  */
 export declare function lazyApi(load: () => Promise<ProviderStreams>): ProviderStreams;
 //# sourceMappingURL=lazy.d.ts.map
+

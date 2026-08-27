@@ -319,3 +319,4 @@ describe("test harness", () => {
 		expect(messageEntries.length).toBeGreaterThanOrEqual(2); // user + assistant
 	});
 });
+

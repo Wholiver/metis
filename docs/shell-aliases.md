@@ -11,3 +11,4 @@ To enable your shell aliases, add to `~/.metis/agent/settings.json`:
 ```
 
 Adjust the path (`~/.zshrc`, `~/.bashrc`, etc.) to match your shell config.
+

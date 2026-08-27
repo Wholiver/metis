@@ -54,3 +54,4 @@ describe("regression #3982: message_end cost override", () => {
 		expect(messageEnd.message.usage.cost.total).toBe(0.123);
 	});
 });
+

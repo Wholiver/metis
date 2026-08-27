@@ -129,3 +129,4 @@ describe("extension factory cache", () => {
 		expect(state().factoryRuns).toBe(3);
 	});
 });
+

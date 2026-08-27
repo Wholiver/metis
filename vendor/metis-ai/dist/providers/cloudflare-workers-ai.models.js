@@ -4,3 +4,4 @@ import values from "./data/cloudflare-workers-ai.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const CLOUDFLARE_WORKERS_AI_MODELS = flattenModelCatalog("cloudflare-workers-ai", values);
 //# sourceMappingURL=cloudflare-workers-ai.models.js.map
+

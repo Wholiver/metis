@@ -4,3 +4,4 @@ import values from "./data/xiaomi.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const XIAOMI_MODELS = flattenModelCatalog("xiaomi", values);
 //# sourceMappingURL=xiaomi.models.js.map
+

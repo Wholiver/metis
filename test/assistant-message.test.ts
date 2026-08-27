@@ -154,3 +154,4 @@ describe("AssistantMessageComponent", () => {
 		expect(unpaddedLines.some((line) => line.startsWith("hello"))).toBe(true);
 	});
 });
+

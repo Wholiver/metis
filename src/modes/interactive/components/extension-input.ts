@@ -85,3 +85,4 @@ export class ExtensionInputComponent extends Container implements Focusable {
 		this.countdown?.dispose();
 	}
 }
+

@@ -266,3 +266,4 @@ export declare class TUI extends Container {
     }): Promise<TerminalColorScheme | undefined>;
 }
 //# sourceMappingURL=tui.d.ts.map
+

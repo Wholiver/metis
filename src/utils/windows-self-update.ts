@@ -82,3 +82,4 @@ export function quarantineWindowsNativeDependencies(packageDir: string): void {
 		copyFileSync(quarantinePath, loadedFile);
 	}
 }
+

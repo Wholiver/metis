@@ -104,3 +104,4 @@ describe("InteractiveMode.maybeWarnAboutAnthropicSubscriptionAuth", () => {
 		expect(fakeThis.session.modelRegistry.getApiKeyForProvider).not.toHaveBeenCalled();
 	});
 });
+

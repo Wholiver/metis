@@ -93,3 +93,4 @@ export { serializeConversation } from "./utils.ts";
 /** Generate compaction summary data from prepared session history. */
 export declare function compact(preparation: CompactionPreparation, models: Models, model: Model<any>, customInstructions?: string, signal?: AbortSignal, thinkingLevel?: ThinkingLevel): Promise<Result<CompactionResult, CompactionError>>;
 //# sourceMappingURL=compaction.d.ts.map
+

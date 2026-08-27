@@ -49,3 +49,4 @@ export declare function createCompactionSummaryMessage(summary: string, tokensBe
 export declare function createCustomMessage(customType: string, content: string | (TextContent | ImageContent)[], display: boolean, details: unknown | undefined, timestamp: string): CustomMessage;
 export declare function convertToLlm(messages: AgentMessage[]): Message[];
 //# sourceMappingURL=messages.d.ts.map
+

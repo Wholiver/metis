@@ -56,3 +56,4 @@ export function createQueryMemoryDbToolDefinition(options?: QueryMemoryDbToolOpt
 export function createQueryMemoryDbTool(options?: QueryMemoryDbToolOptions): AgentTool<typeof queryMemoryDbSchema> {
 	return wrapToolDefinition(createQueryMemoryDbToolDefinition(options));
 }
+

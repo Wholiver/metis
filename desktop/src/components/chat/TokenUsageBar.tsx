@@ -235,3 +235,4 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
     </div>
   );
 };
+

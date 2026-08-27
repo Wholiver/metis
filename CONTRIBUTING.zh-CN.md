@@ -212,3 +212,4 @@ feat(extensions): add tool cancellation hook
 fix(rpc): preserve request error details
 docs: add package integration guide
 ```
+

@@ -65,3 +65,4 @@ if (originalSessionFile) {
 
 unsubscribe?.();
 await runtime.dispose();
+

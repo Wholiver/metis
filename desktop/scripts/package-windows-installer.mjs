@@ -230,3 +230,4 @@ try {
 } finally {
 	await rm(temporaryDir, { recursive: true, force: true });
 }
+

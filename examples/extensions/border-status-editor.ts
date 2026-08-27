@@ -148,3 +148,4 @@ export default function (metis: ExtensionAPI) {
 		ctx.ui.setEditorComponent((tui, theme, keybindings) => new BorderStatusEditor(tui, theme, keybindings));
 	});
 }
+

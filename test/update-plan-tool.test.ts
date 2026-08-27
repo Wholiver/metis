@@ -41,3 +41,4 @@ describe("read_plan tool", () => {
 		expect(result.content[1]?.text).toContain("(in_progress) Implement");
 	});
 });
+

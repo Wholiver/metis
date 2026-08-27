@@ -183,3 +183,4 @@ describe("InteractiveMode.shutdown ordering (#5080)", () => {
 		expect(context.runtimeHost.dispose).not.toHaveBeenCalled();
 	});
 });
+

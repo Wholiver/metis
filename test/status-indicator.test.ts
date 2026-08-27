@@ -30,3 +30,4 @@ describe("status indicators", () => {
 		expect(requestRender).toHaveBeenCalledTimes(callsBeforeDispose);
 	});
 });
+

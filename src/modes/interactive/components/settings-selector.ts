@@ -829,3 +829,4 @@ export class SettingsSelectorComponent extends Container {
 		return this.settingsList;
 	}
 }
+

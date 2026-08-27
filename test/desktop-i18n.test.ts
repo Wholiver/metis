@@ -234,3 +234,4 @@ describe("Desktop native menu localization", () => {
 		}
 	});
 });
+

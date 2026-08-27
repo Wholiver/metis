@@ -47,3 +47,4 @@ export const streamOpenAIResponses = openAIResponsesStreams.stream;
 /** @deprecated Use `streamSimple` from `@earendil-works/metis-ai/api/openai-responses` or `openAIResponsesApi().streamSimple`. */
 export const streamSimpleOpenAIResponses = openAIResponsesStreams.streamSimple;
 //# sourceMappingURL=legacy-api-aliases.js.map
+

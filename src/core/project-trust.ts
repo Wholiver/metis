@@ -94,3 +94,4 @@ export async function resolveProjectTrusted(options: ResolveProjectTrustedOption
 	}
 	return false;
 }
+

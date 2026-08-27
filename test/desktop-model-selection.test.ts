@@ -27,3 +27,4 @@ describe("desktop model selection", () => {
 		)).toEqual({ provider: "custom-local", id: "local-model" });
 	});
 });
+

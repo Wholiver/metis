@@ -114,3 +114,4 @@ export interface ServerErrorBody {
 		message: string;
 	};
 }
+

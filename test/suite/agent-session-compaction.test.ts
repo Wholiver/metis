@@ -467,3 +467,4 @@ describe("AgentSession compaction characterization", () => {
 		expect(disabledSpy).not.toHaveBeenCalled();
 	});
 });
+

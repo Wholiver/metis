@@ -4,3 +4,4 @@ import values from "./data/minimax.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const MINIMAX_MODELS = flattenModelCatalog("minimax", values);
 //# sourceMappingURL=minimax.models.js.map
+

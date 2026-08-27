@@ -256,3 +256,4 @@ export function ansiToHtml(text: string): string {
 export function ansiLinesToHtml(lines: string[]): string {
 	return lines.map((line) => `<div class="ansi-line">${ansiToHtml(line) || "&nbsp;"}</div>`).join("");
 }
+

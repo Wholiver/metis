@@ -10,3 +10,4 @@ restoreSandboxEnv();
 
 await import("./register-bedrock.ts");
 await import("../cli.ts");
+

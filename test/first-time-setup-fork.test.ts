@@ -37,3 +37,4 @@ describe("shouldRunFirstTimeSetup in forked distributions", () => {
 		expect(shouldRunFirstTimeSetup(settingsPath)).toBe(false);
 	});
 });
+

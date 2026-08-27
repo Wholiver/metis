@@ -38,3 +38,4 @@ describe("export HTML skill block rendering", () => {
 		expect(templateJs).toMatch(/tree-role-skill/);
 	});
 });
+

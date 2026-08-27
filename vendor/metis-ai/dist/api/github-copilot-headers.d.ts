@@ -6,3 +6,4 @@ export declare function buildCopilotDynamicHeaders(params: {
     hasImages: boolean;
 }): Record<string, string>;
 //# sourceMappingURL=github-copilot-headers.d.ts.map
+

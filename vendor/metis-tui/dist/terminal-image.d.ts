@@ -88,3 +88,4 @@ export declare function renderImage(base64Data: string, imageDimensions: ImageDi
 export declare function hyperlink(text: string, url: string): string;
 export declare function imageFallback(mimeType: string, dimensions?: ImageDimensions, filename?: string): string;
 //# sourceMappingURL=terminal-image.d.ts.map
+

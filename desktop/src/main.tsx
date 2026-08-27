@@ -9,3 +9,4 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <DesktopI18nProvider><App /></DesktopI18nProvider>
   </React.StrictMode>
 );
+

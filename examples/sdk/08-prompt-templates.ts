@@ -49,3 +49,4 @@ const { session } = await createAgentSession({
 });
 console.log(`Session created with ${discovered.length + 1} prompt templates`);
 session.dispose();
+

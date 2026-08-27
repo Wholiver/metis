@@ -68,3 +68,4 @@ export declare function truncateLine(line: string, maxChars?: number): {
     wasTruncated: boolean;
 };
 //# sourceMappingURL=truncate.d.ts.map
+

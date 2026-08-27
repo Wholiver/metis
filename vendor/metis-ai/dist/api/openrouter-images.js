@@ -124,3 +124,4 @@ function parseUsage(rawUsage, model) {
     return usage;
 }
 //# sourceMappingURL=openrouter-images.js.map
+

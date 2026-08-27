@@ -54,3 +54,4 @@ export async function pollOAuthDeviceCodeFlow(options) {
     throw new Error(slowDownResponses > 0 ? SLOW_DOWN_TIMEOUT_MESSAGE : TIMEOUT_MESSAGE);
 }
 //# sourceMappingURL=device-code.js.map
+

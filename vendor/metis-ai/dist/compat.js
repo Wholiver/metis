@@ -180,3 +180,4 @@ export async function completeSimple(model, context, options) {
     return s.result();
 }
 //# sourceMappingURL=compat.js.map
+

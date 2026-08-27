@@ -4,3 +4,4 @@ import values from "./data/mistral.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const MISTRAL_MODELS = flattenModelCatalog("mistral", values);
 //# sourceMappingURL=mistral.models.js.map
+

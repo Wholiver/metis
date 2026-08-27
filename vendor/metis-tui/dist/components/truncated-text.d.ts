@@ -11,3 +11,4 @@ export declare class TruncatedText implements Component {
     render(width: number): string[];
 }
 //# sourceMappingURL=truncated-text.d.ts.map
+

@@ -240,3 +240,4 @@ describe("AgentSession bash and persistence characterization", () => {
 		expect(harness.session.messages[harness.session.messages.length - 1]?.role).toBe("bashExecution");
 	});
 });
+

@@ -51,3 +51,4 @@ describe("image processing pipeline", () => {
 		expectPngMagic(result.data);
 	});
 });
+

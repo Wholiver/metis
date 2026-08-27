@@ -95,3 +95,4 @@ export function mergeProviderAttributionHeaders(
 
 	return Object.keys(merged).length > 0 ? merged : undefined;
 }
+

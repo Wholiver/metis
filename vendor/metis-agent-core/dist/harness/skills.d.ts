@@ -42,3 +42,4 @@ export declare function loadSourcedSkills<TSource, TSkill extends Skill = Skill>
     }>;
 }>;
 //# sourceMappingURL=skills.d.ts.map
+

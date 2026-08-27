@@ -111,3 +111,4 @@ jobs:
 
       - name: Build production package
         run: npm run build
+

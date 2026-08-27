@@ -23,3 +23,4 @@ Example extensions demonstrating:
 - [SDK Reference](sdk/README.md)
 - [Extensions Documentation](../docs/extensions.md)
 - [Skills Documentation](../docs/skills.md)
+

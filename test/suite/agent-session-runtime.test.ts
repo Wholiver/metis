@@ -616,3 +616,4 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(runtime.session.thinkingLevel).toBe("off");
 	});
 });
+

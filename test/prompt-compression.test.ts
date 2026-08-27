@@ -96,3 +96,4 @@ describe("static prompt compression contracts", () => {
 		expect(prompt).toContain(project);
 	});
 });
+

@@ -25,3 +25,4 @@ describe("AGENTS discovery", () => {
 		expect(files.map((file) => file.content)).toEqual(["root instructions", "nested override"]);
 	});
 });
+

@@ -538,3 +538,4 @@ describe("desktop subagent progress", () => {
 		});
 	});
 });
+

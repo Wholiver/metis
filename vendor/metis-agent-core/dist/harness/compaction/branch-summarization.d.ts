@@ -49,3 +49,4 @@ export declare function prepareBranchEntries(entries: SessionTreeEntry[], tokenB
 /** Generate a summary for abandoned branch entries. */
 export declare function generateBranchSummary(entries: SessionTreeEntry[], options: GenerateBranchSummaryOptions): Promise<Result<BranchSummaryResult, BranchSummaryError>>;
 //# sourceMappingURL=branch-summarization.d.ts.map
+

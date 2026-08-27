@@ -71,3 +71,4 @@ export const PlanPoints: React.FC<PlanPointsProps> = ({ points }) => {
     </ol>
   );
 };
+

@@ -394,3 +394,4 @@ Configure compaction in `~/.metis/agent/settings.json` or `<project-dir>/.metis/
 | `keepRecentTokens` | `20000` | Recent tokens to keep (not summarized) |
 
 Disable auto-compaction with `"enabled": false`. You can still compact manually with `/compact`.
+

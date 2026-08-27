@@ -59,3 +59,4 @@ describe("Desktop unified memory state", () => {
 		expect(app).toContain("memoryRunPending = false");
 	});
 });
+

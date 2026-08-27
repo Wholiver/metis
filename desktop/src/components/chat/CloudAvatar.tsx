@@ -51,3 +51,4 @@ export const CloudAvatar: React.FC<CloudAvatarProps> = ({ size = 56, className =
     </svg>
   );
 };
+

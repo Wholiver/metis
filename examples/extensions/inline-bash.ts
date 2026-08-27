@@ -92,3 +92,4 @@ export default function (metis: ExtensionAPI) {
 		return { action: "transform", text: result, images: event.images };
 	});
 }
+

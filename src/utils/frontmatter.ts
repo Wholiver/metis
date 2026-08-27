@@ -37,3 +37,4 @@ export const parseFrontmatter = <T extends Record<string, unknown> = Record<stri
 };
 
 export const stripFrontmatter = (content: string): string => parseFrontmatter(content).body;
+

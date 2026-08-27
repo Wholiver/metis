@@ -123,3 +123,4 @@ describe("SessionListOptions.includeMessageText", () => {
 		expect(after!.dailyActivity[0]?.userMessages).toBe(3);
 	});
 });
+

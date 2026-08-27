@@ -59,3 +59,4 @@ export const Routines: React.FC<RoutinesProps> = ({ routines = DEFAULT_ROUTINES 
     </div>
   );
 };
+

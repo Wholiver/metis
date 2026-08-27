@@ -190,3 +190,4 @@ export const AssistantTurn: React.FC<AssistantTurnProps> = ({
     </div>
   );
 };
+

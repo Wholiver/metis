@@ -12,3 +12,4 @@ export interface ShellCaptureResult {
 export declare function sanitizeBinaryOutput(str: string): string;
 export declare function executeShellWithCapture(env: ExecutionEnv, command: string, options?: ShellCaptureOptions): Promise<Result<ShellCaptureResult, ExecutionError>>;
 //# sourceMappingURL=shell-output.d.ts.map
+

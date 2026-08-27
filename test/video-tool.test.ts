@@ -299,3 +299,4 @@ describe("video tool", () => {
 		expect(result.details.motionMagnitude).toBe("Low");
 	});
 });
+

@@ -86,3 +86,4 @@ export default function (metis: ExtensionAPI) {
 		ctx.ui.setEditorComponent((tui, theme, kb) => new RainbowEditor(tui, theme, kb));
 	});
 }
+

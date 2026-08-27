@@ -31,3 +31,4 @@ export declare class Session<TMetadata extends SessionMetadata = SessionMetadata
     }): Promise<string | undefined>;
 }
 //# sourceMappingURL=session.d.ts.map
+

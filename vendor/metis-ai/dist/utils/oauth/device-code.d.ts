@@ -19,3 +19,4 @@ export type OAuthDeviceCodePollOptions<T> = {
 export declare function pollOAuthDeviceCodeFlow<T>(options: OAuthDeviceCodePollOptions<T>): Promise<T>;
 export {};
 //# sourceMappingURL=device-code.d.ts.map
+

@@ -139,3 +139,4 @@ try {
 } finally {
 	rmSync(temporaryDirectory, { recursive: true, force: true });
 }
+

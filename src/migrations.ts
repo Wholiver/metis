@@ -313,3 +313,4 @@ export function runMigrations(cwd: string): {
 	const deprecationWarnings = migrateExtensionSystem(cwd);
 	return { migratedAuthProviders, deprecationWarnings };
 }
+

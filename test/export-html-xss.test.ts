@@ -65,3 +65,4 @@ describe("export HTML markdown link sanitization", () => {
 		expect(templateJs).toMatch(/\$\{escapeHtml\(globalStats\.models\.join\(', '\) \|\| 'unknown'\)\}/);
 	});
 });
+

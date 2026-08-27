@@ -64,3 +64,4 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		check: () => ipcRenderer.invoke("update:check"),
 	},
 });
+

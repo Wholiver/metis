@@ -12,3 +12,4 @@ export function cloudflareWorkersAIProvider() {
     });
 }
 //# sourceMappingURL=cloudflare-workers-ai.js.map
+

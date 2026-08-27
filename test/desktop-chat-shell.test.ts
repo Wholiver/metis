@@ -207,3 +207,4 @@ describe("desktop active chat shell contracts", () => {
 		expect(desktopMainSource).toContain('utilityProcess.fork(cliPath, ["server", "--hostname", "127.0.0.1", "--port", "4096"]');
 	});
 });
+

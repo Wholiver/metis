@@ -40,3 +40,4 @@ const UI_LANGUAGE_SET = new Set<UiLanguage>(SUPPORTED_UI_LANGUAGES.map((language
 export function isUiLanguage(value: unknown): value is UiLanguage {
 	return typeof value === "string" && UI_LANGUAGE_SET.has(value as UiLanguage);
 }
+

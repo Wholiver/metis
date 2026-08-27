@@ -626,3 +626,4 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 		return this.resourceList;
 	}
 }
+

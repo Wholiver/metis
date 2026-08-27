@@ -110,3 +110,4 @@ describe("video transcription npm preparation", () => {
 		await expect(prepareVideoTranscription({ root: testDir, device: "wasm", log: vi.fn() })).rejects.toThrow("Unsupported METIS_VIDEO_TRANSCRIPTION_DEVICE");
 	});
 });
+

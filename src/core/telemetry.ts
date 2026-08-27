@@ -11,3 +11,4 @@ export function isInstallTelemetryEnabled(
 ): boolean {
 	return telemetryEnv !== undefined ? isTruthyEnvFlag(telemetryEnv) : settingsManager.getEnableInstallTelemetry();
 }
+

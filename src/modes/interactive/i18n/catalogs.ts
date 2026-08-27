@@ -281,3 +281,4 @@ export const CATALOGS: Record<ResolvedUiLanguage, TranslationCatalog> = {
 	ru: { ...ru, ...selectorOverrides.ru, ...resourceOverrides.ru },
 	it: { ...it, ...selectorOverrides.it, ...resourceOverrides.it },
 };
+

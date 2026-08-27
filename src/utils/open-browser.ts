@@ -22,3 +22,4 @@ export function openBrowser(target: string): void {
 		.on("error", () => {})
 		.unref();
 }
+

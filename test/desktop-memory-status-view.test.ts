@@ -97,3 +97,4 @@ describe("Desktop Memory status dashboard", () => {
 		expect(main).toContain("runPendingState");
 	});
 });
+

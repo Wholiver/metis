@@ -4,3 +4,4 @@ import values from "./data/cloudflare-ai-gateway.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const CLOUDFLARE_AI_GATEWAY_MODELS = flattenModelCatalog("cloudflare-ai-gateway", values);
 //# sourceMappingURL=cloudflare-ai-gateway.models.js.map
+

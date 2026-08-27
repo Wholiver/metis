@@ -945,3 +945,4 @@ export function createSpawnAgentTool(
 ): AgentTool<typeof spawnAgentSchema> {
 	return wrapToolDefinition(createSpawnAgentToolDefinition(cwd, options));
 }
+

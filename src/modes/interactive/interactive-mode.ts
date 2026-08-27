@@ -6476,3 +6476,4 @@ export class InteractiveMode {
 		this.unregisterSignalHandlers();
 	}
 }
+

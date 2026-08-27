@@ -45,3 +45,4 @@ export const ConversationIcon: React.FC<ConversationIconProps> = ({
     </span>
   );
 };
+

@@ -133,3 +133,4 @@ describe("formatResumeCommand", () => {
 		expect(formatResumeCommand(sessionManager)).toBeUndefined();
 	});
 });
+

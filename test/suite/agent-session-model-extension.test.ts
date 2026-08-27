@@ -352,3 +352,4 @@ describe("AgentSession model and extension characterization", () => {
 		expect(lifecycleEvents).toEqual(["start:startup", "shutdown:reload", "start:reload"]);
 	});
 });
+

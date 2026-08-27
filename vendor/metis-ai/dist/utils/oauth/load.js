@@ -20,3 +20,4 @@ export const loadAnthropicOAuth = async () => (await importOAuthModule("./anthro
 export const loadOpenAICodexOAuth = async () => (await importOAuthModule("./openai-codex.ts")).openaiCodexOAuth;
 export const loadGitHubCopilotOAuth = async () => (await importOAuthModule("./github-copilot.ts")).githubCopilotOAuth;
 //# sourceMappingURL=load.js.map
+

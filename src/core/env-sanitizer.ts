@@ -122,3 +122,4 @@ export function sanitizeTraceData<T>(data: T): T {
 
 	return data;
 }
+

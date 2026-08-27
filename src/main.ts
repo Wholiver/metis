@@ -973,3 +973,4 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 }
+

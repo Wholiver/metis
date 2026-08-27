@@ -4,3 +4,4 @@ import values from "./data/openai.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const OPENAI_MODELS = flattenModelCatalog("openai", values);
 //# sourceMappingURL=openai.models.js.map
+

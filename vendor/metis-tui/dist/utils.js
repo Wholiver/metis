@@ -1058,3 +1058,4 @@ export function extractSegments(line, beforeEnd, afterStart, afterLen, strictAft
     return { before, beforeWidth, after, afterWidth };
 }
 //# sourceMappingURL=utils.js.map
+

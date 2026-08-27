@@ -145,3 +145,4 @@ describe("SettingsManager - External Edit Preservation", () => {
 		expect(savedProjectSettings.extensions).toEqual(["./in-memory-extension.ts"]);
 	});
 });
+

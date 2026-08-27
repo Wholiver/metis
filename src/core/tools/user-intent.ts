@@ -39,3 +39,4 @@ export function createUserIntentToolDefinition(cwd: string): ToolDefinition<type
 export function createUserIntentTool(cwd: string): AgentTool<any> {
 	return wrapToolDefinition(createUserIntentToolDefinition(cwd));
 }
+

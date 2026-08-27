@@ -15,3 +15,4 @@ export type ModelCatalog<TGroups extends ModelGroups, TProvider extends Provider
 export declare function flattenModelCatalog<const TProvider extends ProviderId, const TGroups extends ModelGroups>(_provider: TProvider, groups: TGroups): ModelCatalog<TGroups, TProvider>;
 export {};
 //# sourceMappingURL=model-catalog.d.ts.map
+

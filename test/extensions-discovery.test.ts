@@ -490,3 +490,4 @@ describe("extensions discovery", () => {
 		expect(result.extensions).toHaveLength(0);
 	});
 });
+

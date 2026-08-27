@@ -74,3 +74,4 @@ export class ThinkingSelectorComponent extends Container {
 		return this.selectList;
 	}
 }
+

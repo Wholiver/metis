@@ -202,3 +202,4 @@ export const ToolGroup: React.FC<ToolGroupProps> = ({ parts, streaming = false, 
     </section>
   );
 };
+

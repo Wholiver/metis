@@ -11,3 +11,4 @@ export interface GoogleOptions extends StreamOptions {
 export declare const stream: StreamFunction<"google-generative-ai", GoogleOptions>;
 export declare const streamSimple: StreamFunction<"google-generative-ai", SimpleStreamOptions>;
 //# sourceMappingURL=google-generative-ai.d.ts.map
+

@@ -13,3 +13,4 @@ export function minimaxCnProvider() {
     });
 }
 //# sourceMappingURL=minimax-cn.js.map
+

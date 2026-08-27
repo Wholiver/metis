@@ -274,3 +274,4 @@ export function truncateLine(
 	}
 	return { text: `${line.slice(0, maxChars)}... [truncated]`, wasTruncated: true };
 }
+

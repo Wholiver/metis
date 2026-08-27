@@ -23,3 +23,4 @@ export function formatNoApiKeyFoundMessage(provider: string): string {
 	const providerDisplay = provider === UNKNOWN_PROVIDER ? "the selected model" : provider;
 	return `No API key found for ${providerDisplay}.\n\n${getProviderLoginHelp()}`;
 }
+

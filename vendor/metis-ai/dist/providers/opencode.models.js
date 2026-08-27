@@ -4,3 +4,4 @@ import values from "./data/opencode.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const OPENCODE_MODELS = flattenModelCatalog("opencode", values);
 //# sourceMappingURL=opencode.models.js.map
+

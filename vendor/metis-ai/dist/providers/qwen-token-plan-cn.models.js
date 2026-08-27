@@ -4,3 +4,4 @@ import values from "./data/qwen-token-plan-cn.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const QWEN_TOKEN_PLAN_CN_MODELS = flattenModelCatalog("qwen-token-plan-cn", values);
 //# sourceMappingURL=qwen-token-plan-cn.models.js.map
+

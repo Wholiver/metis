@@ -43,3 +43,4 @@ export function createToolDefinitionFromAgentTool(tool: AgentTool<any>): ToolDef
 		execute: async (toolCallId, params, signal, onUpdate) => tool.execute(toolCallId, params, signal, onUpdate),
 	};
 }
+

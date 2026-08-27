@@ -72,3 +72,4 @@ export function useUpdateCheck(isConnected: boolean) {
 
   return { updateCheck: state, checkForUpdates: check };
 }
+

@@ -86,3 +86,4 @@ describe("readClipboardImage BMP conversion", () => {
 		expect(image!.bytes[3]).toBe(0x47); // G
 	});
 });
+

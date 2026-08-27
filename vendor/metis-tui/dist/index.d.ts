@@ -22,3 +22,4 @@ export { allocateImageId, type CellDimensions, calculateImageRows, deleteAllKitt
 export { type Component, Container, CURSOR_MARKER, type Focusable, isFocusable, type OverlayAnchor, type OverlayHandle, type OverlayMargin, type OverlayOptions, type OverlayUnfocusOptions, type SizeValue, TUI, } from "./tui.ts";
 export { sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "./utils.ts";
 //# sourceMappingURL=index.d.ts.map
+

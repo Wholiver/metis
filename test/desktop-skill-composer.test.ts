@@ -78,3 +78,4 @@ describe("Desktop skill composer wiring", () => {
 		expect(app).toContain('option.addEventListener("pointerdown"');
 	});
 });
+

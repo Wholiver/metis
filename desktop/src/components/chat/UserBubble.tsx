@@ -58,3 +58,4 @@ export const UserBubble: React.FC<UserBubbleProps> = ({ message }) => {
     </div>
   );
 };
+

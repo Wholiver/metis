@@ -298,3 +298,4 @@ export async function readClipboardImage(options?: {
 
 	return image;
 }
+

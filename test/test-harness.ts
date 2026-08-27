@@ -444,3 +444,4 @@ export async function createHarnessWithExtensions(options: HarnessOptions = {}):
 	const resourceLoader = options.resourceLoader ?? createTestResourceLoader({ extensionsResult });
 	return createHarnessWithResourceLoader(options, resourceLoader, tempDir);
 }
+

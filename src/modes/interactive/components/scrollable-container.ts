@@ -60,3 +60,4 @@ export class ScrollableContainer implements Component {
 		return childLines.slice(startIndex, endIndex);
 	}
 }
+

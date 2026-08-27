@@ -102,3 +102,4 @@ describe("issue #3217 scoped model ordering", () => {
 		expect(orderedIds).toEqual([modelTwo.id, modelOne.id, modelThree.id]);
 	});
 });
+

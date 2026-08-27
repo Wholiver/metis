@@ -19,3 +19,4 @@ export declare class AssistantMessageEventStream extends EventStream<AssistantMe
 /** Factory function for AssistantMessageEventStream (for use in extensions) */
 export declare function createAssistantMessageEventStream(): AssistantMessageEventStream;
 //# sourceMappingURL=event-stream.d.ts.map
+

@@ -128,3 +128,4 @@ export const Inspector: React.FC<InspectorProps> = ({
     </aside>
   );
 };
+

@@ -87,3 +87,4 @@ describe("regression #5596: missing configured theme export", () => {
 		expect(settingsManager.getTheme()).toBe("missing-theme");
 	});
 });
+

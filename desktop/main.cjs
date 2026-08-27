@@ -1965,3 +1965,4 @@ function isHttpUrl(value) {
 		return false;
 	}
 }
+

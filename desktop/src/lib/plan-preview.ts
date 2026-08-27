@@ -55,3 +55,4 @@ export function splitPlanTitle(markdown: string): { title: string; body: string 
   lines.splice(headingIndex, 1);
   return { title, body: lines.join('\n').trim() };
 }
+

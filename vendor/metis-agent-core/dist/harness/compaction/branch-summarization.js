@@ -172,3 +172,4 @@ export async function generateBranchSummary(entries, options) {
     });
 }
 //# sourceMappingURL=branch-summarization.js.map
+

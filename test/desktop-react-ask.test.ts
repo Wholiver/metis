@@ -68,3 +68,4 @@ describe('desktop React Ask interface', () => {
     expect(hook).toContain('loadMessages(targetSessionId, true)');
   });
 });
+

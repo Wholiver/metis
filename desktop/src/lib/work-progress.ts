@@ -200,3 +200,4 @@ export function resolveWorkProgress(items: AssistantContentPart[]): WorkProgress
     status: 'active',
   };
 }
+

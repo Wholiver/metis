@@ -23,3 +23,4 @@ export default function (metis: ExtensionAPI) {
 		ctx.ui.setWorkingIndicator(CUSTOM_INDICATOR);
 	});
 }
+

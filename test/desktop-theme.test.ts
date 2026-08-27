@@ -20,3 +20,4 @@ describe("Desktop appearance capability", () => {
 		expect(preload).toContain('ipcRenderer.invoke("app:set-theme"');
 	});
 });
+

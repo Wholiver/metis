@@ -154,3 +154,4 @@ export async function loadDesktopWorkStats(sessionDir?: string): Promise<Desktop
 	const sessions = sessionDir ? await SessionManager.listAll(sessionDir) : await SessionManager.listAll();
 	return aggregateDesktopWorkStats(sessions);
 }
+

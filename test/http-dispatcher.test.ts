@@ -51,3 +51,4 @@ describe("http proxy settings", () => {
 		expect(process.env.HTTPS_PROXY).toBeUndefined();
 	});
 });
+

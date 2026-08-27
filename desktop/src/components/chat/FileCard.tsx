@@ -36,3 +36,4 @@ export const FileCard: React.FC<FileCardProps> = ({ file, onOpen }) => {
     </div>
   );
 };
+

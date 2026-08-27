@@ -183,3 +183,4 @@ export default function (metis: ExtensionAPI): void {
 		ctx.ui.addAutocompleteProvider((current) => createIssueAutocompleteProvider(current, getIssues));
 	});
 }
+

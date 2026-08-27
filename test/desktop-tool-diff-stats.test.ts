@@ -110,3 +110,4 @@ describe("desktop tool diff stats", () => {
 		expect(evalFn(readPart, "Completed")).toBeNull();
 	});
 });
+

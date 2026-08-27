@@ -31,3 +31,4 @@ describe("issue #3317 network connection lost retry", () => {
 		expect(getAssistantTexts(harness)).toContain("recovered after reconnect");
 	});
 });
+

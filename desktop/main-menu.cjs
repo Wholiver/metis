@@ -47,3 +47,4 @@ function createEditorContextMenuTemplate(params = {}, text = englishText) {
 }
 
 module.exports = { createApplicationMenuTemplate, createEditorContextMenuTemplate };
+

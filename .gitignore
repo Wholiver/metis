@@ -35,3 +35,4 @@ dist */
 vendor/*/dist/**/*.map
 vendor/*/dist/**/* 2/
 vendor/*/dist/**/.claude/
+

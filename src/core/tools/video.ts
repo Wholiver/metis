@@ -919,3 +919,4 @@ export function createVideoToolDefinition(cwd: string, options?: VideoToolOption
 export function createVideoTool(cwd: string, options?: VideoToolOptions): AgentTool<typeof videoSchema, VideoToolDetails> {
 	return wrapToolDefinition(createVideoToolDefinition(cwd, options));
 }
+

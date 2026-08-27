@@ -418,3 +418,4 @@ export function createMessageAgentToolDefinition(
 export function createMessageAgentTool(options?: AgentManagementToolOptions): AgentTool<typeof messageAgentSchema> {
 	return wrapToolDefinition(createMessageAgentToolDefinition(options));
 }
+

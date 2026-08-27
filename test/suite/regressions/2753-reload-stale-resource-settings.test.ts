@@ -98,3 +98,4 @@ describe("issue #2753 reload stale resource settings", () => {
 		expect(runtime.session.promptTemplates.map((prompt) => prompt.name)).not.toContain("test");
 	});
 });
+

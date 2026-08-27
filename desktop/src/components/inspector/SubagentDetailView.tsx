@@ -192,3 +192,4 @@ export const SubagentDetailView: React.FC<SubagentDetailViewProps> = ({ subagent
     </div>
   );
 };
+

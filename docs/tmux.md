@@ -61,3 +61,4 @@ This affects the default keybindings (`Enter` to submit, `Shift+Enter` for newli
 - A terminal emulator that supports extended keys (Ghostty, Kitty, iTerm2, WezTerm, Windows Terminal)
 
 With tmux 3.2 through 3.4, omit `extended-keys-format csi-u`; Metis still supports tmux's default xterm `modifyOtherKeys` format.
+

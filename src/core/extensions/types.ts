@@ -1690,3 +1690,4 @@ export interface ExtensionError {
 	error: string;
 	stack?: string;
 }
+

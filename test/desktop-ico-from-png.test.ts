@@ -25,3 +25,4 @@ describe("createMetisIco", () => {
 		expect(ico.length).toBeGreaterThan(100);
 	});
 });
+

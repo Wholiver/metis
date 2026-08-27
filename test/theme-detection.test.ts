@@ -131,3 +131,4 @@ describe("theme setting helpers", () => {
 		expect(resolveThemeSetting("light/dark/extra", "dark")).toBeUndefined();
 	});
 });
+

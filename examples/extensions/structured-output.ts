@@ -63,3 +63,4 @@ const structuredOutputTool = defineTool({
 export default function (metis: ExtensionAPI) {
 	metis.registerTool(structuredOutputTool);
 }
+

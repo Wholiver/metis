@@ -229,3 +229,4 @@ cd /path/to/brave-search && npm install
 
 - [Anthropic Skills](https://github.com/anthropics/skills) - Document processing (docx, pdf, pptx, xlsx), web development
 - [Metis Skills](https://github.com/badlogic/metis-skills) - Web search, browser automation, Google APIs, transcription
+

@@ -634,3 +634,4 @@ export function formatSubagentDuration(durationMs?: number): string {
   const seconds = totalSeconds % 60;
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
+

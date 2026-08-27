@@ -48,3 +48,4 @@ export function createPerformanceGateToolDefinition(options: PerformanceGateTool
 export function createPerformanceGateTool(options: PerformanceGateToolOptions) {
 	return wrapToolDefinition(createPerformanceGateToolDefinition(options));
 }
+

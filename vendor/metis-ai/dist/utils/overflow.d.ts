@@ -55,3 +55,4 @@ export declare function isContextOverflow(message: AssistantMessage, contextWind
  */
 export declare function getOverflowPatterns(): RegExp[];
 //# sourceMappingURL=overflow.d.ts.map
+

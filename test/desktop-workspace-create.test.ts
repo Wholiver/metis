@@ -39,3 +39,4 @@ describe("Desktop workspace creation", () => {
 		await expect(workspaceCreate.createWorkspaceDirectory(path.join(parent, "missing"), "project")).rejects.toMatchObject({ code: "parent_missing" });
 	});
 });
+

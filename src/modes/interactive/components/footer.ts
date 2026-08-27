@@ -300,3 +300,4 @@ export class FooterComponent implements Component {
     return lines;
   }
 }
+

@@ -29,3 +29,4 @@ describe("loadClipboardNative", () => {
 		expect(loadClipboardNative([missing])).toBeNull();
 	});
 });
+

@@ -215,3 +215,4 @@ describe("AgentSession dynamic tool registration", () => {
 		session.dispose();
 	});
 });
+

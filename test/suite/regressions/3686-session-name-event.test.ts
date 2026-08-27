@@ -59,3 +59,4 @@ describe("regression #3686: session name changes emit an event", () => {
 		expect(events).toEqual([{ name: "first" }, { name: "second" }]);
 	});
 });
+

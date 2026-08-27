@@ -224,3 +224,4 @@ function applyServiceTierPricing(usage, serviceTier, model) {
     usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
 }
 //# sourceMappingURL=openai-responses.js.map
+

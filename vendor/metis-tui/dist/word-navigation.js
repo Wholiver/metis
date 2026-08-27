@@ -94,3 +94,4 @@ export function findWordForward(text, cursor, options) {
     return newCursor;
 }
 //# sourceMappingURL=word-navigation.js.map
+

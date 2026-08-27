@@ -95,3 +95,4 @@ describe("Package Manager git source parsing", () => {
 		});
 	});
 });
+

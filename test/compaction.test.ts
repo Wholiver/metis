@@ -559,3 +559,4 @@ describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
 		console.log("After compaction:", reloaded.messages.length);
 	}, 60000);
 });
+

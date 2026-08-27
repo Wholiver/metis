@@ -87,3 +87,4 @@ describe('desktop React model switcher', () => {
     expect(240 + 360 + 360).toBeLessThan(1040);
   });
 });
+

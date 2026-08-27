@@ -2586,3 +2586,4 @@ export class DefaultPackageManager implements PackageManager {
 		return (result.stdout || result.stderr || "").trim();
 	}
 }
+

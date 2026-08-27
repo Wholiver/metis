@@ -144,3 +144,4 @@ export const ToolCard: React.FC<{ part: ToolPart; streaming?: boolean }> = ({ pa
     </div>
   );
 };
+

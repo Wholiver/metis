@@ -24,3 +24,4 @@ const helloTool = defineTool({
 export default function (metis: ExtensionAPI) {
 	metis.registerTool(helloTool);
 }
+

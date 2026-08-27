@@ -64,3 +64,4 @@ describe("Documentation example", () => {
 		expect(typeof checkCompactEvent).toBe("function");
 	});
 });
+

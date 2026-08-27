@@ -154,3 +154,4 @@ export async function checkForNewMetisVersion(currentVersion: string): Promise<L
 		return undefined;
 	}
 }
+

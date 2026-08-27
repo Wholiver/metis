@@ -34,3 +34,4 @@ describe("issue #3688 tree cancellation compaction state", () => {
 		expect(harness.sessionManager.getLeafId()).toBe(currentLeafId);
 	});
 });
+

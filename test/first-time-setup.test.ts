@@ -93,3 +93,4 @@ describe("analytics settings", () => {
 		expect(manager.getTrackingId()).toBe(trackingId);
 	});
 });
+

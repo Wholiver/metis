@@ -206,3 +206,4 @@ export function createLogToolDefinition(
 export function createLogTool(cwd: string, options?: LogToolOptions): AgentTool<typeof logSchema> {
 	return wrapToolDefinition(createLogToolDefinition(cwd, options));
 }
+

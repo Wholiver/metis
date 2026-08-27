@@ -32,3 +32,4 @@ export function createRememberUserIntentToolDefinition(
 export function createRememberUserIntentTool(cwd: string): AgentTool<any> {
 	return wrapToolDefinition(createRememberUserIntentToolDefinition(cwd));
 }
+

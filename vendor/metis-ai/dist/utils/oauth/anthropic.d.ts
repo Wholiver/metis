@@ -25,3 +25,4 @@ export declare function refreshAnthropicToken(refreshToken: string): Promise<OAu
 export declare const anthropicOAuth: OAuthAuth;
 export declare const anthropicOAuthProvider: OAuthProviderInterface;
 //# sourceMappingURL=anthropic.d.ts.map
+

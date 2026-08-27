@@ -225,3 +225,4 @@ Packages can appear in both global and project settings. If the same package app
 - npm: package name
 - git: repository URL without ref
 - local: resolved absolute path
+

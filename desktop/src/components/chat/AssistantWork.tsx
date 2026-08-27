@@ -174,3 +174,4 @@ export const AssistantWork: React.FC<AssistantWorkProps> = ({
     </section>
   );
 };
+

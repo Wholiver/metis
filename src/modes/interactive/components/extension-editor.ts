@@ -165,3 +165,4 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 		}
 	}
 }
+

@@ -388,3 +388,4 @@ describe('desktop React session sidebar', () => {
     expect(appSource).toContain('onNewChat={newConversation}');
   });
 });
+

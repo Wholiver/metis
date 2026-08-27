@@ -12,3 +12,4 @@ await Promise.all([
 ]);
 
 console.log(`Prepared Desktop renderer dependencies: ${vendorDir}`);
+

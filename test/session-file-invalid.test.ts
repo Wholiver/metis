@@ -64,3 +64,4 @@ describe("--session invalid file handling", () => {
 		expect(readFileSync(sessionFile, "utf8")).toBe(originalContent);
 	});
 });
+

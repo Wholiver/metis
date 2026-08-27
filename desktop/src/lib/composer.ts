@@ -12,3 +12,4 @@ export function composerTextareaHeight(scrollHeight: number, expanded: boolean):
     : COMPOSER_MULTILINE_MAX_TEXTAREA_HEIGHT;
   return Math.min(Math.max(scrollHeight, COMPOSER_MULTILINE_MIN_TEXTAREA_HEIGHT), maximum);
 }
+

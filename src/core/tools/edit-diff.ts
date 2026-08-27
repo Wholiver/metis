@@ -559,3 +559,4 @@ export async function computeEditDiff(
 ): Promise<EditDiffResult | EditDiffError> {
 	return computeEditsDiff(path, [{ oldText, newText }], cwd);
 }
+

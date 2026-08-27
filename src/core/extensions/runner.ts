@@ -1232,3 +1232,4 @@ export class ExtensionRunner {
 			: { action: "continue" };
 	}
 }
+

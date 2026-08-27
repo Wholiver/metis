@@ -63,3 +63,4 @@ describe("InteractiveMode /language", () => {
 		expect(statuses).toEqual(["界面语言：简体中文"]);
 	});
 });
+

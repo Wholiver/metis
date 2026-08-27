@@ -41,3 +41,4 @@ describe("query_memory_db tool", () => {
 		await expect(definition.execute("call-err", { sql: "  " }, undefined, undefined, undefined as any)).rejects.toThrow("sql parameter is required");
 	});
 });
+

@@ -40,3 +40,4 @@ port.once("message", (message: unknown) => {
 		}
 	})();
 });
+

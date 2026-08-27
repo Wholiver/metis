@@ -178,3 +178,4 @@ describe("InteractiveMode.renderSessionEntries", () => {
 		expect(renderChat(fakeThis.chatContainer)).toContain("HISTORICAL_RESULT");
 	});
 });
+

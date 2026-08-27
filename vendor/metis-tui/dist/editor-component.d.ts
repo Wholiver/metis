@@ -37,3 +37,4 @@ export interface EditorComponent extends Component {
     setAutocompleteMaxVisible?(maxVisible: number): void;
 }
 //# sourceMappingURL=editor-component.d.ts.map
+

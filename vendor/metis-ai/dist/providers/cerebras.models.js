@@ -4,3 +4,4 @@ import values from "./data/cerebras.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const CEREBRAS_MODELS = flattenModelCatalog("cerebras", values);
 //# sourceMappingURL=cerebras.models.js.map
+

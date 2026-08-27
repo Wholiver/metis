@@ -91,3 +91,4 @@ if [[ "$DRY_RUN" == true && $migrated -gt 0 ]]; then
     echo
     echo "Run without --dry-run to perform the migration"
 fi
+

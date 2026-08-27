@@ -235,3 +235,4 @@ export function createWebSearchToolDefinition(
 export function createWebSearchTool(options?: WebSearchToolOptions): AgentTool<typeof webSearchSchema> {
 	return wrapToolDefinition(createWebSearchToolDefinition(options));
 }
+

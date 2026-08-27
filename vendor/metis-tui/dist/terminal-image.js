@@ -368,3 +368,4 @@ export function imageFallback(mimeType, dimensions, filename) {
     return `[Image: ${parts.join(" ")}]`;
 }
 //# sourceMappingURL=terminal-image.js.map
+

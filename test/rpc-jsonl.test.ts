@@ -63,3 +63,4 @@ describe("RPC JSONL framing", () => {
 		expect(lines).toEqual(['{"a":1}']);
 	});
 });
+

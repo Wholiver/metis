@@ -1448,3 +1448,4 @@ class StreamingInputPanel implements Component {
 
 	invalidate(): void {}
 }
+

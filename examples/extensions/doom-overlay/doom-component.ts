@@ -130,3 +130,4 @@ export class DoomOverlayComponent implements Component {
 		}
 	}
 }
+

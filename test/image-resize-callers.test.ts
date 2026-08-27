@@ -51,3 +51,4 @@ describe("image resize callers", () => {
 		expect(result.text).toContain("Image omitted");
 	});
 });
+

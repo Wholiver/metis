@@ -62,3 +62,4 @@ for (const [name, source] of videoBinaries) {
 for (const executable of ["cli.js", "rpc-entry.js"]) {
 	chmodSync(join(root, "dist", executable), 0o755);
 }
+

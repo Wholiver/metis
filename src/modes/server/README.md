@@ -161,3 +161,4 @@ await request("/session/prompt", {
 | `test/server-mode.test.ts` | 协议行为与安全回归测试 |
 
 公共 SDK 从包根导出 `startServerMode`、`runServerMode`、`createServerOpenApiDocument` 及全部 `Server*` 类型。前端生成 SDK 时，以运行中 server 返回的 `/openapi.json` 为准。
+

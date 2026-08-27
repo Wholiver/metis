@@ -162,3 +162,4 @@ export async function resizeImageInProcess(
 		}
 	}
 }
+

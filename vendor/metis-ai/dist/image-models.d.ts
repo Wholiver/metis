@@ -8,3 +8,4 @@ export declare function getImageProviders(): KnownImagesProvider[];
 export declare function getImageModels<TProvider extends KnownImagesProvider>(provider: TProvider): ImagesModel<ImageModelApi<TProvider, keyof (typeof IMAGE_MODELS)[TProvider]>>[];
 export {};
 //# sourceMappingURL=image-models.d.ts.map
+

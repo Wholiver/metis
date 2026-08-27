@@ -113,3 +113,4 @@ export default function (metis: ExtensionAPI) {
 		metis.sendUserMessage(formatConflicts(ref, conflicts), { deliverAs: "followUp" });
 	});
 }
+

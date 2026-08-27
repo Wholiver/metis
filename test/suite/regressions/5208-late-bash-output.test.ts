@@ -27,3 +27,4 @@ describe("regression #5208: late bash output callbacks", () => {
 		expect(getTextOutput(result).trim()).toBe("before");
 	});
 });
+

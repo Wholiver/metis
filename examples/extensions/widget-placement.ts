@@ -7,3 +7,4 @@ export default function widgetPlacementExtension(metis: ExtensionAPI) {
 		ctx.ui.setWidget("widget-below", ["Below editor widget"], { placement: "belowEditor" });
 	});
 }
+

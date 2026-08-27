@@ -146,3 +146,4 @@ describe("copyToClipboard", () => {
 		expect(osc52Writes()).toHaveLength(0);
 	});
 });
+

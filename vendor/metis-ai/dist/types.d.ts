@@ -605,3 +605,4 @@ export interface ImagesModel<TApi extends ImagesApi> extends Omit<Model<Api>, "a
     output: ("text" | "image")[];
 }
 //# sourceMappingURL=types.d.ts.map
+

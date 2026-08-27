@@ -57,3 +57,4 @@ export class CompactionSummaryMessageComponent extends Box {
 		}
 	}
 }
+

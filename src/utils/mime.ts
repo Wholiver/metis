@@ -114,3 +114,4 @@ function startsWithAscii(buffer: Uint8Array, offset: number, text: string): bool
 	}
 	return true;
 }
+

@@ -204,3 +204,4 @@ describe("git-merge-and-resolve example", () => {
 		expect(sendUserMessage).not.toHaveBeenCalled();
 	});
 });
+

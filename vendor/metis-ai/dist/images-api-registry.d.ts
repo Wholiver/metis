@@ -12,3 +12,4 @@ export declare function registerImagesApiProvider<TApi extends ImagesApi, TOptio
 export declare function getImagesApiProvider(api: ImagesApi): ImagesApiProviderInternal | undefined;
 export {};
 //# sourceMappingURL=images-api-registry.d.ts.map
+

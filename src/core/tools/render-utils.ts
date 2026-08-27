@@ -83,3 +83,4 @@ export function renderToolPath(
 	if (!value) return theme.fg("toolOutput", "...");
 	return linkPath(theme.fg("accent", shortenPath(value)), value, cwd);
 }
+

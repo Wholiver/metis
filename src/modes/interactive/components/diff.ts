@@ -145,3 +145,4 @@ export function renderDiff(diffText: string, _options: RenderDiffOptions = {}): 
 
 	return result.join("\n");
 }
+

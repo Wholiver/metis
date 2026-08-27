@@ -4,3 +4,4 @@ import values from "./data/kimi-coding.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const KIMI_CODING_MODELS = flattenModelCatalog("kimi-coding", values);
 //# sourceMappingURL=kimi-coding.models.js.map
+

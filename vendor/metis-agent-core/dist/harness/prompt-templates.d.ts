@@ -46,3 +46,4 @@ export declare function substituteArgs(content: string, args: string[]): string;
 /** Format a prompt template invocation with positional arguments. */
 export declare function formatPromptTemplateInvocation(template: PromptTemplate, args?: string[]): string;
 //# sourceMappingURL=prompt-templates.d.ts.map
+

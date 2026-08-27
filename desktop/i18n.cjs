@@ -39,3 +39,4 @@ module.exports = {
 	languages: ["auto", ...Object.keys(source)],
 	catalogs: source,
 };
+

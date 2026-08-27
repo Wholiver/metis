@@ -112,3 +112,4 @@ export class IdleStatus implements Component {
 		return [emptyLine, emptyLine];
 	}
 }
+

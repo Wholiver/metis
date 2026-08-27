@@ -78,3 +78,4 @@ describe("issue #2023 queued slash-command follow-up", () => {
 		expect(getAssistantTexts(harness)).toContain("queued follow-up handled by model");
 	});
 });
+

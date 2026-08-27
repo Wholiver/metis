@@ -101,3 +101,4 @@ function crc32(buffer) {
 	}
 	return (crc ^ 0xffffffff) >>> 0;
 }
+

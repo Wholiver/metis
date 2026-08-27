@@ -1499,3 +1499,4 @@ export function saveOtherProviderConfig(
 
 	writeFileSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 }
+

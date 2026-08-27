@@ -15,3 +15,4 @@ describe("workflow prompt policy", () => {
 		expect(prompt).not.toContain("brain-map.md");
 	});
 });
+

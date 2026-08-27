@@ -688,3 +688,4 @@ export async function discoverAndLoadExtensions(
 
 	return loadExtensions(allPaths, resolvedCwd, eventBus);
 }
+

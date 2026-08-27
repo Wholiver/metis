@@ -26,3 +26,4 @@ export declare class KillRing {
     get length(): number;
 }
 //# sourceMappingURL=kill-ring.d.ts.map
+

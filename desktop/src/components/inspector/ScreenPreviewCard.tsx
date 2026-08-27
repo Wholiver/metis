@@ -90,3 +90,4 @@ export const ScreenPreviewCard: React.FC<ScreenPreviewCardProps> = ({ agent }) =
     </div>
   );
 };
+

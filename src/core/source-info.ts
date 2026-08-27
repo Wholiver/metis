@@ -38,3 +38,4 @@ export function createSyntheticSourceInfo(
 		baseDir: options.baseDir,
 	};
 }
+

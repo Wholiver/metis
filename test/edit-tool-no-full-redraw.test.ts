@@ -233,3 +233,4 @@ describe("edit tool TUI rendering", () => {
 		expect(rendered).not.toContain("-1 ");
 	});
 });
+

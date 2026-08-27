@@ -171,3 +171,4 @@ export class DoomEngine {
 		return this.initialized;
 	}
 }
+

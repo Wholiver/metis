@@ -464,3 +464,4 @@ describe('desktop plan preview', () => {
     expect(tool).not.toContain('<ToolIcon');
   });
 });
+

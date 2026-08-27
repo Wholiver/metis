@@ -134,3 +134,4 @@ function bodyOperation(summary: string, requestSchema: object, status: number, r
 		},
 	};
 }
+

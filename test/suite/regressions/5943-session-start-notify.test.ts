@@ -513,3 +513,4 @@ describe("regression #5943: session_start transient UI", () => {
 		expect(focused).toBe(editor);
 	});
 });
+

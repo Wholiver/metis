@@ -435,3 +435,4 @@ describe("detectInstallMethod", () => {
 		);
 	});
 });
+

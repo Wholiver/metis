@@ -63,3 +63,4 @@ export declare function complete<TApi extends Api>(model: Model<TApi>, context: 
 export declare function streamSimple<TApi extends Api>(model: Model<TApi>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream;
 export declare function completeSimple<TApi extends Api>(model: Model<TApi>, context: Context, options?: SimpleStreamOptions): Promise<AssistantMessage>;
 //# sourceMappingURL=compat.d.ts.map
+

@@ -19,3 +19,4 @@ export declare function builtinImagesProviders(): ImagesProvider[];
 export declare function builtinImagesModels(options?: CreateModelsOptions): MutableImagesModels;
 export {};
 //# sourceMappingURL=all.d.ts.map
+

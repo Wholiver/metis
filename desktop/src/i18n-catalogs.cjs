@@ -14510,3 +14510,4 @@ module.exports = {
     "reactSettingsReasoningFromMetadata": "Le opzioni di ragionamento provengono dai metadati del modello restituiti da questa API."
   }
 };
+

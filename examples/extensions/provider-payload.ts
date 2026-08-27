@@ -16,3 +16,4 @@ export default function (metis: ExtensionAPI) {
 		appendFileSync(logFile, `[${event.status}] ${JSON.stringify(event.headers)}\n\n`, "utf8");
 	});
 }
+

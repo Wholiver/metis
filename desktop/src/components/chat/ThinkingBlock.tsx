@@ -103,3 +103,4 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ thinking, streamin
     </section>
   );
 };
+

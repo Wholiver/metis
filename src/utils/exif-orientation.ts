@@ -181,3 +181,4 @@ export function applyExifOrientation(
 			return image;
 	}
 }
+

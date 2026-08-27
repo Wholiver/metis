@@ -4,3 +4,4 @@ import values from "./data/github-copilot.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const GITHUB_COPILOT_MODELS = flattenModelCatalog("github-copilot", values);
 //# sourceMappingURL=github-copilot.models.js.map
+

@@ -487,3 +487,4 @@ describe("AgentSession queue characterization", () => {
 		expect(getUserTexts(harness)).toEqual(["hello", "conflict report"]);
 	});
 });
+

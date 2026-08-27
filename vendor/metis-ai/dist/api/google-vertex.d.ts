@@ -13,3 +13,4 @@ export interface GoogleVertexOptions extends StreamOptions {
 export declare const stream: StreamFunction<"google-vertex", GoogleVertexOptions>;
 export declare const streamSimple: StreamFunction<"google-vertex", SimpleStreamOptions>;
 //# sourceMappingURL=google-vertex.d.ts.map
+

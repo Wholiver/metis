@@ -1187,3 +1187,4 @@ function buildWebSocketHeaders(initHeaders, additionalHeaders, accountId, token,
     return headers;
 }
 //# sourceMappingURL=openai-codex-responses.js.map
+

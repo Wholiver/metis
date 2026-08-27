@@ -418,3 +418,4 @@ gantt
 | **Day 7** | 2026-08-19 | **Bundle 7** | `adapters/terminalbench/` 适配器、`docs/agents.md` 与 `docs/terminalbench.md` 规范文档体系 (✅ 已交付) |
 | **Day 7+** | 2026-08-20 | **Bundle 8** | L0→L4 递归 E2E 测试、Mock Server CI 自动化 (✅ 已交付) |
 
+

@@ -11,3 +11,4 @@ export interface OpenAIResponsesOptions extends StreamOptions {
 export declare const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions>;
 export declare const streamSimple: StreamFunction<"openai-responses", SimpleStreamOptions>;
 //# sourceMappingURL=openai-responses.d.ts.map
+

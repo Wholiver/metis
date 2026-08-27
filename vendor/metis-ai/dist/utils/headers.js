@@ -16,3 +16,4 @@ export function providerHeadersToRecord(headers) {
     return Object.keys(result).length > 0 ? result : undefined;
 }
 //# sourceMappingURL=headers.js.map
+

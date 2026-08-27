@@ -104,3 +104,4 @@ export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TI
 		installedGlobalFetch = globalThis.fetch;
 	}
 }
+

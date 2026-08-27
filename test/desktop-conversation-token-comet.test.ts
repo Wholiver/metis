@@ -114,3 +114,4 @@ describe("desktop conversation token comet", () => {
 		expect(styles).toContain("contain-intrinsic-size: auto 38px");
 	});
 });
+

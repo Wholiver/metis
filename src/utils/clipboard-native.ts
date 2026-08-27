@@ -30,3 +30,4 @@ export function loadClipboardNative(
 const clipboard = !process.env.TERMUX_VERSION && hasDisplay ? loadClipboardNative() : null;
 
 export { clipboard };
+

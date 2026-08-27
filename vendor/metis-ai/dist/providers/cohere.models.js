@@ -220,3 +220,4 @@ export const COHERE_MODELS = {
         maxTokens: 8000,
     },
 };
+

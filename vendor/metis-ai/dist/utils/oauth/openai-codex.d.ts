@@ -43,3 +43,4 @@ export declare function refreshOpenAICodexToken(refreshToken: string): Promise<O
 export declare const openaiCodexOAuth: OAuthAuth;
 export declare const openaiCodexOAuthProvider: OAuthProviderInterface;
 //# sourceMappingURL=openai-codex.d.ts.map
+

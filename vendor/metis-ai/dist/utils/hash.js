@@ -12,3 +12,4 @@ export function shortHash(str) {
     return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
 }
 //# sourceMappingURL=hash.js.map
+

@@ -461,3 +461,4 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(releases).toEqual([payload.agentId]);
 	});
 });
+

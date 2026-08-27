@@ -44,3 +44,4 @@ async function createWorkspaceDirectory(parentPath, projectName) {
 }
 
 module.exports = { WorkspaceCreateError, createWorkspaceDirectory, validateProjectName };
+

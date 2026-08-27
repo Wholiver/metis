@@ -169,3 +169,4 @@ Child processes automatically strip dangerous injection environment variables (`
 
 ### 6. Credential Redaction in Trace
 All JSONL logs and trace outputs automatically mask sensitive API keys and authorization tokens.
+

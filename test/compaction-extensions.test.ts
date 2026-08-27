@@ -414,3 +414,4 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 		expect(result.tokensBefore).toBe(999);
 	}, 120000);
 });
+

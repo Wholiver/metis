@@ -53,3 +53,4 @@ describe("SessionManager.saveCustomEntry", () => {
 		expect(ctx.messages).toHaveLength(2); // only message entries
 	});
 });
+

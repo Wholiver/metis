@@ -173,3 +173,4 @@ Project agents override user agents with the same name when `agentScope: "both"`
 - Parallel model-visible output is capped at 50 KB per task; full results remain in tool details
 - Agents discovered fresh on each invocation (allows editing mid-session)
 - Parallel mode limited to 8 tasks, 4 concurrent
+

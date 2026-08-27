@@ -162,3 +162,4 @@ export class DaxnutsComponent implements Component {
 		this.stopAnimation();
 	}
 }
+

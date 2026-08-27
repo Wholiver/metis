@@ -192,3 +192,4 @@ export function listPerformanceFrameworks(): PerformanceFramework[] {
 export function searchFrameworksByCategory(category: string): PerformanceFramework[] {
 	return ALL_PERFORMANCE_FRAMEWORKS.filter((fw) => fw.category === category || fw.category === "any");
 }
+

@@ -41,3 +41,4 @@ export function createUpdatePlanToolDefinition(options: UpdatePlanToolOptions = 
 export function createUpdatePlanTool(options?: UpdatePlanToolOptions) {
 	return wrapToolDefinition(createUpdatePlanToolDefinition(options));
 }
+

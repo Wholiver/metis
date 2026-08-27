@@ -4,3 +4,4 @@ import values from "./data/zai.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const ZAI_MODELS = flattenModelCatalog("zai", values);
 //# sourceMappingURL=zai.models.js.map
+

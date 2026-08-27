@@ -693,3 +693,4 @@ describe("default model selection", () => {
 		expect(result.model?.id).toBe("deepseek-v4-flash");
 	});
 });
+

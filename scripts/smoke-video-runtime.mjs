@@ -76,3 +76,4 @@ console.log("PASS local Whisper transcript");
 const cachedWhisper = await tool.execute("smoke-whisper-cache", { action: "transcript", path: baseVideo, language: "en" });
 assert(cachedWhisper.details.transcript?.source === "whisper", "cached Whisper transcript was not reused");
 console.log("PASS cached Whisper transcript");
+

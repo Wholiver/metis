@@ -172,3 +172,4 @@ describe("readClipboardImage", () => {
 		expect(result).toBeNull();
 	});
 });
+

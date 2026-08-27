@@ -23,3 +23,4 @@ describe("OAuth callback page", () => {
 		expect(html).not.toContain("M165.29 165.29");
 	});
 });
+

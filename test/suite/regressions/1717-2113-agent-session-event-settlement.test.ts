@@ -93,3 +93,4 @@ describe("regressions #1717/#2113: agent session event settlement", () => {
 		expect(branchRolesAtToolCall).toEqual([["user", "assistant"]]);
 	});
 });
+

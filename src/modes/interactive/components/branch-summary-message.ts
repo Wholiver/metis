@@ -56,3 +56,4 @@ export class BranchSummaryMessageComponent extends Box {
 		}
 	}
 }
+

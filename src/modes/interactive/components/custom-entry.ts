@@ -60,3 +60,4 @@ export class CustomEntryComponent extends Container {
 		this.addChild(component);
 	}
 }
+

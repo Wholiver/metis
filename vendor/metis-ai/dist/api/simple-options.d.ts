@@ -7,3 +7,4 @@ export declare function adjustMaxTokensForThinking(baseMaxTokens: number | undef
     thinkingBudget: number;
 };
 //# sourceMappingURL=simple-options.d.ts.map
+

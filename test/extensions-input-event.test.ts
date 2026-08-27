@@ -122,3 +122,4 @@ describe("Input Event", () => {
 		expect(r.hasHandlers("input")).toBe(true);
 	});
 });
+

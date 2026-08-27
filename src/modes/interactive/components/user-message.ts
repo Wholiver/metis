@@ -55,3 +55,4 @@ export class UserMessageComponent extends Container {
 		return lines;
 	}
 }
+

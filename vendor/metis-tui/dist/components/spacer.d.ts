@@ -10,3 +10,4 @@ export declare class Spacer implements Component {
     render(_width: number): string[];
 }
 //# sourceMappingURL=spacer.d.ts.map
+

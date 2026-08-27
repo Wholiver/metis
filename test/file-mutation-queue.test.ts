@@ -272,3 +272,4 @@ describe("built-in edit and write tools", () => {
 		expect(content).toBe("ALPHA\nBETA\n");
 	});
 });
+

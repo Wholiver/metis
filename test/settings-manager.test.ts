@@ -509,3 +509,4 @@ describe("SettingsManager", () => {
 		});
 	});
 });
+

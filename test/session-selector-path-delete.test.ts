@@ -352,3 +352,4 @@ describe("session selector path/delete interactions", () => {
 		expect(errorMessage).toBe("Cannot delete the currently active session");
 	});
 });
+

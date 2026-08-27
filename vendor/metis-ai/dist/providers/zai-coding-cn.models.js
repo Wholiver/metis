@@ -4,3 +4,4 @@ import values from "./data/zai-coding-cn.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const ZAI_CODING_CN_MODELS = flattenModelCatalog("zai-coding-cn", values);
 //# sourceMappingURL=zai-coding-cn.models.js.map
+

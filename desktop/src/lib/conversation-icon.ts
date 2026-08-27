@@ -40,3 +40,4 @@ export function conversationIconAssignment(seed: string): ConversationIconAssign
     color: CONVERSATION_ICON_COLORS[colorHash % CONVERSATION_ICON_COLORS.length],
   };
 }
+

@@ -1282,3 +1282,4 @@ export function getSettingsListTheme(): SettingsListTheme {
 		hint: (text: string) => theme.fg("dim", text),
 	};
 }
+

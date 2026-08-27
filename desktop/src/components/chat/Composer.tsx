@@ -603,3 +603,4 @@ export const Composer: React.FC<ComposerProps> = ({
     </div>
   );
 };
+

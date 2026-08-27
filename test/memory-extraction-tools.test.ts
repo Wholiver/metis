@@ -166,3 +166,4 @@ describe("background memory extraction", () => {
 		expect(result.memoryMap).toBe("# Memory Map\n\n## Projects\n- **[tech_stack]**: Node.js v22");
 	});
 });
+

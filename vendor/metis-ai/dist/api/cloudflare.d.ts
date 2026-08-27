@@ -7,3 +7,4 @@ export declare const CLOUDFLARE_AI_GATEWAY_OPENAI_BASE_URL = "https://gateway.ai
 /** AI Gateway → Anthropic passthrough. */
 export declare const CLOUDFLARE_AI_GATEWAY_ANTHROPIC_BASE_URL = "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic";
 //# sourceMappingURL=cloudflare.d.ts.map
+

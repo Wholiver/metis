@@ -49,3 +49,4 @@ export function decodeHtmlEntityAt(html: string, index: number): DecodedHtmlEnti
 
 	return { text: decoded, length: semicolonIndex - index + 1 };
 }
+

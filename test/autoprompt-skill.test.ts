@@ -110,3 +110,4 @@ describe("Skills System & Progressive Disclosure", () => {
 		expect(promptXml).toContain("</available_skills>");
 	});
 });
+

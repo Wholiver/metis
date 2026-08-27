@@ -80,3 +80,4 @@ Followed by events as they occur:
 ```bash
 metis --mode json "List files" 2>/dev/null | jq -c 'select(.type == "message_end")'
 ```
+

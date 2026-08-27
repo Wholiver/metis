@@ -380,3 +380,4 @@ export class ArminComponent implements Component {
 		this.stopAnimation();
 	}
 }
+

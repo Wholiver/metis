@@ -4,3 +4,4 @@ import values from "./data/openrouter.json" with { type: "json" };
 import { flattenModelCatalog } from "../model-catalog.js";
 export const OPENROUTER_MODELS = flattenModelCatalog("openrouter", values);
 //# sourceMappingURL=openrouter.models.js.map
+

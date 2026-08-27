@@ -14,3 +14,4 @@ export declare class InMemoryCredentialStore implements CredentialStore {
     delete(providerId: string): Promise<void>;
 }
 //# sourceMappingURL=credential-store.d.ts.map
+

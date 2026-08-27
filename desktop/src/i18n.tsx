@@ -139,3 +139,4 @@ export function DesktopI18nProvider({ children }: PropsWithChildren) {
 
   return <>{children}</>;
 }
+

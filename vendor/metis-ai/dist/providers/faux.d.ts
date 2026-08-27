@@ -95,3 +95,4 @@ export declare function createFauxCore(options: RegisterFauxProviderOptions): {
  */
 export declare function fauxProvider(options?: RegisterFauxProviderOptions): FauxProviderHandle;
 //# sourceMappingURL=faux.d.ts.map
+

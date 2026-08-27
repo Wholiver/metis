@@ -402,3 +402,4 @@ export default function (metis: ExtensionAPI) {
 		streamSimple: streamGitLabDuo,
 	});
 }
+

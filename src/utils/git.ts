@@ -224,3 +224,4 @@ export function parseGitUrl(source: string): GitSource | null {
 
 	return parseGenericGitUrl(url);
 }
+

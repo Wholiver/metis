@@ -154,3 +154,4 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 		expect(session.messages[1].role).toBe("assistant");
 	}, 60000);
 });
+

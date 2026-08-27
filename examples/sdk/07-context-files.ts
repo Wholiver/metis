@@ -45,3 +45,4 @@ const { session } = await createAgentSession({
 });
 console.log(`Session created with ${discovered.length + 1} context files`);
 session.dispose();
+

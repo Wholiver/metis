@@ -58,3 +58,4 @@ describe("stripFrontmatter", () => {
 		expect(stripFrontmatter(input)).toBe("\n  No frontmatter body  \n");
 	});
 });
+

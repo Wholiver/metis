@@ -116,3 +116,4 @@ export function translateBuiltinCommandDescription(
 	const key = BUILTIN_COMMAND_KEYS[name];
 	return key ? t(key, params) : fallback;
 }
+

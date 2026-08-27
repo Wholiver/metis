@@ -89,3 +89,4 @@ describe("session cwd handling", () => {
 		expect(createRuntimeCalled).toBe(false);
 	});
 });
+

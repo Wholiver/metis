@@ -433,3 +433,4 @@ describe("desktop interface polish contracts", () => {
 		expect(styles).toMatch(/\.project-switch-capsule\s*\{[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
 	});
 });
+

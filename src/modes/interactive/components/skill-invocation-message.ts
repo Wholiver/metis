@@ -53,3 +53,4 @@ export class SkillInvocationMessageComponent extends Box {
 		}
 	}
 }
+

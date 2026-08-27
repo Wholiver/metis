@@ -57,3 +57,4 @@ export function parseTerminalColorSchemeReport(data) {
     return match[1] === "2" ? "light" : "dark";
 }
 //# sourceMappingURL=terminal-colors.js.map
+

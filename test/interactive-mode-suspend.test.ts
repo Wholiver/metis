@@ -154,3 +154,4 @@ describe("InteractiveMode.handleCtrlZ", () => {
 		expect(ui.requestRender).not.toHaveBeenCalled();
 	});
 });
+

@@ -127,3 +127,4 @@ Report:
 - remaining user action, only when truly required.
 
 Keep the handoff concise. Do not hide uncertainty or claim tests passed when they did not run.
+
