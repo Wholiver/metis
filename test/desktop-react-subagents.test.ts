@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AssistantWork } from '../desktop/src/components/chat/AssistantWork';
+import { SubagentsList } from '../desktop/src/components/inspector/SubagentsList';
 import {
   collectSubagentItems,
   formatSubagentDuration,
@@ -535,6 +536,53 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(detailViewSource).toContain('<AssistantWork');
     expect(detailViewSource).toContain('preserveExistingItems');
     expect(detailViewSource).toContain('<WorkProgressIndicator');
+  });
+
+  it('renders SubagentsList with layout and status icons matching PlanPoints', () => {
+    const subagentsListSource = source('desktop/src/components/inspector/SubagentsList.tsx');
+    expect(subagentsListSource).toContain('CircleCheckBig');
+    expect(subagentsListSource).toContain('CircleDot');
+    expect(subagentsListSource).toContain('CircleAlert');
+    expect(subagentsListSource).toContain('gap-2.5 rounded-[10px]');
+    expect(subagentsListSource).toContain('mt-px flex h-5 w-5 flex-shrink-0 items-center justify-center');
+    expect(subagentsListSource).toContain('text-[#1e293b]');
+
+    const subagents = [
+      {
+        id: 'subagent-1',
+        role: 'Scope-Coordinator',
+        task: 'Drive Wave 1 scope for the approved README roadmap',
+        mode: 'sync' as const,
+        status: 'running' as const,
+        durationMs: 3872000,
+        parts: [],
+      },
+      {
+        id: 'subagent-2',
+        role: 'Scope-Coordinator',
+        task: '针对用户任务“优化 README”，先检查真实仓库和...',
+        mode: 'async' as const,
+        status: 'completed' as const,
+        durationMs: 195000,
+        parts: [],
+      },
+    ];
+
+    const html = renderToStaticMarkup(React.createElement(SubagentsList, {
+      subagents,
+      onSelect: () => {},
+    }));
+
+    expect(html).toContain('data-subagents-list');
+    expect(html).toContain('data-subagent-id="subagent-1"');
+    expect(html).toContain('data-subagent-status="running"');
+    expect(html).toContain('text-blue-600');
+    expect(html).toContain('Scope-Coordinator');
+    expect(html).toContain('Drive Wave 1 scope');
+    expect(html).toContain('data-subagent-id="subagent-2"');
+    expect(html).toContain('data-subagent-status="completed"');
+    expect(html).toContain('text-emerald-500');
+    expect(html).toContain('Async');
   });
 });
 

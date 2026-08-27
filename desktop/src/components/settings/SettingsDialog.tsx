@@ -139,11 +139,11 @@ function instructionSourceLabel(value: unknown): string {
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <section className="space-y-0.5 rounded-[16px] border border-slate-200/80 bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.02)]">{children}</section>;
+  return <section className="space-y-0.5 rounded-[8px] border border-slate-200/80 bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.02)]">{children}</section>;
 }
 
 function Row({ label, description, children, stacked = false }: { label: string; description: string; children: React.ReactNode; stacked?: boolean }) {
-  return <div className={`flex min-h-[48px] gap-4 rounded-[10px] px-3.5 py-2 transition-colors hover:bg-slate-50/80 ${stacked ? 'flex-col items-start gap-2' : 'items-center justify-between'} `}>
+  return <div className={`flex min-h-[48px] gap-4 rounded-[6px] px-3.5 py-2 transition-colors hover:bg-slate-50/80 ${stacked ? 'flex-col items-start gap-2' : 'items-center justify-between'} `}>
     <div className="min-w-0"><p className="text-[13.5px] font-medium text-slate-800">{label}</p>{description && <p className="mt-0.5 text-pretty text-[12px] leading-[18px] text-slate-500">{description}</p>}</div>
     <div className={stacked ? 'w-full' : 'shrink-0'}>{children}</div>
   </div>;
@@ -172,9 +172,9 @@ function Switch({ checked, onChange, disabled, label }: { checked: boolean; onCh
   );
 }
 
-const controlClass = 'h-[34px] rounded-[8px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-300/50 disabled:cursor-not-allowed disabled:opacity-50';
-const selectClass = 'h-[34px] rounded-[8px] border border-slate-200 bg-white pl-3 pr-8 text-[13px] text-slate-800 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-300/50 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer appearance-none bg-[url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2714%27%20height=%2714%27%20viewBox=%270%200%2024%2024%27%20fill=%27none%27%20stroke=%27%2364748b%27%20stroke-width=%272%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27%3E%3Cpath%20d=%27m6%209%206%206%206-6%27/%3E%3C/svg%3E")] bg-no-repeat bg-[right_10px_center]';
-const buttonClass = 'inline-flex h-[34px] items-center justify-center gap-1.5 rounded-[8px] border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 transition-[background-color,color,box-shadow] hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 disabled:cursor-not-allowed disabled:opacity-45 shadow-[0_1px_2px_rgba(0,0,0,0.02)]';
+const controlClass = 'h-[34px] rounded-[6px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-300/50 disabled:cursor-not-allowed disabled:opacity-50';
+const selectClass = 'h-[34px] rounded-[6px] border border-slate-200 bg-white pl-3 pr-8 text-[13px] text-slate-800 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-300/50 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer appearance-none bg-[url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2714%27%20height=%2714%27%20viewBox=%270%200%2024%2024%27%20fill=%27none%27%20stroke=%27%2364748b%27%20stroke-width=%272%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27%3E%3Cpath%20d=%27m6%209%206%206%206-6%27/%3E%3C/svg%3E")] bg-no-repeat bg-[right_10px_center]';
+const buttonClass = 'inline-flex h-[34px] items-center justify-center gap-1.5 rounded-[6px] border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 transition-[background-color,color,box-shadow] hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 disabled:cursor-not-allowed disabled:opacity-45 shadow-[0_1px_2px_rgba(0,0,0,0.02)]';
 
 export function SettingsDialog(props: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>(() => normalizeTab(props.initialTab));
@@ -509,7 +509,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <Switch label="Memory" checked={Boolean(currentMemory.enabled)} onChange={() => void run(() => props.request('/memory/settings', 'PUT', { enabled: !currentMemory.enabled }), 'Memory setting saved.')} disabled={disabled} />
             </Row>
           </Card>
-          <div className="mt-2.5 rounded-[16px] border border-slate-200/80 bg-slate-50/70 p-4">
+          <div className="mt-2.5 rounded-[8px] border border-slate-200/80 bg-slate-50/70 p-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 {isConsolidating ? (
@@ -546,7 +546,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </div>
             </div>
             {isConsolidating && (
-              <div className="mt-4 rounded-[12px] border border-emerald-200/80 bg-emerald-50/50 p-3.5">
+              <div className="mt-4 rounded-[6px] border border-emerald-200/80 bg-emerald-50/50 p-3.5">
                 <div className="flex items-center justify-between text-[12px]">
                   <span className="font-semibold text-emerald-900">
                     {currentMemory.phase === 'consolidating'
@@ -574,7 +574,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <div><dt className="text-slate-400">Method</dt><dd className="mt-0.5 font-semibold text-slate-700">{currentMemory.extractionMethod || currentMemory.lastExtractionMethod || '—'}</dd></div>
             </dl>
             {currentMemory.lastRunProcessed !== undefined && currentMemory.lastRunProcessed > 0 && !isConsolidating && (
-              <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-slate-100/90 px-3 py-2 text-[12px] text-slate-600">
+              <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 rounded-[6px] bg-slate-100/90 px-3 py-2 text-[12px] text-slate-600">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-3.5 w-3.5 text-slate-400" />
                   <span>
@@ -588,7 +588,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </div>
             )}
             {currentMemory.error && !isConsolidating && (
-              <div className="mt-3 rounded-[10px] border border-rose-200 bg-rose-50/80 p-3 text-[12px] text-rose-700">
+              <div className="mt-3 rounded-[6px] border border-rose-200 bg-rose-50/80 p-3 text-[12px] text-rose-700">
                 Last failure: {currentMemory.error}
                 {currentMemory.nextRetryAt && ` (Retry scheduled at ${new Date(currentMemory.nextRetryAt).toLocaleTimeString()})`}
               </div>
@@ -785,13 +785,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/25 p-5 backdrop-blur-[3px]" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="settings-title" className="flex h-[min(680px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] overflow-hidden rounded-[24px] border border-slate-200/90 bg-white shadow-[0_24px_70px_rgb(15_23_42_/_0.2)]">
+      <section role="dialog" aria-modal="true" aria-labelledby="settings-title" className="flex h-[min(680px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] overflow-hidden rounded-[10px] border border-slate-200/90 bg-white shadow-[0_24px_70px_rgb(15_23_42_/_0.2)]">
         <aside className="flex w-[230px] shrink-0 flex-col border-r border-slate-200/80 bg-[#f6f7f9] px-3 pb-3 pt-6 sm:pt-7 select-none">
           <div className="mb-3.5 px-1 flex items-center h-6">
             <h1 id="settings-title" className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-slate-900 leading-6">Settings</h1>
           </div>
           <div className="pb-2.5 flex-shrink-0">
-            <div className="relative flex items-center w-full bg-[#eef0f3] rounded-[8px] h-[34px] px-2.5 transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-slate-300/60 focus-within:shadow-sm">
+            <div className="relative flex items-center w-full bg-[#eef0f3] rounded-[6px] h-[34px] px-2.5 transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-slate-300/60 focus-within:shadow-sm">
               <Search className="w-4 h-4 text-[#9ca3af] mr-2 flex-shrink-0" />
               <input
                 type="text"
@@ -823,7 +823,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   type="button"
                   data-settings-panel={item.id}
                   onClick={() => { setTab(item.id); setFeedback(''); setError(''); }}
-                  className={`w-full min-h-[38px] px-2.5 py-1.5 rounded-[10px] flex items-center justify-between transition-[background-color,color,box-shadow] text-left relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
+                  className={`w-full min-h-[38px] px-2.5 py-1.5 rounded-[6px] flex items-center justify-between transition-[background-color,color,box-shadow] text-left relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
                     isActive
                       ? 'bg-[#e0e3e8] shadow-[0_1px_2px_rgba(0,0,0,0.03)] font-medium text-[#0f172a]'
                       : 'hover:bg-black/[0.035] text-[#334155]'
@@ -846,7 +846,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
           <p className="px-1 pt-2 text-[11px] text-[#9ca3af]">{appInfo.version ? `v${appInfo.version}` : 'Loading version…'}</p>
         </aside>
         <main className="relative min-w-0 flex-1 overflow-y-auto bg-slate-50/30 px-6 pb-6 pt-6 sm:px-7 sm:pb-7 sm:pt-7">
-          <button type="button" className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-slate-400 transition-[background-color,color] hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60" onClick={props.onClose} aria-label="Close settings">
+          <button type="button" className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-slate-400 transition-[background-color,color] hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60" onClick={props.onClose} aria-label="Close settings">
             <X className="h-4 w-4" />
           </button>
           {loading ? (
@@ -867,7 +867,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   <div
                     key={item.id}
                     onClick={() => { setTab(item.tab); setSearchQuery(''); }}
-                    className="flex cursor-pointer items-center justify-between rounded-[10px] px-3.5 py-2.5 transition-colors hover:bg-slate-50"
+                    className="flex cursor-pointer items-center justify-between rounded-[6px] px-3.5 py-2.5 transition-colors hover:bg-slate-50"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -887,7 +887,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
             sections[tab]
           )}
           {(feedback || error) && (
-            <div role={error ? 'alert' : 'status'} className={`sticky bottom-0 mt-5 rounded-[12px] border px-3 py-2 text-[12px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+            <div role={error ? 'alert' : 'status'} className={`sticky bottom-0 mt-5 rounded-[6px] border px-3 py-2 text-[12px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
               {error || feedback}
             </div>
           )}
