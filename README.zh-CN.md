@@ -28,34 +28,32 @@
 
 ## 快速开始
 
-### 桌面版安装
+### 桌面版
 
-桌面版已内置 Metis CLI 与 Server 运行环境，无需另行安装 Node.js。
+内置独立运行时与 Metis CLI / Server，无需另行安装 Node.js：
 
-| 平台 | 架构 | 安装方式 |
-| --- | --- | --- |
-| macOS | Apple 芯片（`arm64`） | 下载 `Metis-*-macos-arm64.dmg`，再将 **Metis.app** 拖入**应用程序**。 |
-| Windows | `x64` | 运行 `Metis-*-win-x64-setup.exe`；或解压 `Metis-*-win-x64.zip` 后启动 **Metis.exe**。 |
-
-安装包及对应 `.sha256` 校验文件见[最新 GitHub Release](https://github.com/Wholiver/metis/releases/latest)。当前 macOS 构建仅使用 ad-hoc 签名且未经 Apple 公证，Windows 构建也未进行代码签名。若 Gatekeeper 或 SmartScreen 提示“未知开发者/发布者”，仅在文件来自官方 Release 页面且校验值一致时继续。
+- **macOS（Apple 芯片）**：从[最新 GitHub Release](https://github.com/Wholiver/metis/releases/latest) 下载 `Metis-*-macos-arm64.dmg`，将 **Metis.app** 拖入**应用程序**。
+- **Windows（x64）**：从[最新 GitHub Release](https://github.com/Wholiver/metis/releases/latest) 下载 `Metis-*-win-x64-setup.exe` 安装包或 `.zip` 解压使用。
 
 <details>
 <summary><strong>CLI 安装</strong></summary>
 
-需要 Node.js `>=22.19.0` 与 npm。
+需要 Node.js `>=22.19.0`。
 
 ```bash
-npm install -g --ignore-scripts @wholiver_hu/metis@latest
+npm install -g @wholiver_hu/metis
 metis
 ```
 
-支持的订阅 Provider 可通过 `/login` 登录，也可配置 API Key。运行 `metis --help` 查看全部命令行选项；完整首次使用流程见[快速入门](docs/quickstart.md)。
+在任意项目目录中直接运行：
 
 ```bash
 metis "解释这个代码仓库"
 metis @src/main.ts "检查这个文件"
 git diff | metis -p "审查这个 diff"
 ```
+
+支持的订阅 Provider 可通过 `/login` 登录，也可配置 API Key。完整使用指南见[快速入门](docs/quickstart.md)。
 
 </details>
 

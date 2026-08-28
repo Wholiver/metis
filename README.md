@@ -28,34 +28,32 @@
 
 ## Quick start
 
-### Desktop installation
+### Desktop
 
-Desktop includes the Metis CLI and Server runtime; Node.js is not required separately.
+Standalone application with built-in Metis CLI and Server runtime (no Node.js required):
 
-| Platform | Build | Install |
-| --- | --- | --- |
-| macOS | Apple silicon (`arm64`) | Download `Metis-*-macos-arm64.dmg`, then drag **Metis.app** to **Applications**. |
-| Windows | `x64` | Run `Metis-*-win-x64-setup.exe`, or extract `Metis-*-win-x64.zip` and launch **Metis.exe**. |
-
-Download files and matching `.sha256` checksums from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest). Current macOS builds use ad-hoc signing and are not Apple-notarized; Windows builds are not code-signed. If Gatekeeper or SmartScreen reports an unknown developer or publisher, continue only when the file came from the official release page and its checksum matches.
+- **macOS (Apple Silicon)**: Download `Metis-*-macos-arm64.dmg` from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest) and drag to **Applications**.
+- **Windows (x64)**: Download `Metis-*-win-x64-setup.exe` or `.zip` from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest).
 
 <details>
 <summary><strong>CLI installation</strong></summary>
 
-Requires Node.js `>=22.19.0` and npm.
+Requires Node.js `>=22.19.0`.
 
 ```bash
-npm install -g --ignore-scripts @wholiver_hu/metis@latest
+npm install -g @wholiver_hu/metis
 metis
 ```
 
-Use `/login` for supported subscription providers, or configure an API key. Run `metis --help` for CLI options and see the [Quickstart](docs/quickstart.md) for the complete first-run flow.
+Run in any repository or directory:
 
 ```bash
 metis "Explain this repository"
 metis @src/main.ts "Review this file"
 git diff | metis -p "Review this diff"
 ```
+
+Use `/login` for subscription providers or configure an API key. See [Quickstart](docs/quickstart.md) for the complete guide.
 
 </details>
 
