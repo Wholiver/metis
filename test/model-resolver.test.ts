@@ -65,7 +65,22 @@ const mockOpenRouterModels: Model<"anthropic-messages">[] = [
 	},
 ];
 
-const allModels = [...mockModels, ...mockOpenRouterModels];
+const mockOrcaRouterModels: Model<"openai-completions">[] = [
+	{
+		id: "deepseek-reasoner",
+		name: "DeepSeek R1",
+		api: "openai-completions",
+		provider: "orcarouter",
+		baseUrl: "https://api.orcarouter.ai/v1",
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 0.55, output: 2.19, cacheRead: 0.14, cacheWrite: 0 },
+		contextWindow: 64000,
+		maxTokens: 8192,
+	},
+];
+
+const allModels = [...mockModels, ...mockOpenRouterModels, ...mockOrcaRouterModels];
 
 describe("parseModelPattern", () => {
 	describe("simple patterns without colons", () => {
@@ -598,6 +613,7 @@ describe("default model selection", () => {
 		expect(defaultModelPerProvider.minimax).toBe("MiniMax-M2.7");
 		expect(defaultModelPerProvider["minimax-cn"]).toBe("MiniMax-M2.7");
 		expect(defaultModelPerProvider.cerebras).toBe("gpt-oss-120b");
+		expect(defaultModelPerProvider.orcarouter).toBe("gpt-4o");
 		expect(defaultModelPerProvider.xai).toBe("grok-4.6");
 		expect(defaultModelPerProvider.baseten).toBe("zai-org/GLM-5.2");
 		expect(defaultModelPerProvider["qwen-token-plan"]).toBe("qwen3.7-max");
@@ -624,6 +640,23 @@ describe("default model selection", () => {
 
 		expect(result.model?.provider).toBe("openrouter");
 		expect(result.model?.id).toBe("openai/ghost-model");
+	});
+
+	test("findInitialModel accepts explicit orcarouter custom model ids", async () => {
+		const registry = {
+			getAll: () => allModels,
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+
+		const result = await findInitialModel({
+			cliProvider: "orcarouter",
+			cliModel: "deepseek-reasoner",
+			scopedModels: [],
+			isContinuing: false,
+			modelRegistry: registry,
+		});
+
+		expect(result.model?.provider).toBe("orcarouter");
+		expect(result.model?.id).toBe("deepseek-reasoner");
 	});
 
 	test("findInitialModel selects ai-gateway default when available", async () => {

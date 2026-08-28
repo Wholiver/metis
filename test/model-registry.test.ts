@@ -147,6 +147,7 @@ describe("ModelRegistry", () => {
 			"opencode",
 			"opencode-go",
 			"openrouter",
+			"orcarouter",
 			"qwen-token-plan",
 			"qwen-token-plan-cn",
 			"qwen-token-plan-individual",
@@ -1074,6 +1075,7 @@ describe("ModelRegistry", () => {
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 
 			expect(registry.getProviderDisplayName("openai")).toBe("OpenAI");
+			expect(registry.getProviderDisplayName("orcarouter")).toBe("OrcaRouter");
 			expect(registry.getProviderDisplayName("github-copilot")).toBe("GitHub Copilot");
 			expect(registry.getProviderDisplayName("zai")).toBe("ZAI Coding Plan (Global)");
 			expect(registry.getProviderDisplayName("unknown-provider")).toBe("unknown-provider");

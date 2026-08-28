@@ -6,7 +6,7 @@ import './Onboarding.css';
 
 const COMPLETED_KEY = 'metis.desktopOnboardingCompleted.v3';
 const LEGACY_COMPLETED_KEY = 'metis.desktopOnboardingCompleted.v2';
-const FALLBACK_PROVIDERS = ['openai', 'anthropic', 'deepseek', 'gemini', 'openrouter', 'groq', 'ollama'];
+const FALLBACK_PROVIDERS = ['openai', 'anthropic', 'deepseek', 'gemini', 'openrouter', 'orcarouter', 'groq', 'ollama'];
 const providerLabel = 'Configure API / OAuth / Base URL';
 
 // Inner interactive button radius = 10px (matching Settings sidebar tab)

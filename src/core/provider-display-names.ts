@@ -25,6 +25,7 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 	"opencode-go": "OpenCode Go",
 	openai: "OpenAI",
 	openrouter: "OpenRouter",
+	orcarouter: "OrcaRouter",
 	"qwen-token-plan": "Qwen Token Plan",
 	"qwen-token-plan-cn": "Qwen Token Plan (China)",
 	"qwen-token-plan-individual": "Qwen Token Plan (Individual)",

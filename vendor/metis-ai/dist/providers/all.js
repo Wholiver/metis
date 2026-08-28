@@ -29,6 +29,7 @@ import { openaiCodexProvider } from "./openai-codex.js";
 import { opencodeProvider } from "./opencode.js";
 import { opencodeGoProvider } from "./opencode-go.js";
 import { openrouterProvider } from "./openrouter.js";
+import { orcarouterProvider } from "./orcarouter.js";
 import { openrouterImagesProvider } from "./openrouter-images.js";
 import { qwenTokenPlanProvider } from "./qwen-token-plan.js";
 import { qwenTokenPlanCnProvider } from "./qwen-token-plan-cn.js";
@@ -87,6 +88,7 @@ export function builtinProviders() {
         opencodeProvider(),
         opencodeGoProvider(),
         openrouterProvider(),
+        orcarouterProvider(),
         qwenTokenPlanProvider(),
         qwenTokenPlanCnProvider(),
         qwenTokenPlanIndividualProvider(),

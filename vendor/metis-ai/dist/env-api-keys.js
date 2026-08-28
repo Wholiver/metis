@@ -77,6 +77,7 @@ function getApiKeyEnvVars(provider) {
         cerebras: "CEREBRAS_API_KEY",
         xai: "XAI_API_KEY",
         openrouter: "OPENROUTER_API_KEY",
+        orcarouter: "ORCAROUTER_API_KEY",
         "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
         zai: "ZAI_API_KEY",
         "zai-coding-cn": "ZAI_CODING_CN_API_KEY",
