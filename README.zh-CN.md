@@ -12,6 +12,7 @@
   <a href="https://github.com/Wholiver/metis/releases/latest"><img alt="最新 GitHub Release" src="https://img.shields.io/github/v/release/Wholiver/metis?label=release&amp;color=24292F" /></a>
   <a href="https://nodejs.org/"><img alt="Node.js 22.19.0 或更高版本" src="https://img.shields.io/badge/Node.js-%3E%3D22.19.0-339933?logo=nodedotjs&amp;logoColor=white" /></a>
   <a href="#许可证"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4C1" /></a>
+  <a href="https://www.orcarouter.ai/ref/ref_974aa3306181497b4cdc"><img alt="Powered by OrcaRouter" src="https://img.shields.io/badge/Powered_by-OrcaRouter-2563eb" /></a>
 </p>
 
 <p align="center">
@@ -142,4 +143,3 @@ npm --prefix desktop run build # 构建 Renderer 与 Electron Artifact
 ## 许可证
 
 本项目使用 [MIT License](https://opensource.org/license/mit)。
-
