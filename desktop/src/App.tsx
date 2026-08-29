@@ -241,6 +241,7 @@ export function App() {
   const captureModelSwitcher = captureParams.has('capture-model-switcher');
   const captureAttachments = captureParams.has('capture-attachments');
   const captureLocalSend = captureParams.has('capture-local-send');
+  const captureSettledSend = captureParams.has('capture-send-settled');
   const captureThinkingProgress = captureParams.has('capture-thinking-progress');
   const captureMessageWidth = captureParams.has('capture-message-width');
   const captureTools = captureParams.has('capture-tools');
@@ -307,7 +308,9 @@ export function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => shouldShowOnboarding());
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => (
+    captureSettledSend ? false : shouldShowOnboarding()
+  ));
   const [settingsTab, setSettingsTab] = useState<'general' | 'shortcuts' | 'server' | 'model' | 'agent' | 'security' | 'session' | 'about'>('general');
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
   const [skillCommands, setSkillCommands] = useState<SkillCommand[]>([]);
@@ -721,7 +724,11 @@ export function App() {
         isInspectorOpen={isInspectorOpen}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         onNewChat={newConversation}
-        onSendMessage={captureLocalSend ? () => new Promise<boolean | void>(() => {}) : sendMessage}
+        onSendMessage={captureSettledSend
+          ? async () => true
+          : captureLocalSend
+            ? () => new Promise<boolean | void>(() => {})
+            : sendMessage}
         onAbort={abortTurn}
         models={displayedModels}
         activeModel={displayedActiveModel}
@@ -740,7 +747,7 @@ export function App() {
         isCompacting={isCompacting}
         onToggleInspector={() => setIsInspectorOpen((prev) => !prev)}
         isStreaming={captureThinkingProgress || captureStreamingWork ? true : capturePlanPreview ? false : isStreaming}
-        isLoading={captureMessageWidth || captureThinkingProgress || capturePlanPreview || captureLocalSend ? false : isLoadingSessions}
+        isLoading={captureMessageWidth || captureThinkingProgress || capturePlanPreview || captureLocalSend || captureSettledSend ? false : isLoadingSessions}
         workflowProposal={displayedProposal}
         planActionsEnabled={capturePlanPreview || (isConnected && collaborationMode === 'plan' && !isStreaming && !isCompacting)}
         onProcessProposal={capturePlanPreview || collaborationMode === 'plan' ? processProposal : undefined}
@@ -842,4 +849,3 @@ export function App() {
 }
 
 export default App;
-

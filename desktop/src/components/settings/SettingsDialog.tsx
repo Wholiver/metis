@@ -420,7 +420,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <input className={controlClass} value={providerForm.apiKey || ''} onChange={(e) => setProviderForm((current) => ({ ...current, apiKey: e.target.value }))} type="password" placeholder="API key (leave blank to keep)" />
               <input className={controlClass} value={(providerForm.modelIds || []).join(', ')} onChange={(e) => setProviderForm((current) => ({ ...current, modelIds: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} placeholder="Model IDs, separated by commas" />
             </div>
-            <p className="mt-2 text-[12px] text-slate-500">Reasoning options come from model metadata returned by this API.</p>
+            <p className="mt-2 text-[12px] text-slate-500">Metis checks this API for reasoning options and falls back to known model capabilities when metadata is unavailable.</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <button className={buttonClass} disabled={saving || !providerForm.baseUrl?.trim()} onClick={() => void run(async () => { const discoveredModels = await requireDesktop<Array<{ id: string; thinkingOptions: ThinkingOption[] }>>(desktop?.providerConfig?.discoverModels ? () => desktop.providerConfig.discoverModels(providerForm) : undefined, 'Provider discovery'); setProviderForm((current) => ({ ...current, discoveredModels, modelIds: Array.isArray(discoveredModels) ? discoveredModels.map((model) => model.id) : current.modelIds })); }, 'Available models and reasoning options discovered.')}>
                 <RefreshCw className="h-3.5 w-3.5" />Discover models
@@ -908,4 +908,3 @@ function LogoutControl({ providers, disabled, translate, onLogout }: { providers
   useEffect(() => { if (!provider && providers[0]) setProvider(providers[0]); }, [provider, providers]);
   return <div className="flex w-full flex-wrap gap-2"><select className={selectClass} value={provider} onChange={(e) => setProvider(e.target.value)}>{providers.map((item) => <option key={item}>{item}</option>)}</select><button className={`${buttonClass} text-rose-700 hover:bg-rose-50`} disabled={disabled || !provider} onClick={() => { if (window.confirm(translate(`Remove saved credentials for ${provider}?`))) onLogout(provider); }}><Trash2 className="h-3.5 w-3.5" />Sign out</button></div>;
 }
-

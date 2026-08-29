@@ -184,10 +184,12 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 		: {};
 	const existingModels = Array.isArray(existing.models) ? existing.models : [];
 	let modelIds = normalizeModelIds(config.modelIds);
-	let discoveredModels = Array.isArray(config.discoveredModels) ? config.discoveredModels : undefined;
-	if (modelIds.length === 0 && apiKey) {
+	let discoveredModels = Array.isArray(config.discoveredModels) && config.discoveredModels.length > 0
+		? config.discoveredModels
+		: undefined;
+	if (discoveredModels === undefined) {
 		discoveredModels = await discoverCustomProviderModels(baseUrl, apiKey, options);
-		modelIds = discoveredModels.map((model) => model.id);
+		if (modelIds.length === 0) modelIds = discoveredModels.map((model) => model.id);
 	}
 	if (modelIds.length === 0) modelIds = normalizeModelIds(existingModels.map((model) => typeof model === "string" ? model : model?.id));
 	if (modelIds.length === 0) modelIds = ["default"];
@@ -195,16 +197,16 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 	const discoveredById = new Map((discoveredModels || []).map((model) => [model.id, model]));
 	const models = modelIds.map((id) => {
 		const model = { ...(modelsById.get(id) || {}), id, input: modelsById.get(id)?.input || ["text", "image"] };
-		if (discoveredModels !== undefined) {
-			// Discovery ran: the API's own metadata is authoritative. An empty list
-			// means the endpoint exposed no thinking levels, so thinking stays hidden.
-			const thinkingOptions = discoveredById.get(id)?.thinkingOptions || [];
-			model.reasoning = thinkingOptions.some((option) => option.id !== "off");
+		const thinkingOptions = discoveredById.get(id)?.thinkingOptions;
+		if (thinkingOptions && thinkingOptions.length > 0 && thinkingOptions.some((option) => option.id !== "off")) {
+			model.reasoning = true;
 			model.thinkingOptions = thinkingOptions;
-			if (thinkingOptions.length > 0) model.thinkingLevelMap = Object.fromEntries(thinkingOptions.map((option) => [option.id, option.value]));
-			else delete model.thinkingLevelMap;
-		} else if (reasoning) model.reasoning = true;
-		else delete model.reasoning;
+			model.thinkingLevelMap = Object.fromEntries(thinkingOptions.map((option) => [option.id, option.value]));
+		} else {
+			delete model.thinkingOptions;
+			delete model.thinkingLevelMap;
+			delete model.reasoning;
+		}
 		return model;
 	});
 
@@ -237,4 +239,3 @@ module.exports = {
 	listCustomProviderConfigs,
 	saveCustomProviderConfig,
 };
-

@@ -2,7 +2,10 @@ import { createRequire } from "node:module";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { getSupportedThinkingLevels } from "@earendil-works/metis-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthStorage } from "../src/core/auth-storage.ts";
+import { ModelRegistry } from "../src/core/model-registry.ts";
 
 const require = createRequire(import.meta.url);
 const providerConfig = require("../desktop/provider-config.cjs") as {
@@ -48,19 +51,20 @@ describe("Desktop custom Provider configuration", () => {
 		expect(first.provider).toBe("custom-local-proxy");
 		expect(first.modelIds).toEqual(["model-a", "model-b"]);
 		expect(second.provider).toBe("custom-local-proxy-2");
-		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(fetchImpl).toHaveBeenCalledTimes(2);
 		const saved = await providerConfig.listCustomProviderConfigs(agentDir);
 		expect(saved.map((item) => item.provider)).toEqual(["custom-local-proxy", "custom-local-proxy-2"]);
 		expect(saved[0]?.reasoning).toBe(true);
 	});
 
 	it("edits selected models without requiring or persisting an API key", async () => {
+		const fetchImpl = vi.fn().mockResolvedValue({ ok: false });
 		const created = await providerConfig.saveCustomProviderConfig(agentDir, {
 			name: "Proxy",
 			baseUrl: "https://proxy.example/v1",
 			apiKey: "secret",
 			modelIds: ["old-model"],
-		});
+		}, { fetchImpl });
 
 		await providerConfig.saveCustomProviderConfig(agentDir, {
 			providerId: created.provider,
@@ -68,13 +72,14 @@ describe("Desktop custom Provider configuration", () => {
 			baseUrl: "https://proxy.example/v1",
 			modelIds: ["new-model", "custom-model"],
 			reasoning: true,
-		});
+		}, { fetchImpl });
+		expect(fetchImpl).toHaveBeenCalledTimes(2);
 
 		const models = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
 		expect(models.providers[created.provider as string].apiKey).toBeUndefined();
 		expect(models.providers[created.provider as string].models).toEqual([
-			{ id: "new-model", input: ["text", "image"], reasoning: true },
-			{ id: "custom-model", input: ["text", "image"], reasoning: true },
+			{ id: "new-model", input: ["text", "image"] },
+			{ id: "custom-model", input: ["text", "image"] },
 		]);
 	});
 
@@ -115,12 +120,13 @@ describe("Desktop custom Provider configuration", () => {
 		expect(fetchImpl.mock.calls[0]?.[1]?.headers.Authorization).toBe("Bearer secret");
 	});
 
-	it("persists only reasoning options explicitly exposed by each model", async () => {
+	it("persists provider-native reasoning options and strictly disables reasoning when metadata is missing", async () => {
 		const fetchImpl = vi.fn().mockResolvedValue({
 			ok: true,
 			json: async () => ({ data: [
 				{ id: "native", capabilities: { reasoning: { efforts: ["disabled", { id: "balanced", label: "Balanced" }] } } },
-				{ id: "plain" },
+				{ id: "glm-5.3" },
+				{ id: "qwen3-disabled", supported_reasoning_efforts: ["disabled"] },
 			] }),
 		});
 
@@ -133,8 +139,20 @@ describe("Desktop custom Provider configuration", () => {
 		const config = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
 		expect(config.providers["custom-native"].models).toMatchObject([
 			{ id: "native", reasoning: true, thinkingOptions: [{ id: "off", label: "disabled", value: "disabled" }, { id: "balanced", label: "Balanced", value: "balanced" }] },
-			{ id: "plain", reasoning: false, thinkingOptions: [] },
+			{ id: "glm-5.3" },
+			{ id: "qwen3-disabled" },
 		]);
+		expect(config.providers["custom-native"].models[1]).not.toHaveProperty("thinkingOptions");
+
+		const registry = ModelRegistry.create(
+			AuthStorage.create(path.join(agentDir, "auth.json")),
+			path.join(agentDir, "models.json"),
+		);
+		const glm = registry.find("custom-native", "glm-5.3");
+		expect(glm?.reasoning).toBe(false);
+		expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
+		const disabled = registry.find("custom-native", "qwen3-disabled");
+		expect(disabled?.reasoning).toBe(false);
+		expect(getSupportedThinkingLevels(disabled!)).toEqual(["off"]);
 	});
 });
-

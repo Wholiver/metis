@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import {
   composerTextareaHeight,
   hasComposerLineBreak,
+  IDLE_COMPOSER_ACTIVITY,
+  reduceComposerActivity,
 } from '../desktop/src/lib/composer';
 import { filterSkills } from '../desktop/src/components/chat/SkillPicker';
 
@@ -55,13 +57,13 @@ describe('desktop React multiline composer', () => {
       resolve(process.cwd(), 'desktop/src/components/chat/ChatArea.tsx'),
       'utf8',
     );
-    expect(source).toContain('setLocalTaskPending(true)');
+    expect(source).toContain("type: 'send-started'");
     expect(source).toContain('const result = await onSendMessage(text, options)');
-    expect(source).toContain('const showActiveProgress = localTaskPending || isStreaming');
+    expect(source).toContain('composerActivity.localTaskPending || isStreaming');
     expect(source).toContain('isStreaming={showActiveProgress}');
     expect(source).toContain('onAbort={onAbort}');
     expect(source).toContain('disabled={showActiveProgress || isLoading || isCompacting}');
-    expect(source.indexOf('setLocalTaskPending(true)'))
+    expect(source.indexOf("type: 'send-started'"))
       .toBeLessThan(source.indexOf('await onSendMessage(text, options)'));
 
     const composerSource = readFileSync(
@@ -70,6 +72,41 @@ describe('desktop React multiline composer', () => {
     );
     expect(composerSource).toContain('data-stop-button');
     expect(composerSource).toContain('onAbort?.()');
+  });
+
+  it('unlocks the composer when a successful send settles before streaming is observed', () => {
+    const pending = reduceComposerActivity(IDLE_COMPOSER_ACTIVITY, { type: 'send-started' });
+    const settled = reduceComposerActivity(pending, { type: 'send-settled' });
+
+    expect(pending.localTaskPending).toBe(true);
+    expect(settled).toEqual(IDLE_COMPOSER_ACTIVITY);
+  });
+
+  it('unlocks the composer after normal streaming completion and rejected sends', () => {
+    const pending = reduceComposerActivity(IDLE_COMPOSER_ACTIVITY, { type: 'send-started' });
+    const streaming = reduceComposerActivity(pending, {
+      type: 'server-streaming-changed',
+      streaming: true,
+    });
+    const completed = reduceComposerActivity(streaming, {
+      type: 'server-streaming-changed',
+      streaming: false,
+    });
+    const rejected = reduceComposerActivity(pending, { type: 'send-settled' });
+
+    expect(streaming).toEqual({ localTaskPending: true, sawServerStreaming: true });
+    expect(completed).toEqual(IDLE_COMPOSER_ACTIVITY);
+    expect(rejected).toEqual(IDLE_COMPOSER_ACTIVITY);
+  });
+
+  it('keeps a repeatable Desktop capture for the settled-send unlock state', () => {
+    const app = readFileSync(resolve(process.cwd(), 'desktop/src/App.tsx'), 'utf8');
+    const main = readFileSync(resolve(process.cwd(), 'desktop/main.cjs'), 'utf8');
+
+    expect(app).toContain("captureParams.has('capture-send-settled')");
+    expect(app).toContain('captureSettledSend\n          ? async () => true');
+    expect(main).toContain('METIS_DESKTOP_CAPTURE_PROGRESS_LOCAL_SEND_SETTLED');
+    expect(main).toContain('[capture:composer-send-settled]');
   });
 
   it('filters skill commands after slash and inserts them with keyboard selection support', () => {
@@ -132,4 +169,3 @@ describe('desktop React multiline composer', () => {
     expect(markdown).toContain('[overflow-wrap:anywhere]');
   });
 });
-

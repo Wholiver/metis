@@ -40,7 +40,7 @@ Some OpenAI-compatible servers do not understand the `developer` role used for r
 
 You can set `compat` at the provider level to apply to all models, or at the model level to override a specific model. This commonly applies to Ollama, vLLM, SGLang, and similar OpenAI-compatible servers.
 
-When `reasoning` is omitted, metis matches the model ID against the built-in catalog and inherits its supported thinking levels. This also works for models discovered through custom OpenAI-compatible providers, including GLM, DeepSeek, Qwen, Claude, Gemini, GPT/o-series, Grok, Kimi, MiniMax, and Mistral families. Unknown IDs remain non-reasoning models. Explicit model settings take priority.
+Desktop and TUI custom-Provider setup request the OpenAI-compatible `/models` endpoint for model IDs and provider-native reasoning levels. A reported non-empty reasoning level list is authoritative. If the endpoint returns only model IDs, returns an empty level list, or cannot be queried, custom provider models default to non-reasoning models without reasoning level options. Explicit thinking options or level maps configured manually in `models.json` continue to be respected.
 
 ```json
 {
@@ -497,4 +497,3 @@ Vercel AI Gateway example:
   }
 }
 ```
-

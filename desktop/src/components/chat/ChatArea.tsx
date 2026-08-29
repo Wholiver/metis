@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Agent, CollaborationMode, ContextUsage, MemoryState, Message, ModelOption, PendingUserInput, SendMessageOptions, ThinkingOption, TokenBreakdown, UserInputResponse, WorkflowProposalState } from '../../types';
+import { IDLE_COMPOSER_ACTIVITY, reduceComposerActivity } from '../../lib/composer';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
@@ -87,35 +88,28 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   contextUsage,
   tokenBreakdown,
 }) => {
-  const [localTaskPending, setLocalTaskPending] = useState(false);
-  const sawServerStreaming = useRef(false);
+  const [composerActivity, setComposerActivity] = useState(IDLE_COMPOSER_ACTIVITY);
 
   useEffect(() => {
-    if (!localTaskPending) return;
-    if (isStreaming) {
-      sawServerStreaming.current = true;
-    } else if (sawServerStreaming.current) {
-      sawServerStreaming.current = false;
-      setLocalTaskPending(false);
-    }
-  }, [isStreaming, localTaskPending]);
+    setComposerActivity((current) => reduceComposerActivity(current, {
+      type: 'server-streaming-changed',
+      streaming: isStreaming,
+    }));
+  }, [isStreaming]);
 
   const handleSendMessage = async (text: string, options?: SendMessageOptions) => {
-    sawServerStreaming.current = false;
-    setLocalTaskPending(true);
+    setComposerActivity((current) => reduceComposerActivity(current, { type: 'send-started' }));
     try {
       const result = await onSendMessage(text, options);
-      if (result === false) {
-        setLocalTaskPending(false);
-      }
+      setComposerActivity((current) => reduceComposerActivity(current, { type: 'send-settled' }));
       return result;
     } catch (error) {
-      setLocalTaskPending(false);
+      setComposerActivity(IDLE_COMPOSER_ACTIVITY);
       throw error;
     }
   };
 
-  const showActiveProgress = localTaskPending || isStreaming || Boolean(pendingUserInput);
+  const showActiveProgress = composerActivity.localTaskPending || isStreaming || Boolean(pendingUserInput);
 
   return (
     <main data-purpose="main-chat" className="flex-1 h-full bg-[#ffffff] flex flex-col min-w-[360px] overflow-hidden relative">
@@ -172,4 +166,3 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     </main>
   );
 };
-

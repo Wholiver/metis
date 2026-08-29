@@ -27,10 +27,16 @@ async function copyUntrackedFiles(cwd: string, workspacePath: string): Promise<v
 		const stat = await fs.lstat(source);
 		await fs.mkdir(path.dirname(target), { recursive: true });
 		if (stat.isSymbolicLink()) {
-			await fs.symlink(await fs.readlink(source), target);
+			try {
+				await fs.symlink(await fs.readlink(source), target);
+			} catch {
+				try {
+					await fs.copyFile(source, target);
+				} catch {}
+			}
 		} else if (stat.isFile()) {
 			await fs.copyFile(source, target);
-			await fs.chmod(target, stat.mode);
+			await fs.chmod(target, stat.mode).catch(() => {});
 		}
 	}
 }
@@ -74,6 +80,21 @@ export interface CreateIsolatedWorkspaceOptions {
 	worktree?: string; // "auto", "isolate", "temp", "branch:<name>", or explicit directory path
 	agentId?: string;
 	preserveOnExit?: boolean;
+}
+
+/**
+ * Check if a Git branch exists in local refs
+ */
+export async function isGitBranchExists(cwd: string, branchName: string): Promise<boolean> {
+	try {
+		await execFileAsync("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], {
+			cwd,
+			timeout: 5000,
+		});
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -137,23 +158,27 @@ export async function createIsolatedWorkspace(
 			const targetDirName = `metis-worktree-${branchName}`;
 			const worktreePath = path.join(tmpdir(), targetDirName);
 
+			// Clean up any stale directory or leftover worktree state before attempting creation
+			try {
+				await fs.rm(worktreePath, { recursive: true, force: true });
+			} catch {}
+			await execFileAsync("git", ["worktree", "prune"], { cwd, timeout: 5000 }).catch(() => {});
+
 			let worktreeCreated = false;
 			try {
-				// Try creating git worktree with a new branch first
-				try {
-					await execFileAsync("git", ["worktree", "add", "-b", branchName, worktreePath, "HEAD"], {
-						cwd,
-						timeout: 10000,
-					});
-					worktreeCreated = true;
-				} catch {
-					// If branch already exists, attach without -b
+				const branchExists = await isGitBranchExists(cwd, branchName);
+				if (branchExists) {
 					await execFileAsync("git", ["worktree", "add", worktreePath, branchName], {
 						cwd,
 						timeout: 10000,
 					});
-					worktreeCreated = true;
+				} else {
+					await execFileAsync("git", ["worktree", "add", "-b", branchName, worktreePath, "HEAD"], {
+						cwd,
+						timeout: 10000,
+					});
 				}
+				worktreeCreated = true;
 				await seedGitWorktreeFromParent(cwd, worktreePath);
 
 				const cleanup = async () => {
@@ -194,8 +219,15 @@ export async function createIsolatedWorkspace(
 				if (worktreeCreated) {
 					await execFileAsync("git", ["worktree", "remove", "--force", worktreePath], { cwd, timeout: 10000 }).catch(() => {});
 					if (!isBranch) await execFileAsync("git", ["branch", "-D", branchName], { cwd, timeout: 5000 }).catch(() => {});
+				} else {
+					await fs.rm(worktreePath, { recursive: true, force: true }).catch(() => {});
+					await execFileAsync("git", ["worktree", "prune"], { cwd, timeout: 5000 }).catch(() => {});
 				}
-				throw new Error(`Failed to create current-state worktree: ${error instanceof Error ? error.message : String(error)}`);
+
+				if (isBranch) {
+					throw new Error(`Failed to create current-state worktree: ${error instanceof Error ? error.message : String(error)}`);
+				}
+				// In auto/isolate mode, fall through to step 4 (temporary directory mode)
 			}
 		}
 	}

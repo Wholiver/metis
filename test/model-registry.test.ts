@@ -317,7 +317,7 @@ describe("ModelRegistry", () => {
 	});
 
 	describe("custom models merge behavior", () => {
-		test("infers thinking levels and transport metadata for catalog-backed custom models", () => {
+		test("custom models without discovered thinkingOptions default to non-reasoning and support thinking with thinkingOptions", () => {
 			writeRawModelsJson({
 				"custom-zai": {
 					baseUrl: "https://proxy.example.com/v1",
@@ -325,7 +325,15 @@ describe("ModelRegistry", () => {
 					api: "openai-completions",
 					models: [
 						{ id: "glm-5.3" },
-						{ id: "qwen3.8-max" },
+						{
+							id: "qwen3.8-max",
+							thinkingOptions: [
+								{ id: "off", label: "off", value: "off" },
+								{ id: "low", label: "Low", value: "low" },
+								{ id: "medium", label: "Medium", value: "medium" },
+								{ id: "xhigh", label: "Max", value: "max" },
+							],
+						},
 						{ id: "qwen/qwen3-next-80b-a3b-thinking" },
 						{ id: "unknown-capabilities" },
 					],
@@ -335,14 +343,15 @@ describe("ModelRegistry", () => {
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 			const glm = registry.find("custom-zai", "glm-5.3");
 			const qwen = registry.find("custom-zai", "qwen3.8-max");
+			const thinkingNamed = registry.find("custom-zai", "qwen/qwen3-next-80b-a3b-thinking");
 			const unknown = registry.find("custom-zai", "unknown-capabilities");
 
-			expect(glm?.reasoning).toBe(true);
-			expect(getSupportedThinkingLevels(glm!)).toEqual(["low", "high", "max"]);
-			expect((glm?.compat as OpenAICompletionsCompat | undefined)?.thinkingFormat).toBe("zai");
+			expect(glm?.reasoning).toBe(false);
+			expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
 			expect(qwen?.reasoning).toBe(true);
 			expect(getSupportedThinkingLevels(qwen!)).toEqual(["off", "low", "medium", "xhigh"]);
-			expect(registry.find("custom-zai", "qwen/qwen3-next-80b-a3b-thinking")?.reasoning).toBe(true);
+			expect(thinkingNamed?.reasoning).toBe(false);
+			expect(getSupportedThinkingLevels(thinkingNamed!)).toEqual(["off"]);
 			expect(unknown?.reasoning).toBe(false);
 			expect(getSupportedThinkingLevels(unknown!)).toEqual(["off"]);
 		});
@@ -365,6 +374,22 @@ describe("ModelRegistry", () => {
 				"high",
 			]);
 			expect(getSupportedThinkingLevels(registry.find("custom-provider-default", "glm-5.3")!)).toEqual(["off"]);
+		});
+
+		test("custom models without thinking metadata do not infer reasoning from catalog", () => {
+			writeRawModelsJson({
+				"custom-tokenhub": {
+					baseUrl: "https://tokenhub.example/v1",
+					apiKey: "test-key",
+					api: "openai-completions",
+					models: [{ id: "glm-5.3", reasoning: false, thinkingOptions: [] }],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const glm = registry.find("custom-tokenhub", "glm-5.3");
+			expect(glm?.reasoning).toBe(false);
+			expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
 		});
 
 		test("custom models default to multimodal input when capability is omitted", () => {
@@ -1047,7 +1072,7 @@ describe("ModelRegistry", () => {
 	});
 
 	describe("dynamic provider lifecycle", () => {
-		test("dynamic custom providers infer supported thinking levels when omitted", () => {
+		test("dynamic custom providers without thinking options default to non-reasoning and support thinking with thinkingOptions", () => {
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 			registry.registerProvider("extension-provider", {
 				baseUrl: "https://proxy.example.com/v1",
@@ -1062,13 +1087,29 @@ describe("ModelRegistry", () => {
 						contextWindow: 128000,
 						maxTokens: 4096,
 					},
+					{
+						id: "custom-reasoning-model",
+						name: "Custom Reasoner",
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 128000,
+						maxTokens: 4096,
+						thinkingOptions: [
+							{ id: "off", label: "off", value: "off" },
+							{ id: "low", label: "Low", value: "low" },
+							{ id: "high", label: "High", value: "high" },
+						],
+					},
 				],
 			});
 
-			const model = registry.find("extension-provider", "glm-5.3");
-			expect(model?.reasoning).toBe(true);
-			expect(getSupportedThinkingLevels(model!)).toEqual(["low", "high", "max"]);
-			expect((model?.compat as OpenAICompletionsCompat | undefined)?.thinkingFormat).toBe("zai");
+			const plainModel = registry.find("extension-provider", "glm-5.3");
+			expect(plainModel?.reasoning).toBe(false);
+			expect(getSupportedThinkingLevels(plainModel!)).toEqual(["off"]);
+
+			const reasoningModel = registry.find("extension-provider", "custom-reasoning-model");
+			expect(reasoningModel?.reasoning).toBe(true);
+			expect(getSupportedThinkingLevels(reasoningModel!)).toEqual(["off", "low", "high"]);
 		});
 
 		test("getProviderDisplayName resolves registered, OAuth, built-in, and fallback names", () => {
@@ -1972,4 +2013,3 @@ describe("ModelRegistry", () => {
 		});
 	});
 });
-

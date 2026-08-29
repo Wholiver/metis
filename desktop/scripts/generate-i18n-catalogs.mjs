@@ -25,7 +25,7 @@ const localeTargets = {
 const localeOverrides = {
 	fr: {
 		reactSettingsReasoningAvailability: "Options signalées par le fournisseur du modèle actuel.",
-		reactSettingsReasoningFromMetadata: "Les options de raisonnement proviennent des métadonnées de modèle renvoyées par cette API.",
+		reactSettingsReasoningFromMetadata: "Metis interroge cette API sur les options de raisonnement et utilise les capacités connues du modèle lorsque les métadonnées sont indisponibles.",
 		reactSettingsModelsDiscovered: "Modèles disponibles et options de raisonnement détectés.",
 		settingsMemoryFallbackInline: "(repli sûr utilisé)",
 		settingsMemoryExtractingEllipsis: "Extraction de la mémoire…",
@@ -116,7 +116,7 @@ const localeOverrides = {
 	},
 	"zh-TW": {
 		reactSettingsReasoningAvailability: "由目前模型服務商提供的選項。",
-		reactSettingsReasoningFromMetadata: "推理選項來自該 API 回傳的模型中介資料。",
+		reactSettingsReasoningFromMetadata: "Metis 會向此 API 查詢推理選項；未提供中繼資料時，會回退到已知模型能力。",
 		reactSettingsModelsDiscovered: "已發現可用模型與推理選項。",
 		settingsMemoryFallbackInline: "（已使用安全備援）",
 		settingsMemoryExtractingEllipsis: "正在提取記憶…",
@@ -208,7 +208,7 @@ const localeOverrides = {
 	},
 	ja: {
 		reactSettingsReasoningAvailability: "現在のモデルプロバイダーが報告したオプションです。",
-		reactSettingsReasoningFromMetadata: "推論オプションは、この API が返すモデルのメタデータに基づきます。",
+		reactSettingsReasoningFromMetadata: "Metis はこの API で推論オプションを確認し、メタデータがない場合は既知のモデル機能にフォールバックします。",
 		reactSettingsModelsDiscovered: "利用可能なモデルと推論オプションを検出しました。",
 		settingsMemoryFallbackInline: "（安全なフォールバックを使用）",
 		settingsMemoryExtractingEllipsis: "メモリを抽出中…",
@@ -299,7 +299,7 @@ const localeOverrides = {
 	},
 	ko: {
 		reactSettingsReasoningAvailability: "현재 모델 제공업체가 보고한 옵션입니다.",
-		reactSettingsReasoningFromMetadata: "추론 옵션은 이 API가 반환한 모델 메타데이터에서 가져옵니다.",
+		reactSettingsReasoningFromMetadata: "Metis는 이 API에서 추론 옵션을 확인하고 메타데이터가 없으면 알려진 모델 기능으로 대체합니다.",
 		reactSettingsModelsDiscovered: "사용 가능한 모델과 추론 옵션을 찾았습니다.",
 		settingsMemoryFallbackInline: "(안전 대체 사용)",
 		settingsMemoryExtractingEllipsis: "메모리 추출 중…",
@@ -389,6 +389,7 @@ const localeOverrides = {
 		tokensUnit: "토큰",
 	},
 	de: {
+		reactSettingsReasoningFromMetadata: "Metis fragt diese API nach Reasoning-Optionen ab und greift ohne Metadaten auf bekannte Modellfähigkeiten zurück.",
 		askUserCancelLabel: "Frage abbrechen",
 		askUserOtherAnswerLabel: "Andere Antwort eingeben",
 		chatHomePrefix: "Was sollen wir in",
@@ -408,7 +409,7 @@ const localeOverrides = {
 	},
 	pt: {
 		reactSettingsReasoningAvailability: "Opções informadas pelo provedor do modelo atual.",
-		reactSettingsReasoningFromMetadata: "As opções de raciocínio vêm dos metadados de modelo retornados por esta API.",
+		reactSettingsReasoningFromMetadata: "O Metis consulta esta API sobre opções de raciocínio e usa os recursos conhecidos do modelo quando os metadados não estão disponíveis.",
 		reactSettingsModelsDiscovered: "Modelos disponíveis e opções de raciocínio descobertos.",
 		settingsMemoryFallbackInline: "(fallback seguro usado)",
 		settingsMemoryExtractingEllipsis: "Extraindo memória…",
@@ -499,7 +500,7 @@ const localeOverrides = {
 	},
 	ru: {
 		reactSettingsReasoningAvailability: "Параметры, сообщённые текущим поставщиком модели.",
-		reactSettingsReasoningFromMetadata: "Параметры рассуждения берутся из метаданных модели, которые возвращает этот API.",
+		reactSettingsReasoningFromMetadata: "Metis запрашивает у этого API параметры рассуждения и при отсутствии метаданных использует известные возможности модели.",
 		reactSettingsModelsDiscovered: "Найдены доступные модели и параметры рассуждения.",
 		settingsMemoryFallbackInline: "(использован безопасный резервный режим)",
 		settingsMemoryExtractingEllipsis: "Извлечение памяти…",
@@ -590,7 +591,7 @@ const localeOverrides = {
 	},
 	it: {
 		reactSettingsReasoningAvailability: "Opzioni segnalate dal provider del modello corrente.",
-		reactSettingsReasoningFromMetadata: "Le opzioni di ragionamento provengono dai metadati del modello restituiti da questa API.",
+		reactSettingsReasoningFromMetadata: "Metis interroga questa API sulle opzioni di ragionamento e usa le capacità note del modello quando i metadati non sono disponibili.",
 		reactSettingsModelsDiscovered: "Modelli disponibili e opzioni di ragionamento rilevati.",
 		settingsMemoryFallbackInline: "(fallback sicuro utilizzato)",
 		settingsMemoryExtractingEllipsis: "Estrazione memoria…",
@@ -681,7 +682,7 @@ const localeOverrides = {
 	},
 	es: {
 		reactSettingsReasoningAvailability: "Opciones informadas por el proveedor del modelo actual.",
-		reactSettingsReasoningFromMetadata: "Las opciones de razonamiento provienen de los metadatos del modelo que devuelve esta API.",
+		reactSettingsReasoningFromMetadata: "Metis consulta esta API sobre las opciones de razonamiento y usa las capacidades conocidas del modelo cuando no hay metadatos.",
 		reactSettingsModelsDiscovered: "Modelos disponibles y opciones de razonamiento detectados.",
 		settingsMemoryFallbackInline: "(se usó el modo seguro)",
 		settingsMemoryExtractingEllipsis: "Extrayendo memoria…",
@@ -1243,7 +1244,7 @@ const extra = {
 	reactSettingsProviderConnectionDescription: ["Provider name, OpenAI-compatible endpoint and optional API key.", "服务商名称、OpenAI 兼容接口地址和可选 API 密钥。"],
 	reactSettingsApiKeyKeepPlaceholder: ["API key (leave blank to keep)", "API 密钥（留空则保留原值）"],
 	reactSettingsModelIdsPlaceholder: ["Model IDs, separated by commas", "模型 ID，多个值用逗号分隔"],
-	reactSettingsReasoningFromMetadata: ["Reasoning options come from model metadata returned by this API.", "推理选项来自该 API 返回的模型元数据。"],
+	reactSettingsReasoningFromMetadata: ["Metis checks this API for reasoning options and falls back to known model capabilities when metadata is unavailable.", "Metis 会向该 API 查询推理选项；未返回元数据时，将回退到已知模型能力。"],
 	reactSettingsModelsDiscovered: ["Available models and reasoning options discovered.", "已发现可用模型及推理选项。"],
 	reactSettingsProviderSaved: ["Custom provider saved and models reloaded.", "自定义服务商已保存，模型已重新加载。"],
 	reactSettingsSaveProvider: ["Save provider", "保存服务商"],
@@ -13641,4 +13642,3 @@ await writeFile(sourcePath, `// Canonical Desktop copy. Update both locales, the
 await writeFile(outputPath, `// Generated by desktop/scripts/generate-i18n-catalogs.mjs. Do not edit by hand.\n(function (root, factory) {\n\tconst catalogs = factory();\n\tif (typeof module === "object" && module.exports) module.exports = catalogs;\n\tif (root) root.metisDesktopI18nCatalogs = catalogs;\n})(typeof window === "object" ? window : undefined, () => (${JSON.stringify(catalogs, null, 2)}));\n`);
 await writeFile(nodeOutputPath, `// Generated by desktop/scripts/generate-i18n-catalogs.mjs. Do not edit by hand.\nmodule.exports = ${JSON.stringify(catalogs, null, 2)};\n`);
 console.log(`Generated ${Object.keys(catalogs).length} catalogs with ${Object.keys(catalogs.en).length} keys each.`);
-

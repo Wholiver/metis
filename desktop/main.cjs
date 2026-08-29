@@ -224,6 +224,10 @@ function createWindow() {
 	if (process.env.METIS_DESKTOP_CAPTURE_ATTACHMENTS) captureQuery["capture-attachments"] = "1";
 	if (process.env.METIS_DESKTOP_CAPTURE_ASK) captureQuery["capture-ask"] = "1";
 	if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_LOCAL_SEND || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_TASK_RECEIVED) captureQuery["capture-local-send"] = "1";
+	if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_LOCAL_SEND_SETTLED) {
+		captureQuery["capture-local-send"] = "1";
+		captureQuery["capture-send-settled"] = "1";
+	}
 	if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_THINKING) captureQuery["capture-thinking-progress"] = "1";
 	if (process.env.METIS_DESKTOP_CAPTURE_PLAN_POINTS) captureQuery["capture-plan-points"] = "1";
 	if (process.env.METIS_DESKTOP_CAPTURE_PLAN_POINTS_EMPTY) captureQuery["capture-plan-points-empty"] = "1";
@@ -1169,7 +1173,7 @@ function createWindow() {
 						})()`);
 						console.error(`[capture:thinking] ${JSON.stringify(thinkingMetrics)}`);
 					}
-					if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_DEFAULT || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_COMPLETED || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_LOCAL_SEND || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_TASK_RECEIVED || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_THINKING) {
+					if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_DEFAULT || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_COMPLETED || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_LOCAL_SEND || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_LOCAL_SEND_SETTLED || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_TASK_RECEIVED || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_THINKING) {
 						if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_THINKING) {
 							const sampleThinkingVisual = async () => mainWindow.webContents.executeJavaScript(`(() => {
 								const indicator = document.querySelector('[data-work-progress]');
@@ -1220,7 +1224,7 @@ function createWindow() {
 						if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_DEFAULT) {
 							await new Promise((resolve) => setTimeout(resolve, 4000));
 						}
-						if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_LOCAL_SEND || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_TASK_RECEIVED) {
+						if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_LOCAL_SEND || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_LOCAL_SEND_SETTLED || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_TASK_RECEIVED) {
 							await mainWindow.webContents.executeJavaScript(`(async () => {
 								const input = document.querySelector('[data-composer-input]');
 								const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
@@ -1230,6 +1234,18 @@ function createWindow() {
 								document.querySelector('[aria-label="Send message"]')?.click();
 								await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 							})()`);
+						}
+						if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_LOCAL_SEND_SETTLED) {
+							await new Promise((resolve) => setTimeout(resolve, 100));
+							const settledComposerMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+								const input = document.querySelector('[data-composer-input]');
+								return {
+									disabled: Boolean(input?.disabled),
+									stopVisible: Boolean(document.querySelector('[data-stop-button]')),
+									sendVisible: Boolean(document.querySelector('[data-send-icon]')),
+								};
+							})()`);
+							console.error(`[capture:composer-send-settled] ${JSON.stringify(settledComposerMetrics)}`);
 						}
 						if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_TASK_RECEIVED) {
 							const sampleTaskReceivedVisual = async () => mainWindow.webContents.executeJavaScript(`(() => {
@@ -1324,8 +1340,8 @@ function createWindow() {
 							return {
 								hasProgress: Boolean(indicator),
 								isTail: turn?.lastElementChild === indicator,
-								afterFinalResponse: !finalResponse || Boolean(finalResponse.compareDocumentPosition(indicator) & Node.DOCUMENT_POSITION_FOLLOWING),
-								afterUserMessage: !lastUserMessage || Boolean(lastUserMessage.compareDocumentPosition(indicator) & Node.DOCUMENT_POSITION_FOLLOWING),
+								afterFinalResponse: !indicator || !finalResponse || Boolean(finalResponse.compareDocumentPosition(indicator) & Node.DOCUMENT_POSITION_FOLLOWING),
+								afterUserMessage: !indicator || !lastUserMessage || Boolean(lastUserMessage.compareDocumentPosition(indicator) & Node.DOCUMENT_POSITION_FOLLOWING),
 								phase: indicator?.getAttribute('data-progress-phase') || null,
 								status: indicator?.getAttribute('data-progress-status') || null,
 								idle: indicator?.getAttribute('data-progress-idle') || null,
@@ -1965,4 +1981,3 @@ function isHttpUrl(value) {
 		return false;
 	}
 }
-

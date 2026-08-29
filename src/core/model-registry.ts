@@ -475,6 +475,7 @@ function resolveThinkingCapabilities(options: {
 	modelId: string;
 	api: Api;
 	baseUrl: string;
+	isCustomProvider?: boolean;
 	modelReasoning?: boolean;
 	providerReasoning?: boolean;
 	modelThinkingLevelMap?: Model<Api>["thinkingLevelMap"];
@@ -483,14 +484,60 @@ function resolveThinkingCapabilities(options: {
 	modelCompat?: Model<Api>["compat"];
 	providerCompat?: Model<Api>["compat"];
 }): ResolvedThinkingCapabilities {
+	const modelThinkingOptions = Array.isArray(options.modelThinkingOptions) && options.modelThinkingOptions.length > 0
+		? options.modelThinkingOptions
+		: undefined;
+
+	if (options.isCustomProvider) {
+		if (options.modelReasoning === false) {
+			return {
+				reasoning: false,
+				thinkingLevelMap: undefined,
+				thinkingOptions: undefined,
+				compat: mergeCompat(options.providerCompat, options.modelCompat),
+			};
+		}
+		const configuredMap = options.modelThinkingLevelMap
+			? { ...options.providerThinkingLevelMap, ...options.modelThinkingLevelMap }
+			: options.providerThinkingLevelMap;
+		const hasDiscoveredThinking = Boolean(
+			modelThinkingOptions && modelThinkingOptions.some((option) => option.id !== "off"),
+		);
+		if (hasDiscoveredThinking || configuredMap) {
+			const thinkingLevelMap =
+				configuredMap ??
+				Object.fromEntries(modelThinkingOptions!.map((option) => [option.id, option.value]));
+			return {
+				reasoning: true,
+				thinkingLevelMap,
+				thinkingOptions: modelThinkingOptions,
+				compat: mergeCompat(options.providerCompat, options.modelCompat),
+			};
+		}
+		return {
+			reasoning: false,
+			thinkingLevelMap: undefined,
+			thinkingOptions: undefined,
+			compat: mergeCompat(options.providerCompat, options.modelCompat),
+		};
+	}
+
 	const candidate = findCatalogThinkingCandidate(options.modelId);
+	// Desktop versions before capability fallback persisted an absent /models
+	// capability as an explicit opt-out. Treat that exact generated shape as
+	// unknown; a deliberate opt-out remains `reasoning: false` without `[]`.
+	const legacyEmptyDiscovery = options.modelReasoning === false
+		&& Array.isArray(options.modelThinkingOptions)
+		&& options.modelThinkingOptions.length === 0
+		&& options.modelThinkingLevelMap === undefined;
+	const modelReasoning = legacyEmptyDiscovery ? undefined : options.modelReasoning;
 	const configuredMap = options.modelThinkingLevelMap
 		? { ...options.providerThinkingLevelMap, ...options.modelThinkingLevelMap }
 		: options.providerThinkingLevelMap;
 	const reasoning =
-		options.modelReasoning ??
+		modelReasoning ??
 		options.providerReasoning ??
-		(options.modelThinkingOptions ? options.modelThinkingOptions.some((option) => option.id !== "off") : configuredMap ? true : candidate?.model.reasoning ?? inferReasoningFromModelId(options.modelId));
+		(modelThinkingOptions ? modelThinkingOptions.some((option) => option.id !== "off") : configuredMap ? true : candidate?.model.reasoning ?? inferReasoningFromModelId(options.modelId));
 	const inferredMap = reasoning && candidate ? adaptThinkingLevelMap(candidate.model, options.api) : undefined;
 	const inferredCompat = reasoning
 		? selectThinkingCompat(candidate?.model, options.api, options.modelId, options.baseUrl)
@@ -498,7 +545,7 @@ function resolveThinkingCapabilities(options: {
 	return {
 		reasoning,
 		thinkingLevelMap: configuredMap ?? inferredMap,
-		thinkingOptions: options.modelThinkingOptions,
+		thinkingOptions: modelThinkingOptions,
 		compat: mergeCompat(mergeCompat(inferredCompat, options.providerCompat), options.modelCompat),
 	};
 }
@@ -822,6 +869,8 @@ export class ModelRegistry {
 
 			const builtInDefaults = getBuiltInDefaults(providerName);
 
+			const isCustomProvider = isCustomProviderId(providerName) || !builtInProviders.has(providerName);
+
 			for (const modelDef of modelDefs) {
 				const api = modelDef.api ?? providerConfig.api ?? builtInDefaults?.api;
 				if (!api) continue;
@@ -833,6 +882,7 @@ export class ModelRegistry {
 					modelId: modelDef.id,
 					api: api as Api,
 					baseUrl,
+					isCustomProvider,
 					modelReasoning: modelDef.reasoning,
 					providerReasoning: providerConfig.reasoning,
 					modelThinkingLevelMap: modelDef.thinkingLevelMap,
@@ -1155,6 +1205,9 @@ export class ModelRegistry {
 
 		this.storeProviderRequestConfig(providerName, config);
 
+		const builtInProviders = new Set<string>(getProviders());
+		const isCustomProvider = isCustomProviderId(providerName) || !builtInProviders.has(providerName);
+
 		if (config.models && config.models.length > 0) {
 			// Full replacement: remove existing models for this provider
 			this.models = this.models.filter((m) => m.provider !== providerName);
@@ -1167,6 +1220,7 @@ export class ModelRegistry {
 					modelId: modelDef.id,
 					api: api as Api,
 					baseUrl,
+					isCustomProvider,
 					modelReasoning: modelDef.reasoning,
 					providerReasoning: config.reasoning,
 					modelThinkingLevelMap: modelDef.thinkingLevelMap,
@@ -1475,17 +1529,16 @@ export function saveOtherProviderConfig(
 	const modelEntries = finalModelIds.map((id) => {
 		const existingModel = existingModels.get(id) as any;
 		const entry: any = { ...(existingModel || {}), id, input: existingModel?.input || ["text", "image"] };
-		if (discoveredModels !== undefined) {
-			// Discovery ran: the API's own metadata is authoritative. An empty list
-			// means the endpoint exposed no thinking levels, so thinking stays hidden
-			// instead of being guessed.
-			const options = discoveredById.get(id)?.thinkingOptions ?? [];
-			entry.reasoning = options.some((option) => option.id !== "off");
+		const options = discoveredById.get(id)?.thinkingOptions;
+		if (options && options.length > 0 && options.some((option) => option.id !== "off")) {
+			entry.reasoning = true;
 			entry.thinkingOptions = options;
-			if (options.length > 0) entry.thinkingLevelMap = Object.fromEntries(options.map((option) => [option.id, option.value]));
-			else delete entry.thinkingLevelMap;
-		} else if (reasoning) entry.reasoning = true;
-		else delete entry.reasoning;
+			entry.thinkingLevelMap = Object.fromEntries(options.map((option) => [option.id, option.value]));
+		} else {
+			delete entry.thinkingOptions;
+			delete entry.thinkingLevelMap;
+			delete entry.reasoning;
+		}
 		return entry;
 	});
 
@@ -1499,4 +1552,3 @@ export function saveOtherProviderConfig(
 
 	writeFileSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 }
-

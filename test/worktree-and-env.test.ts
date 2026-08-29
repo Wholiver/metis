@@ -27,6 +27,7 @@ import {
 	cleanupIsolatedWorkspace,
 	createIsolatedWorkspace,
 	isGitRepository,
+	isGitBranchExists,
 } from "../src/core/worktree.ts";
 import {
 	createSpawnAgentToolDefinition,
@@ -157,6 +158,115 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 
 			expect(await fs.readFile(join(ws.workspacePath, "README.md"), "utf8")).toBe("dirty parent edit\n");
 			expect(await fs.readFile(join(ws.workspacePath, "src/index.ts"), "utf8")).toContain("current = true");
+			await cleanupIsolatedWorkspace(ws);
+			expect(existsSync(ws.workspacePath)).toBe(false);
+		});
+
+		it("detects existing and non-existing git branches accurately", async () => {
+			const repo = mkdtempSync(join(tmpdir(), "metis-branch-check-"));
+			tempDirs.push(repo);
+			execFileSync("git", ["init"], { cwd: repo });
+			execFileSync("git", ["config", "user.email", "metis@example.test"], { cwd: repo });
+			execFileSync("git", ["config", "user.name", "Metis Test"], { cwd: repo });
+			await fs.writeFile(join(repo, "init.txt"), "init\n");
+			execFileSync("git", ["add", "init.txt"], { cwd: repo });
+			execFileSync("git", ["commit", "-m", "initial commit"], { cwd: repo });
+			execFileSync("git", ["branch", "feature-xyz"], { cwd: repo });
+
+			expect(await isGitBranchExists(repo, "feature-xyz")).toBe(true);
+			expect(await isGitBranchExists(repo, "non-existent-branch-123")).toBe(false);
+		});
+
+		it("creates an isolated workspace when branch already exists without throwing already exists error", async () => {
+			const repo = mkdtempSync(join(tmpdir(), "metis-existing-branch-"));
+			tempDirs.push(repo);
+			execFileSync("git", ["init"], { cwd: repo });
+			execFileSync("git", ["config", "user.email", "metis@example.test"], { cwd: repo });
+			execFileSync("git", ["config", "user.name", "Metis Test"], { cwd: repo });
+			await fs.writeFile(join(repo, "init.txt"), "init\n");
+			execFileSync("git", ["add", "init.txt"], { cwd: repo });
+			execFileSync("git", ["commit", "-m", "initial commit"], { cwd: repo });
+			execFileSync("git", ["branch", "existing-feature"], { cwd: repo });
+
+			const ws = await createIsolatedWorkspace({
+				cwd: repo,
+				worktree: "branch:existing-feature",
+				agentId: "test-agent",
+			});
+			tempDirs.push(ws.workspacePath);
+
+			expect(ws.isGitWorktree).toBe(true);
+			expect(ws.branchName).toBe("existing-feature");
+			expect(existsSync(ws.workspacePath)).toBe(true);
+			await cleanupIsolatedWorkspace(ws);
+			expect(existsSync(ws.workspacePath)).toBe(false);
+		});
+
+		it("handles stale existing directory in tempdir without crashing with already exists error", async () => {
+			const repo = mkdtempSync(join(tmpdir(), "metis-stale-dir-"));
+			tempDirs.push(repo);
+			execFileSync("git", ["init"], { cwd: repo });
+			execFileSync("git", ["config", "user.email", "metis@example.test"], { cwd: repo });
+			execFileSync("git", ["config", "user.name", "Metis Test"], { cwd: repo });
+			await fs.writeFile(join(repo, "init.txt"), "init\n");
+			execFileSync("git", ["add", "init.txt"], { cwd: repo });
+			execFileSync("git", ["commit", "-m", "initial commit"], { cwd: repo });
+
+			// Pre-create the stale target directory that would collide with branch name
+			const staleDir = join(tmpdir(), "metis-worktree-stale-branch-test");
+			await fs.mkdir(staleDir, { recursive: true });
+			await fs.writeFile(join(staleDir, "leftover.txt"), "stale");
+
+			const ws = await createIsolatedWorkspace({
+				cwd: repo,
+				worktree: "branch:stale-branch-test",
+				agentId: "test-agent",
+			});
+			tempDirs.push(ws.workspacePath);
+
+			expect(ws.isGitWorktree).toBe(true);
+			expect(existsSync(ws.workspacePath)).toBe(true);
+			// Leftover file from stale directory should be gone, replaced with fresh worktree
+			expect(existsSync(join(ws.workspacePath, "init.txt"))).toBe(true);
+			expect(existsSync(join(ws.workspacePath, "leftover.txt"))).toBe(false);
+			await cleanupIsolatedWorkspace(ws);
+			expect(existsSync(ws.workspacePath)).toBe(false);
+		});
+
+		it("throws an explicit error when branch creation fails on invalid branch name", async () => {
+			const repo = mkdtempSync(join(tmpdir(), "metis-invalid-branch-"));
+			tempDirs.push(repo);
+			execFileSync("git", ["init"], { cwd: repo });
+			execFileSync("git", ["config", "user.email", "metis@example.test"], { cwd: repo });
+			execFileSync("git", ["config", "user.name", "Metis Test"], { cwd: repo });
+			await fs.writeFile(join(repo, "init.txt"), "init\n");
+			execFileSync("git", ["add", "init.txt"], { cwd: repo });
+			execFileSync("git", ["commit", "-m", "initial commit"], { cwd: repo });
+
+			await expect(
+				createIsolatedWorkspace({
+					cwd: repo,
+					worktree: "branch:..invalid..branch..name..",
+					agentId: "test-agent",
+				}),
+			).rejects.toThrow("Failed to create current-state worktree");
+		});
+
+		it("gracefully falls back to temporary directory in auto mode when git repo has no commits (unborn HEAD)", async () => {
+			const repo = mkdtempSync(join(tmpdir(), "metis-unborn-head-"));
+			tempDirs.push(repo);
+			execFileSync("git", ["init"], { cwd: repo });
+			// No commits created yet - HEAD is unborn, so git worktree add will fail
+
+			const ws = await createIsolatedWorkspace({
+				cwd: repo,
+				worktree: "auto",
+				agentId: "test-unborn",
+			});
+			tempDirs.push(ws.workspacePath);
+
+			expect(ws.isGitWorktree).toBe(false);
+			expect(existsSync(ws.workspacePath)).toBe(true);
 			await cleanupIsolatedWorkspace(ws);
 			expect(existsSync(ws.workspacePath)).toBe(false);
 		});

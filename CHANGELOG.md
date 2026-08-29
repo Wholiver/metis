@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.7] - 2026-08-29
+
+### Model Registry Enhancements & Worktree Isolation Hardening
+
+- Added MiniMax (MiniMax-Text-01) and SiliconFlow (DeepSeek-V3) provider configurations and model definitions.
+- Hardened git worktree isolation and sanitized environment setup for agent sessions and test runners.
+- Refined Desktop composer interactions, image attachment handling, and settings localization.
+
 ## [1.1.6] - 2026-08-27
 
 ### Onboarding Flow Refinement & Internationalization Alignment

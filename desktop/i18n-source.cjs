@@ -1317,7 +1317,7 @@ module.exports = {
     "settingsMemoryAddedDivider": "added ·",
     "settingsMemoryProcessedDivider": "processed ·",
     "settingsMemorySkippedInline": "skipped",
-    "reactSettingsReasoningFromMetadata": "Reasoning options come from model metadata returned by this API.",
+    "reactSettingsReasoningFromMetadata": "Metis checks this API for reasoning options and falls back to known model capabilities when metadata is unavailable.",
     "onboardingHome": "Home",
     "onboardingAiMemory": "AI Long-term Memory",
     "onboardingAiMemoryDesc": "Automatically consolidates work experience and historical context to retrieve in future conversations.",
@@ -2646,7 +2646,7 @@ module.exports = {
     "settingsMemoryAddedDivider": "新增 ·",
     "settingsMemoryProcessedDivider": "已处理 ·",
     "settingsMemorySkippedInline": "已跳过",
-    "reactSettingsReasoningFromMetadata": "推理选项来自该 API 返回的模型元数据。",
+    "reactSettingsReasoningFromMetadata": "Metis 会向该 API 查询推理选项；未返回元数据时，将回退到已知模型能力。",
     "onboardingHome": "首页",
     "onboardingAiMemory": "AI 长期记忆 (Memory)",
     "onboardingAiMemoryDesc": "自动沉淀工作经验与历史上下文，并在后续对话中主动检索。",
@@ -2659,4 +2659,3 @@ module.exports = {
     "onboardingMetisLogo": "Metis 图标"
   }
 };
-

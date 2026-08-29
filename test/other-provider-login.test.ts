@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { getSupportedThinkingLevels } from "@earendil-works/metis-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import {
@@ -141,8 +142,8 @@ describe("Other provider setup and login flow", () => {
 
 		const before = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
 		expect(before.providers["custom-one"].models).toEqual([
-			{ id: "a", input: ["text", "image"], reasoning: true },
-			{ id: "b", input: ["text", "image"], reasoning: true },
+			{ id: "a", input: ["text", "image"] },
+			{ id: "b", input: ["text", "image"] },
 		]);
 
 		expect(deleteCustomProviderConfig(modelsPath, "custom-one")).toBe(true);
@@ -151,5 +152,26 @@ describe("Other provider setup and login flow", () => {
 		expect(after.providers["custom-one"]).toBeUndefined();
 		expect(after.providers["custom-two"]).toBeDefined();
 	});
-});
 
+	it("custom models without discovered thinkingOptions default to non-reasoning", () => {
+		saveOtherProviderConfig(
+			modelsPath,
+			"custom-tokenhub",
+			"TokenHub",
+			"https://tokenhub.example/v1",
+			["glm-5.3"],
+			false,
+			[{ id: "glm-5.3", thinkingOptions: [] }],
+		);
+
+		const content = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
+		const savedModel = content.providers["custom-tokenhub"].models[0];
+		expect(savedModel).not.toHaveProperty("reasoning");
+		expect(savedModel).not.toHaveProperty("thinkingOptions");
+
+		const registry = ModelRegistry.create(authStorage, modelsPath);
+		const glm = registry.find("custom-tokenhub", "glm-5.3");
+		expect(glm?.reasoning).toBe(false);
+		expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
+	});
+});

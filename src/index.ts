@@ -294,6 +294,7 @@ export {
 	createIsolatedWorkspace,
 	cleanupIsolatedWorkspace,
 	isGitRepository,
+	isGitBranchExists,
 } from "./core/worktree.ts";
 export {
 	DANGEROUS_ENV_VARS,

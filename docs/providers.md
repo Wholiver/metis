@@ -264,7 +264,7 @@ Or set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key file.
 
 **Via TUI:** Run `/login`, choose **Use an API key**, then **Add custom Provider…**. Enter a name, OpenAI-compatible Base URL, and API key. Metis discovers `/models` automatically and shows the model IDs as an editable comma-separated list, so you can keep multiple discovered models or enter IDs manually. Selecting an existing custom Provider opens edit/delete actions. Deleting it also removes its saved API key.
 
-**Via Desktop:** Open **Settings → Account & security → Custom Base URL**. The Provider picker supports multiple independent configurations. Use **Discover models** to populate the multi-select list, select any number of models, or enter additional IDs manually. Existing configurations can be edited or deleted without editing files.
+**Via Desktop:** Open **Settings → Account & security → Custom Base URL**. The Provider picker supports multiple independent configurations. Use **Discover models** to populate the multi-select list, select any number of models, or enter additional IDs manually. Saving also attempts `/models` discovery when it has not already run. Provider-reported reasoning levels are preserved; endpoints that return only model IDs or no reasoning metadata default to non-reasoning models. Existing configurations can be edited or deleted without editing files.
 
 **Via models.json:** Manual configuration remains supported for Ollama, LM Studio, vLLM, or any provider that speaks a supported API (OpenAI Completions, OpenAI Responses, Anthropic Messages, Google Generative AI). Existing legacy `other` configuration remains compatible. See [models.md](models.md).
 
@@ -278,4 +278,3 @@ When resolving credentials for a provider:
 2. `auth.json` entry (API key or OAuth token)
 3. Environment variable
 4. Custom provider keys from `models.json`
-
