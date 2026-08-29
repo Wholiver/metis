@@ -65,22 +65,22 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 
 | Agent Framework | Model | Benchmark | Solved (Accuracy) | Architecture & Harness Advantage |
 | :--- | :--- | :--- | :---: | :--- |
-| **Metis** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | **73 / 89 (82.02%)** | Recursive 5-role agents + SQLite memory + Plan/Build separation |
-| **OpenCode** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | 60 / 89 (67.42%) | Single-thread flat tool execution |
-| *Improvement* | *Same Model & Budget* | *Same Environment* | **+14.6% (+13 tasks)** | *Harness, memory, and verification gates alone* |
+| 🏆 **Metis** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | **73 / 89 (82.02%)** | ✅ Recursive 5-role agents + SQLite memory + Plan/Build |
+| **OpenCode** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | 60 / 89 (67.42%) | ⚠️ Single-thread flat tool execution |
+| 📈 *Improvement* | *Same Model & Budget* | *Same Environment* | **+14.6% (+13 tasks)** | 🚀 *Harness, memory, and verification gates alone* |
 
 ### Feature Comparison Matrix
 
 | Capability | Metis | Claude Code | OpenCode | Cursor / Cline |
 | :--- | :---: | :---: | :---: | :---: |
-| **License & Pricing** | **MIT ($0 Free)** | Proprietary / API costs | MIT ($0 Free) | Commercial / Freemium |
-| **Model Freedom** | **Any Model / OpenAI Compat / OrcaRouter** | Anthropic Only | Multi-provider | Specific / BYOK |
-| **User Interfaces** | **Dual: Terminal TUI + React Desktop (macOS/Win)** | Terminal Only | Terminal Only | IDE Plugin Only |
-| **Workflow Separation** | **Strict Dual-Mode (Plan ↔ Build)** | Single Flow | Single Flow | Inline / Chat Flow |
-| **Multi-Agent Architecture** | **Native Recursive L0→L4 (5 Named Roles + Worktrees)** | Subagents (Flat) | Limited | Single Agent |
-| **Durable Memory** | **SQLite State + Vector Semantic Search** | Ephemeral | Ephemeral | Index / Embeddings |
-| **Verification & Evidence** | **Automated Test Gates + Video Frame Inspection** | Manual Bash | Manual Bash | Manual Linter |
-| **Headless Benchmark Ready** | **Python Adapter + JSONL Trace + POSIX Codes** | No Native Harness | Partial | None |
+| **License & Pricing** | ✅ **MIT ($0 Free)** | ❌ Proprietary | ✅ MIT ($0 Free) | ⚠️ Commercial |
+| **Model Freedom** | ✅ **Any Model / OrcaRouter** | ❌ Anthropic Only | ✅ Multi-Provider | ⚠️ Limited / BYOK |
+| **User Interfaces** | ✅ **TUI + React Desktop** | ⚠️ Terminal Only | ⚠️ Terminal Only | ⚠️ IDE Only |
+| **Workflow Mode** | ✅ **Plan ↔ Build Dual-Mode** | ⚠️ Single Flow | ⚠️ Single Flow | ⚠️ Chat / Inline |
+| **Multi-Agent System** | ✅ **Recursive L0→L4 (5 Roles)** | ⚠️ Flat Subagents | ⚠️ Basic | ❌ None |
+| **Durable Memory** | ✅ **SQLite + Vector Search** | ❌ Ephemeral | ❌ Ephemeral | ⚠️ Code Embeddings |
+| **Verification Gates** | ✅ **Test Gates + Video Evidence** | ⚠️ Manual Bash | ⚠️ Manual Bash | ⚠️ Basic Linter |
+| **Headless Benchmark** | ✅ **Python Adapter + Trace** | ❌ None | ⚠️ Partial | ❌ None |
 
 ## Key Features
 
