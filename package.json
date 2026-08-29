@@ -32,6 +32,7 @@
 		"CONTRIBUTING.zh-CN.md",
 		"AGENTS.md",
 		"README.zh-CN.md",
+		"LICENSE",
 		"npm-shrinkwrap.json",
 		"scripts/prepare-video-transcription.mjs"
 	],
