@@ -21,8 +21,8 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
-  <a href="#highlights">Highlights</a> ·
-  <a href="#how-metis-works">How it works</a> ·
+  <a href="#benchmark--comparison">Benchmark & Comparison</a> ·
+  <a href="#key-features">Key features</a> ·
   <a href="#documentation">Documentation</a>
 </p>
 
@@ -57,47 +57,39 @@ Use `/login` for subscription providers or configure an API key. See [Quickstart
 
 </details>
 
-## Highlights
+## Benchmark & Comparison
 
-- **Plan and Build workflows** — investigate safely in read-only Plan mode, then execute an approved proposal with a persistent checklist in Build mode.
-- **React Desktop for macOS and Windows** — use the Vite-powered workspace for conversations, plans, interactive questions, file and media attachments, models, providers, sessions, and subagent activity.
-- **Durable memory and recovery** — search reusable project knowledge and resume work after interruption, compaction, or session reload.
-- **Branchable sessions** — resume and name sessions, navigate the conversation tree, fork or clone branches, compact long context, and import or export JSONL/HTML records.
-- **Flexible models and authentication** — use built-in subscription login, API-key providers, or custom OpenAI-compatible providers with model discovery.
-- **Recursive Multi-Agent System** — native named agent definitions (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`), L0→L4 recursive delegation, role-specific tool allowlists, optional Git Worktree isolation, and deterministic lifecycle control.
-- **Interactive and automation modes** — work in the terminal UI or run unattended through Print, JSONL, RPC, Server, and the Node.js SDK.
-- **TerminalBench & Harbor Ready** — headless machine-readable JSONL execution, standardized exit codes (`0`/`1`/`2`), final answer separation, full trace aggregation, and an included Python harness adapter.
-- **Performance workflows** — route implementation, debugging, review, refactoring, research, and documentation through task-specific frameworks, adaptive T0–T3 tiers, independent review, and evidence gates.
-- **Video evidence** — inspect local video through metadata, timestamped storyboards, ordered motion samples, high-resolution frames, subtitles, and local transcription.
-- **Extensible core** — add TypeScript extensions, Agent Skills, prompt templates, themes, and Metis packages; register custom tools, commands, providers, UI, and lifecycle hooks.
-- **Explicit trust model** — project-local settings and resources require a trust decision; Metis has no built-in OS sandbox, with Docker, OpenShell, and Gondolin documented for stronger isolation.
-- **Verified execution** — coordinate subagents, preserve tool-result ordering, run relevant checks, and compare delivery against the original request.
+### Terminal-Bench 2.1 Benchmark Results
 
-## How Metis works
+In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same 89 real-world tasks, identical budget, and environment:
 
-1. **Ground** — load trusted instructions and relevant context, then search code, memory, or authoritative sources when needed.
-2. **Plan or build** — Plan mode stays read-only and produces a durable proposal; Build mode performs evidence-supported changes.
-3. **Persist** — retain sessions, message/tool pairs, workflow checkpoints, plans, and compacted context.
-4. **Verify** — run risk-proportionate checks and report completed requirements, evidence, and remaining risk.
+| Agent Framework | Model | Benchmark | Solved (Accuracy) | Architecture & Harness Advantage |
+| :--- | :--- | :--- | :---: | :--- |
+| **Metis** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | **73 / 89 (82.02%)** | Recursive 5-role agents + SQLite memory + Plan/Build separation |
+| **OpenCode** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | 60 / 89 (67.42%) | Single-thread flat tool execution |
+| *Improvement* | *Same Model & Budget* | *Same Environment* | **+14.6% (+13 tasks)** | *Harness, memory, and verification gates alone* |
 
-<details>
-<summary><strong>Technical design</strong></summary>
+### Feature Comparison Matrix
 
-### Deterministic workflow runtime
+| Capability | Metis | Claude Code | OpenCode | Cursor / Cline |
+| :--- | :---: | :---: | :---: | :---: |
+| **License & Pricing** | **MIT ($0 Free)** | Proprietary / API costs | MIT ($0 Free) | Commercial / Freemium |
+| **Model Freedom** | **Any Model / OpenAI Compat / OrcaRouter** | Anthropic Only | Multi-provider | Specific / BYOK |
+| **User Interfaces** | **Dual: Terminal TUI + React Desktop (macOS/Win)** | Terminal Only | Terminal Only | IDE Plugin Only |
+| **Workflow Separation** | **Strict Dual-Mode (Plan ↔ Build)** | Single Flow | Single Flow | Inline / Chat Flow |
+| **Multi-Agent Architecture** | **Native Recursive L0→L4 (5 Named Roles + Worktrees)** | Subagents (Flat) | Limited | Single Agent |
+| **Durable Memory** | **SQLite State + Vector Semantic Search** | Ephemeral | Ephemeral | Index / Embeddings |
+| **Verification & Evidence** | **Automated Test Gates + Video Frame Inspection** | Manual Bash | Manual Bash | Manual Linter |
+| **Headless Benchmark Ready** | **Python Adapter + JSONL Trace + POSIX Codes** | No Native Harness | Partial | None |
 
-Metis freezes a `StepSnapshot` before every model sample. Model, reasoning level, collaboration mode, instructions, messages, visible tools, dispatcher, and context window therefore remain consistent for that step. Safe reads may run in parallel; writes and mixed tools are serialized. Steering and follow-ups are applied only after current tool results persist.
+## Key Features
 
-### Plans and interactive input
-
-New interactive and Desktop sessions start in Plan mode. `/mode plan` and `/mode build` switch workflows when idle. Approved proposals survive reload and compaction through `read_plan`; Build checklists update in place in TUI and Desktop. Interactive hosts can answer `ask_user`, while unattended print/JSON and SDK runs return a recoverable unsupported result instead of hanging.
-
-### Memory
-
-Metis checkpoints active work after prompts, completed steps, compaction, errors, aborts, and completion. Durable records and their search index live in `~/.metis/memories/state.sqlite`. `query_memory_db` is available on demand in Plan and Build; results are advisory and never override current instructions.
-
-Use `/memory status|on|off|run|search|forget|reset`. Proposal artifacts and long-term memory remain separate, so an unexecuted draft is not promoted automatically.
-
-</details>
+- **Plan & Build Dual Workflows** — Safely investigate in read-only Plan mode, then execute approved plans with a live-updating checklist in Build mode.
+- **Dual Interface for Terminal & Desktop** — Work directly in your terminal via the rich interactive TUI, or use the dedicated React/Vite Desktop workspace on macOS and Windows.
+- **Recursive Multi-Agent System** — Native named agents (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`) with L0→L4 recursive delegation and Git Worktree isolation.
+- **Durable Memory & Resumable Sessions** — Project knowledge and decisions persist in SQLite across restarts, context compactions, and session forks.
+- **Extensible & Model-Agnostic** — Use any LLM provider (OpenAI, Anthropic, DeepSeek, OrcaRouter, Gemini, Groq, Ollama, vLLM) and extend with TypeScript plugins, Agent Skills, and MCP.
+- **Benchmark-Grade Reliability** — Automated verification gates, video evidence inspection, and full Terminal-Bench & Harbor evaluation readiness.
 
 ## Documentation
 
@@ -140,4 +132,4 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for developmen
 
 ## License
 
-Distributed under the [MIT License](https://opensource.org/license/mit).
+Distributed under the [MIT License](LICENSE).

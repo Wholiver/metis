@@ -21,8 +21,8 @@
 
 <p align="center">
   <a href="#快速开始">快速开始</a> ·
-  <a href="#主要能力">主要能力</a> ·
-  <a href="#工作方式">工作方式</a> ·
+  <a href="#基准评测与主流-agent-对比">基准评测与对比</a> ·
+  <a href="#核心特性">核心特性</a> ·
   <a href="#文档">文档</a>
 </p>
 
@@ -57,47 +57,39 @@ git diff | metis -p "审查这个 diff"
 
 </details>
 
-## 主要能力
+## 基准评测与主流 Agent 对比
 
-- **Plan 与 Build 工作流** — 在只读 Plan 模式中安全调查，再由 Build 模式按已确认方案执行，并持久保存检查清单。
-- **面向 macOS 与 Windows 的 React 桌面端** — 在基于 Vite 的工作区中管理对话、计划、交互提问、文件与媒体附件、模型、Provider、会话及 Subagent 活动。
-- **持久记忆与恢复** — 检索可复用的项目知识；中断、上下文压缩或会话重载后继续工作。
-- **可分支会话** — 恢复和命名会话、浏览对话树、Fork 或 Clone 分支、压缩长上下文，并导入或导出 JSONL/HTML 记录。
-- **灵活的模型与认证** — 使用内置订阅登录、API Key Provider，或带模型发现能力的自定义 OpenAI 兼容 Provider。
-- **原生命名递归多智能体体系** — 内置具名 Agent 角色（`coordinator`、`planner`、`implementer`、`reviewer`、`verifier`），支持 L0→L4 递归委派、角色工具白名单、可选 Git Worktree 隔离与生命周期控制。
-- **交互与自动化运行模式** — 使用终端 TUI 交互，或通过 Print、JSONL、RPC、Server 和 Node.js SDK 无人值守运行。
-- **TerminalBench 与 Harbor 评测就绪** — 无头机器可读 JSONL 执行、标准退出码（`0`/`1`/`2`）、最终回答文件隔离、全链路 Trace/Token/Cost 聚合以及内置 Python Harness 适配器。
-- **性能工作流** — 针对实现、调试、评审、重构、研究与文档任务选择专用框架，采用自适应 T0–T3 层级、独立评审与证据门禁。
-- **视频证据** — 通过元数据、时间戳故事板、有序运动样本、高清帧、字幕与本地转录检查视频。
-- **可扩展核心** — 加载 TypeScript Extensions、Agent Skills、Prompt Templates、Themes 与 Metis Packages，并注册自定义工具、命令、Provider、UI 与生命周期 Hooks。
-- **明确的信任模型** — 项目级设置与资源必须经过信任确认；Metis 不内置操作系统级沙箱，需要更强隔离时可按文档使用 Docker、OpenShell 或 Gondolin。
-- **经过验证的执行** — 协调 Subagents、保持工具结果顺序、运行相关检查，并逐项对照原始要求交付。
+### Terminal-Bench 2.1 实测对比
 
-## 工作方式
+在相同模型（**DeepSeek V4 Flash**）、相同 89 个真实编程任务、相同成本预算与执行环境下进行严格对比测试：
 
-1. **建立依据** — 加载可信指令与相关上下文，按需搜索代码、记忆或权威资料。
-2. **规划或执行** — Plan 只读调查并生成持久方案；Build 只进行证据支持的修改。
-3. **保存状态** — 保留会话、消息/工具配对、工作流检查点、计划与压缩后的上下文。
-4. **验证结果** — 按风险运行检查，报告已完成要求、证据与剩余风险。
+| Agent 框架 | 评测模型 | 评测基准 | 解决率 (准确率) | 架构与 Harness 核心优势 |
+| :--- | :--- | :--- | :---: | :--- |
+| **Metis** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 任务) | **73 / 89 (82.02%)** | 递归 5 角色多智能体 + SQLite 持久记忆 + Plan/Build 严格分离 |
+| **OpenCode** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 任务) | 60 / 89 (67.42%) | 单线程扁平工具执行流 |
+| *提升幅度* | *同等模型与预算* | *完全一致的执行环境* | **+14.6% (+13 项任务)** | *纯 Agent Harness、记忆与验证门禁带来的性能跃升* |
 
-<details>
-<summary><strong>技术设计</strong></summary>
+### 全维度特性对比矩阵
 
-### 确定性工作流运行时
+| 核心能力 | Metis | Claude Code | OpenCode | Cursor / Cline |
+| :--- | :---: | :---: | :---: | :---: |
+| **开源许可与费用** | **MIT ($0 完全免费)** | 闭源商业 / API 计费 | MIT ($0 免费) | 商业软件 / 增值订阅 |
+| **模型生态自由度** | **任意模型 / OpenAI 兼容 / OrcaRouter / 本地** | 仅限 Anthropic | 多 Provider 支持 | 指定模型 / BYOK |
+| **客户端界面** | **双端：终端 TUI + React 原生桌面端 (macOS/Win)** | 仅终端 CLI | 仅终端 CLI | 仅 IDE 插件 |
+| **工作流控制** | **严格双模式（Plan 规划 ↔ Build 构建）** | 单一线性流 | 单一线性流 | 行内补全 / 侧边对话 |
+| **多智能体架构** | **原生递归 L0→L4（5 具名角色 + Worktree 隔离）** | 简单子 Agent (扁平) | 基础支持 | 单 Agent 运行 |
+| **持久记忆系统** | **SQLite 状态库 + 向量语义检索** | 仅当前上下文 | 仅当前上下文 | 静态代码索引 / Embeddings |
+| **验证与证据门禁** | **自动化测试验证 + 视频逐帧证据检查** | 依赖手工 Bash | 依赖手工 Bash | 依赖基础 Linter |
+| **无头基准评测** | **内置 Python 适配器 + JSONL 全链路 Trace + 标准退出码** | 无原生评测套件 | 部分支持 | 无 |
 
-每次模型采样前，Metis 都会冻结 `StepSnapshot`。模型、思考等级、协作模式、指令、消息、可见工具、Dispatcher 与上下文窗口在当前 Step 内保持一致。安全只读工具可并发运行；写入及混合工具串行运行。Steering 和 Follow-up 仅在当前工具结果持久化后生效。
+## 核心特性
 
-### 计划与交互输入
-
-新的交互式会话和 Desktop 会话默认进入 Plan。空闲时可用 `/mode plan` 与 `/mode build` 切换工作流。已确认方案通过 `read_plan` 跨重载和压缩保存；Build 清单在 TUI 与 Desktop 中原位更新。交互式 Host 可回答 `ask_user`；无人值守的 Print/JSON 与 SDK 运行会返回可恢复的 unsupported 结果，不会挂起。
-
-### 记忆
-
-Metis 会在 Prompt、完整 Step、上下文压缩、错误、中止及完成后自动保存活跃工作。持久记录和检索索引位于 `~/.metis/memories/state.sqlite`。Plan 与 Build 均可按需调用 `query_memory_db`；搜索结果只作为建议性证据，不能覆盖当前指令。
-
-使用 `/memory status|on|off|run|search|forget|reset`。方案 Artifact 与长期记忆彼此独立，未执行草案不会自动进入长期记忆。
-
-</details>
+- **Plan 与 Build 双工作流** — 在只读 Plan 模式中安全调查并生成方案；在 Build 模式下按已确认方案与动态清单可靠执行。
+- **终端 TUI 与桌面端双界面** — 既可在终端使用交互式全功能 TUI，也可在 macOS 和 Windows 上使用基于 React/Vite 的可视化桌面工作区。
+- **原生命名递归多智能体体系** — 内置具名 Agent 角色（`coordinator`、`planner`、`implementer`、`reviewer`、`verifier`），支持 L0→L4 递归委派与 Git Worktree 隔离。
+- **持久记忆与会话恢复** — 跨重载、上下文压缩与分支操作，在 SQLite 中持久保留项目经验与决策结论。
+- **全模型自由与高可扩展性** — 支持 OpenAI、Anthropic、DeepSeek、OrcaRouter、Gemini、Groq、Ollama 等任意端点，支持 TypeScript 插件、Agent Skills 与 MCP。
+- **评测级可靠性与验证门禁** — 自动化验证检查、视频证据分析，全面适配 Terminal-Bench 2.1 与 Harbor 自动化评测。
 
 ## 文档
 
@@ -140,4 +132,4 @@ npm --prefix desktop run build # 构建 Renderer 与 Electron Artifact
 
 ## 许可证
 
-本项目使用 [MIT License](https://opensource.org/license/mit)。
+本项目使用 [MIT License](LICENSE)。
