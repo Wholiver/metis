@@ -6,7 +6,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { ImageContent } from "@earendil-works/metis-ai";
-import { getProviders, getSupportedThinkingLevels, getThinkingOptions } from "@earendil-works/metis-ai/compat";
+import { getSupportedThinkingLevels, getThinkingOptions } from "@earendil-works/metis-ai/compat";
+import { builtinProviders } from "@earendil-works/metis-ai/providers/all";
 import { APP_NAME, getShareViewerUrl, VERSION } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { type AskUserRequest, type AskUserResponse, validateAskUserResponse } from "../../core/ask-user.ts";
@@ -449,7 +450,29 @@ export async function startServerMode(
 				thinkingLevels: getSupportedThinkingLevels(model),
 				thinkingOptions: getThinkingOptions(model),
 			}));
-			return sendJson(response, 200, { models });
+			const oauthProviders = session.modelRegistry.authStorage.getOAuthProviders?.() ?? [];
+			const oauthById = new Map(oauthProviders.map((provider: any) => [provider.id, provider]));
+			const registeredProviderIds = new Set(session.modelRegistry.getAll().map((model: any) => model.provider));
+			const providerCatalog = builtinProviders().map((provider) => ({
+				id: provider.id,
+				name: provider.name,
+				...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}),
+				authMethods: [
+					...(provider.auth?.apiKey ? ["api_key" as const] : []),
+					...(provider.auth?.oauth || oauthById.has(provider.id) ? ["oauth" as const] : []),
+				],
+			}));
+			const catalogIds = new Set(providerCatalog.map((provider) => provider.id));
+			for (const providerId of new Set([...registeredProviderIds, ...oauthById.keys()])) {
+				if (catalogIds.has(providerId)) continue;
+				const oauthProvider: any = oauthById.get(providerId);
+				providerCatalog.push({
+					id: providerId,
+					name: oauthProvider?.name ?? session.modelRegistry.getProviderDisplayName?.(providerId) ?? providerId,
+					authMethods: oauthProvider ? ["oauth"] : ["api_key"],
+				});
+			}
+			return sendJson(response, 200, { models, providers: providerCatalog });
 		}
 		if (method === "GET" && url.pathname === "/commands") {
 			return sendJson(response, 200, { commands: getCommandCatalog() });
@@ -1281,4 +1304,3 @@ function listen(server: Server, port: number, hostname: string): Promise<void> {
 		server.listen(port, hostname);
 	});
 }
-

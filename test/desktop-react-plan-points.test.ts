@@ -39,7 +39,8 @@ describe('desktop React plan points inspector', () => {
     expect(changedFiles).toContain('min-h-8');
     expect(inspector).toContain('useState(true)');
     expect(inspector).toContain('aria-expanded={filesExpanded}');
-    expect(inspector).toContain('aria-expanded={planExpanded}');
+    expect(inspector).toContain('data-copy-plan-button');
+    expect(inspector).toContain('handleCopyPlan');
     expect(inspector).not.toContain('hover:bg-slate-50');
   });
 

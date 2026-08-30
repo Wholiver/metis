@@ -4,6 +4,7 @@ import { Sidebar } from './components/sidebar/Sidebar';
 import { ChatArea } from './components/chat/ChatArea';
 import { Inspector } from './components/inspector/Inspector';
 import { collectTurnFileChanges } from './lib/turn-files';
+import { ExtensionUiRequest } from './lib/extension-ui';
 import {
   collectSubagentItems,
   mergeSubagentHistoryItems,
@@ -14,6 +15,7 @@ import {
 import { useMetisServer } from './hooks/useMetisServer';
 import { useUpdateCheck } from './hooks/useUpdateCheck';
 import { SettingsDialog } from './components/settings/SettingsDialog';
+import { ExtensionUiDialog } from './components/ExtensionUiDialog';
 import { Onboarding, shouldShowOnboarding } from './components/onboarding/Onboarding';
 import { SkillCommand } from './components/chat/SkillPicker';
 import { Agent, Message, ModelOption, PendingUserInput, ProjectItem, ThinkingOption, WorkflowPlanState } from './types';
@@ -233,6 +235,15 @@ const ASK_CAPTURE: PendingUserInput = {
   ],
 };
 
+const EXTENSION_UI_CAPTURE_REQUEST: ExtensionUiRequest = {
+  id: 'capture-extension-ui',
+  method: 'input',
+  title: 'Complete provider sign in',
+  message: 'Paste the authorization code from your browser.',
+  placeholder: 'Authorization code',
+  options: [],
+};
+
 export function App() {
   const captureParams = new URLSearchParams(window.location.search);
   const capturePlanPreview = captureParams.has('capture-plan-preview');
@@ -251,6 +262,7 @@ export function App() {
   const capturePlanPointsEmpty = captureParams.has('capture-plan-points-empty');
   const captureAsk = captureParams.has('capture-ask');
   const captureSkills = captureParams.has('capture-skills');
+  const captureExtensionUi = captureParams.has('capture-extension-ui');
   const [captureThinkingState, setCaptureThinkingState] = useState<'thinking' | 'other'>('thinking');
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [activeProjectId, setActiveProjectId] = useState('');
@@ -264,6 +276,7 @@ export function App() {
     sendMessage,
     abortTurn,
     models,
+    providerCatalog,
     refreshModels,
     activeModel,
     isChangingModel,
@@ -297,6 +310,9 @@ export function App() {
     processProposal,
     refineProposal,
     respondToUserInput,
+    extensionUiRequest,
+    isRespondingToExtensionUi,
+    respondToExtensionUi,
     contextUsage,
     tokenBreakdown,
   } = useMetisServer(activeProject);
@@ -309,7 +325,7 @@ export function App() {
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => (
-    captureSettledSend ? false : shouldShowOnboarding()
+    captureSettledSend || captureExtensionUi ? false : shouldShowOnboarding()
   ));
   const [settingsTab, setSettingsTab] = useState<'general' | 'shortcuts' | 'server' | 'model' | 'agent' | 'security' | 'session' | 'about'>('general');
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
@@ -793,6 +809,7 @@ export function App() {
         isConnected={isConnected}
         isBusy={isStreaming || isCompacting || isLoadingSessions}
         models={models}
+        providerCatalog={providerCatalog}
         activeModel={activeModel}
         thinkingLevel={thinkingLevel}
         thinkingLevels={thinkingLevels}
@@ -818,6 +835,11 @@ export function App() {
         onProjectReady={handleOnboardingProject}
         onSelectModel={selectModel}
         onRefreshModels={refreshModels}
+      />
+      <ExtensionUiDialog
+        request={captureExtensionUi ? EXTENSION_UI_CAPTURE_REQUEST : extensionUiRequest}
+        busy={isRespondingToExtensionUi}
+        onRespond={captureExtensionUi ? async () => true : respondToExtensionUi}
       />
 
       {toast && (

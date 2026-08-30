@@ -49,6 +49,28 @@ function normalizeThinkingOption(value) {
 	};
 }
 
+const DEFAULT_CUSTOM_CONTEXT_WINDOW = 256_000;
+
+function extractProviderContextWindow(item) {
+	if (!item || typeof item !== "object") return undefined;
+	const candidates = [
+		item.context_length,
+		item.max_model_len,
+		item.context_window,
+		item.max_context_length,
+		item.max_context_tokens,
+		item.context_tokens,
+		item.contextWindow,
+		item.capabilities?.context_length,
+		item.capabilities?.context_window,
+	];
+	for (const candidate of candidates) {
+		const parsed = typeof candidate === "number" ? candidate : typeof candidate === "string" ? parseInt(candidate, 10) : NaN;
+		if (Number.isFinite(parsed) && parsed > 0) return parsed;
+	}
+	return undefined;
+}
+
 function extractProviderThinkingOptions(item) {
 	if (!item || typeof item !== "object") return [];
 	const candidates = [
@@ -79,6 +101,7 @@ function summarizeProvider(providerId, provider, modelsPath) {
 		models: models.map((model) => ({
 			id: typeof model === "string" ? model : String(model?.id || ""),
 			thinkingOptions: Array.isArray(model?.thinkingOptions) ? model.thinkingOptions : [],
+			contextWindow: typeof model === "object" && typeof model?.contextWindow === "number" ? model.contextWindow : DEFAULT_CUSTOM_CONTEXT_WINDOW,
 		})).filter((model) => model.id),
 		modelIds: normalizeModelIds(models.map((model) => typeof model === "string" ? model : model?.id)),
 		modelsPath,
@@ -146,10 +169,15 @@ async function discoverCustomProviderModels(baseUrl, apiKey, options = {}) {
 			if (!response.ok) continue;
 			const data = await response.json();
 			const items = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
-			const models = items.map((item) => ({
-				id: typeof item === "string" ? item.trim() : typeof item?.id === "string" ? item.id.trim() : "",
-				thinkingOptions: extractProviderThinkingOptions(item),
-			})).filter((model) => model.id);
+			const models = items.map((item) => {
+				const id = typeof item === "string" ? item.trim() : typeof item?.id === "string" ? item.id.trim() : "";
+				const contextWindow = extractProviderContextWindow(item);
+				return {
+					id,
+					thinkingOptions: extractProviderThinkingOptions(item),
+					...(contextWindow ? { contextWindow } : {}),
+				};
+			}).filter((model) => model.id);
 			if (models.length > 0) {
 				const byId = new Map();
 				for (const model of models) if (!byId.has(model.id)) byId.set(model.id, model);
@@ -158,6 +186,38 @@ async function discoverCustomProviderModels(baseUrl, apiKey, options = {}) {
 		} catch {}
 	}
 	return [];
+}
+
+async function fetchSingleModelDetails(baseUrl, apiKey, modelId, options = {}) {
+	const translate = options.translate || ((key) => key);
+	const normalizedBaseUrl = normalizeBaseUrl(baseUrl, translate);
+	const encodedId = encodeURIComponent(modelId);
+	const urls = normalizedBaseUrl.endsWith("/v1")
+		? [`${normalizedBaseUrl}/models/${encodedId}`]
+		: [`${normalizedBaseUrl}/v1/models/${encodedId}`, `${normalizedBaseUrl}/models/${encodedId}`];
+	for (const url of urls) {
+		try {
+			const headers = { "User-Agent": "metis-desktop" };
+			if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+			const response = await (options.fetchImpl || fetch)(url, {
+				headers,
+				signal: AbortSignal.timeout(options.timeoutMs || 3_000),
+			});
+			if (!response.ok) continue;
+			const data = await response.json();
+			const item = data && typeof data === "object" ? (data.data || data) : undefined;
+			if (item && typeof item === "object") {
+				const contextWindow = extractProviderContextWindow(item);
+				const thinkingOptions = extractProviderThinkingOptions(item);
+				return {
+					id: modelId,
+					thinkingOptions: Array.isArray(thinkingOptions) ? thinkingOptions : [],
+					...(contextWindow ? { contextWindow } : {}),
+				};
+			}
+		} catch {}
+	}
+	return undefined;
 }
 
 async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
@@ -195,9 +255,15 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 	if (modelIds.length === 0) modelIds = ["default"];
 	const modelsById = new Map(existingModels.filter((model) => model && typeof model === "object").map((model) => [model.id, model]));
 	const discoveredById = new Map((discoveredModels || []).map((model) => [model.id, model]));
-	const models = modelIds.map((id) => {
-		const model = { ...(modelsById.get(id) || {}), id, input: modelsById.get(id)?.input || ["text", "image"] };
-		const thinkingOptions = discoveredById.get(id)?.thinkingOptions;
+	const models = await Promise.all(modelIds.map(async (id) => {
+		const existingModel = modelsById.get(id) || {};
+		let discovered = discoveredById.get(id);
+		if (!discovered && apiKey) {
+			discovered = await fetchSingleModelDetails(baseUrl, apiKey, id, options);
+		}
+		const contextWindow = discovered?.contextWindow ?? existingModel.contextWindow ?? DEFAULT_CUSTOM_CONTEXT_WINDOW;
+		const model = { ...existingModel, id, input: existingModel.input || ["text", "image"], contextWindow };
+		const thinkingOptions = discovered?.thinkingOptions ?? existingModel.thinkingOptions;
 		if (thinkingOptions && thinkingOptions.length > 0 && thinkingOptions.some((option) => option.id !== "off")) {
 			model.reasoning = true;
 			model.thinkingOptions = thinkingOptions;
@@ -208,7 +274,7 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 			delete model.reasoning;
 		}
 		return model;
-	});
+	}));
 
 	modelsConfig.providers[providerId] = {
 		...existing,

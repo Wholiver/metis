@@ -51,7 +51,7 @@ describe("Desktop custom Provider configuration", () => {
 		expect(first.provider).toBe("custom-local-proxy");
 		expect(first.modelIds).toEqual(["model-a", "model-b"]);
 		expect(second.provider).toBe("custom-local-proxy-2");
-		expect(fetchImpl).toHaveBeenCalledTimes(2);
+		expect(fetchImpl).toHaveBeenCalledTimes(3);
 		const saved = await providerConfig.listCustomProviderConfigs(agentDir);
 		expect(saved.map((item) => item.provider)).toEqual(["custom-local-proxy", "custom-local-proxy-2"]);
 		expect(saved[0]?.reasoning).toBe(true);
@@ -73,13 +73,13 @@ describe("Desktop custom Provider configuration", () => {
 			modelIds: ["new-model", "custom-model"],
 			reasoning: true,
 		}, { fetchImpl });
-		expect(fetchImpl).toHaveBeenCalledTimes(2);
+		expect(fetchImpl).toHaveBeenCalledTimes(3);
 
 		const models = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
 		expect(models.providers[created.provider as string].apiKey).toBeUndefined();
 		expect(models.providers[created.provider as string].models).toEqual([
-			{ id: "new-model", input: ["text", "image"] },
-			{ id: "custom-model", input: ["text", "image"] },
+			{ id: "new-model", input: ["text", "image"], contextWindow: 256000 },
+			{ id: "custom-model", input: ["text", "image"], contextWindow: 256000 },
 		]);
 	});
 
@@ -120,13 +120,13 @@ describe("Desktop custom Provider configuration", () => {
 		expect(fetchImpl.mock.calls[0]?.[1]?.headers.Authorization).toBe("Bearer secret");
 	});
 
-	it("persists provider-native reasoning options and strictly disables reasoning when metadata is missing", async () => {
+	it("persists provider-native reasoning options and contextWindow from discovery", async () => {
 		const fetchImpl = vi.fn().mockResolvedValue({
 			ok: true,
 			json: async () => ({ data: [
-				{ id: "native", capabilities: { reasoning: { efforts: ["disabled", { id: "balanced", label: "Balanced" }] } } },
-				{ id: "glm-5.3" },
-				{ id: "qwen3-disabled", supported_reasoning_efforts: ["disabled"] },
+				{ id: "native", context_length: 65536, capabilities: { reasoning: { efforts: ["disabled", { id: "balanced", label: "Balanced" }] } } },
+				{ id: "glm-5.3", max_model_len: 128000 },
+				{ id: "qwen3-disabled", context_window: 32768, supported_reasoning_efforts: ["disabled"] },
 			] }),
 		});
 
@@ -138,9 +138,9 @@ describe("Desktop custom Provider configuration", () => {
 
 		const config = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
 		expect(config.providers["custom-native"].models).toMatchObject([
-			{ id: "native", reasoning: true, thinkingOptions: [{ id: "off", label: "disabled", value: "disabled" }, { id: "balanced", label: "Balanced", value: "balanced" }] },
-			{ id: "glm-5.3" },
-			{ id: "qwen3-disabled" },
+			{ id: "native", reasoning: true, contextWindow: 65536, thinkingOptions: [{ id: "off", label: "disabled", value: "disabled" }, { id: "balanced", label: "Balanced", value: "balanced" }] },
+			{ id: "glm-5.3", contextWindow: 128000 },
+			{ id: "qwen3-disabled", contextWindow: 32768 },
 		]);
 		expect(config.providers["custom-native"].models[1]).not.toHaveProperty("thinkingOptions");
 
@@ -150,9 +150,11 @@ describe("Desktop custom Provider configuration", () => {
 		);
 		const glm = registry.find("custom-native", "glm-5.3");
 		expect(glm?.reasoning).toBe(false);
+		expect(glm?.contextWindow).toBe(128000);
 		expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
 		const disabled = registry.find("custom-native", "qwen3-disabled");
 		expect(disabled?.reasoning).toBe(false);
+		expect(disabled?.contextWindow).toBe(32768);
 		expect(getSupportedThinkingLevels(disabled!)).toEqual(["off"]);
 	});
 });

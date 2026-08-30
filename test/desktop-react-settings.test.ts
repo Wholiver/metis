@@ -71,22 +71,27 @@ describe('desktop React settings', () => {
 
   it('wires migrated Provider, OAuth, Memory, workspace, and transfer controls end to end', () => {
     const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
+    const modal = source('desktop/src/components/settings/AddModelModal.tsx');
     const app = source('desktop/src/App.tsx');
     const hook = source('desktop/src/hooks/useMetisServer.ts');
     const main = source('desktop/main.cjs');
-    expect(settings).toContain("command: '/logout'");
-    expect(settings).toContain('providers={credentialProviders}');
     expect(settings).toContain('providerId: provider.providerId || provider.provider');
-    expect(settings).toContain('value={providerForm.name || \'\'}');
-    expect(settings).toContain('providerConfig.saveCustom(providerForm)');
-    expect(settings).toContain('providerConfig.deleteCustom(providerForm.providerId!)');
+    expect(settings).toContain('desktop?.providerConfig?.saveCustom');
+    expect(settings).toContain('desktop?.providerConfig?.deleteCustom');
+    expect(settings).toContain('<AddModelModal');
+    expect(modal).not.toContain('PROVIDER_PRESETS');
+    expect(modal).not.toContain('tencent-token-plan-personal');
+    expect(modal).not.toContain('腾讯云 Token Plan');
+    expect(modal).toContain('providers: ProviderCatalogEntry[]');
+    expect(modal).toContain("authMethods.includes('oauth')");
+    expect(settings).toContain('providers={props.providerCatalog}');
+    expect(settings).toContain('onOAuthLogin={handleOAuthLogin}');
+    expect(hook).toContain('setProviderCatalog(Array.isArray(result.providers) ? result.providers : [])');
+    expect(app).toContain('providerCatalog={providerCatalog}');
     expect(settings).toContain("desktop.openExternal(result.url)");
     expect(settings).toContain("if (!file) return false");
     expect(settings).toContain("if (!target) return false");
-    expect(settings).toContain('<option value="" disabled>Choose model</option>');
-    expect(settings).not.toContain('<option value="">Off</option>');
     expect(settings).toContain("disabled={disabled || !sessionName.trim()}");
-    expect(settings).toContain("disabled={!props.isConnected || saving || !providerForm.name?.trim()");
     expect(app).toContain('onChangeWorkspace={handleChangeWorkspace}');
     expect(hook).toContain("type === 'extension_ui_request'");
     expect(hook).toContain("request('/extension/ui-response', 'POST', response)");
@@ -157,5 +162,3 @@ describe('desktop React settings', () => {
     expect(settings).toContain('label="Concurrency limit"');
   });
 });
-
-

@@ -26,10 +26,11 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import type { CollaborationMode, MemoryState, ModelOption, ProjectItem, ThinkingOption } from '../../types';
+import type { CollaborationMode, MemoryState, ModelOption, ProjectItem, ProviderCatalogEntry, ThinkingOption } from '../../types';
 import { RELEASES_URL, type UpdateCheckState } from '../../hooks/useUpdateCheck';
 import { translateExact } from '../../i18n';
 import { modelLabel } from '../chat/ModelSwitcher';
+import { AddModelModal } from './AddModelModal';
 
 type Request = <T>(path: string, method?: string, body?: unknown, timeoutMs?: number) => Promise<T>;
 
@@ -46,6 +47,7 @@ type SettingsDialogProps = {
   isConnected: boolean;
   isBusy: boolean;
   models: ModelOption[];
+  providerCatalog: ProviderCatalogEntry[];
   activeModel?: ModelOption;
   thinkingLevel: string;
   thinkingLevels: string[];
@@ -197,6 +199,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [loginInfo, setLoginInfo] = useState<Record<string, any>>({});
   const [credentialInfo, setCredentialInfo] = useState<Record<string, any>>({});
   const [customProviders, setCustomProviders] = useState<ProviderConfig[]>([]);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [providerForm, setProviderForm] = useState<ProviderConfig>({});
   const [serverUrl, setServerUrl] = useState('http://127.0.0.1:4096');
   const [serverUsername, setServerUsername] = useState('metis');
@@ -360,81 +363,229 @@ export function SettingsDialog(props: SettingsDialogProps) {
     </>
   );
 
-  // Section 2: Models & Providers (Current/Default model & reasoning, Cloud keys, Custom providers)
+  const modelsFilePath = useMemo(() => {
+    const rawPath = customProviders[0]?.modelsPath || '~/.metis/agent/models.json';
+    return rawPath
+      .replace(/^\/Users\/[^/]+/, '~')
+      .replace(/^[A-Za-z]:\\Users\\[^\\]+/, '~');
+  }, [customProviders]);
+
+  const handleSaveCustomModel = async (config: {
+    name: string;
+    baseUrl: string;
+    apiKey?: string;
+    modelIds?: string[];
+  }) => {
+    await run(async () => {
+      const saved = await requireDesktop<{ provider?: string }>(
+        desktop?.providerConfig?.saveCustom ? () => desktop.providerConfig.saveCustom(config) : undefined,
+        'Provider settings'
+      );
+      await command('/reload');
+      if (config.apiKey?.trim() && saved?.provider) {
+        await command(`/login ${saved.provider} ${config.apiKey.trim()}`);
+      }
+    }, translate('modelSavedSuccess') || 'Custom model saved successfully.');
+  };
+
+  const refreshProviderState = async () => {
+    await load();
+    if (props.isConnected) await props.refresh();
+  };
+
+  const handleApiKeyLogin = async (providerId: string, apiKey: string) => {
+    await command(`/login ${providerId} ${apiKey}`);
+    setFeedback(translate('API key saved.'));
+    await refreshProviderState();
+  };
+
+  const handleOAuthLogin = async (providerId: string) => {
+    await command(`/login ${providerId}`, 300_000);
+    setFeedback(translate('Authorization started.'));
+    await refreshProviderState();
+  };
+
+  const handleRemoveCredential = async (providerId: string, name: string) => {
+    if (window.confirm(translate(`Remove saved credentials for ${name}?`))) {
+      await run(async () => {
+        await command(`/logout ${providerId}`);
+        await refreshProviderState();
+      }, translate('Credentials removed.'));
+    }
+  };
+
+  const savedOAuthAndBuiltinProviders = useMemo(() => {
+    return credentialProviders
+      .filter((providerId) => !customProviders.some((custom) => (custom.providerId || custom.provider) === providerId))
+      .map((providerId) => {
+        const catalog = props.providerCatalog?.find((p) => p.id === providerId);
+        const isOAuth = catalog?.authMethods?.includes('oauth') || oauthProviders.includes(providerId);
+        const associatedModels = props.models.filter((m) => m.provider === providerId);
+        const modelNames = associatedModels.length > 0
+          ? associatedModels.map((m) => m.name || m.id).slice(0, 3).join(', ') + (associatedModels.length > 3 ? '…' : '')
+          : isOAuth ? 'OAuth' : 'API Key';
+        return {
+          id: providerId,
+          name: catalog?.name || providerId,
+          isOAuth,
+          tag: isOAuth ? 'OAuth' : 'API Key',
+          modelsSummary: modelNames,
+          baseUrl: catalog?.baseUrl || (isOAuth ? translate('OAuth authorized account') : translate('API key authorized')),
+        };
+      });
+  }, [credentialProviders, customProviders, props.providerCatalog, props.models, oauthProviders, translate]);
+
   const model = (
     <>
-      <SectionHeading title="Models & Providers" />
-      <div className="space-y-3">
-        <Card>
-          <Row label="Current model" description="Applied to the active session immediately.">
-            <select className={`${selectClass} max-w-60`} value={props.activeModel ? `${props.activeModel.provider}/${props.activeModel.id}` : ''} onChange={(e) => { const selected = props.models.find((item) => `${item.provider}/${item.id}` === e.target.value); if (selected) void props.onSelectModel(selected); }} disabled={disabled}>
-              <option value="" disabled>Choose model</option>
-              {props.models.map((item) => <option key={`${item.provider}/${item.id}`} value={`${item.provider}/${item.id}`}>{modelLabel(item)} · {item.provider}</option>)}
-            </select>
-          </Row>
-          <Row label="Reasoning effort" description="Options reported by the current model provider.">
-            <select className={selectClass} value={props.thinkingLevel} onChange={(e) => void props.onSelectThinkingLevel(e.target.value)} disabled={disabled || !props.supportsThinking}>
-              {props.thinkingOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-            </select>
-          </Row>
-          <Row label="Default model" description="Used only for newly created sessions.">
-            <select className={`${selectClass} max-w-60`} value={defaults.provider && defaults.modelId ? `${defaults.provider}/${defaults.modelId}` : ''} onChange={(e) => void run(async () => { const selected = props.models.find((item) => `${item.provider}/${item.id}` === e.target.value); await props.request('/settings/defaults', 'PUT', selected ? { provider: selected.provider, modelId: selected.id } : { provider: null, modelId: null }); }, 'Default model saved.')} disabled={!props.isConnected || saving}>
-              <option value="">No default</option>
-              {props.models.map((item) => <option key={`${item.provider}/${item.id}`} value={`${item.provider}/${item.id}`}>{modelLabel(item)} · {item.provider}</option>)}
-            </select>
-          </Row>
-          <Row label="Default reasoning" description="Used only for newly created sessions.">
-            <select className={selectClass} value={defaults.thinkingLevel || ''} onChange={(e) => void run(() => props.request('/settings/defaults', 'PUT', { thinkingLevel: e.target.value || null }), 'Default reasoning saved.')} disabled={!props.isConnected || saving}>
-              <option value="">No default</option>
-              {props.thinkingOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-            </select>
-          </Row>
-        </Card>
-        <Card>
-          <Row label="OAuth sign in" description="Authorize a subscription account without an API key.">
-            <div className="flex gap-2">
-              <select className={selectClass} value={oauthProvider} onChange={(event) => setOauthProvider(event.target.value)}>
-                {oauthProviders.map((provider: string) => <option key={provider}>{provider}</option>)}
-              </select>
-              <button className={buttonClass} disabled={disabled || !oauthProvider} onClick={() => void run(() => command(`/login ${oauthProvider}`, 10 * 60_000), 'Authorization completed.')}><KeyRound className="h-3.5 w-3.5" />Sign in</button>
+      <SectionHeading title={translate('Custom Models')} />
+      <div className="space-y-6">
+        {/* Local config file card */}
+        <div className="overflow-hidden rounded-[8px] border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23_42,0.02)]">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="min-w-0 pr-3">
+              <h3 className="text-[13.5px] font-medium text-slate-900 truncate">
+                {translate('Local configuration file')}
+              </h3>
+              <p className="mt-0.5 text-[11.5px] text-slate-400 truncate">
+                {translate(`Manage local custom model configurations written to ${modelsFilePath}.`)}
+              </p>
             </div>
-          </Row>
-          <Row label="API key" description="Save an independent API key for a provider." stacked>
-            <ApiKeyControl providers={providers} disabled={disabled} onSave={(provider, key) => run(() => command(`/login ${provider} ${key}`), 'API key saved.')} />
-          </Row>
-          <Row label="Remove credentials" description="Deletes local Metis credentials only." stacked>
-            <LogoutControl providers={credentialProviders} disabled={disabled} translate={translate} onLogout={(provider) => run(() => command(`/logout ${provider}`), 'Credentials removed.')} />
-          </Row>
-        </Card>
-        <Card>
-          <Row label="Saved provider" description="Create a provider or edit a saved one." stacked>
-            <select className={`${selectClass} w-full`} value={providerForm.providerId || ''} onChange={(e) => { const provider = customProviders.find((item) => item.providerId === e.target.value); setProviderForm(provider || {}); }}>
-              <option value="">Add new provider…</option>
-              {customProviders.map((provider) => <option key={provider.providerId} value={provider.providerId}>{provider.name || provider.providerId}</option>)}
-            </select>
-          </Row>
-          <Row label="Connection" description="Provider name, OpenAI-compatible endpoint and optional API key." stacked>
-            <div className="grid w-full gap-2 sm:grid-cols-2">
-              <input className={controlClass} value={providerForm.name || ''} onChange={(e) => setProviderForm((current) => ({ ...current, name: e.target.value }))} placeholder="Provider name" />
-              <input className={controlClass} value={providerForm.baseUrl || ''} onChange={(e) => setProviderForm((current) => ({ ...current, baseUrl: e.target.value }))} placeholder="https://api.example.com/v1" />
-              <input className={controlClass} value={providerForm.apiKey || ''} onChange={(e) => setProviderForm((current) => ({ ...current, apiKey: e.target.value }))} type="password" placeholder="API key (leave blank to keep)" />
-              <input className={controlClass} value={(providerForm.modelIds || []).join(', ')} onChange={(e) => setProviderForm((current) => ({ ...current, modelIds: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} placeholder="Model IDs, separated by commas" />
-            </div>
-            <p className="mt-2 text-[12px] text-slate-500">Metis checks this API for reasoning options and falls back to known model capabilities when metadata is unavailable.</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button className={buttonClass} disabled={saving || !providerForm.baseUrl?.trim()} onClick={() => void run(async () => { const discoveredModels = await requireDesktop<Array<{ id: string; thinkingOptions: ThinkingOption[] }>>(desktop?.providerConfig?.discoverModels ? () => desktop.providerConfig.discoverModels(providerForm) : undefined, 'Provider discovery'); setProviderForm((current) => ({ ...current, discoveredModels, modelIds: Array.isArray(discoveredModels) ? discoveredModels.map((model) => model.id) : current.modelIds })); }, 'Available models and reasoning options discovered.')}>
-                <RefreshCw className="h-3.5 w-3.5" />Discover models
-              </button>
-              <button className={buttonClass} disabled={!props.isConnected || saving || !providerForm.name?.trim() || !providerForm.baseUrl?.trim()} onClick={() => void run(async () => { const saved = await requireDesktop<{ provider?: string }>(desktop?.providerConfig?.saveCustom ? () => desktop.providerConfig.saveCustom(providerForm) : undefined, 'Provider settings'); await command('/reload'); if (providerForm.apiKey?.trim() && saved?.provider) await command(`/login ${saved.provider} ${providerForm.apiKey.trim()}`); setProviderForm({}); }, 'Custom provider saved and models reloaded.')}>
-                <Save className="h-3.5 w-3.5" />Save provider
-              </button>
-              <button className={`${buttonClass} text-rose-700 hover:bg-rose-50`} disabled={!props.isConnected || saving || !providerForm.providerId} onClick={() => { if (window.confirm(translate(`Delete ${providerForm.name || providerForm.providerId}?`))) void run(async () => { await requireDesktop(desktop?.providerConfig?.deleteCustom ? () => desktop.providerConfig.deleteCustom(providerForm.providerId!) : undefined, 'Provider settings'); setProviderForm({}); }, 'Custom provider deleted.'); }}>
-                <Trash2 className="h-3.5 w-3.5" />Delete
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-[6px] border border-slate-200 bg-white px-3 text-[12.5px] font-medium text-slate-700 shadow-sm transition-[background-color,color,box-shadow] hover:bg-slate-50 hover:text-slate-900"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>{translate('Add model')}</span>
               </button>
             </div>
-          </Row>
-        </Card>
+          </div>
+        </div>
+
+        {/* Saved models section */}
+        <div className="space-y-2.5">
+          <h3 className="text-[13px] font-semibold text-slate-900">
+            {translate('Saved models')}
+          </h3>
+
+          {customProviders.length === 0 && savedOAuthAndBuiltinProviders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-[8px] border border-dashed border-slate-300/80 bg-slate-50/50 py-10 px-6 text-center">
+              <p className="text-[13.5px] font-semibold text-slate-700">
+                {translate('No custom models configured yet')}
+              </p>
+              <p className="mt-1.5 max-w-md text-[12px] text-slate-400 leading-normal">
+                {translate('Added models will automatically be written to local models.json and appear in the chat model dropdown under the "Custom Models" group.')}
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 overflow-hidden rounded-[8px] border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.02)]">
+              {customProviders.map((provider) => {
+                const modelNames =
+                  provider.modelIds && provider.modelIds.length > 0
+                    ? provider.modelIds.join(', ')
+                    : provider.models && provider.models.length > 0
+                    ? provider.models.map((m) => m.id).join(', ')
+                    : 'Auto';
+                return (
+                  <div
+                    key={provider.providerId}
+                    className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-slate-50/80"
+                  >
+                    <div className="min-w-0 pr-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[13.5px] font-medium text-slate-900 truncate">
+                          {provider.name || provider.providerId}
+                        </span>
+                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                          {modelNames}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[11.5px] text-slate-400 truncate">
+                        {provider.baseUrl}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        title={translate('Delete')}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              translate(`Delete custom model ${provider.name || provider.providerId || ''}?`)
+                            )
+                          ) {
+                            void run(async () => {
+                              await requireDesktop(
+                                desktop?.providerConfig?.deleteCustom
+                                  ? () => desktop.providerConfig.deleteCustom(provider.providerId!)
+                                  : undefined,
+                                'Provider settings'
+                              );
+                            }, translate('Custom model deleted successfully.'));
+                          }
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                        aria-label="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {savedOAuthAndBuiltinProviders.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-slate-50/80"
+                >
+                  <div className="min-w-0 pr-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13.5px] font-medium text-slate-900 truncate">
+                        {item.name}
+                      </span>
+                      <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                        {item.tag}
+                      </span>
+                      {item.modelsSummary && item.modelsSummary !== item.tag && (
+                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                          {item.modelsSummary}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[11.5px] text-slate-400 truncate">
+                      {item.baseUrl}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      title={translate('Sign out')}
+                      onClick={() => void handleRemoveCredential(item.id, item.name)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                      aria-label="Sign out"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+
+      <AddModelModal
+        open={showAddModal}
+        providers={props.providerCatalog}
+        onClose={() => setShowAddModal(false)}
+        onSave={handleSaveCustomModel}
+        onApiKeyLogin={handleApiKeyLogin}
+        onOAuthLogin={handleOAuthLogin}
+        onDiscoverModels={(options) => desktop?.providerConfig?.discoverModels?.(options)}
+        translate={translate}
+      />
     </>
   );
 
@@ -734,13 +885,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
     { id: 'language', tab: 'general' as SettingsTab, title: 'Language', desc: 'Applied to Desktop immediately and synchronized to Agent while connected.', keywords: 'interface language 语言 界面 简体中文 english' },
     { id: 'onboarding', tab: 'general' as SettingsTab, title: 'Onboarding', desc: 'Reopen the welcome and setup spotlight shown on first launch.', keywords: 'welcome guide onboarding 新手 引导 欢迎' },
     { id: 'shortcuts', tab: 'general' as SettingsTab, title: 'Keyboard shortcuts', desc: 'Common Desktop actions. Native text-editing shortcuts continue to work while typing.', keywords: 'hotkeys shortcuts 快捷键 键盘' },
-    { id: 'model', tab: 'model' as SettingsTab, title: 'Current model', desc: 'Applied to the active session immediately.', keywords: 'active current model 模型 当前模型' },
-    { id: 'reasoning', tab: 'model' as SettingsTab, title: 'Reasoning effort', desc: 'Options reported by the current model provider.', keywords: 'thinking effort reasoning 思考 推理 深度' },
-    { id: 'default-model', tab: 'model' as SettingsTab, title: 'Default model', desc: 'Used only for newly created sessions.', keywords: 'default model 默认模型' },
-    { id: 'default-reasoning', tab: 'model' as SettingsTab, title: 'Default reasoning', desc: 'Used only for newly created sessions.', keywords: 'default thinking reasoning 默认思考 默认推理' },
-    { id: 'oauth', tab: 'model' as SettingsTab, title: 'OAuth sign in', desc: 'Authorize a subscription account without an API key.', keywords: 'oauth login sign in 授权 登录' },
-    { id: 'api-key', tab: 'model' as SettingsTab, title: 'API key', desc: 'Save an independent API key for a provider.', keywords: 'api key token 密钥 接口' },
-    { id: 'custom-provider', tab: 'model' as SettingsTab, title: 'Custom OpenAI-compatible provider', desc: 'Provider name, OpenAI-compatible endpoint and optional API key.', keywords: 'custom provider endpoint base url openai 自定义 服务商' },
+    { id: 'custom-models', tab: 'model' as SettingsTab, title: 'Custom Models', desc: 'Manage local custom model configurations written to models.json.', keywords: 'custom model models.json openai token plan coding plan 自定义 模型 接口 服务商 本地配置' },
+    { id: 'add-model', tab: 'model' as SettingsTab, title: 'Add Model', desc: 'Add OpenAI-compatible custom model providers and plans.', keywords: 'add model new provider preset token plan coding plan 添加模型' },
     { id: 'collaboration-mode', tab: 'agent' as SettingsTab, title: 'Collaboration mode', desc: 'Plan uses read-only tools. Build can make changes; neither mode is an OS sandbox.', keywords: 'collaboration mode plan build 协作模式 计划 构建' },
     { id: 'steering-messages', tab: 'agent' as SettingsTab, title: 'Steering messages', desc: 'How Agent receives instructions while working.', keywords: 'steering queue message 转向 指导 消息' },
     { id: 'follow-up-messages', tab: 'agent' as SettingsTab, title: 'Follow-up messages', desc: 'How Agent handles queued messages after it completes.', keywords: 'follow up queue message 排队 消息' },
@@ -895,16 +1041,4 @@ export function SettingsDialog(props: SettingsDialogProps) {
       </section>
     </div>
   );
-}
-
-function ApiKeyControl({ providers, disabled, onSave }: { providers: string[]; disabled: boolean; onSave: (provider: string, key: string) => void }) {
-  const [provider, setProvider] = useState(''); const [key, setKey] = useState('');
-  useEffect(() => { if (!provider && providers[0]) setProvider(providers[0]); }, [provider, providers]);
-  return <div className="flex w-full flex-wrap gap-2"><select className={selectClass} value={provider} onChange={(e) => setProvider(e.target.value)}>{providers.map((item) => <option key={item}>{item}</option>)}</select><input className={`${controlClass} min-w-48 flex-1`} type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="API key" autoComplete="off" /><button className={buttonClass} disabled={disabled || !provider || !key.trim()} onClick={() => { onSave(provider, key.trim()); setKey(''); }}><Save className="h-3.5 w-3.5" />Save</button></div>;
-}
-
-function LogoutControl({ providers, disabled, translate, onLogout }: { providers: string[]; disabled: boolean; translate: (value: string) => string; onLogout: (provider: string) => void }) {
-  const [provider, setProvider] = useState('');
-  useEffect(() => { if (!provider && providers[0]) setProvider(providers[0]); }, [provider, providers]);
-  return <div className="flex w-full flex-wrap gap-2"><select className={selectClass} value={provider} onChange={(e) => setProvider(e.target.value)}>{providers.map((item) => <option key={item}>{item}</option>)}</select><button className={`${buttonClass} text-rose-700 hover:bg-rose-50`} disabled={disabled || !provider} onClick={() => { if (window.confirm(translate(`Remove saved credentials for ${provider}?`))) onLogout(provider); }}><Trash2 className="h-3.5 w-3.5" />Sign out</button></div>;
 }

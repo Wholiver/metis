@@ -908,7 +908,7 @@ export class ModelRegistry {
 					// silently discarded; explicitly set ["text"] for text-only models.
 					input: (modelDef.input ?? ["text", "image"]) as ("text" | "image")[],
 					cost: modelDef.cost ?? defaultCost,
-					contextWindow: modelDef.contextWindow ?? 128000,
+					contextWindow: modelDef.contextWindow ?? (isCustomProvider ? 256000 : 128000),
 					maxTokens: modelDef.maxTokens ?? 16384,
 					headers: undefined,
 					compat: thinking.compat,
@@ -1242,7 +1242,7 @@ export class ModelRegistry {
 					thinkingOptions: thinking.thinkingOptions,
 					input: modelDef.input as ("text" | "image")[],
 					cost: modelDef.cost,
-					contextWindow: modelDef.contextWindow,
+					contextWindow: modelDef.contextWindow ?? (isCustomProvider ? 256000 : 128000),
 					maxTokens: modelDef.maxTokens,
 					headers: undefined,
 					compat: thinking.compat,
@@ -1304,9 +1304,12 @@ export interface ProviderConfigInput {
 	}>;
 }
 
+export const DEFAULT_CUSTOM_CONTEXT_WINDOW = 256_000;
+
 export interface DiscoveredProviderModel {
 	id: string;
 	thinkingOptions: NonNullable<Model<Api>["thinkingOptions"]>;
+	contextWindow?: number;
 }
 
 function thinkingOptionId(value: string): string {
@@ -1324,6 +1327,27 @@ function normalizeThinkingOption(value: unknown): NonNullable<Model<Api>["thinki
 	if (!raw) return undefined;
 	const label = typeof item.label === "string" && item.label.trim() ? item.label.trim() : raw.trim();
 	return { id: thinkingOptionId(raw.trim()), label, value: raw.trim() };
+}
+
+export function extractProviderContextWindow(item: unknown): number | undefined {
+	if (!item || typeof item !== "object") return undefined;
+	const model = item as Record<string, any>;
+	const candidates = [
+		model.context_length,
+		model.max_model_len,
+		model.context_window,
+		model.max_context_length,
+		model.max_context_tokens,
+		model.context_tokens,
+		model.contextWindow,
+		model.capabilities?.context_length,
+		model.capabilities?.context_window,
+	];
+	for (const candidate of candidates) {
+		const parsed = typeof candidate === "number" ? candidate : typeof candidate === "string" ? parseInt(candidate, 10) : NaN;
+		if (Number.isFinite(parsed) && parsed > 0) return parsed;
+	}
+	return undefined;
 }
 
 export function extractProviderThinkingOptions(item: unknown): NonNullable<Model<Api>["thinkingOptions"]> {
@@ -1394,10 +1418,15 @@ export async function fetchOtherProviderModelCatalog(baseUrl: string, apiKey?: s
 						: [];
 
 			const models = items
-				.map((item: any) => ({
-					id: typeof item === "string" ? item.trim() : typeof item?.id === "string" ? item.id.trim() : "",
-					thinkingOptions: extractProviderThinkingOptions(item),
-				}))
+				.map((item: any) => {
+					const id = typeof item === "string" ? item.trim() : typeof item?.id === "string" ? item.id.trim() : "";
+					const contextWindow = extractProviderContextWindow(item);
+					return {
+						id,
+						thinkingOptions: extractProviderThinkingOptions(item),
+						...(contextWindow ? { contextWindow } : {}),
+					};
+				})
 				.filter((model: DiscoveredProviderModel) => model.id.length > 0);
 
 			if (models.length > 0) {
@@ -1528,12 +1557,14 @@ export function saveOtherProviderConfig(
 	const discoveredById = new Map((discoveredModels ?? []).map((model) => [model.id, model]));
 	const modelEntries = finalModelIds.map((id) => {
 		const existingModel = existingModels.get(id) as any;
-		const entry: any = { ...(existingModel || {}), id, input: existingModel?.input || ["text", "image"] };
-		const options = discoveredById.get(id)?.thinkingOptions;
-		if (options && options.length > 0 && options.some((option) => option.id !== "off")) {
+		const discovered = discoveredById.get(id);
+		const contextWindow = discovered?.contextWindow ?? existingModel?.contextWindow ?? DEFAULT_CUSTOM_CONTEXT_WINDOW;
+		const entry: any = { ...(existingModel || {}), id, input: existingModel?.input || ["text", "image"], contextWindow };
+		const options = discovered?.thinkingOptions ?? existingModel?.thinkingOptions;
+		if (options && options.length > 0 && options.some((option: any) => option.id !== "off")) {
 			entry.reasoning = true;
 			entry.thinkingOptions = options;
-			entry.thinkingLevelMap = Object.fromEntries(options.map((option) => [option.id, option.value]));
+			entry.thinkingLevelMap = Object.fromEntries(options.map((option: any) => [option.id, option.value]));
 		} else {
 			delete entry.thinkingOptions;
 			delete entry.thinkingLevelMap;

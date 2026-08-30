@@ -12,7 +12,7 @@ import { getApiProvider, getProviders, getSupportedThinkingLevels, getThinkingOp
 import { getOAuthProvider } from "@earendil-works/metis-ai/oauth";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { clearApiKeyCache, extractProviderThinkingOptions, ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
+import { clearApiKeyCache, extractProviderContextWindow, extractProviderThinkingOptions, ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
 import { defaultModelPerProvider } from "../src/core/model-resolver.ts";
 
 describe("ModelRegistry", () => {
@@ -392,7 +392,7 @@ describe("ModelRegistry", () => {
 			expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
 		});
 
-		test("custom models default to multimodal input when capability is omitted", () => {
+		test("custom models default to multimodal input and 256K contextWindow when omitted", () => {
 			writeRawModelsJson({
 				"custom-openai": {
 					baseUrl: "https://custom.example.com/v1",
@@ -403,7 +403,24 @@ describe("ModelRegistry", () => {
 			});
 
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
-			expect(registry.find("custom-openai", "unknown-capabilities")?.input).toEqual(["text", "image"]);
+			const model = registry.find("custom-openai", "unknown-capabilities");
+			expect(model?.input).toEqual(["text", "image"]);
+			expect(model?.contextWindow).toBe(256000);
+		});
+
+		test("extractProviderContextWindow extracts context length from diverse candidate fields", () => {
+			expect(extractProviderContextWindow({ context_length: 128000 })).toBe(128000);
+			expect(extractProviderContextWindow({ max_model_len: 65536 })).toBe(65536);
+			expect(extractProviderContextWindow({ context_window: 32768 })).toBe(32768);
+			expect(extractProviderContextWindow({ max_context_length: 200000 })).toBe(200000);
+			expect(extractProviderContextWindow({ max_context_tokens: 16000 })).toBe(16000);
+			expect(extractProviderContextWindow({ context_tokens: 8192 })).toBe(8192);
+			expect(extractProviderContextWindow({ contextWindow: 1000000 })).toBe(1000000);
+			expect(extractProviderContextWindow({ capabilities: { context_length: 262144 } })).toBe(262144);
+			expect(extractProviderContextWindow({ context_length: "131072" })).toBe(131072);
+			expect(extractProviderContextWindow({ context_length: 0 })).toBeUndefined();
+			expect(extractProviderContextWindow({})).toBeUndefined();
+			expect(extractProviderContextWindow(null)).toBeUndefined();
 		});
 
 		test("built-in provider custom models inherit api and baseUrl without explicit fields", () => {

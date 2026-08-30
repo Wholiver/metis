@@ -1,0 +1,5 @@
+# Optional dependencies for ALE-CLI runner
+# Standard library is used by default; these enrich dataset loading and progress display
+tqdm>=4.66.0
+datasets>=2.18.0
+huggingface_hub>=0.20.0

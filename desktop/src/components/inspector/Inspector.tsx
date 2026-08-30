@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { ChevronDown, PanelRightClose } from 'lucide-react';
+import { Check, ChevronDown, Copy, PanelRightClose } from 'lucide-react';
 import { ContextUsage, TokenBreakdown, WorkflowPlanState } from '../../types';
 import { TurnFileChange } from '../../lib/turn-files';
 import { SubagentItem } from '../../lib/subagents';
+import { useI18n } from '../../i18n';
 import { ChangedFiles } from './ChangedFiles';
 import { PlanPoints } from './PlanPoints';
 import { SubagentsList } from './SubagentsList';
@@ -30,10 +31,31 @@ export const Inspector: React.FC<InspectorProps> = ({
   contextUsage,
   tokenBreakdown,
 }) => {
+  const { t } = useI18n();
   const [filesExpanded, setFilesExpanded] = useState(true);
   const [planExpanded, setPlanExpanded] = useState(true);
   const [subagentsExpanded, setSubagentsExpanded] = useState(true);
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
+  const [planCopied, setPlanCopied] = useState(false);
+
+  const handleCopyPlan = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!workflowPlan?.plan || workflowPlan.plan.length === 0) return;
+    const lines: string[] = [];
+    if (workflowPlan.explanation?.trim()) {
+      lines.push(workflowPlan.explanation.trim(), '');
+    }
+    for (const item of workflowPlan.plan) {
+      const mark = item.status === 'completed' ? '[x]' : item.status === 'in_progress' ? '[-]' : '[ ]';
+      lines.push(`- ${mark} ${item.step}`);
+    }
+    const textToCopy = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setPlanCopied(true);
+      setTimeout(() => setPlanCopied(false), 2000);
+    } catch {}
+  };
 
   const selectedSubagent = selectedSubagentId
     ? subagents.find((item) => item.id === selectedSubagentId)
@@ -82,16 +104,48 @@ export const Inspector: React.FC<InspectorProps> = ({
             </section>
 
             <section data-plan-section="">
-              <button
-                type="button"
-                className="flex min-h-8 w-full items-center gap-2 rounded-[10px] px-2.5 text-left text-[14px] font-medium text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
-                onClick={() => setPlanExpanded((value) => !value)}
-                aria-expanded={planExpanded}
-              >
-                <span data-plan-points-title="">Plan</span>
-                <span className="text-[13px] leading-4 tabular-nums text-slate-400 font-normal">{workflowPlan?.plan.length || 0}</span>
-                <ChevronDown size={16} strokeWidth={2} className={`ml-auto transition-transform ${planExpanded ? '' : '-rotate-90'}`} aria-hidden="true" />
-              </button>
+              <div className="flex min-h-8 w-full items-center rounded-[10px]">
+                <button
+                  type="button"
+                  className="flex min-h-8 flex-1 items-center gap-2 rounded-[10px] px-2.5 text-left text-[14px] font-medium text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
+                  onClick={() => setPlanExpanded((value) => !value)}
+                  aria-expanded={planExpanded}
+                >
+                  <span data-plan-points-title="">Plan</span>
+                  <span className="text-[13px] leading-4 tabular-nums text-slate-400 font-normal">{workflowPlan?.plan.length || 0}</span>
+                </button>
+                {workflowPlan?.plan && workflowPlan.plan.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleCopyPlan}
+                    className="flex h-7 items-center gap-1 rounded-lg px-2 text-[12px] font-medium text-slate-500 hover:bg-black/5 hover:text-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50 mr-1"
+                    title={planCopied ? (t('planCopied') || 'Copied') : (t('copyPlan') || 'Copy Plan')}
+                    aria-label={t('copyPlan') || 'Copy Plan'}
+                    data-copy-plan-button=""
+                  >
+                    {planCopied ? (
+                      <>
+                        <Check size={13} className="text-emerald-600 stroke-[2.2]" />
+                        <span className="text-emerald-600">{t('planCopied') || 'Copied'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={13} strokeWidth={1.8} />
+                        <span>{t('copy') || 'Copy'}</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPlanExpanded((value) => !value)}
+                  className="flex h-8 w-8 items-center justify-center text-slate-400 hover:text-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50 rounded-[10px] mr-0.5"
+                  aria-label={planExpanded ? 'Collapse plan' : 'Expand plan'}
+                  tabIndex={-1}
+                >
+                  <ChevronDown size={16} strokeWidth={2} className={`transition-transform ${planExpanded ? '' : '-rotate-90'}`} aria-hidden="true" />
+                </button>
+              </div>
               {planExpanded && <PlanPoints points={workflowPlan?.plan || []} />}
             </section>
 

@@ -178,7 +178,7 @@ function buildFallbackModel(provider: string, modelId: string, availableModels: 
 			reasoning: false,
 			input: ["text"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 128000,
+			contextWindow: 256000,
 			maxTokens: 4096,
 		} as unknown as Model<Api>;
 	}

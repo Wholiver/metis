@@ -9,6 +9,7 @@ import {
   ThinkingOption,
   PendingUserInput,
   ProjectItem,
+  ProviderCatalogEntry,
   ServerSessionItem,
   SubagentProgress,
   SendMessageOptions,
@@ -21,6 +22,11 @@ import {
   TokenBreakdown,
 } from '../types';
 import { extractImageAttachments, parseAttachmentPayloadText } from '../lib/attachments';
+import {
+  ExtensionUiRequest,
+  ExtensionUiResponse,
+  toExtensionUiRequest,
+} from '../lib/extension-ui';
 import { applyToolExecutionUpdate, extractToolResultText } from '../lib/tool-execution-update';
 
 type MetisResponse<T> = {
@@ -53,6 +59,7 @@ type SessionState = {
 
 type ProviderModelsResponse = {
   models: ModelOption[];
+  providers?: ProviderCatalogEntry[];
 };
 
 type SessionListResponse = {
@@ -558,6 +565,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const [isCompacting, setIsCompacting] = useState(false);
   const [isChangingCollaborationMode, setIsChangingCollaborationMode] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
+  const [providerCatalog, setProviderCatalog] = useState<ProviderCatalogEntry[]>([]);
   const [activeModel, setActiveModel] = useState<ModelOption>();
   const [isChangingModel, setIsChangingModel] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState('');
@@ -567,6 +575,8 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const [isChangingThinking, setIsChangingThinking] = useState(false);
   const [memoryState, setMemoryState] = useState<MemoryState>();
   const [contextUsage, setContextUsage] = useState<ContextUsage>();
+  const [extensionUiRequests, setExtensionUiRequests] = useState<ExtensionUiRequest[]>([]);
+  const [isRespondingToExtensionUi, setIsRespondingToExtensionUi] = useState(false);
   const prevMemoryPhaseRef = useRef<string>();
   const activeProjectRef = useRef(activeProject);
   const agentsRef = useRef<Agent[]>([]);
@@ -576,6 +586,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const activeSessionIdRef = useRef('');
   const serverInstanceIdRef = useRef('');
   const lastServerSequenceRef = useRef(0);
+  const extensionUiResponsePendingRef = useRef(false);
 
   useEffect(() => {
     activeProjectRef.current = activeProject;
@@ -661,7 +672,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   }, [request]);
 
   const tokenBreakdown = useMemo<TokenBreakdown | undefined>(() => {
-    const contextWindow = contextUsage?.contextWindow || 128_000;
+    const contextWindow = contextUsage?.contextWindow || 256_000;
     let latestUsage: MessageUsage | undefined;
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === 'assistant' && messages[i].usage) {
@@ -845,23 +856,13 @@ export function useMetisServer(activeProject?: ProjectItem) {
             }
             return;
           }
-          if (!event.id || !['confirm', 'select', 'input', 'editor'].includes(event.method || '')) return;
-          let response: Record<string, unknown>;
-          if (event.method === 'confirm') {
-            response = { id: event.id, confirmed: window.confirm([event.title, event.message].filter(Boolean).join('\n\n')) };
-          } else if (event.method === 'select') {
-            const choices = (event.options || []).map(String);
-            const answer = window.prompt(`${event.title || 'Select'}\n\n${choices.map((choice, index) => `${index + 1}. ${choice}`).join('\n')}`);
-            if (answer === null) response = { id: event.id, cancelled: true };
-            else {
-              const numbered = choices[Number.parseInt(answer, 10) - 1];
-              response = { id: event.id, value: numbered || choices.find((choice) => choice === answer) || answer };
-            }
-          } else {
-            const answer = window.prompt(event.title || 'Input', event.prefill || event.placeholder || '');
-            response = answer === null ? { id: event.id, cancelled: true } : { id: event.id, value: answer };
-          }
-          await request('/extension/ui-response', 'POST', response);
+          const interactiveRequest = toExtensionUiRequest(event as Record<string, unknown>);
+          if (!interactiveRequest) return;
+          setExtensionUiRequests((current) => (
+            current.some((queued) => queued.id === interactiveRequest.id)
+              ? current
+              : [...current, interactiveRequest]
+          ));
         })().catch((error) => setSessionError(error instanceof Error ? error.message : String(error)));
         return;
       }
@@ -1004,6 +1005,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
       const result = await request<ProviderModelsResponse>('/config/providers');
       const nextModels = Array.isArray(result.models) ? result.models : [];
       setModels(nextModels);
+      setProviderCatalog(Array.isArray(result.providers) ? result.providers : []);
       const state = await request<SessionState>('/session');
       setActiveModel(state.model);
       setThinkingLevel(state.thinkingLevel || '');
@@ -1019,6 +1021,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   useEffect(() => {
     if (!isConnected) {
       setModels([]);
+      setProviderCatalog([]);
       return;
     }
     void refreshModels();
@@ -1226,6 +1229,29 @@ export function useMetisServer(activeProject?: ProjectItem) {
     }
   }, [request]);
 
+  const respondToExtensionUi = useCallback(async (response: ExtensionUiResponse) => {
+    const activeRequest = extensionUiRequests[0];
+    if (!activeRequest || response.id !== activeRequest.id || extensionUiResponsePendingRef.current) return false;
+    extensionUiResponsePendingRef.current = true;
+    setIsRespondingToExtensionUi(true);
+    setSessionError('');
+    try {
+      await request('/extension/ui-response', 'POST', response);
+      setExtensionUiRequests((current) => (
+        current[0]?.id === response.id
+          ? current.slice(1)
+          : current.filter((queued) => queued.id !== response.id)
+      ));
+      return true;
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : String(error));
+      return false;
+    } finally {
+      extensionUiResponsePendingRef.current = false;
+      setIsRespondingToExtensionUi(false);
+    }
+  }, [extensionUiRequests, request]);
+
   return {
     agents,
     activeAgent,
@@ -1234,6 +1260,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     sendMessage,
     abortTurn,
     models,
+    providerCatalog,
     refreshModels,
     activeModel,
     isChangingModel,
@@ -1267,8 +1294,10 @@ export function useMetisServer(activeProject?: ProjectItem) {
     processProposal,
     refineProposal,
     respondToUserInput,
+    extensionUiRequest: extensionUiRequests[0],
+    isRespondingToExtensionUi,
+    respondToExtensionUi,
     contextUsage,
     tokenBreakdown,
   };
 }
-

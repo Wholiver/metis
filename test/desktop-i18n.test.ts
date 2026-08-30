@@ -47,6 +47,10 @@ const legitimateCognates = new Set([
 	"workProgressSubagent",
 	"chatHomeSuffix",
 	"tokensUnit",
+	"autoModelOption",
+	"customBaseUrlPlaceholder",
+	"tokenPlanGroup",
+	"codingPlanGroup",
 ]);
 
 describe("Desktop translation catalogs", () => {

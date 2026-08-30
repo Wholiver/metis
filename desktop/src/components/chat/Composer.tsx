@@ -508,9 +508,9 @@ export const Composer: React.FC<ComposerProps> = ({
               event.preventDefault();
               void addAttachments(filesFromTransfer(event.clipboardData));
             }}
-            placeholder={collaborationMode === 'plan' ? 'Plan changes...' : `Message ${agent.name}`}
+            placeholder="Type / to open commands..."
             disabled={disabled}
-            aria-label={collaborationMode === 'plan' ? 'Plan changes...' : `Message ${agent.name}`}
+            aria-label="Type / to open commands..."
             data-composer-input=""
             className="mt-0.5 overflow-y-auto pl-1 pr-9 py-0 min-w-0 w-full resize-none bg-transparent text-[14px] leading-5 text-[#1e293b] placeholder-[#9ca3af] outline-none disabled:cursor-not-allowed"
           />

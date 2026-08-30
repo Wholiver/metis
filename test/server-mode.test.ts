@@ -308,9 +308,24 @@ describe("server mode", () => {
 		expect(state.autoRetryEnabled).toBe(true);
 
 		const providerModels = await fetch(`${handle.address.url}/config/providers`).then((response) => response.json());
-		expect(providerModels).toEqual({
-			models: [{ provider: "test", id: "model-1", name: "Test Model", thinkingLevels: ["off"], thinkingOptions: [] }],
-		});
+		expect(providerModels.models).toEqual([
+			{ provider: "test", id: "model-1", name: "Test Model", thinkingLevels: ["off"], thinkingOptions: [] },
+		]);
+		expect(providerModels.providers).toEqual(expect.arrayContaining([
+			expect.objectContaining({
+				id: "openai",
+				name: "OpenAI",
+				baseUrl: "https://api.openai.com/v1",
+				authMethods: ["api_key"],
+			}),
+			expect.objectContaining({
+				id: "openai-codex",
+				name: "OpenAI Codex",
+				authMethods: ["oauth"],
+			}),
+			expect.objectContaining({ id: "anthropic", authMethods: ["api_key", "oauth"] }),
+			expect.objectContaining({ id: "github-copilot", authMethods: ["api_key", "oauth"] }),
+		]));
 
 		const modelResponse = await fetch(`${handle.address.url}/session/model`, {
 			method: "PUT",
@@ -839,4 +854,3 @@ describe("server mode", () => {
 		);
 	});
 });
-

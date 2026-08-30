@@ -55,7 +55,7 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
     };
   }, [isOpen]);
 
-  const contextWindow = contextUsage?.contextWindow || tokenBreakdown?.contextWindow || 128_000;
+  const contextWindow = contextUsage?.contextWindow || tokenBreakdown?.contextWindow || 256_000;
   const usedTokens = contextUsage?.tokens ?? tokenBreakdown?.total ?? 0;
   const percentValue = contextUsage?.percent ?? (contextWindow > 0 ? (usedTokens / contextWindow) * 100 : 0);
   const percent = Number.isFinite(percentValue) ? Math.min(Math.max(percentValue, 0), 100) : 0;

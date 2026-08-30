@@ -40,7 +40,7 @@ describe("Other provider setup and login flow", () => {
 		expect(content.providers.other.name).toBe("My Custom LLM");
 		expect(content.providers.other.baseUrl).toBe("https://api.myllm.com/v1");
 		expect(content.providers.other.api).toBe("openai-completions");
-		expect(content.providers.other.models).toEqual([{ id: "default", input: ["text", "image"] }]);
+		expect(content.providers.other.models).toEqual([{ id: "default", input: ["text", "image"], contextWindow: 256000 }]);
 
 		const registry = ModelRegistry.create(authStorage, modelsPath);
 		expect(registry.getProviderDisplayName("other")).toBe("My Custom LLM");
@@ -51,6 +51,7 @@ describe("Other provider setup and login flow", () => {
 		expect(otherModel?.baseUrl).toBe("https://api.myllm.com/v1");
 		expect(otherModel?.api).toBe("openai-completions");
 		expect(otherModel?.input).toEqual(["text", "image"]);
+		expect(otherModel?.contextWindow).toBe(256000);
 	});
 
 	it("saves fetched model list into models.json when modelIds are provided", () => {
@@ -59,21 +60,25 @@ describe("Other provider setup and login flow", () => {
 
 		const content = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
 		expect(content.providers.other.models).toEqual([
-			{ id: "gpt-4o", input: ["text", "image"] },
-			{ id: "gpt-4o-mini", input: ["text", "image"] },
-			{ id: "qwen-2.5-coder", input: ["text", "image"] },
+			{ id: "gpt-4o", input: ["text", "image"], contextWindow: 256000 },
+			{ id: "gpt-4o-mini", input: ["text", "image"], contextWindow: 256000 },
+			{ id: "qwen-2.5-coder", input: ["text", "image"], contextWindow: 256000 },
 		]);
 
 		authStorage.set("other", { type: "api_key", key: "sk-test" });
 		const registry = ModelRegistry.create(authStorage, modelsPath);
 		const availableModels = registry.getAvailable().filter((m) => m.provider === "other");
 		expect(availableModels.map((m) => m.id)).toEqual(["gpt-4o", "gpt-4o-mini", "qwen-2.5-coder"]);
+		expect(availableModels[0]?.contextWindow).toBe(256000);
 	});
 
 	it("fetches available models from OpenAI-compatible /models endpoint", async () => {
 		const mockResponse = {
 			object: "list",
-			data: [{ id: "llama-3.3-70b" }, { id: "qwen-2.5-72b" }],
+			data: [
+				{ id: "llama-3.3-70b", context_length: 131072 },
+				{ id: "qwen-2.5-72b", max_model_len: 32768 },
+			],
 		};
 
 		vi.stubGlobal(
@@ -142,8 +147,8 @@ describe("Other provider setup and login flow", () => {
 
 		const before = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
 		expect(before.providers["custom-one"].models).toEqual([
-			{ id: "a", input: ["text", "image"] },
-			{ id: "b", input: ["text", "image"] },
+			{ id: "a", input: ["text", "image"], contextWindow: 256000 },
+			{ id: "b", input: ["text", "image"], contextWindow: 256000 },
 		]);
 
 		expect(deleteCustomProviderConfig(modelsPath, "custom-one")).toBe(true);
@@ -153,25 +158,33 @@ describe("Other provider setup and login flow", () => {
 		expect(after.providers["custom-two"]).toBeDefined();
 	});
 
-	it("custom models without discovered thinkingOptions default to non-reasoning", () => {
+	it("custom models without discovered thinkingOptions default to non-reasoning and save discovered contextWindow", () => {
 		saveOtherProviderConfig(
 			modelsPath,
 			"custom-tokenhub",
 			"TokenHub",
 			"https://tokenhub.example/v1",
-			["glm-5.3"],
+			["glm-5.3", "vllm-custom"],
 			false,
-			[{ id: "glm-5.3", thinkingOptions: [] }],
+			[
+				{ id: "glm-5.3", thinkingOptions: [], contextWindow: 128000 },
+				{ id: "vllm-custom", thinkingOptions: [], contextWindow: 65536 },
+			],
 		);
 
 		const content = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
-		const savedModel = content.providers["custom-tokenhub"].models[0];
-		expect(savedModel).not.toHaveProperty("reasoning");
-		expect(savedModel).not.toHaveProperty("thinkingOptions");
+		const savedGlm = content.providers["custom-tokenhub"].models[0];
+		expect(savedGlm).not.toHaveProperty("reasoning");
+		expect(savedGlm).not.toHaveProperty("thinkingOptions");
+		expect(savedGlm.contextWindow).toBe(128000);
+
+		const savedVllm = content.providers["custom-tokenhub"].models[1];
+		expect(savedVllm.contextWindow).toBe(65536);
 
 		const registry = ModelRegistry.create(authStorage, modelsPath);
 		const glm = registry.find("custom-tokenhub", "glm-5.3");
 		expect(glm?.reasoning).toBe(false);
+		expect(glm?.contextWindow).toBe(128000);
 		expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
 	});
 });

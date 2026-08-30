@@ -206,6 +206,13 @@ export interface ModelOption {
   thinkingOptions?: ThinkingOption[];
 }
 
+export interface ProviderCatalogEntry {
+  id: string;
+  name: string;
+  baseUrl?: string;
+  authMethods: Array<'api_key' | 'oauth'>;
+}
+
 export interface RoutineItem {
   id: string;
   title: string;
@@ -259,4 +266,3 @@ export interface MemoryState {
   lastRunAt?: string;
   extractionMethod?: string;
 }
-

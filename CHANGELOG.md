@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.8] - 2026-08-30
+
+### Model Management Upgrades, Extension Dialogs & Settings Refinements
+
+- Added interactive AddModelModal dialog for custom model configuration and provider switching in Desktop Settings.
+- Integrated ExtensionUiDialog support for extension interactive confirmation and modal flows.
+- Refined Inspector tab panels, token usage indicator alignment, and multi-language translation catalogs.
+
 ## [1.1.7] - 2026-08-29
 
 ### Model Registry Enhancements & Worktree Isolation Hardening
