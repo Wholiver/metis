@@ -313,7 +313,16 @@ export function toMessage(
       : undefined;
   const rawId = typeof source.id === 'string' ? source.id : typeof raw.id === 'string' ? raw.id : undefined;
   const messageId = rawId || `${role}-${String(timestamp ?? index)}`;
-  const rawText = extractText(source.content) || (typeof source.text === 'string' ? source.text : '') || extractText(raw.content);
+  const stopReason = typeof source.stopReason === 'string'
+    ? source.stopReason
+    : typeof raw.stopReason === 'string' ? raw.stopReason : undefined;
+  const errorMessage = typeof source.errorMessage === 'string'
+    ? source.errorMessage.trim()
+    : typeof raw.errorMessage === 'string' ? raw.errorMessage.trim() : '';
+  const rawText = extractText(source.content)
+    || (typeof source.text === 'string' ? source.text : '')
+    || extractText(raw.content)
+    || (role === 'assistant' && stopReason === 'error' ? errorMessage : '');
   const parsedPayload = parseAttachmentPayloadText(rawText);
   const content = parsedPayload.text;
   const imageAttachments = extractImageAttachments(source.content || raw.content);
@@ -343,7 +352,7 @@ export function toMessage(
   if (thinkingDurationMs !== undefined) message.thinkingDurationMs = thinkingDurationMs;
   if (parts && parts.length > 0) message.parts = parts;
   if (attachments.length > 0) message.attachments = attachments;
-  if (typeof source.stopReason === 'string') message.stopReason = source.stopReason;
+  if (stopReason) message.stopReason = stopReason;
   if (timestamp !== undefined) {
     message.time = formatSessionTime(timestamp);
     message.serverTimestamp = timestamp;

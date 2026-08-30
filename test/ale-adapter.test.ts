@@ -37,11 +37,11 @@ describe("ALE-CLI Benchmark Adapter and Runner Suite", () => {
 	});
 
 	describe("2. OpenAI Codex and GPT-5.6-Luna Configuration", () => {
-		it("metis_adapter.py should default to openai-codex, gpt-5.6-luna and medium thinking", async () => {
+		it("metis_adapter.py should default to openai-codex, gpt-5.6-luna and low thinking", async () => {
 			const adapterContent = await fs.readFile(path.join(aleDir, "metis_adapter.py"), "utf-8");
 			expect(adapterContent).toContain('default_provider: Optional[str] = "openai-codex"');
 			expect(adapterContent).toContain('default_model: Optional[str] = "gpt-5.6-luna"');
-			expect(adapterContent).toContain('default_thinking: Optional[str] = "medium"');
+			expect(adapterContent).toContain('default_thinking: Optional[str] = "low"');
 			expect(adapterContent).toContain("class ALEResult");
 			expect(adapterContent).toContain("class ALEMetisAdapter");
 			expect(adapterContent).toContain("--output-final-answer");

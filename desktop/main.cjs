@@ -9,6 +9,12 @@ const { createApplicationMenuTemplate, createEditorContextMenuTemplate } = requi
 const customProviderConfig = require("./provider-config.cjs");
 const { getMetisRuntimeIntegrityError } = require("./runtime-integrity.cjs");
 const { readSessionTokenActivity, readSessionTokenTotals } = require("./session-token-totals.cjs");
+const {
+	DEFAULT_METIS_SERVER,
+	localServerTarget,
+	persistMetisServer,
+	restoreMetisServer,
+} = require("./server-connection.cjs");
 const desktopI18n = require("./i18n.cjs");
 const { WorkspaceCreateError, createWorkspaceDirectory } = require("./workspace-create.cjs");
 
@@ -25,7 +31,8 @@ let desktopLanguage = "auto";
 let desktopTheme = "system";
 let isDefaultWorkspaceProjectRepo = false;
 let workspaceRoot = findDefaultWorkspace();
-let metisServer = { baseUrl: "http://127.0.0.1:4096", username: "metis", password: "" };
+let metisServer = { ...DEFAULT_METIS_SERVER };
+let pendingMetisServer;
 let metisEventController;
 
 function nativeText(key, variables) {
@@ -41,23 +48,34 @@ function loadDesktopPreferences() {
 		const saved = JSON.parse(fs.readFileSync(desktopPreferencesPath(), "utf8"));
 		desktopLanguage = desktopI18n.languages.includes(saved?.language) ? saved.language : "auto";
 		desktopTheme = ["system", "light", "dark"].includes(saved?.theme) ? saved.theme : "system";
+		metisServer = restoreMetisServer(saved?.server);
 		nativeTheme.themeSource = desktopTheme;
 	} catch {
 		desktopLanguage = "auto";
 		desktopTheme = "system";
+		metisServer = { ...DEFAULT_METIS_SERVER };
 		nativeTheme.themeSource = "system";
 	}
 }
 
 function saveDesktopPreferences() {
 	fs.mkdirSync(app.getPath("userData"), { recursive: true });
-	fs.writeFileSync(desktopPreferencesPath(), JSON.stringify({ language: desktopLanguage, theme: desktopTheme }), "utf8");
+	fs.writeFileSync(desktopPreferencesPath(), JSON.stringify({
+		language: desktopLanguage,
+		theme: desktopTheme,
+		server: persistMetisServer(metisServer),
+	}), "utf8");
 }
 
 function rebuildApplicationMenu() {
 	Menu.setApplicationMenu(Menu.buildFromTemplate(createApplicationMenuTemplate(process.platform, app.name, nativeText)));
 }
 let autoServerProcess;
+let autoServerTarget;
+let autoServerEnsure;
+let autoServerRestartTimer;
+let autoServerRestartDelay = 500;
+const intentionallyStoppedAutoServers = new WeakSet();
 let appIsQuitting = false;
 
 if (process.platform === "win32") {
@@ -104,9 +122,9 @@ function findMetisCli() {
 	return undefined;
 }
 
-async function isLocalServerHealthy() {
+async function isLocalServerHealthy(target) {
 	try {
-		const response = await net.fetch("http://127.0.0.1:4096/global/health", { signal: AbortSignal.timeout(500) });
+		const response = await net.fetch(`${target.baseUrl}/global/health`, { signal: AbortSignal.timeout(500) });
 		if (!response.ok) return false;
 		const data = await response.json();
 		return data?.healthy === true;
@@ -115,12 +133,38 @@ async function isLocalServerHealthy() {
 	}
 }
 
-async function ensureLocalMetisServer() {
-	if (process.env.METIS_DESKTOP_NO_AUTO_SERVER || (await isLocalServerHealthy())) return;
+async function ensureLocalMetisServer(server = metisServer) {
+	const target = localServerTarget(server.baseUrl);
+	if (process.env.METIS_DESKTOP_NO_AUTO_SERVER || !target) return false;
+	if (autoServerEnsure) {
+		await autoServerEnsure.promise;
+		if (autoServerEnsure?.baseUrl === target.baseUrl) return isLocalServerHealthy(target);
+	}
+	const promise = startLocalMetisServer(target).catch((error) => {
+		console.error("[desktop] Failed to start local Server:", error);
+		return false;
+	});
+	autoServerEnsure = { baseUrl: target.baseUrl, promise };
+	try {
+		return await promise;
+	} finally {
+		if (autoServerEnsure?.promise === promise) autoServerEnsure = undefined;
+	}
+}
+
+async function startLocalMetisServer(target) {
+	if (await isLocalServerHealthy(target)) {
+		if (autoServerProcess && autoServerTarget?.baseUrl !== target.baseUrl) stopAutoServer();
+		cancelAutoServerRestart();
+		autoServerRestartDelay = 500;
+		return true;
+	}
+	if (autoServerProcess && autoServerTarget?.baseUrl !== target.baseUrl) stopAutoServer();
+	if (autoServerProcess) return waitForLocalServer(autoServerProcess, target);
 	const cliPath = findMetisCli();
 	if (!cliPath) {
 		console.error("[desktop] Complete Metis CLI runtime not found in app resources or repository build output.");
-		return;
+		return false;
 	}
 	let lastStderr = "";
 	let envPath = process.env.PATH || "";
@@ -128,47 +172,111 @@ async function ensureLocalMetisServer() {
 		const defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 		envPath = envPath ? `${envPath}:${defaultPath}` : defaultPath;
 	}
-	autoServerProcess = utilityProcess.fork(cliPath, ["server", "--hostname", "127.0.0.1", "--port", "4096"], {
+	const serverProcess = utilityProcess.fork(cliPath, ["server", "--hostname", target.hostname, "--port", String(target.port)], {
 		cwd: workspaceRoot,
 		env: { ...process.env, PATH: envPath },
 		stdio: ["ignore", "pipe", "pipe"],
 		serviceName: "Metis Server",
 	});
-	autoServerProcess.stdout?.on("data", (chunk) => {
+	autoServerProcess = serverProcess;
+	autoServerTarget = target;
+	serverProcess.stdout?.on("data", (chunk) => {
 		const str = chunk.toString();
 		process.stdout.write("[server] " + str);
 		if (str.includes("metis server listening")) {
 			mainWindow?.webContents.send("metis:server-ready");
 		}
 	});
-	autoServerProcess.stderr?.on("data", (chunk) => {
+	serverProcess.stderr?.on("data", (chunk) => {
 		const str = chunk.toString();
 		if (str.trim()) lastStderr = str.trim();
 		process.stderr.write("[server] " + str);
 	});
-	autoServerProcess.once("exit", (code) => {
-		autoServerProcess = undefined;
-		if (!appIsQuitting) {
+	serverProcess.once("exit", (code) => {
+		if (autoServerProcess === serverProcess) {
+			autoServerProcess = undefined;
+			autoServerTarget = undefined;
+		}
+		if (!appIsQuitting && !intentionallyStoppedAutoServers.has(serverProcess)) {
 			const detail = lastStderr ? `: ${lastStderr}` : "";
 			console.error("[desktop] Auto-started Server exited (" + code + ")" + detail);
 			mainWindow?.webContents.send("metis:disconnected", nativeText("localServerStopped", { code, detail }));
+			if (localServerTarget(metisServer.baseUrl)?.baseUrl === target.baseUrl) {
+				scheduleAutoServerRestart(serverProcess);
+			}
 		}
 	});
+	return waitForLocalServer(serverProcess, target);
+}
+
+async function waitForLocalServer(serverProcess, target) {
 	for (let attempt = 0; attempt < 120; attempt += 1) {
-		if (await isLocalServerHealthy()) {
+		if (await isLocalServerHealthy(target)) {
+			cancelAutoServerRestart();
+			autoServerRestartDelay = 500;
 			mainWindow?.webContents.send("metis:server-ready");
-			return;
+			return true;
 		}
-		if (!autoServerProcess) return;
+		if (autoServerProcess !== serverProcess) return false;
+		if (!isUtilityProcessRunning(serverProcess)) {
+			retireUnhealthyAutoServer(serverProcess, target);
+			return false;
+		}
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
 	console.error("[desktop] Timed out waiting for local Metis Server.");
+	retireUnhealthyAutoServer(serverProcess, target);
+	return false;
+}
+
+function isUtilityProcessRunning(serverProcess) {
+	if (!serverProcess?.pid) return false;
+	try {
+		process.kill(serverProcess.pid, 0);
+		return true;
+	} catch (error) {
+		return error?.code !== "ESRCH";
+	}
+}
+
+function retireUnhealthyAutoServer(serverProcess, target) {
+	if (autoServerProcess !== serverProcess) return;
+	if (!appIsQuitting && localServerTarget(metisServer.baseUrl)?.baseUrl === target.baseUrl) {
+		scheduleAutoServerRestart(serverProcess);
+	}
+	intentionallyStoppedAutoServers.add(serverProcess);
+	autoServerProcess = undefined;
+	autoServerTarget = undefined;
+	try {
+		serverProcess.kill();
+	} catch {}
+}
+
+function scheduleAutoServerRestart(serverProcess) {
+	if (appIsQuitting || intentionallyStoppedAutoServers.has(serverProcess) || autoServerRestartTimer) return;
+	const delay = autoServerRestartDelay;
+	autoServerRestartDelay = Math.min(autoServerRestartDelay * 2, 30_000);
+	autoServerRestartTimer = setTimeout(() => {
+		autoServerRestartTimer = undefined;
+		void ensureLocalMetisServer().catch((error) => {
+			console.error("[desktop] Failed to restart local Server:", error);
+		});
+	}, delay);
+}
+
+function cancelAutoServerRestart() {
+	if (!autoServerRestartTimer) return;
+	clearTimeout(autoServerRestartTimer);
+	autoServerRestartTimer = undefined;
 }
 
 function stopAutoServer() {
+	cancelAutoServerRestart();
 	if (!autoServerProcess) return;
 	const serverProcess = autoServerProcess;
+	intentionallyStoppedAutoServers.add(serverProcess);
 	autoServerProcess = undefined;
+	autoServerTarget = undefined;
 	const serverPid = serverProcess.pid;
 	serverProcess.kill();
 	if (serverPid) {
@@ -1543,7 +1651,10 @@ app.whenReady().then(() => {
 	console.log("performence mode loaded");
 	void ensureLocalMetisServer();
 	app.on("activate", () => {
-		if (BrowserWindow.getAllWindows().length === 0) createWindow();
+		if (BrowserWindow.getAllWindows().length === 0) {
+			createWindow();
+			void ensureLocalMetisServer();
+		}
 	});
 });
 
@@ -1685,21 +1796,33 @@ function registerIpc() {
 		hasPassword: Boolean(metisServer.password),
 	}));
 	ipcMain.handle("metis:connect", async (_event, options = {}) => {
+		const previousServer = metisServer;
 		const candidate = {
 			baseUrl: normalizeServerUrl(options.baseUrl || metisServer.baseUrl),
 			username: Object.hasOwn(options, "username") ? String(options.username || "metis") : metisServer.username,
 			password: Object.hasOwn(options, "password") ? String(options.password || "") : metisServer.password,
 		};
-		const health = await metisRequest("/global/health", {}, candidate);
-		if (!health.ok) return health;
-		const changed = candidate.baseUrl !== metisServer.baseUrl
-			|| candidate.username !== metisServer.username
-			|| candidate.password !== metisServer.password;
-		metisServer = candidate;
-		if (changed || !metisEventController || metisEventController.signal.aborted) {
-			void streamMetisEvents();
+		pendingMetisServer = candidate;
+		try {
+			await ensureLocalMetisServer(candidate);
+			const health = await metisRequest("/global/health", {}, candidate);
+			if (!health.ok) {
+				if (candidate.baseUrl !== previousServer.baseUrl) void ensureLocalMetisServer(previousServer);
+				return health;
+			}
+			const changed = candidate.baseUrl !== metisServer.baseUrl
+				|| candidate.username !== metisServer.username
+				|| candidate.password !== metisServer.password;
+			metisServer = candidate;
+			saveDesktopPreferences();
+			if (!localServerTarget(candidate.baseUrl)) stopAutoServer();
+			if (changed || !metisEventController || metisEventController.signal.aborted) {
+				void streamMetisEvents();
+			}
+			return health;
+		} finally {
+			if (pendingMetisServer === candidate) pendingMetisServer = undefined;
 		}
-		return health;
 	});
 	ipcMain.handle("metis:disconnect", () => {
 		metisEventController?.abort();
@@ -1947,6 +2070,9 @@ async function streamMetisEvents() {
 		} catch (error) {
 			if (controller.signal.aborted) break;
 			mainWindow?.webContents.send("metis:disconnected", error.message);
+			if (!pendingMetisServer && localServerTarget(metisServer.baseUrl)) {
+				void ensureLocalMetisServer();
+			}
 		}
 		await waitForAbortableDelay(retryDelay, controller.signal);
 		retryDelay = Math.min(retryDelay * 2, 5_000);

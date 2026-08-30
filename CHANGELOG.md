@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.9] - 2026-08-30
+
+### Server Connection Reliability & ALE Evaluation Adapter
+
+- Extracted and hardened Desktop server connection logic into a dedicated module with retry and health-check policies.
+- Enhanced ALE benchmark evaluation adapter, execution traces, and runner stability.
+- Refined Desktop main process lifecycle and session sidebar rendering resilience.
+
 ## [1.1.8] - 2026-08-30
 
 ### Model Management Upgrades, Extension Dialogs & Settings Refinements

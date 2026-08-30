@@ -21,6 +21,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -56,11 +57,12 @@ class ALEMetisAdapter:
         metis_bin: str = "metis",
         default_provider: Optional[str] = "openai-codex",
         default_model: Optional[str] = "gpt-5.6-luna",
-        default_thinking: Optional[str] = "medium",
+        default_thinking: Optional[str] = "low",
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         default_timeout: Optional[int] = None,
         extra_args: Optional[List[str]] = None,
+        live_log_path: Optional[Path] = None,
     ) -> None:
         self.metis_bin = metis_bin
         self.default_provider = default_provider
@@ -70,7 +72,9 @@ class ALEMetisAdapter:
         self.api_key = api_key
         self.default_timeout = default_timeout
         self.extra_args = extra_args or []
-        self._current_process: Optional[subprocess.Popen] = None
+        self.live_log_path = live_log_path
+        self._active_processes: set[subprocess.Popen] = set()
+        self._proc_lock = threading.Lock()
 
     def inject_credentials(self, env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         """Prepare subprocess environment with credentials and configuration."""
@@ -95,16 +99,19 @@ class ALEMetisAdapter:
         return merged_env
 
     def terminate_current_process(self) -> None:
-        """Immediately terminate running task subprocess if active."""
-        proc = self._current_process
-        if proc and proc.poll() is None:
+        """Terminate all active Metis child processes upon interrupt."""
+        with self._proc_lock:
+            procs = list(self._active_processes)
+        for proc in procs:
             try:
-                proc.send_signal(signal.SIGINT)
-                time.sleep(0.5)
-                if proc.poll() is None:
-                    proc.kill()
+                proc.terminate()
+                proc.kill()
             except Exception:
                 pass
+
+    def terminate_all_processes(self) -> None:
+        """Alias for terminate_current_process."""
+        self.terminate_current_process()
 
     def _resolve_bin_cmd(self) -> List[str]:
         """Resolve executable command, preferring current repository dist/cli.js when metis_bin is default."""
@@ -174,6 +181,8 @@ class ALEMetisAdapter:
             prompt,
             "--mode",
             "json",
+            "--collaboration-mode",
+            "build",
             "--output-final-answer",
             str(answer_file_path),
             "--no-session",
@@ -204,8 +213,90 @@ class ALEMetisAdapter:
         timed_out = False
         was_interrupted = False
 
+        stdout_lines: List[str] = []
+        stderr_lines: List[str] = []
+
+        def log_live(msg: str) -> None:
+            formatted = f"[{task_id}] {msg.strip()}"
+            print(formatted, flush=True)
+            if self.live_log_path:
+                try:
+                    ts = time.strftime("%H:%M:%S")
+                    with open(self.live_log_path, "a", encoding="utf-8") as f:
+                        f.write(f"[{ts}] {formatted}\n")
+                except Exception:
+                    pass
+
+        def read_stdout(pipe: Any) -> None:
+            try:
+                for line in iter(pipe.readline, ''):
+                    stdout_lines.append(line)
+                    line_str = line.strip()
+                    if not line_str:
+                        continue
+                    if line_str.startswith("{"):
+                        try:
+                            ev = json.loads(line_str)
+                            ev_type = ev.get("type")
+                            if ev_type in ("tool_start", "tool_call"):
+                                tool_name = ev.get("toolName") or ev.get("name") or "tool"
+                                args = ev.get("args") or ev.get("parameters") or {}
+                                if tool_name in ("spawn_agent", "subagent"):
+                                    agent_name = args.get("agent") or args.get("TypeName") or "subagent"
+                                    task_desc = str(args.get("task") or args.get("Prompt") or "")[:70]
+                                    log_live(f"👥 [Subagent] Spawning '{agent_name}': {task_desc}...")
+                                elif tool_name == "bash":
+                                    cmd_str = str(args.get("command") or "")[:80]
+                                    log_live(f"⚡ [Bash] {cmd_str}")
+                                elif tool_name in ("write", "write_to_file", "edit", "replace_file_content"):
+                                    file_path = args.get("path") or args.get("TargetFile") or args.get("target_file") or ""
+                                    log_live(f"📝 [File] {tool_name}: {file_path}")
+                                elif tool_name in ("read", "view_file", "find", "grep", "ls"):
+                                    target = args.get("path") or args.get("AbsolutePath") or args.get("pattern") or ""
+                                    log_live(f"🔍 [Inspect] {tool_name} {target}")
+                                else:
+                                    log_live(f"🔧 [Tool] {tool_name}")
+                            elif ev_type in ("tool_end", "tool_result"):
+                                tool_name = ev.get("toolName") or ev.get("name") or "tool"
+                                log_live(f"✔️  [Tool Done] {tool_name}")
+                            elif ev_type == "message_update":
+                                update_ev = ev.get("assistantMessageEvent", {})
+                                if update_ev.get("type") == "thinking_start":
+                                    log_live(f"🧠 [Thinking] Reasoning & planning next action...")
+                            elif ev_type == "agent_start":
+                                agent_id = ev.get("agentId") or ev.get("role") or ""
+                                if agent_id and agent_id != "root":
+                                    log_live(f"🤖 [Agent Active] {agent_id}")
+                        except Exception:
+                            pass
+                    else:
+                        if verbose:
+                            log_live(f"[stdout] {line_str}")
+            except Exception:
+                pass
+            finally:
+                try:
+                    pipe.close()
+                except Exception:
+                    pass
+
+        def read_stderr(pipe: Any) -> None:
+            try:
+                for line in iter(pipe.readline, ''):
+                    stderr_lines.append(line)
+                    if verbose:
+                        print(f"[{task_id}] [stderr] {line.strip()}", flush=True)
+            except Exception:
+                pass
+            finally:
+                try:
+                    pipe.close()
+                except Exception:
+                    pass
+
+        proc: Optional[subprocess.Popen] = None
         try:
-            self._current_process = subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd,
                 cwd=str(resolved_workdir),
                 env=env,
@@ -214,31 +305,38 @@ class ALEMetisAdapter:
                 text=True,
                 bufsize=1,
             )
+            with self._proc_lock:
+                self._active_processes.add(proc)
+
+            t_out = threading.Thread(target=read_stdout, args=(proc.stdout,), daemon=True)
+            t_err = threading.Thread(target=read_stderr, args=(proc.stderr,), daemon=True)
+            t_out.start()
+            t_err.start()
 
             try:
-                stdout_data, stderr_data = self._current_process.communicate(
-                    timeout=resolved_timeout if (resolved_timeout and resolved_timeout > 0) else None
-                )
-                raw_stdout = stdout_data or ""
-                raw_stderr = stderr_data or ""
-                exit_code = self._current_process.returncode
+                proc.wait(timeout=resolved_timeout if (resolved_timeout and resolved_timeout > 0) else None)
+                t_out.join(timeout=2)
+                t_err.join(timeout=2)
+                raw_stdout = "".join(stdout_lines)
+                raw_stderr = "".join(stderr_lines)
+                exit_code = proc.returncode
             except subprocess.TimeoutExpired:
                 timed_out = True
-                self._current_process.kill()
-                stdout_data, stderr_data = self._current_process.communicate()
-                raw_stdout = stdout_data or ""
-                raw_stderr = stderr_data or ""
+                proc.kill()
+                t_out.join(timeout=1)
+                t_err.join(timeout=1)
+                raw_stdout = "".join(stdout_lines)
+                raw_stderr = "".join(stderr_lines)
                 exit_code = 2
                 error_msg = f"Task timed out after {resolved_timeout} seconds"
             except KeyboardInterrupt:
                 was_interrupted = True
-                self.terminate_current_process()
-                try:
-                    stdout_data, stderr_data = self._current_process.communicate(timeout=2)
-                    raw_stdout = stdout_data or ""
-                    raw_stderr = stderr_data or ""
-                except Exception:
-                    pass
+                proc.terminate()
+                time.sleep(0.5)
+                if proc.poll() is None:
+                    proc.kill()
+                raw_stdout = "".join(stdout_lines)
+                raw_stderr = "".join(stderr_lines)
                 exit_code = 130
                 error_msg = "Task interrupted by user"
         except FileNotFoundError:
@@ -297,6 +395,27 @@ class ALEMetisAdapter:
             except json.JSONDecodeError:
                 pass
 
+        # Aggregate tokens and cost from trace_summary
+        total_in_tokens = 0
+        total_out_tokens = 0
+        total_cache_tokens = 0
+        total_cost = 0.0
+
+        if trace_summary:
+            total_in_tokens = trace_summary.get("totalInputTokens", 0)
+            total_out_tokens = trace_summary.get("totalOutputTokens", 0)
+            total_cache_tokens = trace_summary.get("totalCacheReadTokens", trace_summary.get("totalCachedTokens", 0))
+            total_cost = float(trace_summary.get("totalCost", 0.0))
+        else:
+            for ev in trace_events:
+                if ev.get("type") == "model_call" and "usage" in ev:
+                    u = ev["usage"]
+                    total_in_tokens += u.get("inputTokens", 0)
+                    total_out_tokens += u.get("outputTokens", 0)
+                    total_cache_tokens += u.get("cacheReadTokens", 0)
+                elif ev.get("type") == "turn_cost":
+                    total_cost += float(ev.get("cost", 0.0))
+
         # Map exit code to standard status
         is_auth_or_infra_error = False
         stderr_lower = raw_stderr.lower()
@@ -321,27 +440,6 @@ class ALEMetisAdapter:
             status = "task_failure"
         else:
             status = "harness_error"
-
-        # Aggregate tokens and cost from trace_summary
-        total_in_tokens = 0
-        total_out_tokens = 0
-        total_cache_tokens = 0
-        total_cost = 0.0
-
-        if trace_summary:
-            total_in_tokens = trace_summary.get("totalInputTokens", 0)
-            total_out_tokens = trace_summary.get("totalOutputTokens", 0)
-            total_cache_tokens = trace_summary.get("totalCacheReadTokens", trace_summary.get("totalCachedTokens", 0))
-            total_cost = float(trace_summary.get("totalCost", 0.0))
-        else:
-            for ev in trace_events:
-                if ev.get("type") == "model_call" and "usage" in ev:
-                    u = ev["usage"]
-                    total_in_tokens += u.get("inputTokens", 0)
-                    total_out_tokens += u.get("outputTokens", 0)
-                    total_cache_tokens += u.get("cacheReadTokens", 0)
-                elif ev.get("type") == "turn_cost":
-                    total_cost += float(ev.get("cost", 0.0))
 
         return ALEResult(
             task_id=task_id,

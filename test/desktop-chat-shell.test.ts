@@ -204,7 +204,6 @@ describe("desktop active chat shell contracts", () => {
 		expect(desktopPackage.scripts.predev).toBe("npm run prepare:cli");
 		expect(desktopPackage.scripts.prestart).toBe("npm run prepare:cli");
 		expect(desktopMainSource).toContain("void ensureLocalMetisServer()");
-		expect(desktopMainSource).toContain('utilityProcess.fork(cliPath, ["server", "--hostname", "127.0.0.1", "--port", "4096"]');
+		expect(desktopMainSource).toContain('utilityProcess.fork(cliPath, ["server", "--hostname", target.hostname, "--port", String(target.port)]');
 	});
 });
-

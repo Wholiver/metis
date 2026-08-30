@@ -51,9 +51,8 @@ describe('desktop React session sidebar', () => {
     expect(source).not.toContain('SESSION_REPLACEMENT_BUSY_MESSAGE');
     expect(appSource).toContain('if (isConnected && !isLoadingSessions) void newConversation();');
     expect(mainSource).toContain('"X-Metis-Desktop": "1"');
-    expect(selectConversation.indexOf("await request('/session/switch', 'POST'")).toBeLessThan(
-      selectConversation.indexOf('setMessages([])'),
-    );
+    expect(selectConversation).toContain("await request<SessionState & { cancelled: boolean }>('/session/switch'");
+    expect(selectConversation).toContain('await loadMessages(targetSessionId, true)');
 
     const markup = renderToStaticMarkup(React.createElement(Sidebar, {
       agents: [sessionToAgent(session)],
@@ -239,6 +238,46 @@ describe('desktop React session sidebar', () => {
     })).toMatchObject({ content: 'Final answer', thinking: 'Reason first' });
   });
 
+  it('keeps terminal Provider errors visible as assistant replies', () => {
+    const providerError = toMessage({
+      id: 'provider-error-1',
+      role: 'assistant',
+      content: [],
+      stopReason: 'error',
+      errorMessage: '429 rate limit exceeded',
+    });
+    expect(providerError).toMatchObject({
+      id: 'provider-error-1',
+      role: 'assistant',
+      content: '429 rate limit exceeded',
+      stopReason: 'error',
+    });
+    const repeatedErrors = toMessages([
+      { id: 'user-1', role: 'user', content: 'First attempt' },
+      {
+        id: 'provider-error-1',
+        role: 'assistant',
+        content: [],
+        stopReason: 'error',
+        errorMessage: '429 rate limit exceeded',
+      },
+      { id: 'user-2', role: 'user', content: 'Second attempt' },
+      {
+        id: 'provider-error-2',
+        role: 'assistant',
+        content: [],
+        stopReason: 'error',
+        errorMessage: 'Provider authentication failed',
+      },
+    ]);
+    expect(repeatedErrors.map((message) => message.content)).toEqual([
+      'First attempt',
+      '429 rate limit exceeded',
+      'Second attempt',
+      'Provider authentication failed',
+    ]);
+  });
+
   it('replaces optimistic sends and incrementally updates streamed replies', () => {
     const optimistic = {
       id: 'optimistic-user-1',
@@ -388,4 +427,3 @@ describe('desktop React session sidebar', () => {
     expect(appSource).toContain('onNewChat={newConversation}');
   });
 });
-

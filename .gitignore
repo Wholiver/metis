@@ -36,3 +36,4 @@ vendor/*/dist/**/*.map
 vendor/*/dist/**/* 2/
 vendor/*/dist/**/.claude/
 
+eval_results/

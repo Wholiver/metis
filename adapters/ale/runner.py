@@ -17,13 +17,17 @@ Features:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 from dataclasses import asdict, dataclass
 import datetime
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import sys
+import tempfile
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -32,11 +36,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# Configure default Hugging Face token from environment if present
+if "HF_TOKEN" in os.environ and "HUGGING_FACE_HUB_TOKEN" not in os.environ:
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = os.environ["HF_TOKEN"]
+
 try:
     from adapters.ale.metis_adapter import ALEMetisAdapter, ALEResult
 except ImportError:
     from metis_adapter import ALEMetisAdapter, ALEResult  # type: ignore
-
 
 
 @dataclass
@@ -56,25 +63,20 @@ class ALETask:
 
 
 def format_duration(seconds: float) -> str:
-    """Format duration in seconds into human-readable string (e.g. 1h 23m 45s)."""
-    if seconds < 0:
-        return "0s"
-    sec = int(round(seconds))
-    hours, rem = divmod(sec, 3600)
-    minutes, secs = divmod(rem, 60)
+    """Format duration in seconds into human-readable string."""
+    mins, secs = divmod(int(seconds), 60)
+    hours, mins = divmod(mins, 60)
     if hours > 0:
-        return f"{hours}h {minutes:02d}m {secs:02d}s"
-    if minutes > 0:
-        return f"{minutes}m {secs:02d}s"
-    return f"{secs}s"
+        return f"{hours}h {mins:02d}m {secs:02d}s"
+    return f"{mins}m {secs:02d}s"
 
 
 def format_tokens(n: int) -> str:
-    """Format token count into compact human-readable string (e.g. 1.2M, 45.3K)."""
+    """Format token count with comma or k/M suffix."""
     if n >= 1_000_000:
         return f"{n / 1_000_000:.2f}M"
     if n >= 1_000:
-        return f"{n / 1_000:.1f}K"
+        return f"{n / 1_000:.1f}k"
     return str(n)
 
 
@@ -88,13 +90,15 @@ class ALERunner:
         metis_bin: str = "metis",
         provider: str = "openai-codex",
         model: str = "gpt-5.6-luna",
-        thinking: str = "medium",
+        thinking: str = "low",
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         timeout: Optional[int] = None,
+        concurrency: int = 2,
         resume: bool = True,
         dry_run: bool = False,
         verbose: bool = False,
+        cleanup_workspace: bool = True,
     ) -> None:
         self.tasks = tasks
         self.output_dir = Path(output_dir).resolve()
@@ -105,13 +109,17 @@ class ALERunner:
         self.base_url = base_url
         self.api_key = api_key
         self.timeout = timeout
+        self.concurrency = max(1, concurrency)
         self.resume = resume
         self.dry_run = dry_run
         self.verbose = verbose
+        self.cleanup_workspace = cleanup_workspace
 
         self.checkpoint_path = self.output_dir / "checkpoint.json"
         self.results_jsonl_path = self.output_dir / "results.jsonl"
         self.traces_dir = self.output_dir / "traces"
+        self.workspaces_root = self.output_dir / "workspaces"
+        self.live_log_path = self.output_dir / "live.log"
 
         self.adapter = ALEMetisAdapter(
             metis_bin=self.metis_bin,
@@ -121,6 +129,7 @@ class ALERunner:
             base_url=self.base_url,
             api_key=self.api_key,
             default_timeout=self.timeout,
+            live_log_path=self.live_log_path,
         )
 
         self._interrupted = False
@@ -130,6 +139,7 @@ class ALERunner:
         self._total_out_tokens = 0
         self._total_cache_tokens = 0
         self._total_cost = 0.0
+        self._lock = threading.Lock()
 
         self._setup_signal_handlers()
         self._ensure_output_dirs()
@@ -140,7 +150,7 @@ class ALERunner:
             if not self._interrupted:
                 self._interrupted = True
                 print("\n\n" + "=" * 70, file=sys.stderr)
-                print("🛑 Received interrupt signal (Ctrl+C). Terminating active task...", file=sys.stderr)
+                print("🛑 Received interrupt signal (Ctrl+C). Terminating active tasks...", file=sys.stderr)
                 print("=" * 70, file=sys.stderr)
                 self.adapter.terminate_current_process()
 
@@ -151,6 +161,9 @@ class ALERunner:
         """Ensure necessary output folders exist."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.traces_dir.mkdir(parents=True, exist_ok=True)
+        self.workspaces_root.mkdir(parents=True, exist_ok=True)
+        if not self.live_log_path.exists():
+            self.live_log_path.write_text("", encoding="utf-8")
 
     def load_checkpoint(self) -> None:
         """Load state from existing checkpoint.json if resume is enabled."""
@@ -164,17 +177,19 @@ class ALERunner:
             self._total_in_tokens = data.get("total_input_tokens", 0)
             self._total_out_tokens = data.get("total_output_tokens", 0)
             self._total_cache_tokens = data.get("total_cache_tokens", 0)
-            self._total_cost = float(data.get("total_cost", 0.0))
+            self._total_cost = data.get("total_cost", 0.0)
+
             print(
-                f"[ALE Runner] Resumed checkpoint: {len(self._completed_task_ids)}/{len(self.tasks)} tasks completed previously."
+                f"🔄 [Resume] Loaded checkpoint from {self.checkpoint_path.name}: "
+                f"{len(self._completed_task_ids)}/{len(self.tasks)} tasks completed."
             )
         except Exception as e:
-            print(f"[ALE Runner] Warning: Failed to read checkpoint ({e}). Starting fresh.", file=sys.stderr)
+            print(f"⚠️  [Resume] Failed to parse existing checkpoint: {e}. Starting fresh.", file=sys.stderr)
 
     def save_checkpoint(self) -> None:
-        """Save current execution state to checkpoint.json."""
+        """Persist current progress to checkpoint.json."""
         payload = {
-            "completed_task_ids": list(self._completed_task_ids),
+            "completed_task_ids": sorted(list(self._completed_task_ids)),
             "completed_count": len(self._completed_task_ids),
             "total_tasks": len(self.tasks),
             "durations": self._completed_durations,
@@ -192,28 +207,29 @@ class ALERunner:
         temp_file.replace(self.checkpoint_path)
 
     def record_result(self, result: ALEResult) -> None:
-        """Record completed task result and update running aggregates."""
-        self._completed_task_ids.add(result.task_id)
-        self._completed_durations.append(result.duration_seconds)
-        self._total_in_tokens += result.total_input_tokens
-        self._total_out_tokens += result.total_output_tokens
-        self._total_cache_tokens += result.total_cache_tokens
-        self._total_cost += result.total_cost
+        """Record completed task result and update running aggregates (thread-safe)."""
+        with self._lock:
+            self._completed_task_ids.add(result.task_id)
+            self._completed_durations.append(result.duration_seconds)
+            self._total_in_tokens += result.total_input_tokens
+            self._total_out_tokens += result.total_output_tokens
+            self._total_cache_tokens += result.total_cache_tokens
+            self._total_cost += result.total_cost
 
-        # Append to results.jsonl
-        with open(self.results_jsonl_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(result.to_dict(), ensure_ascii=False) + "\n")
+            # Append to results.jsonl
+            with open(self.results_jsonl_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(result.to_dict(), ensure_ascii=False) + "\n")
 
-        # Save trace if events are present
-        if result.trace_events:
-            safe_task_id = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in result.task_id)
-            trace_file = self.traces_dir / f"{safe_task_id}.jsonl"
-            trace_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(trace_file, "w", encoding="utf-8") as f:
-                for ev in result.trace_events:
-                    f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+            # Save trace if events are present
+            if result.trace_events:
+                safe_task_id = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in result.task_id)
+                trace_file = self.traces_dir / f"{safe_task_id}.jsonl"
+                trace_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(trace_file, "w", encoding="utf-8") as f:
+                    for ev in result.trace_events:
+                        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
 
-        self.save_checkpoint()
+            self.save_checkpoint()
 
     def compute_eta(self, remaining_count: int) -> tuple[float, str, str]:
         """
@@ -228,7 +244,7 @@ class ALERunner:
         # Moving average biased toward recent tasks
         recent = self._completed_durations[-10:] if len(self._completed_durations) > 10 else self._completed_durations
         avg_duration = sum(recent) / len(recent)
-        remaining_seconds = avg_duration * remaining_count
+        remaining_seconds = (avg_duration * remaining_count) / self.concurrency
         eta_str = format_duration(remaining_seconds)
 
         now = datetime.datetime.now()
@@ -241,27 +257,26 @@ class ALERunner:
         """Render terminal status header for current task."""
         total = len(self.tasks)
         pct = (current_idx / total) * 100
-        completed_count = len(self._completed_task_ids)
-        remaining_count = total - completed_count
+        with self._lock:
+            completed_count = len(self._completed_task_ids)
+            remaining_count = total - completed_count
+            avg_dur, eta_str, finish_str = self.compute_eta(remaining_count)
+            elapsed_total = sum(self._completed_durations)
+            elapsed_str = format_duration(elapsed_total)
 
-        avg_dur, eta_str, finish_str = self.compute_eta(remaining_count)
-
-        elapsed_total = sum(self._completed_durations)
-        elapsed_str = format_duration(elapsed_total)
-
-        print("\n" + "=" * 80)
-        print(f"📊 [ALE-CLI Benchmark] Task {current_idx + 1}/{total} ({pct:.1f}%) | Current: {task.task_id}")
-        print(f"⏱️  Elapsed: {elapsed_str} | Avg: {format_duration(avg_dur)}/task | ETA: {eta_str} (Est. finish: {finish_str})")
-        print(
-            f"🪙  Tokens: In={format_tokens(self._total_in_tokens)}, Out={format_tokens(self._total_out_tokens)}, Cache={format_tokens(self._total_cache_tokens)} | Cost: ${self._total_cost:.4f}"
-        )
-        print(f"🤖 Model: {self.provider}:{self.model} (thinking: {self.thinking})")
-        print("-" * 80)
-        prompt_preview = task.prompt.strip().replace("\n", " ")
-        if len(prompt_preview) > 120:
-            prompt_preview = prompt_preview[:117] + "..."
-        print(f"📝 Prompt: {prompt_preview}")
-        print("=" * 80 + "\n")
+            print("\n" + "=" * 80)
+            print(f"📊 [ALE-CLI Benchmark] Task {current_idx + 1}/{total} ({pct:.1f}%) | Current: {task.task_id}")
+            print(f"⏱️  Elapsed: {elapsed_str} | Avg: {format_duration(avg_dur)}/task | Concurrency: {self.concurrency} | ETA: {eta_str} (Est. finish: {finish_str})")
+            print(
+                f"🪙  Tokens: In={format_tokens(self._total_in_tokens)}, Out={format_tokens(self._total_out_tokens)}, Cache={format_tokens(self._total_cache_tokens)} | Cost: ${self._total_cost:.4f}"
+            )
+            print(f"🤖 Model: {self.provider}:{self.model} (thinking: {self.thinking})")
+            print("-" * 80)
+            prompt_preview = task.prompt.strip().replace("\n", " ")
+            if len(prompt_preview) > 120:
+                prompt_preview = prompt_preview[:117] + "..."
+            print(f"📝 Prompt: {prompt_preview}")
+            print("=" * 80 + "\n", flush=True)
 
     def run_preflight_check(self) -> bool:
         """Verify model authentication and provider connectivity before benchmark run."""
@@ -299,40 +314,85 @@ class ALERunner:
         print(f"✅ [Pre-flight] Model connectivity and credentials verified! (response: {preflight_res.final_answer or 'OK'})\n")
         return True
 
-    def run(self, skip_preflight: bool = False) -> Dict[str, Any]:
+    def prepare_task_workspace(self, task: ALETask) -> tuple[Path, Optional[Path]]:
         """
-        Execute full benchmark suite with concurrency 1.
+        Prepare an isolated task workspace directory.
+        Fetches the task's individual input files from Hugging Face on-demand.
+        Returns: (workspace_dir, temp_download_cache_dir)
         """
-        if not skip_preflight:
-            if not self.run_preflight_check():
-                return {"completed_tasks": 0, "total_tasks": len(self.tasks), "interrupted": True, "error": "preflight_failed"}
+        safe_id = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in task.task_id)
+        ws_dir = self.workspaces_root / f"ws_{safe_id}"
+        ws_dir.mkdir(parents=True, exist_ok=True)
+        temp_download_dir: Optional[Path] = None
 
-        self.load_checkpoint()
-        total_tasks = len(self.tasks)
+        if task.workdir and Path(task.workdir).exists():
+            return Path(task.workdir), None
 
-        print(f"🚀 Starting ALE-CLI Benchmark Evaluation")
-        print(f"   - Total Tasks: {total_tasks}")
-        print(f"   - Concurrency: 1")
-        print(f"   - Model: {self.provider}:{self.model} (thinking={self.thinking})")
-        print(f"   - Timeout: {'None (No Timeout)' if not self.timeout else f'{self.timeout}s'}")
-        print(f"   - Output Dir: {self.output_dir}")
-        print(f"   - Resume: {self.resume}")
-        print()
+        if not self.dry_run:
+            try:
+                from huggingface_hub import snapshot_download
+                print(f"📥 [On-Demand Data] Downloading input files for task '{task.task_id}'...")
+                temp_download_dir = Path(tempfile.mkdtemp(prefix=f"ale_dl_{safe_id}_"))
 
-        for idx, task in enumerate(self.tasks):
-            if self._interrupted:
-                break
+                patterns = [
+                    f"tasks/{task.task_id}/*",
+                    f"tasks/{task.task_id}/**/*",
+                    f"{task.task_id}/*",
+                    f"{task.task_id}/**/*",
+                ]
+                downloaded_path = snapshot_download(
+                    repo_id="agents-last-exam/agents-last-exam-data",
+                    repo_type="dataset",
+                    allow_patterns=patterns,
+                    local_dir=str(temp_download_dir),
+                    max_workers=4,
+                )
 
-            if task.task_id in self._completed_task_ids:
+                # Find task files in downloaded_path
+                task_root = Path(downloaded_path) / "tasks" / task.task_id
+                if not task_root.exists():
+                    task_root = Path(downloaded_path) / task.task_id
+
+                if task_root.exists():
+                    for item in task_root.iterdir():
+                        dest = ws_dir / item.name
+                        if item.is_dir():
+                            shutil.copytree(item, dest, dirs_exist_ok=True)
+                        else:
+                            shutil.copy2(item, dest)
+                    print(f"📦 [On-Demand Data] Staged input files for '{task.task_id}' into isolated workspace.")
+                else:
+                    if self.verbose:
+                        print(f"ℹ️  [On-Demand Data] No separate input files directory found for {task.task_id}.")
+            except Exception as e:
                 if self.verbose:
-                    print(f"⏭️  Skipping completed task: {task.task_id}")
-                continue
+                    print(f"⚠️  [On-Demand Data] Notice: Could not fetch remote task data ({e}). Running in workspace: {ws_dir}", file=sys.stderr)
 
-            self.print_progress_header(idx, task)
+        return ws_dir, temp_download_dir
 
+    def cleanup_task_workspace(self, workspace_path: Optional[Path], download_dir: Optional[Path], task_id: str) -> None:
+        """Clean up workspace and downloaded task data to keep disk usage minimal."""
+        if not self.cleanup_workspace:
+            return
+
+        if workspace_path and workspace_path.exists() and workspace_path != Path.cwd():
+            shutil.rmtree(workspace_path, ignore_errors=True)
+        if download_dir and download_dir.exists():
+            shutil.rmtree(download_dir, ignore_errors=True)
+        print(f"🧹 [Cleanup] Cleaned up temporary files for '{task_id}'")
+
+    def _execute_task(self, idx: int, task: ALETask) -> Optional[ALEResult]:
+        """Execute a single task lifecycle (staging, running, cleanup, recording)."""
+        if self._interrupted:
+            return None
+
+        self.print_progress_header(idx, task)
+
+        ws_dir, temp_dl_dir = self.prepare_task_workspace(task)
+        try:
             if self.dry_run:
                 # Simulated dry run
-                print(f"[DRY-RUN] Simulating task {task.task_id}...")
+                print(f"[DRY-RUN] Simulating task {task.task_id} in {ws_dir}...")
                 time.sleep(0.5)
                 res = ALEResult(
                     task_id=task.task_id,
@@ -349,7 +409,7 @@ class ALERunner:
                 res = self.adapter.run_task(
                     task_id=task.task_id,
                     prompt=task.prompt,
-                    workdir=task.workdir,
+                    workdir=ws_dir,
                     model=self.model,
                     provider=self.provider,
                     thinking=self.thinking,
@@ -357,17 +417,74 @@ class ALERunner:
                     timeout=self.timeout,
                     verbose=self.verbose,
                 )
+        finally:
+            self.cleanup_task_workspace(ws_dir, temp_dl_dir, task.task_id)
 
-            if res.status == "interrupted":
-                print(f"\n⚠️  Task {task.task_id} was interrupted.")
-                break
+        if res.status == "interrupted":
+            self._interrupted = True
+            print(f"\n⚠️  Task {task.task_id} was interrupted.")
+            return res
 
-            self.record_result(res)
+        self.record_result(res)
 
-            status_icon = "✅" if res.status == "success" else "❌"
-            print(
-                f"{status_icon} Completed {task.task_id} | Status: {res.status} | Time: {res.duration_seconds}s | Tokens: in={res.total_input_tokens}, out={res.total_output_tokens}"
-            )
+        status_icon = "✅" if res.status == "success" else "❌"
+        print(
+            f"{status_icon} Completed {task.task_id} | Status: {res.status} | Time: {res.duration_seconds}s | Tokens: in={res.total_input_tokens}, out={res.total_output_tokens}",
+            flush=True,
+        )
+        return res
+
+    def run(self, skip_preflight: bool = False) -> Dict[str, Any]:
+        """
+        Execute full benchmark suite with configurable concurrency.
+        """
+        if not skip_preflight:
+            if not self.run_preflight_check():
+                return {"completed_tasks": 0, "total_tasks": len(self.tasks), "interrupted": True, "error": "preflight_failed"}
+
+        self.load_checkpoint()
+        total_tasks = len(self.tasks)
+
+        print(f"🚀 Starting ALE-CLI Benchmark Evaluation")
+        print(f"   - Total Tasks: {total_tasks}")
+        print(f"   - Concurrency: {self.concurrency}")
+        print(f"   - Model: {self.provider}:{self.model} (thinking={self.thinking})")
+        print(f"   - Timeout: {'None (No Timeout)' if not self.timeout else f'{self.timeout}s'}")
+        print(f"   - Output Dir: {self.output_dir}")
+        print(f"   - On-Demand Data Download: Enabled")
+        print(f"   - Auto-Cleanup Workspace: {self.cleanup_workspace}")
+        print(f"   - Resume: {self.resume}")
+        print()
+
+        pending_tasks = [
+            (idx, task) for idx, task in enumerate(self.tasks)
+            if task.task_id not in self._completed_task_ids
+        ]
+
+        if not pending_tasks:
+            print("✨ All tasks have already been completed!")
+        elif self.concurrency == 1:
+            for idx, task in pending_tasks:
+                if self._interrupted:
+                    break
+                self._execute_task(idx, task)
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.concurrency) as executor:
+                futures = {
+                    executor.submit(self._execute_task, idx, task): task.task_id
+                    for idx, task in pending_tasks
+                }
+                try:
+                    for future in concurrent.futures.as_completed(futures):
+                        if self._interrupted:
+                            break
+                        try:
+                            future.result()
+                        except Exception as e:
+                            print(f"⚠️  Task exception: {e}", file=sys.stderr)
+                except KeyboardInterrupt:
+                    self._interrupted = True
+                    self.adapter.terminate_current_process()
 
         # Print final summary
         completed_count = len(self._completed_task_ids)
@@ -385,7 +502,8 @@ class ALERunner:
             f"   Total Tokens: In={format_tokens(self._total_in_tokens)}, Out={format_tokens(self._total_out_tokens)}, Cache={format_tokens(self._total_cache_tokens)}"
         )
         print(f"   Total Cost: ${self._total_cost:.4f}")
-        print(f"   Results: {self.results_jsonl_path}")
+        print(f"   Results saved to: {self.results_jsonl_path}")
+        print(f"   Checkpoint saved to: {self.checkpoint_path}")
         print("=" * 80 + "\n")
 
         return {
@@ -581,8 +699,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--thinking",
-        default="medium",
-        help="Thinking level (default: medium)",
+        default="low",
+        help="Thinking level (default: low)",
     )
     parser.add_argument(
         "--base-url",
@@ -622,9 +740,21 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "--concurrency",
+        "-c",
+        type=int,
+        default=2,
+        help="Number of tasks to evaluate concurrently (default: 2)",
+    )
+    parser.add_argument(
         "--skip-preflight",
         action="store_true",
         help="Skip pre-flight model authentication and connectivity check",
+    )
+    parser.add_argument(
+        "--keep-workspaces",
+        action="store_true",
+        help="Keep task workspace directories after completion instead of auto-cleaning",
     )
 
     args = parser.parse_args()
@@ -646,9 +776,11 @@ def main() -> None:
         thinking=args.thinking,
         base_url=args.base_url,
         timeout=args.timeout,
+        concurrency=args.concurrency,
         resume=not args.no_resume,
         dry_run=args.dry_run,
         verbose=args.verbose,
+        cleanup_workspace=not args.keep_workspaces,
     )
 
     runner.run(skip_preflight=args.skip_preflight)

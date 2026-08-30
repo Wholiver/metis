@@ -14,6 +14,7 @@ await cp(path.join(desktopDir, "provider-config.cjs"), path.join(outputDir, "pro
 await cp(path.join(desktopDir, "workspace-create.cjs"), path.join(outputDir, "workspace-create.cjs"));
 await cp(path.join(desktopDir, "runtime-integrity.cjs"), path.join(outputDir, "runtime-integrity.cjs"));
 await cp(path.join(desktopDir, "session-token-totals.cjs"), path.join(outputDir, "session-token-totals.cjs"));
+await cp(path.join(desktopDir, "server-connection.cjs"), path.join(outputDir, "server-connection.cjs"));
 await cp(path.join(desktopDir, "preload.cjs"), path.join(outputDir, "preload.cjs"));
 await cp(path.join(desktopDir, "i18n.cjs"), path.join(outputDir, "i18n.cjs"));
 await cp(path.join(desktopDir, "i18n-source.cjs"), path.join(outputDir, "i18n-source.cjs"));
@@ -30,4 +31,3 @@ packageJson.scripts = { start: "electron ." };
 await writeFile(path.join(outputDir, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
 
 console.log(`Built Electron desktop artifact: ${outputDir}`);
-

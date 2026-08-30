@@ -61,12 +61,29 @@ describe('desktop React settings', () => {
     expect(preload).toContain('getConnection: () => ipcRenderer.invoke("metis:get-connection")');
     expect(main).toContain('ipcMain.handle("metis:get-connection"');
     expect(main).toContain('const health = await metisRequest("/global/health", {}, candidate)');
-    expect(main).toContain('if (!health.ok) return health');
+    expect(main.includes('if (!health.ok) {')).toBe(true);
+    expect(main.includes('return health;')).toBe(true);
     expect(main).toContain('if (changed || !metisEventController');
     expect(hook).toContain('const connectServer = useCallback');
     expect(hook).toContain('setIsConnected(true)');
     expect(app).toContain('onConnectServer={connectServer}');
     expect(settings).toContain('await props.onConnectServer');
+  });
+
+  it('persists a custom local Server port and restarts the managed Server after an unexpected exit', () => {
+    const main = source('desktop/main.cjs');
+    expect(main.includes('metisServer = restoreMetisServer(saved?.server)')).toBe(true);
+    expect(main.includes('server: persistMetisServer(metisServer)')).toBe(true);
+    expect(main.includes('const target = localServerTarget(server.baseUrl)')).toBe(true);
+    expect(main.includes('["server", "--hostname", target.hostname, "--port", String(target.port)]')).toBe(true);
+    expect(main.includes('await ensureLocalMetisServer(candidate)')).toBe(true);
+    expect(main.includes('void ensureLocalMetisServer(previousServer)')).toBe(true);
+    expect(main.includes('scheduleAutoServerRestart(serverProcess)')).toBe(true);
+    expect(main.includes('process.kill(serverProcess.pid, 0)')).toBe(true);
+    expect(main.includes('retireUnhealthyAutoServer(serverProcess, target)')).toBe(true);
+    expect(main.includes('if (!pendingMetisServer && localServerTarget(metisServer.baseUrl))')).toBe(true);
+    expect(main.includes('net.fetch("http://127.0.0.1:4096/global/health"')).toBe(false);
+    expect(main.includes('["server", "--hostname", "127.0.0.1", "--port", "4096"]')).toBe(false);
   });
 
   it('wires migrated Provider, OAuth, Memory, workspace, and transfer controls end to end', () => {
