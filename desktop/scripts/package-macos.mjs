@@ -66,8 +66,8 @@ async function buildBundledRuntime() {
 	const archivePath = path.join(temporaryDir, packResult[0].filename);
 	await run("/usr/bin/tar", ["-xzf", archivePath, "-C", runtimeDir, "--strip-components=1"]);
 	// npm package bundling only carries explicitly bundled local packages. Install the
-	// complete locked production tree so the embedded CLI is independent of host CLI/Node.
 	await cp(path.join(rootDir, "vendor"), path.join(runtimeDir, "vendor"), { recursive: true, verbatimSymlinks: true });
+	await cp(path.join(rootDir, "dist"), path.join(runtimeDir, "dist"), { recursive: true });
 	await run("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], {
 		cwd: runtimeDir,
 		env: { ...process.env, METIS_SKIP_VIDEO_TRANSCRIPTION_PREPARE: "1" },
