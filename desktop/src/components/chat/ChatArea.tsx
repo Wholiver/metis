@@ -126,6 +126,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         tokenBreakdown={tokenBreakdown}
       />
       <MessageList
+        key={agent.id}
         messages={messages}
         workspacePath={workspacePath}
         projectName={projectName}

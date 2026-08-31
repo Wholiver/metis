@@ -166,24 +166,11 @@ export const Composer: React.FC<ComposerProps> = ({
     const shell = shellRef.current;
     const main = shell?.closest<HTMLElement>('[data-purpose="main-chat"]');
     if (!shell || !main) return;
-    let pendingScrollFrame = 0;
-
     const updateOverlayHeight = () => {
-      const messageScroll = main.querySelector<HTMLElement>('[data-message-scroll]');
-      const wasNearBottom = Boolean(
-        messageScroll
-        && messageScroll.scrollHeight - messageScroll.scrollTop - messageScroll.clientHeight < 32,
-      );
       main.style.setProperty(
         '--composer-overlay-height',
         `${Math.ceil(shell.getBoundingClientRect().height)}px`,
       );
-      if (wasNearBottom && messageScroll) {
-        cancelAnimationFrame(pendingScrollFrame);
-        pendingScrollFrame = requestAnimationFrame(() => {
-          messageScroll.scrollTop = messageScroll.scrollHeight;
-        });
-      }
     };
     updateOverlayHeight();
 
@@ -191,7 +178,6 @@ export const Composer: React.FC<ComposerProps> = ({
     observer.observe(shell);
     return () => {
       observer.disconnect();
-      cancelAnimationFrame(pendingScrollFrame);
       main.style.removeProperty('--composer-overlay-height');
     };
   }, []);
@@ -603,4 +589,3 @@ export const Composer: React.FC<ComposerProps> = ({
     </div>
   );
 };
-

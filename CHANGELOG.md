@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.11] - 2026-08-31
+
+### Desktop Chat Auto-Scroll & Message Rendering Polish
+
+- Refined Desktop chat auto-scroll behavior with unified ResizeObserver and layout effect synchronizations.
+- Hardened scroll-to-bottom tracking during streaming, dynamic content expansions, and conversation switches.
+- Added comprehensive desktop chat scroll test fixtures and regression coverage.
+
 ## [1.1.10] - 2026-08-31
 
 ### Custom Provider Thinking & Model Registry Enhancements

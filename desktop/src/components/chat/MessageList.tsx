@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useLayoutEffect, useCallback } from 'react';
 import { Message, PendingUserInput, SendMessageOptions, WorkflowProposalState } from '../../types';
 import { UserBubble } from './UserBubble';
 import { AssistantTurn } from './AssistantTurn';
@@ -34,53 +34,52 @@ export const MessageList: React.FC<MessageListProps> = ({
   onSendMessage,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const laneRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
-  const prevStreamingRef = useRef(isStreaming);
-  const scrollRafRef = useRef<number | null>(null);
+  const lastScrollTopRef = useRef(0);
+  const latestUserId = [...messages].reverse().find((message) => message.role === 'user')?.id;
+  const previousUserIdRef = useRef(latestUserId);
+
+  const followBottom = useCallback(() => {
+    const el = containerRef.current;
+    if (!el || !isNearBottomRef.current) return;
+    // The composer overlays this viewport, so its clearance is part of the
+    // scroll range. The browser clamps short conversations to zero naturally.
+    el.scrollTop = el.scrollHeight;
+    lastScrollTopRef.current = el.scrollTop;
+  }, []);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    isNearBottomRef.current = distanceToBottom <= 48;
+    if (distanceToBottom <= 48) {
+      isNearBottomRef.current = true;
+    } else if (el.scrollTop < lastScrollTopRef.current) {
+      // Content growth and browser anchoring are not user scroll-away intent.
+      isNearBottomRef.current = false;
+    }
+    lastScrollTopRef.current = el.scrollTop;
   };
 
-  useEffect(() => {
-    if (isStreaming && !prevStreamingRef.current) {
+  useLayoutEffect(() => {
+    if (latestUserId !== previousUserIdRef.current) {
       isNearBottomRef.current = true;
     }
-    prevStreamingRef.current = isStreaming;
-  }, [isStreaming]);
+    previousUserIdRef.current = latestUserId;
+    followBottom();
+  }, [followBottom, latestUserId, isLoading, isStreaming, messages]);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    if (isStreaming && !isNearBottomRef.current) return;
-
-    if (scrollRafRef.current !== null) {
-      cancelAnimationFrame(scrollRafRef.current);
-    }
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = null;
-      const el = containerRef.current;
-      if (el) {
-        const clearanceEl = el.querySelector<HTMLElement>('[data-composer-clearance]');
-        const clearanceHeight = clearanceEl ? clearanceEl.offsetHeight : 0;
-        const contentHeight = el.scrollHeight - clearanceHeight;
-        if (contentHeight <= el.clientHeight) {
-          el.scrollTop = 0;
-        } else {
-          el.scrollTop = el.scrollHeight;
-        }
-      }
-    });
-
-    return () => {
-      if (scrollRafRef.current !== null) {
-        cancelAnimationFrame(scrollRafRef.current);
-        scrollRafRef.current = null;
-      }
-    };
-  }, [isLoading, isStreaming, messages]);
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const lane = laneRef.current;
+    if (!container || !lane) return;
+    // Also follow layout changes without a new message: images, work sections,
+    // composer height, and viewport resizing. Keep one owner of chat scrolling.
+    const observer = new ResizeObserver(followBottom);
+    observer.observe(container);
+    observer.observe(lane);
+    return () => observer.disconnect();
+  }, [followBottom]);
 
   const visibleTimeDivider = timeDivider || messages.find((message) => message.time)?.time;
   const renderGroups: Array<
@@ -114,7 +113,7 @@ export const MessageList: React.FC<MessageListProps> = ({
       data-message-scroll=""
     >
       {/* Centered message lane with exact same max-w-[620px] as composer */}
-      <div className={`flex w-full min-w-0 max-w-[620px] flex-col ${messages.length === 0 ? 'flex-1' : ''}`} data-message-lane="">
+      <div ref={laneRef} className={`flex w-full min-w-0 max-w-[620px] flex-col ${messages.length === 0 ? 'flex-1' : ''}`} data-message-lane="">
         {/* Centered time chip */}
         {visibleTimeDivider && (
           <div className="flex justify-center my-2 mb-4">
@@ -172,10 +171,8 @@ export const MessageList: React.FC<MessageListProps> = ({
             style={{ height: 'calc(var(--composer-overlay-height, 100px) + 16px)' }}
             data-composer-clearance=""
           />
-          <div ref={endRef} />
         </div>
       </div>
     </div>
   );
 };
-
