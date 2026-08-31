@@ -317,7 +317,7 @@ describe("ModelRegistry", () => {
 	});
 
 	describe("custom models merge behavior", () => {
-		test("custom models without discovered thinkingOptions default to non-reasoning and support thinking with thinkingOptions", () => {
+		test("custom models use documented or catalog controls while unknown models require thinking metadata", () => {
 			writeRawModelsJson({
 				"custom-zai": {
 					baseUrl: "https://proxy.example.com/v1",
@@ -346,12 +346,12 @@ describe("ModelRegistry", () => {
 			const thinkingNamed = registry.find("custom-zai", "qwen/qwen3-next-80b-a3b-thinking");
 			const unknown = registry.find("custom-zai", "unknown-capabilities");
 
-			expect(glm?.reasoning).toBe(false);
-			expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
+			expect(glm?.reasoning).toBe(true);
+			expect(getSupportedThinkingLevels(glm!)).toEqual(["low", "high", "max"]);
 			expect(qwen?.reasoning).toBe(true);
 			expect(getSupportedThinkingLevels(qwen!)).toEqual(["off", "low", "medium", "xhigh"]);
-			expect(thinkingNamed?.reasoning).toBe(false);
-			expect(getSupportedThinkingLevels(thinkingNamed!)).toEqual(["off"]);
+			expect(thinkingNamed?.reasoning).toBe(true);
+			expect(getSupportedThinkingLevels(thinkingNamed!)).toContain("high");
 			expect(unknown?.reasoning).toBe(false);
 			expect(getSupportedThinkingLevels(unknown!)).toEqual(["off"]);
 		});
@@ -376,7 +376,7 @@ describe("ModelRegistry", () => {
 			expect(getSupportedThinkingLevels(registry.find("custom-provider-default", "glm-5.3")!)).toEqual(["off"]);
 		});
 
-		test("custom models without thinking metadata do not infer reasoning from catalog", () => {
+		test("legacy empty discovery does not disable documented GLM thinking", () => {
 			writeRawModelsJson({
 				"custom-tokenhub": {
 					baseUrl: "https://tokenhub.example/v1",
@@ -388,8 +388,8 @@ describe("ModelRegistry", () => {
 
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 			const glm = registry.find("custom-tokenhub", "glm-5.3");
-			expect(glm?.reasoning).toBe(false);
-			expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
+			expect(glm?.reasoning).toBe(true);
+			expect(getSupportedThinkingLevels(glm!)).toEqual(["low", "high", "max"]);
 		});
 
 		test("custom models default to multimodal input and 256K contextWindow when omitted", () => {
@@ -1089,7 +1089,7 @@ describe("ModelRegistry", () => {
 	});
 
 	describe("dynamic provider lifecycle", () => {
-		test("dynamic custom providers without thinking options default to non-reasoning and support thinking with thinkingOptions", () => {
+		test("dynamic custom providers use documented GLM controls and configured thinkingOptions", () => {
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 			registry.registerProvider("extension-provider", {
 				baseUrl: "https://proxy.example.com/v1",
@@ -1121,8 +1121,8 @@ describe("ModelRegistry", () => {
 			});
 
 			const plainModel = registry.find("extension-provider", "glm-5.3");
-			expect(plainModel?.reasoning).toBe(false);
-			expect(getSupportedThinkingLevels(plainModel!)).toEqual(["off"]);
+			expect(plainModel?.reasoning).toBe(true);
+			expect(getSupportedThinkingLevels(plainModel!)).toEqual(["low", "high", "max"]);
 
 			const reasoningModel = registry.find("extension-provider", "custom-reasoning-model");
 			expect(reasoningModel?.reasoning).toBe(true);

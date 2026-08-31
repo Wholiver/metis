@@ -40,7 +40,21 @@ Some OpenAI-compatible servers do not understand the `developer` role used for r
 
 You can set `compat` at the provider level to apply to all models, or at the model level to override a specific model. This commonly applies to Ollama, vLLM, SGLang, and similar OpenAI-compatible servers.
 
-Desktop and TUI custom-Provider setup request the OpenAI-compatible `/models` endpoint for model IDs and provider-native reasoning levels. A reported non-empty reasoning level list is authoritative. If the endpoint returns only model IDs, returns an empty level list, or cannot be queried, custom provider models default to non-reasoning models without reasoning level options. Explicit thinking options or level maps configured manually in `models.json` continue to be respected.
+Desktop and TUI custom-Provider setup request the OpenAI-compatible `/models` endpoint for model IDs and provider-native reasoning levels. Desktop saving also queries `/models/{id}` for selected models whose list entries lack capabilities. A reported non-empty reasoning level list is used as-is, including native IDs, labels, values, and disabled-only lists. An explicit upstream `reasoning: false` is an opt-out, not missing metadata.
+
+Missing, empty, or unavailable metadata does not prove that a model lacks thinking support. All custom providers fall back to matching models in Metis's bundled catalog, using the selected API and endpoint to resolve capabilities. This covers known DeepSeek, Qwen, GPT, Claude, Gemini, Kimi, MiniMax, and other catalog models, including dynamically registered providers. Native Anthropic/Google capabilities are not blindly transferred to unrelated API protocols. Endpoint-specific OpenRouter/Together dialects and explicit provider/model `compat` overrides are respected. Controls implemented only as a switch are shown as Off/On, not duplicate effort grades.
+
+For known GLM models using `openai-completions`, Metis uses the [documented Z.AI controls](https://docs.z.ai/guides/capabilities/thinking#code-examples):
+
+| Model | Controls when discovery has no reasoning metadata |
+| --- | --- |
+| GLM-5.3 / GLM-5.3-FLASH | Low, High, Max; thinking cannot be disabled |
+| GLM-5.2 | Off, High, Max (protocol aliases are not duplicate menu entries) |
+| GLM-4.5 / 4.6 / 4.7 / 5 / 5.1 | Off, On; no unsupported effort grades |
+
+These controls set `thinking.type`; `reasoning_effort` is sent only for GLM-5.2 and GLM-5.3. Official general and Coding Plan endpoints, and custom proxies using the same OpenAI-compatible request format, use the same fallback. Unknown models or private aliases absent from the catalog require provider metadata or explicit `reasoning`, `thinkingOptions`, `thinkingLevelMap`, and (where needed) `compat` configuration. Metis does not invent levels from an arbitrary model name or send billable chat requests merely to probe capabilities.
+
+Legacy generated entries with `reasoning: false` plus `thinkingOptions: []` and no level map are treated as unknown across all providers. A deliberate `reasoning: false` without that generated shape remains disabled. Empty discovery results no longer erase existing model thinking settings when saving. Explicit model/provider opt-outs override fallback capabilities. After updating Metis, restart or reload the active session; a separately installed Desktop package must also be updated.
 
 ```json
 {

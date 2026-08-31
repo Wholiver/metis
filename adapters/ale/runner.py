@@ -340,11 +340,13 @@ class ALERunner:
                     f"{task.task_id}/*",
                     f"{task.task_id}/**/*",
                 ]
+                hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
                 downloaded_path = snapshot_download(
                     repo_id="agents-last-exam/agents-last-exam-data",
                     repo_type="dataset",
                     allow_patterns=patterns,
                     local_dir=str(temp_download_dir),
+                    token=hf_token,
                     max_workers=4,
                 )
 
@@ -590,17 +592,18 @@ def load_default_ale_tasks() -> List[ALETask]:
     try:
         from datasets import load_dataset  # type: ignore
 
+        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
         print("[ALE Runner] Attempting to load 'agents-last-exam/agents-last-exam' from Hugging Face...")
         ds = None
         for split_candidate in ["v1.0", "test", "train"]:
             try:
-                ds = load_dataset("agents-last-exam/agents-last-exam", split=split_candidate)
+                ds = load_dataset("agents-last-exam/agents-last-exam", split=split_candidate, token=hf_token)
                 break
             except Exception:
                 continue
 
         if ds is None:
-            raw_ds = load_dataset("agents-last-exam/agents-last-exam")
+            raw_ds = load_dataset("agents-last-exam/agents-last-exam", token=hf_token)
             if hasattr(raw_ds, "keys") and len(raw_ds) > 0:
                 first_key = list(raw_ds.keys())[0]
                 ds = raw_ds[first_key]

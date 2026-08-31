@@ -51,7 +51,7 @@ describe("Desktop custom Provider configuration", () => {
 		expect(first.provider).toBe("custom-local-proxy");
 		expect(first.modelIds).toEqual(["model-a", "model-b"]);
 		expect(second.provider).toBe("custom-local-proxy-2");
-		expect(fetchImpl).toHaveBeenCalledTimes(3);
+		expect(fetchImpl).toHaveBeenCalledTimes(4);
 		const saved = await providerConfig.listCustomProviderConfigs(agentDir);
 		expect(saved.map((item) => item.provider)).toEqual(["custom-local-proxy", "custom-local-proxy-2"]);
 		expect(saved[0]?.reasoning).toBe(true);
@@ -73,7 +73,7 @@ describe("Desktop custom Provider configuration", () => {
 			modelIds: ["new-model", "custom-model"],
 			reasoning: true,
 		}, { fetchImpl });
-		expect(fetchImpl).toHaveBeenCalledTimes(3);
+		expect(fetchImpl).toHaveBeenCalledTimes(5);
 
 		const models = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
 		expect(models.providers[created.provider as string].apiKey).toBeUndefined();
@@ -120,6 +120,25 @@ describe("Desktop custom Provider configuration", () => {
 		expect(fetchImpl.mock.calls[0]?.[1]?.headers.Authorization).toBe("Bearer secret");
 	});
 
+	it("keeps GLM thinking available when neither model-list nor model-detail discovery succeeds", async () => {
+		const fetchImpl = vi.fn().mockRejectedValue(new Error("discovery unavailable"));
+		await providerConfig.saveCustomProviderConfig(agentDir, {
+			name: "Unavailable", baseUrl: "https://api.z.ai/api/paas/v4", apiKey: "test-key", modelIds: ["glm-5.3"],
+		}, { fetchImpl });
+		expect(fetchImpl).toHaveBeenCalled();
+		const registry = ModelRegistry.create(AuthStorage.create(path.join(agentDir, "auth.json")), path.join(agentDir, "models.json"));
+		expect(getSupportedThinkingLevels(registry.find("custom-unavailable", "glm-5.3")!)).toEqual(["low", "high", "max"]);
+	});
+
+	it("preserves an explicit disabled-only GLM capability from discovery", async () => {
+		await providerConfig.saveCustomProviderConfig(agentDir, {
+			name: "Disabled GLM", baseUrl: "https://proxy.example/v1", apiKey: "test-key", modelIds: ["glm-5.3"],
+			discoveredModels: [{ id: "glm-5.3", thinkingOptions: [{ id: "off", label: "Disabled", value: "disabled" }] }],
+		});
+		const registry = ModelRegistry.create(AuthStorage.create(path.join(agentDir, "auth.json")), path.join(agentDir, "models.json"));
+		expect(registry.find("custom-disabled-glm", "glm-5.3")?.reasoning).toBe(false);
+	});
+
 	it("persists provider-native reasoning options and contextWindow from discovery", async () => {
 		const fetchImpl = vi.fn().mockResolvedValue({
 			ok: true,
@@ -149,12 +168,79 @@ describe("Desktop custom Provider configuration", () => {
 			path.join(agentDir, "models.json"),
 		);
 		const glm = registry.find("custom-native", "glm-5.3");
-		expect(glm?.reasoning).toBe(false);
+		expect(glm?.reasoning).toBe(true);
 		expect(glm?.contextWindow).toBe(128000);
-		expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
+		expect(getSupportedThinkingLevels(glm!)).toEqual(["low", "high", "max"]);
 		const disabled = registry.find("custom-native", "qwen3-disabled");
 		expect(disabled?.reasoning).toBe(false);
 		expect(disabled?.contextWindow).toBe(32768);
 		expect(getSupportedThinkingLevels(disabled!)).toEqual(["off"]);
+	});
+
+	it("queries model details when a list entry omits thinking metadata", async () => {
+		const fetchImpl = vi.fn()
+			.mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: "private-model", context_length: 64000 }] }) })
+			.mockResolvedValueOnce({ ok: true, json: async () => ({ id: "private-model", supported_reasoning_efforts: ["low", "high"] }) });
+		await providerConfig.saveCustomProviderConfig(agentDir, {
+			name: "Details", baseUrl: "https://proxy.example/v1",
+		}, { fetchImpl });
+		expect(fetchImpl.mock.calls.map((call) => call[0])).toEqual([
+			"https://proxy.example/v1/models", "https://proxy.example/v1/models/private-model",
+		]);
+		const registry = ModelRegistry.create(AuthStorage.create(path.join(agentDir, "auth.json")), path.join(agentDir, "models.json"));
+		const model = registry.find("custom-details", "private-model")!;
+		expect(getSupportedThinkingLevels(model)).toEqual(["low", "high"]);
+		expect(model.contextWindow).toBe(64000);
+	});
+
+	it("bounds detail discovery concurrency while retaining selected model order", async () => {
+		const modelIds = Array.from({ length: 12 }, (_, index) => `model-${index}`);
+		let active = 0;
+		let peak = 0;
+		const fetchImpl = vi.fn(async () => {
+			active += 1;
+			peak = Math.max(peak, active);
+			await Promise.resolve();
+			active -= 1;
+			return { ok: true, json: async () => ({ supported_reasoning_efforts: ["high"] }) };
+		});
+		await providerConfig.saveCustomProviderConfig(agentDir, {
+			name: "Batch", baseUrl: "https://proxy.example/v1", modelIds,
+			discoveredModels: modelIds.map((id) => ({ id, thinkingOptions: [] })),
+		}, { fetchImpl: fetchImpl as unknown as typeof fetch });
+		expect(fetchImpl).toHaveBeenCalledTimes(12);
+		expect(peak).toBeLessThanOrEqual(4);
+		const saved = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
+		expect(saved.providers["custom-batch"].models.map((model: { id: string }) => model.id)).toEqual(modelIds);
+	});
+
+	it.each([
+		{ reasoning: false },
+		{ reasoning: false, thinkingOptions: [{ id: "high", label: "High", value: "high" }] },
+		{ reasoning: true, thinkingLevelMap: { off: null, low: "low", high: "high" } },
+		{ thinkingOptions: [{ id: "balanced", label: "Balanced", value: "balanced" }] },
+	])("preserves explicit model settings when discovery is empty: %j", async (settings) => {
+		const modelsPath = path.join(agentDir, "models.json");
+		fs.writeFileSync(modelsPath, JSON.stringify({ providers: { "custom-proxy": {
+			name: "Proxy", api: "openai-completions", baseUrl: "https://proxy.example/v1",
+			models: [{ id: "private-model", ...settings }],
+		} } }));
+		await providerConfig.saveCustomProviderConfig(agentDir, {
+			providerId: "custom-proxy", name: "Proxy", baseUrl: "https://proxy.example/v1", modelIds: ["private-model"],
+			discoveredModels: [{ id: "private-model", thinkingOptions: [] }],
+		}, { fetchImpl: vi.fn().mockResolvedValue({ ok: false }) });
+		expect(JSON.parse(fs.readFileSync(modelsPath, "utf8")).providers["custom-proxy"].models[0]).toMatchObject(settings);
+	});
+
+	it.each([
+		[{ supported_reasoning_efforts: [], reasoning: { efforts: ["high"] } }, "high", "high"],
+		[{ thinking_options: [{ id: "high", value: "enabled", label: "On" }] }, "high", "enabled"],
+		[{ thinkingOptions: [{ id: "high", value: "enabled", label: "On" }] }, "high", "enabled"],
+		[{ reasoning: false }, "off", "off"],
+		[{ capabilities: { reasoning: { supported: false } } }, "off", "off"],
+	])("parses capability metadata consistently with the core: %j", async (metadata, id, value) => {
+		const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: "native", ...metadata as object }] }) });
+		const models = await providerConfig.discoverCustomProviderModels("https://proxy.example/v1", "test-key", { fetchImpl });
+		expect(models[0]?.thinkingOptions[0]).toMatchObject({ id, value });
 	});
 });

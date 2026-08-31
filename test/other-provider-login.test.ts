@@ -158,7 +158,14 @@ describe("Other provider setup and login flow", () => {
 		expect(after.providers["custom-two"]).toBeDefined();
 	});
 
-	it("custom models without discovered thinkingOptions default to non-reasoning and save discovered contextWindow", () => {
+	it("preserves an explicit GLM opt-out from discovery", () => {
+		saveOtherProviderConfig(modelsPath, "custom-disabled", "Disabled", "https://proxy.example/v1", ["glm-5.3"], false,
+			[{ id: "glm-5.3", thinkingOptions: [{ id: "off", label: "Disabled", value: "disabled" }] }]);
+		const registry = ModelRegistry.create(authStorage, modelsPath);
+		expect(registry.find("custom-disabled", "glm-5.3")?.reasoning).toBe(false);
+	});
+
+	it("custom GLM models retain documented thinking fallback and discovered contextWindow", () => {
 		saveOtherProviderConfig(
 			modelsPath,
 			"custom-tokenhub",
@@ -183,8 +190,8 @@ describe("Other provider setup and login flow", () => {
 
 		const registry = ModelRegistry.create(authStorage, modelsPath);
 		const glm = registry.find("custom-tokenhub", "glm-5.3");
-		expect(glm?.reasoning).toBe(false);
+		expect(glm?.reasoning).toBe(true);
 		expect(glm?.contextWindow).toBe(128000);
-		expect(getSupportedThinkingLevels(glm!)).toEqual(["off"]);
+		expect(getSupportedThinkingLevels(glm!)).toEqual(["low", "high", "max"]);
 	});
 });

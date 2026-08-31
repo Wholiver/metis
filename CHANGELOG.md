@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.10] - 2026-08-31
+
+### Custom Provider Thinking & Model Registry Enhancements
+
+- Enhanced custom provider thinking capability discovery and reasoning level mappings (GLM, Qwen, Zhipu, OpenRouter, Together).
+- Added flexible thinking option parsing for custom OpenAI-compatible endpoints.
+- Updated provider documentation and refined model capability tests.
+
 ## [1.1.9] - 2026-08-30
 
 ### Server Connection Reliability & ALE Evaluation Adapter

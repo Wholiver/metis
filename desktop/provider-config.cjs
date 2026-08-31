@@ -42,8 +42,9 @@ function normalizeThinkingOption(value) {
 	if (!value || typeof value !== "object") return undefined;
 	const raw = [value.value, value.id, value.name].find((candidate) => typeof candidate === "string" && candidate.trim());
 	if (!raw) return undefined;
+	const id = typeof value.id === "string" && value.id.trim() ? value.id.trim() : raw.trim();
 	return {
-		id: /^(?:off|none|disabled)$/i.test(raw) ? "off" : raw.trim(),
+		id: /^(?:off|none|disabled)$/i.test(id) ? "off" : id,
 		label: typeof value.label === "string" && value.label.trim() ? value.label.trim() : raw.trim(),
 		value: raw.trim(),
 	};
@@ -73,21 +74,29 @@ function extractProviderContextWindow(item) {
 
 function extractProviderThinkingOptions(item) {
 	if (!item || typeof item !== "object") return [];
+	if ([item.reasoning, item.supports_reasoning, item.capabilities?.reasoning,
+		item.reasoning?.supported, item.thinking?.supported,
+		item.capabilities?.reasoning?.supported, item.capabilities?.thinking?.supported].includes(false)) {
+		return [{ id: "off", label: "Off", value: "off" }];
+	}
 	const candidates = [
+		item.thinkingOptions, item.thinking_options,
 		item.supported_reasoning_efforts, item.reasoning_efforts,
 		item.supported_thinking_levels, item.thinking_levels,
 		item.capabilities?.reasoning?.efforts, item.capabilities?.reasoning?.levels,
 		item.capabilities?.thinking?.levels, item.reasoning?.efforts,
 		item.reasoning?.levels, item.thinking?.levels,
 	];
-	const exposed = candidates.find(Array.isArray);
-	if (!exposed) return [];
-	const byId = new Map();
-	for (const value of exposed) {
-		const option = normalizeThinkingOption(value);
-		if (option && !byId.has(option.id)) byId.set(option.id, option);
+	for (const exposed of candidates) {
+		if (!Array.isArray(exposed)) continue;
+		const byId = new Map();
+		for (const value of exposed) {
+			const option = normalizeThinkingOption(value);
+			if (option && !byId.has(option.id)) byId.set(option.id, option);
+		}
+		if (byId.size > 0) return [...byId.values()];
 	}
-	return [...byId.values()];
+	return [];
 }
 
 function summarizeProvider(providerId, provider, modelsPath) {
@@ -255,25 +264,38 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 	if (modelIds.length === 0) modelIds = ["default"];
 	const modelsById = new Map(existingModels.filter((model) => model && typeof model === "object").map((model) => [model.id, model]));
 	const discoveredById = new Map((discoveredModels || []).map((model) => [model.id, model]));
-	const models = await Promise.all(modelIds.map(async (id) => {
+	const resolveModel = async (id) => {
 		const existingModel = modelsById.get(id) || {};
 		let discovered = discoveredById.get(id);
-		if (!discovered && apiKey) {
-			discovered = await fetchSingleModelDetails(baseUrl, apiKey, id, options);
+		if (!discovered?.thinkingOptions?.length) {
+			const details = await fetchSingleModelDetails(baseUrl, apiKey, id, options);
+			if (details) discovered = { ...discovered, ...details };
 		}
 		const contextWindow = discovered?.contextWindow ?? existingModel.contextWindow ?? DEFAULT_CUSTOM_CONTEXT_WINDOW;
 		const model = { ...existingModel, id, input: existingModel.input || ["text", "image"], contextWindow };
-		const thinkingOptions = discovered?.thinkingOptions ?? existingModel.thinkingOptions;
-		if (thinkingOptions && thinkingOptions.length > 0 && thinkingOptions.some((option) => option.id !== "off")) {
-			model.reasoning = true;
+		if (existingModel.reasoning === false && !(Array.isArray(existingModel.thinkingOptions)
+			&& existingModel.thinkingOptions.length === 0 && existingModel.thinkingLevelMap === undefined)) return model;
+		const thinkingOptions = discovered?.thinkingOptions?.length ? discovered.thinkingOptions : existingModel.thinkingOptions;
+		if (thinkingOptions && thinkingOptions.length > 0) {
+			model.reasoning = thinkingOptions.some((option) => option.id !== "off");
 			model.thinkingOptions = thinkingOptions;
 			model.thinkingLevelMap = Object.fromEntries(thinkingOptions.map((option) => [option.id, option.value]));
-		} else {
+		} else if (Array.isArray(existingModel.thinkingOptions) && existingModel.thinkingOptions.length === 0
+			&& existingModel.thinkingLevelMap === undefined) {
 			delete model.thinkingOptions;
-			delete model.thinkingLevelMap;
-			delete model.reasoning;
+			if (model.reasoning === false) delete model.reasoning;
 		}
 		return model;
+	};
+	// A model list may contain hundreds of entries with no capability metadata.
+	// Bound requests while retaining the user's model order.
+	const models = new Array(modelIds.length);
+	let nextModelIndex = 0;
+	await Promise.all(Array.from({ length: Math.min(4, modelIds.length) }, async () => {
+		while (nextModelIndex < modelIds.length) {
+			const index = nextModelIndex++;
+			models[index] = await resolveModel(modelIds[index]);
+		}
 	}));
 
 	modelsConfig.providers[providerId] = {
