@@ -1145,9 +1145,9 @@ function isAuthorized(request: IncomingMessage, username: string, password: stri
 }
 
 function safeEqual(actual: string, expected: string): boolean {
-	const actualBuffer = Buffer.from(actual);
-	const expectedBuffer = Buffer.from(expected);
-	return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+	const actualHash = crypto.createHash("sha256").update(actual).digest();
+	const expectedHash = crypto.createHash("sha256").update(expected).digest();
+	return crypto.timingSafeEqual(actualHash, expectedHash);
 }
 
 function isLoopbackHostname(hostname: string): boolean {

@@ -1,0 +1,4 @@
+## 2024-10-24 - [Fix safeEqual timing attack]
+**Vulnerability:** The `safeEqual` function used for password comparison contained a timing vulnerability. It returned `false` immediately if the lengths of the `actual` and `expected` strings didn't match. This allowed an attacker to guess the length of the expected string by measuring response times.
+**Learning:** Even when using `crypto.timingSafeEqual`, the inputs to the function must be exactly the same length. Returning early based on length defeats the purpose of the constant-time comparison for secrets.
+**Prevention:** Before comparing arbitrary-length strings securely, hash both strings (e.g. using SHA-256) and then compare the hashes using `timingSafeEqual`. This guarantees the buffers are always the same length and completely mitigates length-based timing attacks.
