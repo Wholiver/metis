@@ -29,6 +29,7 @@ import {
 	type ChildAgentResultPayload,
 } from "../src/core/tools/spawn_agent.ts";
 import { setGlobalSpawnGuard, SpawnGuard } from "../src/core/spawn-guard.ts";
+import { PerformanceRuntime } from "../src/core/performance-runtime.ts";
 
 describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 	const tempDirs: string[] = [];
@@ -163,6 +164,38 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(payload.parentId).toBe("root");
 		expect(payload.rootRunId).toBe("run-001");
 		expect(payload.result).toBe("Planning completed successfully.\nSteps: 1, 2, 3");
+	});
+
+	it.each([undefined, 180])("handles a 180-second interval with timeoutSeconds=%s without invalidating the Performance run", async (timeoutSeconds) => {
+		vi.useFakeTimers();
+		const child = createMockChildProcess();
+		spawnMock.mockReturnValue(child);
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-timeout-"));
+		tempDirs.push(tempDir);
+		const runtime = new PerformanceRuntime(tempDir);
+		const state = runtime.start({ kind: "start", mission: "Inspect repository scope" });
+		const releaseSpawn = vi.fn((id: string) => runtime.releaseSpawn(id));
+		const definition = createSpawnAgentToolDefinition(tempDir, {
+			validateSpawn: (input, _runtime, id) => {
+				const decision = runtime.reserveSpawn("root", input.agent, id);
+				return decision.valid ? undefined : decision.message;
+			},
+			releaseSpawn,
+		});
+		const execution = definition.execute("timeout-case", { agent: "scoper", task: "Inspect scope", timeoutSeconds }, new AbortController().signal, () => {}, undefined as never);
+		await vi.waitFor(() => expect(child.stdout.listenerCount("data")).toBeGreaterThan(0));
+		await vi.advanceTimersByTimeAsync(181_001);
+		if (timeoutSeconds === undefined) {
+			expect(child.kill).not.toHaveBeenCalled();
+			child.emit("close", 0);
+		}
+		const result = await execution;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload.status).toBe(timeoutSeconds === undefined ? "success" : "timed_out");
+		if (timeoutSeconds !== undefined) expect(payload.error).toBe("Agent execution timed out after 180s");
+		expect(releaseSpawn).toHaveBeenCalledTimes(1);
+		expect(runtime.read(state.runId)).toMatchObject({ status: "active", leases: [] });
+		expect(runtime.reserveSpawn("root", "scoper", "retry-scope")).toEqual({ valid: true });
 	});
 
 	it("executes in sync mode and returns structured error on non-zero exit code", async () => {
@@ -461,4 +494,3 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(releases).toEqual([payload.agentId]);
 	});
 });
-

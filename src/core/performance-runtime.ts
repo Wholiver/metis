@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import {
@@ -328,6 +328,10 @@ ${line(state, "FRONTIER G2")}
 	 * prompt ledger; prior substantive receipts remain append-only in GATELOG.
 	 */
 	steer(instruction: string): PerformanceRunState {
+		return this.withFreshState(() => this.steerCurrent(instruction));
+	}
+
+	private steerCurrent(instruction: string): PerformanceRunState {
 		const state = this.stateValue;
 		if (!state || state.status !== "active") throw new Error("Performance steering requires an active run.");
 		if (state.leases.length > 0) throw new Error("Performance steering requires collected subagents; resolve live leases before changing scope.");
@@ -474,6 +478,10 @@ ${line(state, "FRONTIER G2")}
 
 	/** Record a role-bound evidence verdict and move to its deterministic next gate. */
 	recordGateReport(input: Omit<PerformanceGateReport, "at">): void {
+		this.withFreshState(() => this.recordCurrentGateReport(input));
+	}
+
+	private recordCurrentGateReport(input: Omit<PerformanceGateReport, "at">): void {
 		let state = this.stateValue;
 		if (!state) throw new Error("No active Performance run.");
 		if (state.status !== "active") throw new Error(`Performance run is ${state.status}.`);
@@ -936,9 +944,34 @@ ${line(state, "FRONTIER G2")}
 		return parsePerformanceRoadmapItems(content);
 	}
 
+	/** Serialize every read-modify-write with lease acquisition and release. */
+	private withFreshState<T>(operation: () => T): T {
+		const previous = this.stateValue;
+		if (!previous) throw new Error("No active Performance run.");
+		return this.withStateLock(() => {
+			const latest = this.readFromDirectory(previous.governanceRoot);
+			if (!latest) throw new Error("Performance run is unavailable; governance state or mission integrity validation failed.");
+			if (latest.runId !== previous.runId || latest.nonce !== previous.nonce
+				|| latest.missionSha256 !== previous.missionSha256 || latest.missionBytes !== previous.missionBytes) {
+				throw new Error("Performance run binding changed; reload the run before reporting evidence or changing scope.");
+			}
+			this.stateValue = latest;
+			return operation();
+		});
+	}
+
 	private persist(): void {
 		if (!this.stateValue) return;
-		writeFileSync(join(this.stateValue.governanceRoot, "run.json"), `${JSON.stringify(this.stateValue, null, 2)}\n`, "utf8");
+		const file = join(this.stateValue.governanceRoot, "run.json");
+		const temporary = `${file}.${randomUUID()}.tmp`;
+		try {
+			// Readers outside the mutation lock must see a complete old or new
+			// snapshot, including when a worker is interrupted during the write.
+			writeFileSync(temporary, `${JSON.stringify(this.stateValue, null, 2)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+			renameSync(temporary, file);
+		} finally {
+			if (existsSync(temporary)) unlinkSync(temporary);
+		}
 	}
 
 	private withStateLock<T>(operation: () => T): T {
@@ -950,7 +983,7 @@ ${line(state, "FRONTIER G2")}
 			fd = openSync(lockPath, "wx");
 			return operation();
 		} catch (error: any) {
-			if (error?.code === "EEXIST") throw new Error("Performance governance is busy; retry the spawn operation.");
+			if (error?.code === "EEXIST") throw new Error("Performance governance is busy; retry the operation.");
 			throw error;
 		} finally {
 			if (fd !== undefined) closeSync(fd);
@@ -966,4 +999,3 @@ ${line(state, "FRONTIER G2")}
 		appendFileSync(join(this.stateValue.governanceRoot, "GATELOG.md"), `${line(this.stateValue, `${event} agent=${agent} model=${model} effort=${effort}`)}\n`, "utf8");
 	}
 }
-

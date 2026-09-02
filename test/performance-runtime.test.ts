@@ -32,7 +32,7 @@ describe("built-in Performance runtime", () => {
 	function writeRoadmap(state: { governanceRoot: string }, items: RoadmapItem[]): void {
 		const template = readFileSync(join(state.governanceRoot, "ROADMAP.md"), "utf8");
 		const roadmap = template.slice(0, template.indexOf("## Item:"))
-			.replaceAll("TBD", "confirmed from repository")
+			.replace(/: TBD$/gm, ": confirmed from repository")
 			.replace("requiresDetailedPlan: false", "requiresDetailedPlan: false")
 			+ items.map((item, index) => `## Item: ${item.id ?? `item-${index + 1}`}
 - Category: ${item.category ?? "backend"}
@@ -138,6 +138,116 @@ describe("built-in Performance runtime", () => {
 		resumed.recordGateReport({ gate: "G2", actor: "scoper-1", role: "scoper", verdict: "pass", evidence });
 		expect(resumed.state?.frontier).toBe("G2-assurance");
 		expect(resumed.state?.repairRequired).toBeUndefined();
+	});
+
+	it("rejects a stale worker blocker after another worker reports a repairable G2 error", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const parent = new PerformanceRuntime(agentDir);
+		const state = parent.start({ kind: "start", mission: "Inspect repository scope" });
+		const worker = new PerformanceRuntime(agentDir, { METIS_PERFORMANCE_RUN_ID: state.runId });
+		const staleWorker = new PerformanceRuntime(agentDir, { METIS_PERFORMANCE_RUN_ID: state.runId });
+		const evidence = receipt(state, "scope-repair");
+		expect(() => worker.recordGateReport({ gate: "G2", actor: "scope-1", role: "scoper", verdict: "pass", evidence })).toThrow("REPAIR_REQUIRED");
+
+		// Both workers were created before the validation error. The second must
+		// see the persisted repair guard, not terminate the run from its old copy.
+		expect.soft(() => staleWorker.recordGateReport({ gate: "G2", actor: "scope-2", role: "scoper", verdict: "blocked", evidence })).toThrow("must repair ROADMAP.md");
+		expect(parent.reserveSpawn("root", "scoper", "retry-scope")).toEqual({ valid: true });
+		expect(parent.state?.status).toBe("active");
+	});
+
+	it("preserves live leases when a previously loaded worker reports a gate", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const parent = new PerformanceRuntime(agentDir);
+		const state = parent.start({ kind: "start", mission: "Inspect repository scope" });
+		const worker = new PerformanceRuntime(agentDir, { METIS_PERFORMANCE_RUN_ID: state.runId });
+		expect(parent.reserveSpawn("root", "scoper", "scope-live")).toEqual({ valid: true });
+		completeRoadmap(state);
+		worker.recordGateReport({ gate: "G2", actor: "scope-1", role: "scoper", verdict: "pass", evidence: receipt(state, "scope") });
+		expect(parent.read(state.runId)?.leases.map((lease) => lease.agentId)).toEqual(["scope-live"]);
+	});
+
+	it("collects assurance reports from independently loaded workers without losing a verdict", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const parent = new PerformanceRuntime(agentDir);
+		const state = parent.start({ kind: "start", mission: "Inspect repository scope" });
+		completeRoadmap(state);
+		parent.recordGateReport({ gate: "G2", actor: "scope-1", role: "scoper", verdict: "pass", evidence: receipt(state, "scope") });
+		const reviewer = new PerformanceRuntime(agentDir, { METIS_PERFORMANCE_RUN_ID: state.runId });
+		const verifier = new PerformanceRuntime(agentDir, { METIS_PERFORMANCE_RUN_ID: state.runId });
+		reviewer.recordGateReport({ gate: "G2-review", actor: "review-1", role: "reviewer", verdict: "pass", evidence: receipt(state, "review") });
+		verifier.recordGateReport({ gate: "G2-verify", actor: "verify-1", role: "fresh-verifier", verdict: "pass", evidence: receipt(state, "verify") });
+		const persisted = parent.read(state.runId);
+		expect(persisted?.reports.map((report) => report.gate)).toEqual(["G2", "G2-review", "G2-verify"]);
+		expect(persisted?.frontier).toBe("G4");
+	});
+
+	it("rejects steering from a stale parent while another process holds a live lease", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const parent = new PerformanceRuntime(agentDir);
+		const state = parent.start({ kind: "start", mission: "Inspect repository scope" });
+		const staleParent = new PerformanceRuntime(agentDir, { METIS_PERFORMANCE_RUN_ID: state.runId });
+		expect(parent.reserveSpawn("root", "scoper", "scope-live")).toEqual({ valid: true });
+		expect(() => staleParent.steer("Change scope")).toThrow("collected subagents");
+		expect(parent.read(state.runId)?.missionSha256).toBe(state.missionSha256);
+	});
+
+	it("does not let a stale worker overwrite a newly steered mission", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const parent = new PerformanceRuntime(agentDir);
+		const state = parent.start({ kind: "start", mission: "Inspect repository scope" });
+		const staleWorker = new PerformanceRuntime(agentDir, { METIS_PERFORMANCE_RUN_ID: state.runId });
+		const steered = parent.steer("Include malformed input");
+		completeRoadmap(steered);
+		expect(() => staleWorker.recordGateReport({ gate: "G2", actor: "old-scope", role: "scoper", verdict: "pass", evidence: receipt(steered, "stale") })).toThrow("binding changed");
+		expect(parent.read(state.runId)).toMatchObject({ missionSha256: steered.missionSha256, reports: [] });
+	});
+
+	it("does not overwrite corrupted governance from a cached snapshot", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.start({ kind: "start", mission: "Inspect repository scope" });
+		const prompt = join(state.governanceRoot, "PROMPTS.txt");
+		writeFileSync(prompt, "changed outside the runtime", "utf8");
+		expect(() => runtime.steer("New task")).toThrow("integrity validation failed");
+		expect(() => runtime.recordGateReport({ gate: "G2", actor: "scope", role: "scoper", verdict: "blocked", evidence: receipt(state, "blocked") })).toThrow("integrity validation failed");
+		expect(readFileSync(prompt, "utf8")).toBe("changed outside the runtime");
+	});
+
+	it("does not revive a legitimately blocked run from a stale worker", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const parent = new PerformanceRuntime(agentDir);
+		const state = parent.start({ kind: "start", mission: "Inspect repository scope" });
+		const staleWorker = new PerformanceRuntime(agentDir, { METIS_PERFORMANCE_RUN_ID: state.runId });
+		parent.recordGateReport({ gate: "G2", actor: "scope", role: "scoper", verdict: "blocked", evidence: receipt(state, "blocked") });
+		completeRoadmap(state);
+		expect(() => staleWorker.recordGateReport({ gate: "G2", actor: "old-scope", role: "scoper", verdict: "pass", evidence: receipt(state, "stale") })).toThrow("run is blocked");
+		expect(parent.read(state.runId)?.status).toBe("blocked");
+	});
+
+	it("uses the same lock for gate reports and steering without removing another worker's lock", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.start({ kind: "start", mission: "Inspect repository scope" });
+		completeRoadmap(state);
+		const report = { gate: "G2", actor: "scope", role: "scoper", verdict: "pass", evidence: receipt(state, "scope") } as const;
+		const lock = join(state.governanceRoot, ".run.lock");
+		writeFileSync(lock, "another worker owns this lock", "utf8");
+		expect(() => runtime.recordGateReport(report)).toThrow("governance is busy");
+		expect(() => runtime.steer("New scope")).toThrow("governance is busy");
+		expect(readFileSync(lock, "utf8")).toBe("another worker owns this lock");
+		expect(runtime.read(state.runId)?.reports).toEqual([]);
+		rmSync(lock);
+		runtime.recordGateReport(report);
+		expect(runtime.read(state.runId)?.frontier).toBe("G2-assurance");
 	});
 
 	it("hard-stops before scope when required read/write/run capability is unavailable", () => {
@@ -553,4 +663,3 @@ Run nonce: ${state.nonce}
 		]);
 	});
 });
-

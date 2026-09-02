@@ -44,6 +44,9 @@ class ALEResult:
     raw_stdout: str = ""
     raw_stderr: str = ""
     error_message: Optional[str] = None
+    score: Optional[float] = None
+    verifier_status: str = "unverified"
+    verifier_output: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -136,6 +139,7 @@ class ALEMetisAdapter:
         extra_env: Optional[Dict[str, str]] = None,
         extra_args: Optional[List[str]] = None,
         verbose: bool = False,
+        docker_container: Optional[str] = None,
     ) -> ALEResult:
         """
         Execute a single ALE benchmark task prompt headlessly.
@@ -153,6 +157,7 @@ class ALEMetisAdapter:
             extra_env: Additional environment variables for this task.
             extra_args: Additional CLI flags to append.
             verbose: If True, stream logs to stderr.
+            docker_container: If provided, delegate shell command execution to this Docker container.
 
         Returns:
             ALEResult containing exit status, final answer, trace events and metrics.
@@ -204,6 +209,16 @@ class ALEMetisAdapter:
             cmd.extend(extra_args)
 
         env = self.inject_credentials(extra_env)
+
+        if docker_container:
+            docker_shell_path = Path(__file__).resolve().parent / "docker_shell.sh"
+            env["ALE_CONTAINER_ID"] = docker_container
+            env["SHELL"] = str(docker_shell_path)
+            # Ensure OrbStack / Docker path is accessible to Metis child process
+            orb_bin = str(Path.home() / ".orbstack" / "bin")
+            local_bin = str(Path.home() / ".local" / "bin")
+            current_path = env.get("PATH", "")
+            env["PATH"] = f"{orb_bin}:{local_bin}:{current_path}"
 
         start_time = time.time()
         raw_stdout = ""
@@ -300,6 +315,7 @@ class ALEMetisAdapter:
                 cmd,
                 cwd=str(resolved_workdir),
                 env=env,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,

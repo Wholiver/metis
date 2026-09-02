@@ -4,6 +4,14 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.12] - 2026-09-02
+
+### Performance Runtime Governance & Multi-Process Concurrency Hardening
+
+- Hardened Performance Runtime gate governance with cross-process file locks and state reload verification.
+- Enforced mission binding checks and lease validation to prevent stale worker overwrites and deadlocks.
+- Enhanced subagent spawn timeout resilience and expanded performance persistence test coverage.
+
 ## [1.1.11] - 2026-08-31
 
 ### Desktop Chat Auto-Scroll & Message Rendering Polish
