@@ -320,19 +320,20 @@ describe('desktop plan preview', () => {
     expect(statSync(idleSvg).size).toBeGreaterThan(1_000);
   });
 
-  it('renders progress at the latest model-output tail during and after streaming', () => {
+  it('renders progress fixed above the composer during and after streaming', () => {
     const work = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/AssistantWork.tsx'), 'utf8');
     const turn = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/AssistantTurn.tsx'), 'utf8');
+    const composer = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/Composer.tsx'), 'utf8');
     const list = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/MessageList.tsx'), 'utf8');
     const indicator = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/WorkProgressIndicator.tsx'), 'utf8');
     const css = readFileSync(resolve(process.cwd(), 'desktop/src/index.css'), 'utf8');
     const main = readFileSync(resolve(process.cwd(), 'desktop/main.cjs'), 'utf8');
     expect(work).not.toContain('<WorkProgressIndicator');
-    expect(turn).toContain('key="output-tail-progress"');
-    expect(turn).toContain('progress={progress} idle={!streaming && !isWaitingUserInput}');
+    expect(turn).not.toContain('<WorkProgressIndicator');
+    expect(composer).toContain('data-composer-progress-slot=""');
+    expect(composer).toContain('<WorkProgressIndicator progress={workProgress} idle={isWorkIdle}');
     expect(list).toContain('key="active-assistant-turn"');
     expect(list).toContain('messages={[]}');
-    expect(list).toContain('showProgress={group === progressGroup}');
     expect(indicator).toContain('data-progress-phase={progress.phase}');
     expect(indicator).toContain('data-progress-status={progress.status}');
     expect(indicator).not.toContain('data-progress-video');

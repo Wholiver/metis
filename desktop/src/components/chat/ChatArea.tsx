@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Agent, CollaborationMode, ContextUsage, MemoryState, Message, ModelOption, PendingUserInput, SendMessageOptions, ThinkingOption, TokenBreakdown, UserInputResponse, WorkflowProposalState } from '../../types';
 import { IDLE_COMPOSER_ACTIVITY, reduceComposerActivity } from '../../lib/composer';
+import { resolveConversationProgress } from '../../lib/work-progress';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
@@ -110,6 +111,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   };
 
   const showActiveProgress = composerActivity.localTaskPending || isStreaming || Boolean(pendingUserInput);
+  const { progress: currentProgress, idle: isCurrentIdle } = resolveConversationProgress(
+    messages,
+    showActiveProgress,
+    Boolean(pendingUserInput)
+  );
 
   return (
     <main data-purpose="main-chat" className="flex-1 h-full bg-[#ffffff] flex flex-col min-w-[360px] overflow-hidden relative">
@@ -140,7 +146,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         onSendMessage={handleSendMessage}
       />
       {pendingUserInput ? (
-        <UserInputCard request={pendingUserInput} onRespond={onRespondToUserInput} />
+        <UserInputCard request={pendingUserInput}
+          onRespond={onRespondToUserInput}
+          progress={currentProgress}
+          idle={isCurrentIdle}
+        />
       ) : (
         <Composer
           agent={agent}
@@ -162,6 +172,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           disabled={showActiveProgress || isLoading || isCompacting}
           isStreaming={showActiveProgress}
           onAbort={onAbort}
+          workProgress={currentProgress}
+          isWorkIdle={isCurrentIdle}
         />
       )}
     </main>

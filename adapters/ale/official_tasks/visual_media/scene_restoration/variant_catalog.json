@@ -1,0 +1,21 @@
+[
+  {
+    "task_tag": "summer_riding_bus_stop_restore_v1",
+    "display_name": "Summer Riding Bus Stop Scene Restoration V1",
+    "remote_task_dir_name": "summer_riding_bus_stop_restore_v1",
+    "visible_subdirs": [
+      "input",
+      "software"
+    ],
+    "engine_version": "Unreal Engine 5.7",
+    "project_relative_path": "input/project/SummerRiding2.uproject",
+    "scaffold_map_path": "/Game/Project/Scenes/Map_SummerRiding2_RestoreBusStopV1_Scaffold",
+    "submission_map_asset_path": "/Game/Project/Scenes/Submission/final",
+    "submission_relpath": "output/submission/project/SummerRiding2.uproject",
+    "input_manifest_relpath": "input/manifest.json",
+    "scene_reference_dir_relpath": "input/scene_reference_images",
+    "camera_prefix": "TaskCam_",
+    "camera_count": 19,
+    "task_summary": "Restore the removed kiosk cluster while keeping the yellow floor base, road, guardrail, trees, and distant background intact."
+  }
+]

@@ -1,0 +1,76 @@
+{
+  "taskId": "physical_sciences/silicon_bse_absorption",
+  "title": "Silicon Bse Absorption",
+  "summary": "Your Task Compute the GW BSE absorption spectrum of bulk silicon from the staged structure and pseudopotential.",
+  "category": "physical_sciences",
+  "software": [
+    "NumPy",
+    "Python",
+    "Quantum ESPRESSO 6.7MaX",
+    "Open MPI 4.1.6",
+    "BerkeleyGW 4.0"
+  ],
+  "taskPrompt": "You are a computational materials scientist working on a Linux VM.\n\n## Your Task\nCompute the GW-BSE absorption spectrum of bulk silicon from the staged structure and pseudopotential.\n\n## Input Files\n- Silicon structure: `base/input/silicon.vasp`\n- Silicon pseudopotential: `base/input/Si.UPF`\n\n## Software\nUse the task-local command-line tools staged here:\n- `base/software/bin/pw.x`\n- `base/software/bin/mpirun`\n- `base/software/bin/epsilon.cplx.x`\n- `base/software/bin/sigma.cplx.x`\n- `base/software/bin/kernel.cplx.x`\n- `base/software/bin/absorption.cplx.x`\n- `base/software/bin/inteqp.cplx.x`\n\n## What You Must Do\n1. Create the missing Quantum ESPRESSO and BerkeleyGW input decks from scratch.\n2. Run the silicon QE mean-field workflow.\n3. Run the BerkeleyGW GW+BSE workflow needed for both quasiparticle and absorption outputs.\n4. Save the required outputs exactly under `base/output`.\n\n## Required Output Files\n- `base/output/bandstructure.dat`\n- `base/output/eqp.dat`\n- `base/output/eqp_q.dat`\n- `base/output/absorption_eh.dat`\n- `base/output/absorption_noeh.dat`\n- `base/output/eigenvalues.dat`\n- `base/output/eigenvalues_noeh.dat`\n- `base/output/bandstructure_inteqp.png`\n- `base/output/absorption.png`\n\nDo not write outputs outside `base/output`.\n",
+  "agentMustDo": [
+    "Read the staged input files under `input/`.",
+    "Create the missing QE and BerkeleyGW input decks from scratch. At minimum this includes QE SCF and NSCF inputs plus BerkeleyGW inputs for `epsilon`, `sigma`, `kernel`, `absorption`, and `inteqp`.",
+    "Run the QE mean-field workflow for bulk silicon to generate the charge density and wavefunctions.",
+    "Run the BerkeleyGW GW+BSE workflow for bulk silicon (`epsilon` -> `sigma` -> `kernel` -> `absorption`, with `inteqp` for the quasiparticle band outputs), targeting the benchmark-scale reference settings from the original prompt such as `5x5x5` wavefunction k-point sampling, `10 Ry` dielectric cutoff, and about `39` bands in the GW sum-over-states.",
+    "Produce the absorption outputs with and without electron-hole interaction, plus the required quasiparticle band outputs.",
+    "Write the required output files under `output/` using the filenames documented in the task materials."
+  ],
+  "inputFiles": [
+    {
+      "name": "Silicon structure",
+      "format": "`vasp`",
+      "path": "input/silicon.vasp",
+      "description": "Bulk Si structure for the optical task"
+    },
+    {
+      "name": "Silicon pseudopotential",
+      "format": "`UPF`",
+      "path": "input/Si.UPF",
+      "description": "Norm-conserving Si pseudopotential"
+    }
+  ],
+  "referenceFiles": [
+    {
+      "name": "Optical outputs",
+      "format": "`mixed`",
+      "path": "output/*",
+      "description": "Includes bandstructure.dat, eqp.dat, eqp_q.dat, absorption_eh.dat, absorption_noeh.dat, eigenvalues.dat, eigenvalues_noeh.dat, bandstructure_inteqp.png, absorption.png"
+    }
+  ],
+  "evaluation": "**Hard gate conditions** (auto score=0 if triggered):\n- `output/` is missing\n- any required filename is missing from `output/`\n- any required text output is unparsable or empty\n- either required plot is empty or is not a PNG\n\n**Scoring method:**\n- Keep the existing nine-file output contract.\n- Extract the DFT/GW gaps and band-edge topology, the first optically bright excitation, the principal absorption features, and the electron-hole-induced spectral change.\n- Compare spectra after interpolation to a common energy grid and normalization; row counts, energy grids, absolute intensity scale, and individual floating-point values do not need to match the reference.\n- Score the physical observables and normalized spectral shape continuously against hidden acceptable ranges.\n- Final score is continuous from `0.0` to `1.0`; `0.70` is the pass threshold after hard gates.\n\n- **Where does the main scoring logic run?** local Python evaluation\n- **If any scoring step runs on the VM, why is that exception necessary?** none planned\n\n**What does a PERFECT output look like?**\nEvery required output is present and the extracted electronic and optical observables are physically consistent.\n\n**What does a WRONG/empty output look like?**\nMissing files, empty placeholders, unparsable tables, invalid plots, or physically inconsistent bands and spectra score `0.0`.",
+  "vm": {
+    "machineType": "c4-standard-4",
+    "snapshot": "cpu-free-ubuntu",
+    "timeout": 7200
+  },
+  "taxonomy": {
+    "domain_id": "2",
+    "domain_code": "physical_sciences",
+    "subdomain_id": "2.2",
+    "subdomain_code": "chemistry_materials",
+    "subdomain_name": "Chemistry & Materials Computation",
+    "classifier": {
+      "model": "gpt-4o-mini",
+      "classified_at": "2026-05-13T09:33:59.335220Z",
+      "source": {
+        "submission_id": "(backfill: no submission lookup)",
+        "fields": [
+          "taskPrompt",
+          "title",
+          "summary",
+          "software"
+        ],
+        "mode": "backfill",
+        "task_card_path": "tasks/physical_sciences/silicon_bse_absorption/task_card.json"
+      },
+      "rationale": "The task involves computational materials science focusing on the absorption spectrum of silicon."
+    }
+  },
+  "requiredSystemPackages": [
+    "qe-bgw-6.7.0-4.0"
+  ]
+}

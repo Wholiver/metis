@@ -113,7 +113,8 @@ export const MessageList: React.FC<MessageListProps> = ({
       data-message-scroll=""
     >
       {/* Centered message lane with exact same max-w-[620px] as composer */}
-      <div ref={laneRef} className={`flex w-full min-w-0 max-w-[620px] flex-col ${messages.length === 0 ? 'flex-1' : ''}`} data-message-lane="">
+      <div ref={laneRef} className={`flex w-full min-w-0 max-w-[620px] flex-col ${messages.length === 0 ? 'flex-1' : 'min-h-full'}`} data-message-lane="">
+        {messages.length > 0 && <div className="flex-1 min-h-0" aria-hidden="true" />}
         {/* Centered time chip */}
         {visibleTimeDivider && (
           <div className="flex justify-center my-2 mb-4">

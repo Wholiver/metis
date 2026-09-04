@@ -1,0 +1,80 @@
+{
+  "taskId": "visual_media/scene_restoration",
+  "title": "Unreal Engine 5.7 Scene Restoration",
+  "summary": "Inside an Unreal Engine 5.7 project with a removed region, restore the missing portion of the scene so it matches a set of reference views — reusing existing project assets without authoring new ones from scratch — and submit a complete Unreal project containing the restored submission map.",
+  "category": "visual_media",
+  "software": [
+    "Unreal Engine"
+  ],
+  "taskPrompt": "You are a technical level artist working in Unreal Engine 5.7.\n\nYour task is partial scene restoration, not asset authoring from scratch.\n\nTask:\n- Restore the removed scene region using existing Unreal project assets so the scene matches the provided reference views.\n\nAgent-visible files:\n- Scene reference images: `input/scene_reference_images`\n- Input manifest: `input/manifest.json`\n- Input Unreal project: `input/project/SummerRiding2.uproject`\n\nScene entry:\n- Open the scaffold project and load the variant-specific scaffold map.\n\nRequirements:\n- Reuse assets that already exist in the visible Unreal project.\n- Restore the removed scene region so the scene matches the provided reference views.\n- Preserve the visible environment outside the removed region unless a local adjustment is required to integrate the restoration cleanly.\n- Keep the fixed task cameras (`TaskCam_*`) available for preview.\n\nSubmission contract:\n- Submit a complete Unreal project at `output/submission/project/SummerRiding2.uproject`.\n- The submitted project must contain the restored map asset at `/Game/Project/Scenes/Submission/final`.",
+  "agentMustDo": [
+    "Open `input/project/SummerRiding2.uproject` in Unreal Engine 5.7 and load the variant's scaffold map.",
+    "Reuse existing project assets to restore the removed region; do not author new assets from scratch.",
+    "Match the supplied `input/scene_reference_images` views as closely as possible without disturbing the rest of the scene.",
+    "Preserve the `TaskCam_*` fixed cameras so the evaluator can render the canonical views.",
+    "Submit a complete Unreal project at `output/submission/project/SummerRiding2.uproject` containing the restored map at `/Game/Project/Scenes/Submission/final`."
+  ],
+  "inputFiles": [
+    {
+      "name": "manifest.json",
+      "format": "json",
+      "path": "input/manifest.json",
+      "description": "Per-variant input manifest describing scaffold map, camera set, and submission map asset path."
+    },
+    {
+      "name": "scene_reference_images/",
+      "format": "directory",
+      "path": "input/scene_reference_images/",
+      "description": "Reference renders of the target scene from the fixed task cameras."
+    },
+    {
+      "name": "project/SummerRiding2.uproject",
+      "format": "uproject",
+      "path": "input/project/SummerRiding2.uproject",
+      "description": "Input Unreal project with the removed region; agent edits a copy in the submission directory."
+    }
+  ],
+  "referenceFiles": [
+    {
+      "name": "Submitted Unreal project",
+      "format": "uproject",
+      "path": "output/submission/project/SummerRiding2.uproject",
+      "description": "Complete Unreal project containing the restored map at `/Game/Project/Scenes/Submission/final`."
+    }
+  ],
+  "outputContracts": [
+    {
+      "name": "Submission map asset path",
+      "format": "txt",
+      "path": "input/manifest.json",
+      "description": "Per-variant manifest declares the required submission map asset path (e.g. `/Game/Project/Scenes/Submission/final`)."
+    }
+  ],
+  "evaluation": "Evaluator enables the required render plugins on the submitted project (MovieRenderPipeline, PythonScriptPlugin, SequencerScripting), launches a headless `UnrealEditor-Cmd.exe` render job that produces a candidate render per `TaskCam_*`, waits for the render report, and downloads the candidate frames. A local soft-eval (`scripts/local_render_eval.run_local_soft_eval`) compares each candidate frame to its reference render and returns a single score in [0,1]. Missing submission, missing submission map asset, render timeouts, or local-eval failures all force 0.0.",
+  "vm": {
+    "machineType": "g2-standard-8",
+    "snapshot": "gpu-license",
+    "os": "windows",
+    "timeout": 10800
+  },
+  "taxonomy": {
+    "domain_id": "8",
+    "domain_code": "visual_media",
+    "subdomain_id": "8.1",
+    "subdomain_code": "animation_3d",
+    "subdomain_name": "3D, Animation & Interactive Media",
+    "classifier": {
+      "model": "manual",
+      "classified_at": "2026-05-13T00:00:00Z",
+      "source": {
+        "submission_id": "(manual-stage1-backfill)",
+        "fields": [
+          "main.py:task_description",
+          "folder_name"
+        ],
+        "mode": "manual"
+      },
+      "rationale": "Unreal Engine scene restoration with rendered camera comparison is 3D / interactive-media authoring."
+    }
+  }
+}

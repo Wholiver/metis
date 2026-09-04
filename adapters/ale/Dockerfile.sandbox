@@ -1,0 +1,140 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# 1. Configure Multiarch repositories (Ubuntu Ports for ARM64 + Ubuntu Archive for AMD64)
+RUN cat << "EOF" > /etc/apt/sources.list
+deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse
+deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse
+deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse
+deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse
+deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted universe multiverse
+deb [arch=amd64] http://security.ubuntu.com/ubuntu/ jammy-security main restricted universe multiverse
+EOF
+
+# 2. Add amd64 architecture and install core compilation toolchains, system tools, X11/GUI, and multi-language runtimes
+RUN dpkg --add-architecture amd64 && apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    g++ \
+    gfortran \
+    make \
+    cmake \
+    ninja-build \
+    pkg-config \
+    autoconf \
+    automake \
+    libtool \
+    dpkg-dev \
+    libc6:amd64 \
+    libstdc++6:amd64 \
+    libgomp1:amd64 \
+    libx11-6:amd64 \
+    curl \
+    wget \
+    git \
+    jq \
+    unzip \
+    tar \
+    gzip \
+    bzip2 \
+    xz-utils \
+    zstd \
+    patch \
+    rsync \
+    ca-certificates \
+    time \
+    bc \
+    coreutils \
+    tree \
+    locales \
+    libblas-dev \
+    liblapack-dev \
+    libffi-dev \
+    libssl-dev \
+    libgd-dev \
+    libgd3 \
+    xvfb \
+    x11-utils \
+    libfuse2 \
+    libnss3 \
+    libasound2 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxi6 \
+    libxtst6 \
+    libxrandr2 \
+    libgbm1 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxss1 \
+    libxshmfence1 \
+    ffmpeg \
+    libgl1 \
+    libgl1-mesa-glx \
+    libgl1-mesa-dri \
+    libosmesa6 \
+    libglu1-mesa \
+    poppler-utils \
+    fonts-dejavu \
+    fonts-freefont-ttf \
+    fonts-noto-cjk \
+    openjdk-11-jre-headless \
+    r-base \
+    r-base-dev \
+    octave \
+    python3 \
+    python3-pip \
+    python3-dev \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. Pre-install EnergyPlus 22.1.0 with multiarch symlink
+RUN curl -fsSL https://github.com/NatLabRockies/EnergyPlus/releases/download/v22.1.0/EnergyPlus-22.1.0-ed759b17ee-Linux-Ubuntu20.04-x86_64.tar.gz | tar -xz -C /usr/local/ \
+    && ln -sf /usr/local/EnergyPlus-22.1.0-ed759b17ee-Linux-Ubuntu20.04-x86_64/energyplus /usr/local/bin/energyplus \
+    && ln -sf /usr/local/EnergyPlus-22.1.0-ed759b17ee-Linux-Ubuntu20.04-x86_64/ExpandObjects /usr/local/bin/ExpandObjects
+
+# 4. Configure Python symlinks (canonical python, python3.10, python3.12 entrypoints)
+RUN ln -sf /usr/bin/python3 /usr/bin/python \
+    && ln -sf /usr/bin/python3 /usr/bin/python3.12
+
+# 5. Python packages: Governance/testing tools (pytest, coverage), scientific, ML, I/O, optimization
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip3 install --no-cache-dir \
+    pytest \
+    pytest-cov \
+    coverage \
+    numpy \
+    pandas \
+    scipy \
+    scikit-learn \
+    scikit-image \
+    pydicom \
+    matplotlib \
+    seaborn \
+    cvxpy \
+    imageio \
+    openpyxl \
+    xlrd \
+    h5py \
+    netCDF4 \
+    xarray \
+    statsmodels \
+    pyarrow \
+    requests \
+    tqdm \
+    pyyaml \
+    pypdf \
+    pdfminer.six \
+    && pip3 install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# 6. Pre-install R statistical packages (ltmle, SuperLearner, etc.)
+RUN R -e "install.packages(c('ltmle', 'SuperLearner', 'gam', 'ggplot2'), repos='https://cloud.r-project.org')"
+
+WORKDIR /workspace
+
+CMD ["sleep", "infinity"]

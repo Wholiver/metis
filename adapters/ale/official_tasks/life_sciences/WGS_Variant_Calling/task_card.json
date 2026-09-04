@@ -1,0 +1,127 @@
+{
+  "taskId": "life_sciences/WGS_Variant_Calling",
+  "title": "WGS Variant Calling",
+  "summary": "Run a germline variant-calling workflow on real HG002 reads from a 1 Mb GRCh38 chromosome 17 region and produce a filtered VCF for evaluator-side benchmarking.",
+  "category": "life_sciences",
+  "software": [],
+  "taskPrompt": "You are given paired-end HG002 sequencing reads covering a 1 Mb region of GRCh38 chromosome 17, plus the GRCh38 chromosome 17 reference.\n\nRun an Ubuntu-native germline variant-calling workflow using `bwa`, `samtools`, and `bcftools`, then produce a filtered VCF containing SNP and INDEL calls.\n\nTask directory:\n- `base`\n\nInput directory:\n- `base/input`\n\nAvailable environment:\n- `bwa`, `samtools`, `bcftools`, FastQC, MultiQC, and RTG Tools are preinstalled on `PATH`\n\nRequired outputs under `base/output`:\n- `region_R1_fastqc.html`\n- `region_R2_fastqc.html`\n- `multiqc_report.html`\n- `flagstat.txt`\n- `duplication_metrics.txt`\n- `variants.filtered.vcf.gz`\n- `variants.filtered.vcf.gz.tbi`\n- `rtg_summary.csv` with the header `Type,Precision,Sensitivity,F_measure` and rows for SNP and INDEL; metric values may be `NA`\n\nDo not ask for confirmation. Execute directly.",
+  "agentMustDo": [
+    "Run an Ubuntu-native germline variant-calling workflow on real HG002 paired-end reads from the staged 1 Mb chr17 region.",
+    "Write outputs only under `output/` while keeping the staged input files untouched.",
+    "Work directly on Ubuntu; Windows + WSL is no longer the canonical runtime."
+  ],
+  "inputFiles": [
+    {
+      "name": "region_R1.fastq.gz",
+      "format": "gz",
+      "path": "input/region_R1.fastq.gz",
+      "description": ""
+    },
+    {
+      "name": "region_R2.fastq.gz",
+      "format": "gz",
+      "path": "input/region_R2.fastq.gz",
+      "description": ""
+    },
+    {
+      "name": "chr17.fa",
+      "format": "fa",
+      "path": "input/chr17.fa",
+      "description": "GRCh38 chromosome 17 reference FASTA."
+    },
+    {
+      "name": "chr17.fa.fai",
+      "format": "fai",
+      "path": "input/chr17.fa.fai",
+      "description": "FASTA index for the chromosome 17 reference."
+    },
+    {
+      "name": "chr17.dict",
+      "format": "dict",
+      "path": "input/chr17.dict",
+      "description": "Sequence dictionary for the chromosome 17 reference."
+    }
+  ],
+  "referenceFiles": [
+    {
+      "name": "region_R1_fastqc.html",
+      "format": "html",
+      "path": "output/region_R1_fastqc.html",
+      "description": "output/region_R1_fastqc.html"
+    },
+    {
+      "name": "region_R2_fastqc.html",
+      "format": "html",
+      "path": "output/region_R2_fastqc.html",
+      "description": "output/region_R2_fastqc.html"
+    },
+    {
+      "name": "multiqc_report.html",
+      "format": "html",
+      "path": "output/multiqc_report.html",
+      "description": "output/multiqc_report.html"
+    },
+    {
+      "name": "flagstat.txt",
+      "format": "txt",
+      "path": "output/flagstat.txt",
+      "description": "output/flagstat.txt"
+    },
+    {
+      "name": "duplication_metrics.txt",
+      "format": "txt",
+      "path": "output/duplication_metrics.txt",
+      "description": "output/duplication_metrics.txt"
+    },
+    {
+      "name": "variants.filtered.vcf.gz",
+      "format": "gz",
+      "path": "output/variants.filtered.vcf.gz",
+      "description": "output/variants.filtered.vcf.gz"
+    },
+    {
+      "name": "variants.filtered.vcf.gz.tbi",
+      "format": "tbi",
+      "path": "output/variants.filtered.vcf.gz.tbi",
+      "description": "output/variants.filtered.vcf.gz.tbi"
+    },
+    {
+      "name": "rtg_summary.csv",
+      "format": "csv",
+      "path": "output/rtg_summary.csv",
+      "description": "output/rtg_summary.csv"
+    }
+  ],
+  "evaluation": "Offline validation of the documented QC, VCF, index, and summary output contract.",
+  "vm": {
+    "machineType": "c4-standard-4",
+    "snapshot": "cpu-free-ubuntu",
+    "timeout": 7200
+  },
+  "taxonomy": {
+    "domain_id": "3",
+    "domain_code": "life_sciences",
+    "subdomain_id": "3.2",
+    "subdomain_code": "genomics",
+    "subdomain_name": "Genomics & Sequence Analysis",
+    "classifier": {
+      "model": "gpt-4o-mini",
+      "classified_at": "2026-05-13T09:02:08.882867Z",
+      "source": {
+        "submission_id": "(backfill: no submission lookup)",
+        "fields": [
+          "taskPrompt",
+          "title",
+          "summary"
+        ],
+        "mode": "backfill",
+        "task_card_path": "tasks/life_sciences/WGS_Variant_Calling/task_card.json"
+      },
+      "rationale": "The task involves running a germline variant-calling workflow in genomics."
+    }
+  },
+  "requiredSystemPackages": [
+    "bioinfo-cli",
+    "rtg-tools"
+  ]
+}

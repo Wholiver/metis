@@ -1,14 +1,18 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, HelpCircle, LoaderCircle, X } from 'lucide-react';
 import { PendingUserInput, UserInputAnswer, UserInputResponse } from '../../types';
+import { WorkProgressIndicator } from './WorkProgressIndicator';
+import { WorkProgressState } from '../../lib/work-progress';
 import { useI18n } from '../../i18n';
 
 interface UserInputCardProps {
   request: PendingUserInput;
   onRespond: (requestId: string, response: UserInputResponse) => boolean | Promise<boolean>;
+  progress?: WorkProgressState;
+  idle?: boolean;
 }
 
-export const UserInputCard: React.FC<UserInputCardProps> = ({ request, onRespond }) => {
+export const UserInputCard: React.FC<UserInputCardProps> = ({ request, onRespond, progress, idle = false }) => {
   const { t } = useI18n();
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, UserInputAnswer>>({});
@@ -103,11 +107,22 @@ export const UserInputCard: React.FC<UserInputCardProps> = ({ request, onRespond
       className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex w-full flex-col items-center bg-transparent p-4 pt-1"
       data-user-input-shell=""
     >
-      <form
-        onSubmit={submit}
-        aria-labelledby={`ask-title-${request.requestId}`}
-        aria-busy={isSubmitting}
-        className="pointer-events-auto w-full max-w-[620px] rounded-[24px] border-[0.5px] border-slate-200/80 bg-white/95 backdrop-blur-md p-3.5 shadow-none"
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 -top-7 -z-10 bg-gradient-to-t from-white from-75% via-white/95 to-transparent"
+        data-composer-fade-mask=""
+      />
+      <div className="w-full max-w-[620px] flex flex-col items-start">
+        {progress && (
+          <div className="pointer-events-auto mb-2 flex items-center px-1" data-composer-progress-slot="">
+            <WorkProgressIndicator progress={progress} idle={idle} />
+          </div>
+        )}
+        <form
+          onSubmit={submit}
+          aria-labelledby={`ask-title-${request.requestId}`}
+          aria-busy={isSubmitting}
+          className="pointer-events-auto w-full max-w-[620px] rounded-[24px] border-[0.5px] border-slate-200/80 bg-white/95 backdrop-blur-md p-3.5 shadow-none"
         data-user-input-request-id={request.requestId}
         data-question-id={question.id}
       >
@@ -221,6 +236,7 @@ export const UserInputCard: React.FC<UserInputCardProps> = ({ request, onRespond
           </button>
         </div>
       </form>
+      </div>
     </div>
   );
 };

@@ -16,6 +16,8 @@ import {
 import { ModelSwitcher } from './ModelSwitcher';
 import { ModeSwitcher } from './ModeSwitcher';
 import { filterSkills, SkillCommand, SkillPicker } from './SkillPicker';
+import { WorkProgressIndicator } from './WorkProgressIndicator';
+import { WorkProgressState } from '../../lib/work-progress';
 import { useI18n } from '../../i18n';
 
 interface ComposerProps {
@@ -38,6 +40,8 @@ interface ComposerProps {
   skills?: SkillCommand[];
   disabled?: boolean;
   isStreaming?: boolean;
+  workProgress?: WorkProgressState;
+  isWorkIdle?: boolean;
 }
 
 function readFile(file: File, method: 'readAsDataURL' | 'readAsText'): Promise<string> {
@@ -120,6 +124,8 @@ export const Composer: React.FC<ComposerProps> = ({
   skills = [],
   disabled = false,
   isStreaming = false,
+  workProgress,
+  isWorkIdle = false,
 }) => {
   const { t } = useI18n();
   const [text, setText] = useState('');
@@ -329,6 +335,11 @@ export const Composer: React.FC<ComposerProps> = ({
       className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-4 pt-1 flex flex-col items-center justify-center w-full bg-transparent"
       data-composer-shell=""
     >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 -top-7 -z-10 bg-gradient-to-t from-white from-75% via-white/95 to-transparent"
+        data-composer-fade-mask=""
+      />
       <input
         ref={fileInputRef}
         type="file"
@@ -346,6 +357,11 @@ export const Composer: React.FC<ComposerProps> = ({
       )}
 
       <div className="w-full max-w-[620px] flex flex-col items-start">
+        {workProgress && (
+          <div className="pointer-events-auto mb-2 flex items-center px-1" data-composer-progress-slot="">
+            <WorkProgressIndicator progress={workProgress} idle={isWorkIdle} />
+          </div>
+        )}
         <div className="mb-2 hidden w-full max-w-[620px] justify-start" data-mode-switcher-row="">
           <ModeSwitcher
             mode={collaborationMode}

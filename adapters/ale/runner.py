@@ -411,6 +411,25 @@ class ALERunner:
         if task.workdir and Path(task.workdir).exists():
             return Path(task.workdir), None
 
+        pre_download_candidates = [
+            Path("eval_data/official_inputs/tasks") / task.task_id,
+            Path("eval_data/official_inputs") / task.task_id,
+            Path.home() / "metis_v2/eval_data/official_inputs/tasks" / task.task_id,
+            Path.home() / "metis_v2/eval_data/official_inputs" / task.task_id,
+        ]
+        local_pre = next((p for p in pre_download_candidates if p.exists()), None)
+        if local_pre:
+            for item in local_pre.iterdir():
+                if item.name in ("reference", "ground_truth", "expected_output"):
+                    continue
+                dest = ws_dir / item.name
+                if item.is_dir():
+                    shutil.copytree(item, dest, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, dest)
+            print(f"📦 [Pre-Downloaded Data] Staged input files for '{task.task_id}' into isolated workspace.")
+            return ws_dir, None
+
         extracted_from_archive = False
         archive_candidates = [
             self.data_archive,
@@ -706,13 +725,13 @@ class ALERunner:
                     status = "passed" if score >= 1.0 else ("partial" if score > 0 else "failed")
                     output = f"Matched {matched}/{len(ref_files)} reference files."
                 else:
-                    score = 1.0 if res.status == "success" and res.final_answer else 0.0
-                    status = "inferred"
-                    output = f"Reference directory had no files. Status: {res.status}"
+                    score = 0.0
+                    status = "unverified"
+                    output = f"Reference directory had no files. Status: {res.status}. Official Colab verification required."
             else:
-                score = 1.0 if res.status == "success" and res.final_answer else 0.0
-                status = "inferred"
-                output = f"No reference data available. Status: {res.status}"
+                score = 0.0
+                status = "unverified"
+                output = f"No reference data available locally. Status: {res.status}. Official Colab verification required."
         except Exception as e:
             output = f"Verifier error: {e}"
             status = "error"
@@ -789,12 +808,31 @@ class ALERunner:
             if self.use_docker:
                 safe_id = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in task.task_id)
                 container_name = f"ale-task-{safe_id[:25]}-{uuid.uuid4().hex[:6]}"
+                volume_mounts = [
+                    "-v", f"{ws_dir}:/workspace:rw",
+                ]
+                mount_dirs = [
+                    "/var/folders",
+                    "/private/var/folders",
+                    "/tmp",
+                    str(Path.home() / ".metis"),
+                    str(ws_dir),
+                ]
+                for host_dir in mount_dirs:
+                    if Path(host_dir).exists():
+                        volume_mounts.extend(["-v", f"{host_dir}:{host_dir}:rw"])
+
                 docker_cmd = [
                     "docker", "run", "-d",
                     "--name", container_name,
                     "-m", self.container_memory,
                     "--memory-swap", self.container_memory,
-                    "-v", f"{ws_dir}:/workspace:rw",
+                    "--add-host", "host.docker.internal:host-gateway",
+                    "-e", "http_proxy=http://host.docker.internal:1082",
+                    "-e", "https_proxy=http://host.docker.internal:1082",
+                    "-e", "HTTP_PROXY=http://host.docker.internal:1082",
+                    "-e", "HTTPS_PROXY=http://host.docker.internal:1082",
+                    *volume_mounts,
                     "-w", "/workspace",
                     self.docker_image,
                     "sleep", "infinity",

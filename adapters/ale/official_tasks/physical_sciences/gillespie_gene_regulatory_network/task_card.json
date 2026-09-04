@@ -1,0 +1,90 @@
+{
+  "taskId": "physical_sciences/gillespie_gene_regulatory_network",
+  "title": "Gillespie SSA For A Tristable Gene Regulatory Network",
+  "summary": "Implement exact Gillespie stochastic simulation and tau-leaping in NumPy for a three-gene mutual-inhibition chemical kinetics model, then report validation, multistability, bifurcation, and acceleration results.",
+  "category": "physical_sciences",
+  "software": [
+    "Python",
+    "NumPy"
+  ],
+  "taskPrompt": "You are implementing a NumPy-only stochastic simulation workflow for a\nthree-gene mutual-inhibition regulatory network. The full scientific\nspecification is in `base/input/problem_spec.md`.\n\n## Your Task\n1. Read `base/input/problem_spec.md` end to end. It defines:\n   - Tier 1: exact Gillespie SSA for a birth-death process.\n   - Tier 2: exact Gillespie SSA for a three-gene mutual-inhibition network.\n   - Tier 3: bifurcation scan plus tau-leaping comparison.\n   - Required JSON schemas, seeds, event counts, parameters, and runtime budget.\n\n2. Set up the Python runtime with:\n   ```\n   uv sync --frozen --project base/input/runtime_env\n   ```\n   Then run your code with `base/input/runtime_env/.venv/bin/python` or activate\n   that environment. It provides NumPy only; use the standard library for JSON,\n   time, and math utilities.\n\n3. Implement the simulations from scratch in Python/NumPy:\n   - Use `numpy.random.default_rng(seed)` for all random number generation.\n   - Use exact SSA for Tier 1 and Tier 2.\n   - Implement tau-leaping for Tier 3 with the leap condition and non-negative\n     population handling described in the spec.\n   - Do not use SciPy, GillesPy2, BioSimulator, StochPy, COPASI, StochKit, or\n     any dedicated stochastic simulation package.\n\n4. Save all final artifacts under `base/output`:\n   - `base/output/tier1_results.json`\n   - `base/output/tier2_results.json`\n   - `base/output/tier3_results.json`\n   - `base/output/gillespie_solver.py`\n\n   `gillespie_solver.py` should be your reusable implementation, not a notebook\n   transcript, so the simulation can be reproduced from source.\n\n## Output Contract\n- Follow the JSON schemas in `problem_spec.md` for all three result files.\n- Probabilities and basin fractions must be finite values in `[0, 1]` and should\n  sum to one where the spec defines a partition.\n- Use the exact Tier 3 alpha grid and comparison points from the spec.\n- Overwrite stale files in `base/output` if they already exist.\n\n## Boundaries\n- Do not modify anything under `base/input`.\n- Write only under `base/output`.\n",
+  "agentMustDo": [
+    "Read `input/problem_spec.md` for the birth-death validation, three-gene mutual-inhibition model, bifurcation scan, tau-leaping requirements, seeds, event counts, and JSON schemas.",
+    "Provision the Python runtime via `uv sync --frozen --project input/runtime_env` and run with the resulting NumPy environment.",
+    "Implement exact Gillespie SSA for Tier 1 and Tier 2 using `numpy.random.default_rng(seed)`.",
+    "Compute Tier 2 trajectory statistics, basin fractions, ensemble statistics, and 50 lag autocorrelation arrays.",
+    "Implement the Tier 3 alpha scan and tau-leaping comparison, enforcing non-negative populations and the specified leap condition.",
+    "Write the three result JSON files plus reusable `gillespie_solver.py` under `output/`."
+  ],
+  "inputFiles": [
+    {
+      "name": "Problem specification",
+      "format": "`.md`",
+      "path": "input/problem_spec.md",
+      "description": "Full task specification with models, parameters, seeds, required simulations, output schemas, banned libraries, and runtime budget."
+    },
+    {
+      "name": "Runtime manifest",
+      "format": "`.toml`",
+      "path": "input/runtime_env/pyproject.toml",
+      "description": "Declares the NumPy-only Python runtime the agent installs with uv."
+    },
+    {
+      "name": "Runtime lockfile",
+      "format": "`.lock`",
+      "path": "input/runtime_env/uv.lock",
+      "description": "Reproducible lock companion to the runtime manifest."
+    }
+  ],
+  "referenceFiles": [
+    {
+      "name": "Tier 1 results",
+      "format": "`.json`",
+      "path": "output/tier1_results.json",
+      "description": "Birth-death SSA validation summary."
+    },
+    {
+      "name": "Tier 2 results",
+      "format": "`.json`",
+      "path": "output/tier2_results.json",
+      "description": "Three-gene trajectory, ensemble, autocorrelation, and multistability summary."
+    },
+    {
+      "name": "Tier 3 results",
+      "format": "`.json`",
+      "path": "output/tier3_results.json",
+      "description": "Bifurcation scan and tau-leaping comparison summary."
+    },
+    {
+      "name": "Solver source",
+      "format": "`.py`",
+      "path": "output/gillespie_solver.py",
+      "description": "Reusable NumPy implementation used to produce the result files."
+    }
+  ],
+  "evaluation": "Hard gates include missing or unparseable required JSON/source files, banned imports, malformed Tier 2 trajectory structure, or malformed Tier 3 grid/comparison structure. The scorer awards continuous credit for source/code structure, Tier 1 validation behavior, Tier 2 reproducibility and schema, and Tier 3 public-contract consistency. Positive fixture score is 1.0 and negative fixture score is 0.0.",
+  "vm": {
+    "machineType": "c4-standard-4",
+    "snapshot": "cpu-free-ubuntu",
+    "timeout": 28800
+  },
+  "taxonomy": {
+    "domain_id": "3",
+    "domain_code": "life_sciences",
+    "subdomain_id": "3.4",
+    "subdomain_code": "systems_microbial",
+    "subdomain_name": "Systems & Microbial Biology",
+    "classifier": {
+      "source": "task_all_workflows.csv",
+      "applied_at": "2026-05-28T20:12:46Z",
+      "previous": {
+        "domain_id": "2",
+        "domain_code": "physical_sciences",
+        "subdomain_id": "2.2",
+        "subdomain_code": "chemistry_materials",
+        "subdomain_name": "Chemistry & Materials Computation"
+      }
+    }
+  },
+  "requiredSystemPackages": []
+}

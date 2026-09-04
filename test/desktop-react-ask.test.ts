@@ -51,13 +51,15 @@ describe('desktop React Ask interface', () => {
     const chatArea = source('desktop/src/components/chat/ChatArea.tsx');
     const messageList = source('desktop/src/components/chat/MessageList.tsx');
     const assistantTurn = source('desktop/src/components/chat/AssistantTurn.tsx');
+    const userInputCard = source('desktop/src/components/chat/UserInputCard.tsx');
 
     expect(chatArea).toContain('pendingUserInput={pendingUserInput}');
+    expect(chatArea).toContain('progress={currentProgress}');
     expect(messageList).toContain('pendingUserInput?: PendingUserInput');
     expect(messageList).toContain('pendingUserInput={group === progressGroup ? pendingUserInput : undefined}');
     expect(assistantTurn).toContain('isWaitingUserInput = Boolean(pendingUserInput)');
-    expect(assistantTurn).toContain("phase: 'waiting'");
-    expect(assistantTurn).toContain('idle={!streaming && !isWaitingUserInput}');
+    expect(userInputCard).toContain('data-composer-progress-slot=""');
+    expect(userInputCard).toContain('<WorkProgressIndicator progress={progress} idle={idle}');
   });
 
   it('restores pending user input state when switching back to a waiting session', () => {

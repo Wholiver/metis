@@ -1,0 +1,88 @@
+{
+  "taskId": "engineering/chisel_verilog_alignment_seq_1",
+  "title": "Chisel-to-Verilog Source Location Alignment",
+  "summary": "Given a Chisel hardware design (Fifo.scala) and its firtool-optimized SystemVerilog output, identify the exact set of Chisel source locations that a specific sub-expression semantically corresponds to.",
+  "category": "engineering",
+  "software": [
+    "Yosys 0.33+",
+    "firtool 1.138.0 (CIRCT)",
+    "sbt 1.9+ with Chisel 6.5.0",
+    "Python 3.10"
+  ],
+  "taskPrompt": "You are a hardware design engineer specializing in Chisel and SystemVerilog.\n\n## Your Task\n\nGiven a Chisel hardware design (Fifo.scala) and its firtool-optimized SystemVerilog output, identify the exact set of Chisel source locations (Fifo.scala:line:col) that a specific sub-expression of the optimized Verilog semantically corresponds to.\n\nThe optimized Verilog's @[...] source-location comment is both noisy (lists unrelated locations) and incomplete (misses real locations), so answering requires genuine analysis — not comment-reading.\n\n## Working Directory\n\nAll materials are under: `base/input/workdir/`\n\n- `TASK.md` — detailed instructions and rules\n- `src/main/scala/Fifo.scala` — original Chisel source (DoubleBuffer FIFO, 87 lines)\n- `generated/optimized.sv` — firtool emission (target: line 21, sub-expression `stateReg == 2'h2`)\n- `generated/DoubleBufferFifo.fir` — FIRRTL intermediate (you may regenerate alternative emissions)\n\n## Tools Available\n\nUse the canonical task-local CLI entry points under `base/software/`:\n\n- `base/software/yosys` — Yosys 0.33+\n- `base/software/firtool` — CIRCT firtool 1.138.0\n- `base/software/sbt` — sbt 1.9.9 with Chisel 6.5.0 dependencies prewarmed\n- `base/software/python` — Python 3.10\n- `base/software/jq` — jq 1.x\n\nThe VM has no internet access during solve time.\n\n## Rules\n\n1. Do NOT edit any file under `src/`, `generated/`, or `TASK.md`. Writes are only allowed under the task output directory.\n2. Focus on the sub-expression `stateReg == 2'h2` at line 21, columns 23-39 of optimized.sv.\n3. Approach is unconstrained (formal verification, simulation, semantic analysis — whatever works).\n\n## Output\n\nWrite a single file: `base/output/answer.json`\n\n```json\n{\n  \"target_signal\": \"stateReg == 2'h2\",\n  \"target_location_in_optimized_sv\": \"21.23-39\",\n  \"chisel_sources\": [\"Fifo.scala:<L1>:<C1>\", ...]\n}\n```\n",
+  "agentMustDo": [
+    "Read TASK.md for the detailed query",
+    "Examine Fifo.scala and optimized.sv",
+    "Perform genuine semantic analysis (not just read annotations)",
+    "Write output/answer.json with the correct chisel_sources set"
+  ],
+  "inputFiles": [
+    {
+      "name": "Task instructions",
+      "format": "md",
+      "path": "input/workdir/TASK.md",
+      "description": "Restates the query and includes firtool annotation noisiness disclaimer"
+    },
+    {
+      "name": "Chisel source",
+      "format": "scala",
+      "path": "input/workdir/src/main/scala/Fifo.scala",
+      "description": "Original Chisel source — DoubleBuffer FIFO with 3-state enum"
+    },
+    {
+      "name": "Optimized SystemVerilog",
+      "format": "sv",
+      "path": "input/workdir/generated/optimized.sv",
+      "description": "firtool-optimized emission; target line 21 contains stateReg == 2'h2"
+    },
+    {
+      "name": "FIRRTL intermediate",
+      "format": "fir",
+      "path": "input/workdir/generated/DoubleBufferFifo.fir",
+      "description": "FIRRTL intermediate for optional re-emission via firtool"
+    }
+  ],
+  "referenceFiles": [
+    {
+      "name": "Golden answer",
+      "format": "json",
+      "path": "reference/answer.json",
+      "description": "Benchmark validation artifact."
+    }
+  ],
+  "evaluation": "**Hard gate conditions** (auto score=0 if triggered):\n- output/answer.json missing or invalid JSON\n- chisel_sources field missing, not a list, or contains non-matching elements\n- Any file under src/, generated/, or TASK.md was modified\n\n**Scoring method (additive, max 1.0):**\n\n| Check | Weight | Method |\n|---|---|---|\n| Valid JSON with all 3 required fields, regex-valid chisel_sources | 0.10 | Schema + regex validation |\n| target_signal exactly equals 'stateReg == 2'h2' | 0.10 | Exact string match |\n| chisel_sources set-equals reference | 0.80 | Unordered set equality, no partial credit |\n\n**Expected positive fixture score:** 1.0\n**Expected negative fixture score:** 0.2 (valid JSON + correct target_signal only)",
+  "vm": {
+    "machineType": "c4-standard-4",
+    "snapshot": "cpu-free-ubuntu",
+    "timeout": 7200
+  },
+  "taxonomy": {
+    "domain_id": "1",
+    "domain_code": "engineering",
+    "subdomain_id": "1.8",
+    "subdomain_code": "semiconductor",
+    "subdomain_name": "Semiconductor & Microelectronics Design",
+    "classifier": {
+      "model": "gpt-4o-mini",
+      "classified_at": "2026-05-13T09:27:10.551164Z",
+      "source": {
+        "submission_id": "(backfill: no submission lookup)",
+        "fields": [
+          "taskPrompt",
+          "title",
+          "summary",
+          "software"
+        ],
+        "mode": "backfill",
+        "task_card_path": "tasks/engineering/chisel_verilog_alignment_seq_1/task_card.json"
+      },
+      "rationale": "The task involves hardware design and verification, which fits within Semiconductor & Microelectronics Design."
+    }
+  },
+  "requiredSystemPackages": [
+    "oss-cad-suite-20260422",
+    "firtool-1.138.0",
+    "sbt-1.9.9",
+    "jdk-default"
+  ]
+}

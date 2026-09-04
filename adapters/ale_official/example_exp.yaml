@@ -1,0 +1,30 @@
+# Example experiment wiring (copy into an ALE checkout / Drive checkpoints).
+#
+# Prerequisites:
+#   export PYTHONPATH="/path/to/metis:$PYTHONPATH"
+#   python /path/to/metis/adapters/ale_official/factory_patch.py --ale-root /path/to/agents-last-exam
+#   # auth_json_path must point at a host temp file — never commit secrets
+#
+# Then:
+#   uv run python -m ale_run run this_file.yaml --dry-run
+
+name: metis_ale_docker_official
+
+secret_file: secret/.env
+
+agents:
+  - adapters/ale_official/metis.yaml
+  # If running from ALE cwd, use an absolute path to the Metis preset instead:
+  # - /path/to/metis/adapters/ale_official/metis.yaml
+
+environment: configs/environments/docker.yaml
+
+tasks: selected_tasks/docker_support.txt
+
+output:
+  root: .logs/ale
+
+concurrency: 1
+auto_resume: true
+max_attempts: 3
+cleanup_mode: delete

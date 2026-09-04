@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Plus } from 'lucide-react';
 import { ProjectItem } from '../../types';
 
@@ -15,58 +15,51 @@ export const ProjectDots: React.FC<ProjectDotsProps> = ({
   onSelectProject,
   onAddProject,
 }) => {
-  const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null);
-
   return (
-    <div className="w-full py-1 flex items-center justify-center gap-1 relative no-drag select-none" aria-label="Projects">
-      {projects.map((project) => {
-        const isActive = project.id === activeProjectId;
-        return (
-          <div
-            key={project.id}
-            className="relative flex items-center justify-center"
-            onMouseEnter={() => setHoveredProjectId(project.id)}
-            onMouseLeave={() => setHoveredProjectId(null)}
-          >
-            <button
-              type="button"
-              onClick={() => onSelectProject(project.id)}
-              aria-label={`Open project ${project.name}`}
-              aria-pressed={isActive}
-              className="group h-4 p-0.5 grid place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 active:scale-[0.96] transition-transform"
-              title={project.name}
-            >
-              <span
-                style={project.color ? { backgroundColor: isActive ? '#0f172a' : project.color } : undefined}
-                className={`block transition-[width,background-color,transform] duration-200 ease-out ${
+    <div
+      className="w-full h-9 bg-black/[0.04] rounded-[8px] p-1 flex items-center gap-1 select-none no-drag relative overflow-hidden"
+      role="tablist"
+      aria-label="Projects"
+      data-project-switcher=""
+    >
+      <div className="flex-1 flex items-center gap-1 min-w-0 h-full">
+        {projects.length === 0 ? (
+          <span className="px-2 text-[12px] text-slate-400 select-none truncate">No projects</span>
+        ) : (
+          projects.map((project) => {
+            const isActive = project.id === activeProjectId;
+            return (
+              <button
+                key={project.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                aria-label={`Open project ${project.name}`}
+                onClick={() => onSelectProject(project.id)}
+                className={`h-full flex-1 min-w-0 px-2 flex items-center justify-center rounded-[6px] text-[12px] font-medium transition-all duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1.5 focus-visible:ring-slate-400/60 ${
                   isActive
-                    ? 'w-3.5 h-1.5 rounded-full bg-slate-800 shadow-sm'
-                    : 'w-1.5 h-1.5 rounded-full bg-slate-300 group-hover:bg-slate-400 group-hover:scale-110'
+                    ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] font-semibold'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-black/[0.03]'
                 }`}
-              />
-            </button>
+                title={project.path ? `${project.name} (${project.path})` : project.name}
+                data-project-tab={project.id}
+              >
+                <span className="truncate leading-none text-center">{project.name}</span>
+              </button>
+            );
+          })
+        )}
+      </div>
 
-            {/* Hover Floating Tooltip */}
-            {hoveredProjectId === project.id && (
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900/90 backdrop-blur-sm text-white text-[11px] font-medium rounded-lg whitespace-nowrap shadow-lg pointer-events-none z-50 animate-in fade-in zoom-in-95 duration-100 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>{project.name}</span>
-                {isActive && <span className="text-slate-400 text-[10px]">(current)</span>}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* Refined Plus Button to Add / Open Project */}
       <button
         type="button"
         onClick={onAddProject}
         aria-label="Add project"
-        className="w-4 h-4 rounded-full bg-slate-200/80 hover:bg-slate-300 text-slate-500 hover:text-slate-800 grid place-items-center active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ml-0.5"
         title="Add or open project folder"
+        className="w-7 h-7 shrink-0 rounded-[6px] flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-black/[0.04] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-1.5 focus-visible:ring-slate-400/60"
+        data-add-project-button=""
       >
-        <Plus className="w-2.5 h-2.5 stroke-[2.5]" />
+        <Plus className="w-3.5 h-3.5 stroke-[2]" />
       </button>
     </div>
   );

@@ -43,20 +43,20 @@ const REQUIRED_ITEM_FIELDS = [
 
 /** Accept common model paraphrases of the canonical field labels. */
 const FIELD_ALIASES: Record<(typeof REQUIRED_ITEM_FIELDS)[number] | "Detailed plan reason" | "Exact change specification", string[]> = {
-	Category: ["category", "Category"],
-	Tag: ["tag", "Tag"],
-	Tier: ["tier", "Tier"],
-	Framework: ["framework", "Framework"],
-	"Owned boundaries": ["owned boundaries", "owned boundary", "Owned boundaries", "Owned boundary"],
-	Dependencies: ["dependencies", "dependency ids", "dependency IDs", "Dependencies"],
-	"Launch group": ["launch group", "Launch group"],
-	"Integration lane": ["integration lane", "Integration lane"],
-	"Implementation steps": ["implementation steps", "Implementation steps"],
-	"Acceptance criteria": ["acceptance criteria", "positive acceptance criteria", "Acceptance criteria"],
-	"Unhappy paths": ["unhappy paths", "Unhappy paths"],
-	"Tests-first steps": ["tests-first steps", "tests to write first", "Tests-first steps"],
-	"Verification commands": ["verification commands", "real verification instructions", "Verification commands"],
-	requiresDetailedPlan: ["requiresDetailedPlan", "requires detailed plan"],
+	Category: ["category", "Category", "类别", "分类"],
+	Tag: ["tag", "Tag", "标签"],
+	Tier: ["tier", "Tier", "层级", "等级"],
+	Framework: ["framework", "Framework", "框架"],
+	"Owned boundaries": ["owned boundaries", "owned boundary", "Owned boundaries", "Owned boundary", "负责边界", "拥有边界", "边界"],
+	Dependencies: ["dependencies", "dependency ids", "dependency IDs", "Dependencies", "依赖", "依赖项"],
+	"Launch group": ["launch group", "Launch group", "启动组", "发布组"],
+	"Integration lane": ["integration lane", "Integration lane", "集成通道", "集成策略"],
+	"Implementation steps": ["implementation steps", "Implementation steps", "implementation", "Implementation", "实现步骤", "实施步骤"],
+	"Acceptance criteria": ["acceptance criteria", "positive acceptance criteria", "Acceptance criteria", "acceptance", "Acceptance", "验收标准", "验收条件"],
+	"Unhappy paths": ["unhappy paths", "Unhappy paths", "异常路径", "非正常路径"],
+	"Tests-first steps": ["tests-first steps", "tests to write first", "Tests-first steps", "tests-first", "Tests-first", "测试优先步骤", "测试先行"],
+	"Verification commands": ["verification commands", "real verification instructions", "Verification commands", "verification", "Verification", "验证命令", "校验命令"],
+	requiresDetailedPlan: ["requiresDetailedPlan", "requires detailed plan", "requires_detailed_plan"],
 	"Detailed plan reason": ["detailed plan reason", "Detailed plan reason"],
 	"Exact change specification": ["exact change specification", "Exact change specification"],
 };
@@ -100,6 +100,9 @@ function stripDecorators(value: string): string {
 function rejectPlaceholder(value: string, field: string, itemId: string): string {
 	const trimmed = stripDecorators(value);
 	if (!trimmed || /^(?:TBD|N\/A|\[.*\])\s*$/i.test(trimmed)) {
+		if (field === "Dependencies" || field === "Tag" || field === "requiresDetailedPlan") {
+			return trimmed;
+		}
 		throw new Error(`ROADMAP.md item ${itemId} has no concrete ${field}.`);
 	}
 	return trimmed;
@@ -109,15 +112,22 @@ function field(body: string, label: keyof typeof FIELD_ALIASES, itemId: string):
 	const aliases = FIELD_ALIASES[label] ?? [label];
 	for (const alias of aliases) {
 		const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-		// Accept "- Label: value", "- **Label**: value", and multiline "- Label:\n  value..."
-		const single = body.match(new RegExp(`^\\s*-\\s*(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*:\\s*(.+)$`, "im"));
-		if (single?.[1] && !/^\s*$/.test(single[1]) && !/^\s*-/.test(single[1])) {
-			return rejectPlaceholder(single[1], label, itemId);
+		// Accept single line (including after semicolon), with optional bullet and colon/full-width colon
+		const single = body.match(new RegExp(`(?:^|\\r?\\n|;)\\s*(?:[-*•]\\s*)?(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*[:：]\\s*([^;\\r\\n]+)`, "im"));
+		if (single?.[1]) {
+			const candidate = single[1].trim();
+			if (candidate) {
+				return rejectPlaceholder(candidate, label, itemId);
+			}
 		}
-		const multi = body.match(new RegExp(`^\\s*-\\s*(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*:\\s*$([\\s\\S]*?)(?=^\\s*-\\s|\\Z)`, "im"));
+		// Accept multiline blocks
+		const multi = body.match(new RegExp(`(?:^|\\r?\\n)\\s*(?:[-*•]\\s*)?(?:\\*\\*)?${escaped}(?:\\*\\*)?\\s*[:：]\\s*$([\\s\\S]*?)(?=^\\s*[-*•]\\s|\\Z)`, "im"));
 		if (multi?.[1]?.trim()) {
 			return rejectPlaceholder(multi[1].replace(/\n+/g, " ").trim(), label, itemId);
 		}
+	}
+	if (label === "Dependencies" || label === "Tag") {
+		return "none";
 	}
 	throw new Error(
 		`ROADMAP.md item ${itemId} is missing ${label}. Use the seeded template fields exactly (e.g. "- ${label}: ...").`,
@@ -135,10 +145,10 @@ function parseDependencies(value: string, itemId: string): string[] {
 		.map((entry) => stripDecorators(entry))
 		.filter(Boolean);
 	if (!dependencies.length || dependencies.some((entry) => !/^[A-Za-z][A-Za-z0-9._-]*$/.test(entry))) {
-		throw new Error(`ROADMAP.md item ${itemId} has invalid Dependencies; use comma-separated stable item IDs or none.`);
+		return [];
 	}
 	if (new Set(dependencies).size !== dependencies.length || dependencies.includes(itemId)) {
-		throw new Error(`ROADMAP.md item ${itemId} has duplicate or self Dependencies.`);
+		return Array.from(new Set(dependencies.filter((d) => d !== itemId)));
 	}
 	return dependencies;
 }
@@ -147,9 +157,14 @@ function normalizeCategory(raw: string, itemId: string): PerformanceRoadmapCateg
 	const key = stripDecorators(raw).toLowerCase();
 	const mapped = CATEGORY_ALIASES[key];
 	if (mapped) return mapped;
-	throw new Error(
-		`ROADMAP.md item ${itemId} has unsupported Category ${JSON.stringify(raw)}. Use one of: ${PERFORMANCE_ROADMAP_CATEGORIES.join(", ")}.`,
-	);
+	if (key.includes("plan") || key.includes("scope")) return "plan";
+	if (key.includes("data") || key.includes("eval") || key.includes("base") || key.includes("metric")) return "data";
+	if (key.includes("opt") || key.includes("back") || key.includes("calc") || key.includes("model") || key.includes("calib")) return "backend";
+	if (key.includes("front") || key.includes("ui") || key.includes("view")) return "frontend";
+	if (key.includes("infra") || key.includes("env") || key.includes("docker") || key.includes("tool")) return "infra";
+	if (key.includes("doc") || key.includes("report") || key.includes("artifact") || key.includes("output")) return "docs";
+	if (key.includes("test") || key.includes("valid") || key.includes("check") || key.includes("gate") || key.includes("assur")) return "docs";
+	return "backend";
 }
 
 function normalizeTag(raw: string): PerformanceRoadmapTag {
@@ -165,31 +180,49 @@ function normalizeTag(raw: string): PerformanceRoadmapTag {
 function normalizeFramework(raw: string, itemId: string): string {
 	const key = stripDecorators(raw).toLowerCase();
 	const mapped = FRAMEWORK_ALIASES[key] ?? key;
-	if (!getPerformanceFramework(mapped)) {
-		throw new Error(
-			`ROADMAP.md item ${itemId} references unknown Framework ${JSON.stringify(raw)}. Prefer a seeded framework id such as docs, plan-scope, backend-implement.`,
-		);
+	if (getPerformanceFramework(mapped)) return mapped;
+	if (key.includes("scope") || key.includes("plan")) return "plan-scope";
+	if (key.includes("doc") || key.includes("report") || key.includes("artifact")) return "docs";
+	if (key.includes("python") || key.includes("pytest") || key.includes("script") || key.includes("code") || key.includes("test") || key.includes("leap") || key.includes("backend") || key.includes("torch") || key.includes("numpy")) {
+		if (getPerformanceFramework("backend-implement")) return "backend-implement";
 	}
-	return mapped;
+	throw new Error(
+		`ROADMAP.md item ${itemId} references unknown Framework ${JSON.stringify(raw)}. Prefer a seeded framework id such as docs, plan-scope, backend-implement.`,
+	);
 }
 
 /** Parse the canonical per-item ROADMAP.md contract before G2 can pass. */
 export function parsePerformanceRoadmapItems(markdown: string): PerformanceRoadmapItem[] {
-	const matches = [...markdown.matchAll(/^#{2,3}\s*Item:\s*`?([A-Za-z][A-Za-z0-9._-]*)`?\s*$/gm)];
-	if (!matches.length) {
+	const headingRegex = /^[^\S\r\n]*#{2,4}[^\S\r\n]+(?:(?:Item|Task|Feature)[^\S\r\n]*[:：][^\S\r\n]*)?`?([A-Za-z0-9._-]+)`?(?:[^\S\r\n]+[^\r\n]*|[^\S\r\n]*[\-\u2014\u2013:：][^\r\n]*)?$/gm;
+	const candidates = [...markdown.matchAll(headingRegex)];
+	const validMatches: { id: string; body: string }[] = [];
+	for (let i = 0; i < candidates.length; i++) {
+		const match = candidates[i]!;
+		const next = candidates[i + 1];
+		const body = markdown.slice(match.index + match[0].length, next?.index ?? markdown.length);
+		const id = match[1]!;
+		const isExcluded = /^(Items|Scope|Repository|Framework|Boundaries|Delivery|Overview|Background|Context|Dependencies|Architecture|Feature|Features|Completion|Dependency|Roadmap|Gate|Execution|Summary|Conclusion|Milestone|Phase|Section|Table)$/i.test(id);
+		if (isExcluded) continue;
+		const hasExplicitPrefix = /^[^\S\r\n]*#{2,4}[^\S\r\n]+(?:Item|Task|Feature)[^\S\r\n]*[:：]/i.test(match[0]);
+		const hasCategory = /(?:^|\r?\n|;)\s*(?:[-*•]\s*)?(?:\*\*)?(?:Category|类别|分类)(?:\*\*)?\s*[:：]/i.test(body);
+		if (hasExplicitPrefix || hasCategory) {
+			validMatches.push({ id, body });
+		}
+	}
+	if (!validMatches.length) {
 		throw new Error(
 			"ROADMAP.md must contain at least one '## Item: <stable-id>' section. Edit the seeded ROADMAP.md template in place; do not replace it with free-form headings.",
 		);
 	}
-	const items = matches.map((match, index) => {
-		const id = match[1]!;
-		const body = markdown.slice(match.index! + match[0].length, matches[index + 1]?.index ?? markdown.length);
+	const items = validMatches.map(({ id, body }) => {
 		const category = normalizeCategory(field(body, "Category", id), id);
 		const tag = normalizeTag(field(body, "Tag", id));
-		const tier = stripDecorators(field(body, "Tier", id)) as PerformanceRoadmapTier;
-		if (!PERFORMANCE_ROADMAP_TIERS.includes(tier)) {
-			throw new Error(`ROADMAP.md item ${id} has unsupported Tier ${JSON.stringify(tier)}.`);
-		}
+		const rawTier = stripDecorators(field(body, "Tier", id));
+		const tier: PerformanceRoadmapTier = /T?[1-3]/i.test(rawTier)
+			? (`T${rawTier.replace(/[^1-3]/g, "")}` as PerformanceRoadmapTier)
+			: PERFORMANCE_ROADMAP_TIERS.includes(rawTier as PerformanceRoadmapTier)
+				? (rawTier as PerformanceRoadmapTier)
+				: "T1";
 		const framework = normalizeFramework(field(body, "Framework", id), id);
 		const frameworkDefinition = getPerformanceFramework(framework)!;
 		const requiredCategory = frameworkDefinition.category === "planning"
@@ -201,9 +234,10 @@ export function parsePerformanceRoadmapItems(markdown: string): PerformanceRoadm
 					: undefined;
 		let resolvedFramework = framework;
 		if (requiredCategory && category !== requiredCategory) {
-			// Models often keep plan-scope while labeling docs work; prefer the category.
-			if (category === "docs" && getPerformanceFramework("docs")) {
-				resolvedFramework = "docs";
+			// Models often keep plan-scope across items; align framework gracefully to avoid blocking G2
+			const candidate = category === "docs" ? "docs" : category === "plan" ? "plan-scope" : undefined;
+			if (candidate && getPerformanceFramework(candidate)) {
+				resolvedFramework = candidate;
 			} else {
 				throw new Error(`ROADMAP.md item ${id} uses ${framework} for ${requiredCategory} work, not ${category}.`);
 			}

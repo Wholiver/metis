@@ -65,12 +65,16 @@ function findBashOnPath(): string | null {
  * 3. On Unix: /bin/bash, then bash on PATH, then fallback to sh
  */
 export function getShellConfig(customShellPath?: string): ShellConfig {
-	// 1. Check user-specified shell path
-	if (customShellPath) {
-		if (existsSync(customShellPath)) {
-			return getBashShellConfig(customShellPath);
+	// 1. Check user-specified shell path or environment override (METIS_SHELL / docker_shell)
+	const candidate =
+		customShellPath ??
+		process.env.METIS_SHELL ??
+		(process.env.SHELL && /docker_shell\.sh$/.test(process.env.SHELL) ? process.env.SHELL : undefined);
+	if (candidate) {
+		if (existsSync(candidate)) {
+			return getBashShellConfig(candidate);
 		}
-		throw new Error(`Custom shell path not found: ${customShellPath}`);
+		throw new Error(`Custom shell path not found: ${candidate}`);
 	}
 
 	if (process.platform === "win32") {

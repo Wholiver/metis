@@ -1,0 +1,769 @@
+{
+  "published": {
+    "other/mota_exploration": {
+      "variants": [
+        "images"
+      ]
+    },
+    "computing_math/paper_reproduction_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/financial_stmt_reconstruction_aapl_fy2024": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/taxform_4_1": {
+      "variants": [
+        "variant_1"
+      ]
+    },
+    "business_finance/pe_screening_memo_1": {
+      "variants": [
+        "zscaler_fy2025"
+      ]
+    },
+    "visual_media/video_storyboard_001": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/cell_tracking_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/spatial_transcriptomics_spatial_domain_identification": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/molecular_structure_plausibility": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/microdicom_nih_cxr_reader_adjudication": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/crf_sdtm_mapping_4": {
+      "variants": [
+        "base"
+      ]
+    },
+    "legal/agora_governance_classify_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/ghidra_malware_config_extraction_01": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/recsys_cold_start_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/k8s_payment_api_root_cause_analysis": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/synthetic_causal_structure_inference": {
+      "variants": [
+        "base"
+      ]
+    },
+    "psychology_neuro/reddit_ai_post_codebook_boolean_coding": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/causal_ihdp_ite_estimation_6a_v1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "education_info/homework_grading_numerical_pdes_instance_02": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/metabase_bi_dashboard_01": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/bpmn_supply_disruption_l3": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/scene3_skullstrip_qc": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/healthcare_variant_annotation_pipeline": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/gene_expression_differential_analysis_functional_enrichment_analysis_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/hg002_chr22_germline_variant_pipeline": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/Clinical_Variant_Annotation": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/tp53_locus_variant_histone_browser_svg": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/WGS_Variant_Calling": {
+      "variants": [
+        "base"
+      ]
+    },
+    "visual_media/inkscape_cultural_poster_design": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/os_log_permission_guard_v1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/k8s_migration_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/sanding_performance_scoring_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/branch_bound_atsp": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/k3_abelian_extensions": {
+      "variants": [
+        "base"
+      ]
+    },
+    "transport_safety/capacitated_vehicle_routing_problems": {
+      "variants": [
+        "base"
+      ]
+    },
+    "agriculture_env/crop_rotation_d02": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/replicate_paper_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/epidemiology_forecast": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/nhanes_confounder_sensitivity_analysis": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/flusight_offline_hosp_forecast_2024_12_14": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/adapt_vqe_molecular_energy": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/ising_post_measurement_1": {
+      "variants": [
+        "n10_critical_u01_correlators"
+      ]
+    },
+    "engineering/abb_irb6700_asset_to_urdf_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/cp_test_gen_1": {
+      "variants": [
+        "default"
+      ]
+    },
+    "physical_sciences/gillespie_gene_regulatory_network": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/ecg_superclass_ptbxl": {
+      "variants": [
+        "ptbxl_1386"
+      ]
+    },
+    "health_medicine/ecg_rhythm_conduction_ptbxl": {
+      "variants": [
+        "ptbxl_2263"
+      ]
+    },
+    "business_finance/sse_northbound_programmatic_trading_01": {
+      "variants": [
+        "base"
+      ]
+    },
+    "visual_media/butterfly_flap_animation": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/ketcher_smiles_reproduction": {
+      "variants": [
+        "7yy"
+      ]
+    },
+    "life_sciences/tcga_brca_deg_analysis": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/ct_geometry_calibration_catphan": {
+      "variants": [
+        "instance_1"
+      ]
+    },
+    "life_sciences/tms_marrow_cell_type_annotation_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/sa_aki_phenotyping": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/merfish_image_decoding_segmentation_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "visual_media/chroma_key_from_reference": {
+      "variants": [
+        "crane_flyingsky"
+      ]
+    },
+    "engineering/humanoid_wbc_policy_evaluation": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/mp_checkpoint_consolidation_v2": {
+      "variants": [
+        "base"
+      ]
+    },
+    "visual_media/compress_3dgs_scene_ply": {
+      "variants": [
+        "base"
+      ]
+    },
+    "visual_media/uv_reproduction": {
+      "variants": [
+        "images"
+      ]
+    },
+    "business_finance/ar_full_1500": {
+      "variants": [
+        "base"
+      ]
+    },
+    "visual_media/project_migration": {
+      "variants": [
+        "CONTEXT.md"
+      ]
+    },
+    "life_sciences/zdock_hiv_dimer_interface_scoring_v1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/lenacapavir_sar_table2_extraction": {
+      "variants": [
+        "table2"
+      ]
+    },
+    "life_sciences/amber_three_stage_mmgbsa_workflow_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/idp_ensemble_scoring": {
+      "variants": [
+        "default"
+      ]
+    },
+    "life_sciences/pseudotime_de": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/computational_materials_science": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/mose2_bse_absorption_soc": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/silicon_bse_absorption": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/cailian_road_highway_alignment_2": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/limited_angle_ct_dps_reconstruction": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/nsclc_radiomics_cox_signature_v1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/ltmle_targeted_bootstrap_simulation_study": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/kicad_navswitch_library_integration_release_002": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/pcb_layout_kicad_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/ff5_public_reconstruction": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/bpmn_category_governance_restructuring_l3": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/saas_onepager_brand_refresh_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/gcode": {
+      "variants": [
+        "125162_319"
+      ]
+    },
+    "computing_math/particle_filter_nonlinear_tracking": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/phonon_dispersion_thermodynamics": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/healthcare_tcga_luad_survival_kras": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/humanoid_velocity_tracking_policy": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/openroad_sky130_ibex_pnr_signoff": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/simglucose_safe_basal_control_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/digital_marketing_ab_test_analysis_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/protein_function_annotation_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/qm9_mmff94_forcefield_survey_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/sec_10k_financial_parsing": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/obermeyer_bias_reproduction": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/tris_crackme": {
+      "variants": [
+        "base"
+      ]
+    },
+    "other/aerobics_wc2026_portugal_trio_difficulty_scoring": {
+      "variants": [
+        "variant_1"
+      ]
+    },
+    "computing_math/newyear_keygen2": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/odoo": {
+      "variants": [
+        "odoo_compact"
+      ]
+    },
+    "visual_media/skeletal_animation_reproduction": {
+      "variants": [
+        "images"
+      ]
+    },
+    "computing_math/dit_pipeline_cfg_alignment_fid_256_001": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/ar_full_300": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/basel_operational_risk_bia_cn": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/aerospace_low_thrust_trajectory": {
+      "variants": [
+        "base"
+      ]
+    },
+    "visual_media/music_transcription": {
+      "variants": [
+        "dorico_prelude"
+      ]
+    },
+    "life_sciences/amber_minimization_script_prep_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/yeast_colony_detection": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/cell_translocation_analysis": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/mpc_control_building_v1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/egt710_table1_smiles_extraction": {
+      "variants": [
+        "table1"
+      ]
+    },
+    "engineering/inner_support_elevation_optimization": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/wsi_tumor_localization_1": {
+      "variants": [
+        "center_point"
+      ]
+    },
+    "health_medicine/healthcare_bias_audit_27a_public_replication_v1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/healthcare_sap_group_sequential_nsclc": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/crf_sdtm_mapping_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/llm_ecosystem_privacy_audit_realdata_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "psychology_neuro/celegans_neuron_tracking": {
+      "variants": [
+        "137"
+      ]
+    },
+    "computing_math/pcap_enterprise_triage_01": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/data_pipeline_etl_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "legal/legal_dr_fees_01": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/climate_prediction": {
+      "variants": [
+        "base"
+      ]
+    },
+    "social_sciences/atwood_2022_measles_vaccine_reproduction": {
+      "variants": [
+        "base"
+      ]
+    },
+    "education_info/moodle_gradebook_closeout_reconciliation": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/Analog_Active": {
+      "variants": [
+        "Analog_Active_v1"
+      ]
+    },
+    "engineering/power_10kv_feeder_reliability_001": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/glm_lake_calibration": {
+      "variants": [
+        "base"
+      ]
+    },
+    "psychology_neuro/scene2_resample": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/genomic_interval_processing_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/internal_employee_agent_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/cost_optimization_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/legal_ma_consistency_audit_01": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/mold-flow": {
+      "variants": [
+        "220089"
+      ]
+    },
+    "computing_math/cfr_game_theory_equilibrium": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/exact_diag_heisenberg_j1j2": {
+      "variants": [
+        "base"
+      ]
+    },
+    "agriculture_env/ndvi_zonal_statistics_d02": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/public_health_mask_mandate_ratio": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/american_option_pricing_ls": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/clustered_cyclic_code_circuit_level_simulation": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/digital_marketing_audience_segmentation_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/chisel_verilog_alignment_seq_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "computing_math/ranking_node_feature_parity_recovery_instance_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "life_sciences/rgi_mcr1_colistin_v2": {
+      "variants": [
+        "base"
+      ]
+    },
+    "health_medicine/prostate_imrt_matrad_reproduction": {
+      "variants": [
+        "base"
+      ]
+    },
+    "education_info/yi_manuscript_translation_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "transport_safety/abm_hangzhou_metro": {
+      "variants": [
+        "base"
+      ]
+    },
+    "physical_sciences/hst_acs_wfc_visit_reduction": {
+      "variants": [
+        "base"
+      ]
+    },
+    "transport_safety/fds_single_compartment_detector_reconstruction": {
+      "variants": [
+        "base"
+      ]
+    },
+    "education_info/marc_remediation_folio_overlay": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/sumo_urban_am_peak_calibration": {
+      "variants": [
+        "base"
+      ]
+    },
+    "business_finance/equity_research_summary": {
+      "variants": [
+        "tsla_fy2023"
+      ]
+    },
+    "computing_math/go_game_reconstruction_1": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/2d_drawings_to_3d_building_model": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/2d_drawings_to_3d_bridge_model": {
+      "variants": [
+        "base"
+      ]
+    },
+    "visual_media/blender_character_reconstruction_from_multiview_01": {
+      "variants": [
+        "base"
+      ]
+    },
+    "visual_media/human_mesh_animation_reproduction": {
+      "variants": [
+        "base"
+      ]
+    },
+    "engineering/robotics_blender_tabletop_reconstruction": {
+      "variants": [
+        "base"
+      ]
+    },
+    "visual_media/atlas_outpost_graybox_navigation": {
+      "variants": [
+        "base"
+      ]
+    }
+  }
+}

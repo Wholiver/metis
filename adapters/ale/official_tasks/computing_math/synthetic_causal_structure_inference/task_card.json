@@ -1,0 +1,86 @@
+{
+  "taskId": "computing_math/synthetic_causal_structure_inference",
+  "title": "Synthetic Causal Structure Inference",
+  "summary": "Inspect 40 synthetic tabular datasets, infer each dataset's causal scenario and graph structure, and submit one combined JSON benchmark prediction file.",
+  "category": "computing_math",
+  "software": [
+    "Python",
+    "pandas",
+    "numpy",
+    "statsmodels",
+    "scikit-learn",
+    "networkx"
+  ],
+  "taskPrompt": "You are working on a Linux VM to solve a synthetic causal-structure benchmark.\n\n## Input Files\n- Task brief: `base/input/task_brief.md`\n- Benchmark prompt: `base/input/AGENT_PROMPT_FOR_SYNTHETIC_CAUSAL_TASK.md`\n- Sanitized dataset manifest: `base/input/manifest.json`\n- Dataset directories: `base/input/public/dataset_###/`\n- Optional runtime manifest: `base/input/runtime_env`\n- Optional Python wrapper: `base/software/python_causal_env.sh`\n\n## Optional Python Setup\nIf you want the staged scientific Python environment, use the wrapper:\n\n```bash\n\"base/software/python_causal_env.sh\" your_script.py\n```\n\nThat wrapper keeps any created runtime environment under `base/output`.\n\n## Your Task\n1. Read `base/input/task_brief.md` and `base/input/AGENT_PROMPT_FOR_SYNTHETIC_CAUSAL_TASK.md`.\n2. Read `base/input/manifest.json` to get the full sanitized dataset list.\n3. For each dataset directory under `base/input/public`, infer:\n   - `scenario`\n   - `identification_strategy`\n   - `identifiable_effect`\n   - `variable_roles`\n   - `directed_edges`\n   - `latent_confounders`\n4. Save one final JSON file at `base/output/submission.json`.\n\n## Output Requirements\n- The file must be valid JSON.\n- Top-level keys must be `benchmark_name` and `predictions`.\n- `benchmark_name` must match the staged benchmark value shown in `base/input/manifest.json`.\n- Include exactly one prediction object for every dataset listed in `base/input/manifest.json`.\n- Use the sanitized dataset ids from the manifest exactly as written.\n- Do not modify files under `base/input`.\n",
+  "agentMustDo": [
+    "Read the staged task brief, benchmark prompt, and sanitized manifest.",
+    "Inspect each dataset directory under `input/public/dataset_###/`.",
+    "Infer the scenario family, identification strategy, identifiability, variable roles, directed edges, and latent confounders for every dataset.",
+    "Write one final `submission.json` containing exactly one prediction object for every sanitized dataset id."
+  ],
+  "inputFiles": [
+    {
+      "name": "Task brief",
+      "format": "`.md`",
+      "path": "input/task_brief.md",
+      "description": "High-level wrapper with output path and runtime notes"
+    },
+    {
+      "name": "Benchmark prompt",
+      "format": "`.md`",
+      "path": "input/AGENT_PROMPT_FOR_SYNTHETIC_CAUSAL_TASK.md",
+      "description": "Detailed public benchmark instructions with allowed labels and schema example"
+    },
+    {
+      "name": "Sanitized manifest",
+      "format": "`.json`",
+      "path": "input/manifest.json",
+      "description": "Lists the benchmark name and every required sanitized dataset id"
+    },
+    {
+      "name": "Dataset bundle",
+      "format": "directory",
+      "path": "input/public/",
+      "description": "Forty dataset directories, each containing `synthetic.csv` and `task.json`"
+    },
+    {
+      "name": "Runtime manifest",
+      "format": "directory",
+      "path": "input/runtime_env/",
+      "description": "Optional staged Python environment manifest and lockfile"
+    }
+  ],
+  "referenceFiles": [
+    {
+      "name": "Benchmark submission",
+      "format": "`.json`",
+      "path": "output/submission.json",
+      "description": "Combined predictions for all 40 datasets"
+    }
+  ],
+  "evaluation": "**Hard gate conditions** (auto score `0.0` if triggered):\n- `output/submission.json` is missing or unreadable\n- top-level keys are not exactly `benchmark_name` and `predictions`\n- `benchmark_name` does not match the staged benchmark package\n- predictions are not a list of objects with string `dataset_id` values\n- predictions contain duplicate, missing, or unknown dataset ids\n- hidden reference JSON cannot be read\n\n**Scoring method:**\n1. Read the agent's `submission.json` and the hidden `reference/gold_standard_submission.json`.\n2. Reject schema-invalid submissions before field-by-field scoring.\n3. For each dataset, score:\n   - `scenario` exact match: weight `0.30`\n   - `identification_strategy` exact match: weight `0.20`\n   - `identifiable_effect` exact match: weight `0.10`\n   - directed-edge F1: weight `0.20`\n   - latent-confounder-pair F1: weight `0.10`\n   - variable-role accuracy: weight `0.10`\n4. Return the macro-average combined score over all 40 datasets.\n\n**Score behavior:**\n- Positive fixture: `1.0`\n- Negative fixture: `0.14004140380458857`\n- Missing or schema-invalid output: `0.0`\n",
+  "vm": {
+    "machineType": "c4-standard-4",
+    "snapshot": "cpu-free-ubuntu",
+    "timeout": 7200
+  },
+  "taxonomy": {
+    "domain_id": "9",
+    "domain_code": "computing_math",
+    "subdomain_id": "9.2",
+    "subdomain_code": "data_analytics",
+    "subdomain_name": "Data & Analytics Engineering",
+    "classifier": {
+      "source": "task_all_workflows.csv",
+      "applied_at": "2026-05-28T20:12:46Z",
+      "previous": {
+        "domain_id": "9",
+        "domain_code": "computing_math",
+        "subdomain_id": "9.3",
+        "subdomain_code": "ai_cs_research",
+        "subdomain_name": "AI Engineering, Safety & CS Research"
+      }
+    }
+  },
+  "requiredSystemPackages": []
+}

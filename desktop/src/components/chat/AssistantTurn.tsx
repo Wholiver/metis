@@ -5,7 +5,6 @@ import { collectTurnFileChanges } from '../../lib/turn-files';
 import { resolveOutputTailProgress } from '../../lib/work-progress';
 import { AgentBubble } from './AgentBubble';
 import { AssistantWork } from './AssistantWork';
-import { WorkProgressIndicator } from './WorkProgressIndicator';
 import { TurnFilesSummary } from './TurnFilesSummary';
 
 interface AssistantTurnProps {
@@ -124,7 +123,6 @@ export const AssistantTurn: React.FC<AssistantTurnProps> = ({
             onRefineProposal={onRefineProposal}
           />
         ))}
-        {showProgress && <WorkProgressIndicator key="output-tail-progress" progress={progress} idle={!streaming && !isWaitingUserInput} />}
       </div>
     );
   }
@@ -186,7 +184,6 @@ export const AssistantTurn: React.FC<AssistantTurnProps> = ({
         </div>
       )}
       <TurnFilesSummary files={fileChanges} />
-      {showProgress && <WorkProgressIndicator key="output-tail-progress" progress={progress} idle={!streaming && !isWaitingUserInput} />}
     </div>
   );
 };

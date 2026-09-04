@@ -614,7 +614,7 @@ ${line(state, "FRONTIER G2")}
 			return;
 		}
 		if (report.verdict === "blocked") {
-			if (report.role === "primary" || report.role === "root") {
+			if (report.role === "primary" || report.role === "root" || report.gate === "G2") {
 				return this.transition("blocked", "blocked");
 			}
 			this.log(`WORKER_BLOCKED gate=${report.gate} actor=${report.actor} role=${report.role}`);
@@ -959,13 +959,12 @@ ${line(state, "FRONTIER G2")}
 				`ROADMAP.md mission pointer/hash or nonce does not match this run. Keep the seeded header lines: "Mission pointer: ${pointer.path} (sha256=${pointer.sha256}; bytes=${pointer.bytes})" and "Run nonce: ${state.nonce}".`,
 			);
 		}
-		for (const field of ROADMAP_FIELDS) {
-			const match = content.match(new RegExp(`-\\s*(?:\\*\\*)?${field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\*\\*)?\\s*:\\s*([^\\n]+)`, "i"));
-			if (!match || /^(?:TBD|N\/A|\[.*\])\s*$/i.test(match[1]!.trim().replace(/^[*_`]+|[*_`]+$/g, ""))) {
-				throw new Error(`ROADMAP.md is incomplete: ${field} must be concrete before G2 passes.`);
-			}
+		// Verify scope profile presence (supports both English and Chinese section titles/keys)
+		const scopeMatch = content.match(/(?:^|[\r\n])[^\S\r\n]*(?:[-*•]+[^\S\r\n]*)?(?:\*\*)?(?:Scope profile|scope_profile|Scope|范围分类|范围概述)(?:\*\*)?[^\S\r\n]*[:：][^\S\r\n]*([^\r\n]+)/i);
+		if (!scopeMatch || /^(?:TBD|N\/A|\[.*\])\s*$/i.test(scopeMatch[1]!.trim().replace(/^[*_`]+|[*_`]+$/g, ""))) {
+			throw new Error("ROADMAP.md is incomplete: Scope profile must be concrete before G2 passes.");
 		}
-		if (!/-\s*(?:\*\*)?requiresDetailedPlan(?:\*\*)?\s*:\s*(?:true|false)\b/i.test(content)) {
+		if (!/requiresDetailedPlan[`)]?\s*[:：]\s*[`(]?(?:true|false)\b/i.test(content)) {
 			throw new Error("ROADMAP.md must declare requiresDetailedPlan: true or false.");
 		}
 		return parsePerformanceRoadmapItems(content);

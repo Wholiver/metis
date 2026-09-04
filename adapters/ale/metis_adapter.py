@@ -212,7 +212,13 @@ class ALEMetisAdapter:
 
         if docker_container:
             docker_shell_path = Path(__file__).resolve().parent / "docker_shell.sh"
+            if docker_shell_path.exists():
+                try:
+                    docker_shell_path.chmod(0o755)
+                except Exception:
+                    pass
             env["ALE_CONTAINER_ID"] = docker_container
+            env["METIS_SHELL"] = str(docker_shell_path)
             env["SHELL"] = str(docker_shell_path)
             # Ensure OrbStack / Docker path is accessible to Metis child process
             orb_bin = str(Path.home() / ".orbstack" / "bin")

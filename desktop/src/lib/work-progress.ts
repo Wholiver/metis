@@ -1,4 +1,4 @@
-import { AssistantContentPart } from '../types';
+import { AssistantContentPart, Message } from '../types';
 
 export type WorkProgressPhase =
   | 'thinking'
@@ -198,6 +198,45 @@ export function resolveWorkProgress(items: AssistantContentPart[]): WorkProgress
     phase: 'executing',
     label: name === 'update_plan' ? 'Updating the plan…' : 'Running a tool…',
     status: 'active',
+  };
+}
+
+export function resolveConversationProgress(
+  messages: Message[],
+  streaming: boolean,
+  isWaitingUserInput = false,
+): { progress: WorkProgressState; idle: boolean } {
+  if (isWaitingUserInput) {
+    return {
+      progress: { phase: 'waiting', label: 'Waiting for your input…', status: 'waiting' },
+      idle: false,
+    };
+  }
+  const lastAssistantMessages: Message[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === 'assistant') {
+      lastAssistantMessages.unshift(msg);
+    } else if (lastAssistantMessages.length > 0) {
+      break;
+    }
+  }
+  const parts: AssistantContentPart[] = lastAssistantMessages.flatMap((message) =>
+    message.parts && message.parts.length > 0
+      ? message.parts
+      : [
+          ...(message.thinking
+            ? [{ type: 'thinking' as const, id: `${message.id}-thinking`, thinking: message.thinking, durationMs: message.thinkingDurationMs }]
+            : []),
+          ...(message.content
+            ? [{ type: 'text' as const, id: `${message.id}-text`, text: message.content }]
+            : []),
+        ]
+  );
+  const progress = resolveOutputTailProgress(parts, streaming);
+  return {
+    progress,
+    idle: !streaming,
   };
 }
 

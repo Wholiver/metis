@@ -23,6 +23,7 @@ import {
 } from '../desktop/src/hooks/useMetisServer';
 import { composeAttachmentPayload } from '../desktop/src/lib/attachments';
 import { Sidebar } from '../desktop/src/components/sidebar/Sidebar';
+import { ProjectDots } from '../desktop/src/components/sidebar/ProjectDots';
 
 const requireDesktop = createRequire(resolve(process.cwd(), 'desktop/package.json'));
 const React = requireDesktop('react') as typeof import('react');
@@ -425,5 +426,40 @@ describe('desktop React session sidebar', () => {
     expect(headerSource).toContain('onNewChat');
     expect(chatAreaSource).toContain('onNewChat={onNewChat}');
     expect(appSource).toContain('onNewChat={newConversation}');
+  });
+
+  it('renders redesigned borderless rectangular project switcher matching Settings button size (w-full h-9 rounded-[8px])', () => {
+    const projects = [
+      { id: 'proj-1', name: 'Metis Core', path: '/path/to/metis' },
+      { id: 'proj-2', name: 'Desktop App', path: '/path/to/desktop' },
+    ];
+    const markup = renderToStaticMarkup(React.createElement(ProjectDots, {
+      projects,
+      activeProjectId: 'proj-1',
+      onSelectProject: () => undefined,
+      onAddProject: () => undefined,
+    }));
+
+    // Outer container: borderless, rectangular matching Settings button (w-full h-9 rounded-[8px])
+    expect(markup).toContain('data-project-switcher=""');
+    expect(markup).toContain('w-full');
+    expect(markup).toContain('h-9');
+    expect(markup).toContain('rounded-[8px]');
+    expect(markup).toContain('bg-black/[0.04]');
+    expect(markup).not.toContain('border-');
+
+    // Project tabs
+    expect(markup).toContain('data-project-tab="proj-1"');
+    expect(markup).toContain('data-project-tab="proj-2"');
+    expect(markup).toContain('Metis Core');
+    expect(markup).toContain('Desktop App');
+
+    // Active project tab has white card background and shadow
+    expect(markup).toContain('bg-white text-slate-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] font-semibold');
+    expect(markup).toContain('rounded-[6px]');
+
+    // Plus button immediately following tabs
+    expect(markup).toContain('data-add-project-button=""');
+    expect(markup).toContain('aria-label="Add project"');
   });
 });

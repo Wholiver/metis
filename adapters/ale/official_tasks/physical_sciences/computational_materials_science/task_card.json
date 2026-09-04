@@ -1,0 +1,74 @@
+{
+  "taskId": "physical_sciences/computational_materials_science",
+  "title": "Silicon GW Band Gap",
+  "summary": "Compute the indirect GW quasiparticle band gap of bulk silicon using Quantum ESPRESSO and BerkeleyGW.",
+  "category": "physical_sciences",
+  "software": [
+    "Python",
+    "Quantum ESPRESSO",
+    "BerkeleyGW"
+  ],
+  "taskPrompt": "You are a computational materials scientist working on a Linux VM.\n\n## Your Task\nCompute the indirect GW quasiparticle band gap of bulk silicon from the staged structure and pseudopotential.\n\n## Input Files\n- Silicon structure: `base/input/silicon/silicon.vasp`\n- Silicon pseudopotential: `base/input/silicon/Si.UPF`\n\n## Software\nUse the task-local launcher staged here:\n- `base/software/launch_qe_bgw.sh`\n\nRun Quantum ESPRESSO and BerkeleyGW commands through the launcher, for example:\n- `bash base/software/launch_qe_bgw.sh pw.x ...`\n- `bash base/software/launch_qe_bgw.sh epsilon.cplx.x ...`\n- `bash base/software/launch_qe_bgw.sh bash` to open a shell with the QE/BerkeleyGW PATH set\n\nYou may also use Python, shell utilities, and editors available on the VM.\n\n## Benchmark Workflow Settings\n- Run QE SCF and NSCF/bands calculations, then `pw2bgw`, BerkeleyGW `epsilon`, `sigma`, and `inteqp`.\n- Use approximately `5x5x5` wavefunction k-point sampling, a `10 Ry` dielectric cutoff, and about `39` GW summation bands.\n- Set `OMP_NUM_THREADS=1` and use no more than four MPI ranks, for example `mpirun -np 4`.\n- Report the converged DFT and GW indirect gaps, identify the VBM and CBM locations, and demonstrate the quasiparticle gap opening.\n\n## What You Must Do\n1. Create the missing Quantum ESPRESSO and BerkeleyGW input decks from scratch.\n2. Run the complete silicon GW workflow using the staged structure and pseudopotential.\n3. Save the required outputs exactly under `base/output/silicon`.\n\n## Required Output Files\n- `base/output/silicon/bandstructure.dat`\n- `base/output/silicon/eqp.dat`\n- `base/output/silicon/bandstructure_inteqp.png`\n\nDo not write outputs outside `base/output`.",
+  "agentMustDo": [
+    "Read the staged silicon structure and pseudopotential under `input/silicon/`.",
+    "Create the missing QE and BerkeleyGW input decks from scratch for the SCF, NSCF/bands, pw2bgw, epsilon, sigma, and inteqp workflow.",
+    "Run the silicon GW workflow with approximately `5x5x5` wavefunction k-point sampling, a `10 Ry` dielectric cutoff, and about `39` GW summation bands.",
+    "Set `OMP_NUM_THREADS=1` and use no more than four MPI ranks.",
+    "Write `bandstructure.dat`, `eqp.dat`, and `bandstructure_inteqp.png` under `output/silicon/`."
+  ],
+  "inputFiles": [
+    {
+      "name": "Silicon structure",
+      "format": "vasp",
+      "path": "input/silicon/silicon.vasp",
+      "description": "Bulk silicon crystal structure"
+    },
+    {
+      "name": "Silicon pseudopotential",
+      "format": "UPF",
+      "path": "input/silicon/Si.UPF",
+      "description": "PZ/LDA norm-conserving silicon pseudopotential"
+    }
+  ],
+  "referenceFiles": [
+    {
+      "name": "Silicon GW outputs",
+      "format": "mixed",
+      "path": "output/silicon/*",
+      "description": "Includes bandstructure.dat, eqp.dat, and bandstructure_inteqp.png"
+    }
+  ],
+  "evaluation": "**Hard gate conditions** (auto score=0 if triggered):\n- `output/silicon/` is missing\n- any required file is missing\n- any required numeric file is unparsable or empty\n- `bandstructure_inteqp.png` is empty or is not a PNG\n\n**Scoring method:**\n- Required file set: `bandstructure.dat`, `eqp.dat`, and `bandstructure_inteqp.png`.\n- Parse the existing whitespace-delimited outputs and extract the DFT and GW indirect gaps, band-edge locations, quasiparticle gap opening, and correction plausibility.\n- Score these physical observables continuously against hidden physically acceptable ranges; table row counts, sampling grids, and individual floating-point values do not need to match the reference.\n- `bandstructure_inteqp.png` must exist, be non-empty, and have a valid PNG signature.\n- Final score is continuous from `0.0` to `1.0`; `0.70` is the pass threshold after hard gates.\n\n- **Where does the main scoring logic run?** local Python evaluation\n- **If any scoring step runs on the VM, why is that exception necessary?** none planned",
+  "vm": {
+    "machineType": "c4-standard-8",
+    "snapshot": "cpu-free-ubuntu",
+    "timeout": 14400
+  },
+  "taxonomy": {
+    "domain_id": "2",
+    "domain_code": "physical_sciences",
+    "subdomain_id": "2.2",
+    "subdomain_code": "chemistry_materials",
+    "subdomain_name": "Chemistry & Materials Computation",
+    "classifier": {
+      "model": "gpt-4o-mini",
+      "classified_at": "2026-05-13T09:33:51.753942Z",
+      "source": {
+        "submission_id": "(backfill: no submission lookup)",
+        "fields": [
+          "taskPrompt",
+          "title",
+          "summary",
+          "software"
+        ],
+        "mode": "backfill",
+        "task_card_path": "tasks/physical_sciences/computational_materials_science/task_card.json"
+      },
+      "rationale": "The task involves computational materials science, specifically using software for materials computation."
+    }
+  },
+  "requiredSystemPackages": [
+    "micromamba",
+    "qe-bgw-6.7.0-4.0"
+  ]
+}
