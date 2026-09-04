@@ -1,0 +1,38 @@
+# Official ALE agent preset for Metis
+#
+# Usage (from an ALE checkout, with Metis repo on PYTHONPATH):
+#
+#   export PYTHONPATH="/path/to/metis:${PYTHONPATH}"
+#   # optional shortcut registration:
+#   python /path/to/metis/adapters/ale_official/factory_patch.py --ale-root .
+#
+#   # then reference this file from an experiment yaml:
+#   agents:
+#     - /path/to/metis/adapters/ale_official/metis.yaml
+#
+# Fixed eval model: openai-codex / gpt-5.6-luna / thinking=low
+#
+# Auth: set auth_json_path to a host temp file containing ~/.metis/agent/auth.json
+# contents (injected via Colab Secrets / one-shot upload — never commit secrets).
+
+harness: adapters.ale_official.deployer.MetisDeployer
+# executor: sandbox   # deployer default
+
+model: gpt-5.6-luna
+
+config:
+  provider: openai-codex
+  model: gpt-5.6-luna
+  thinking: low
+  collaboration_mode: build
+
+  # Snapshot branch Colab clones / sandboxes build from.
+  install_mode: git
+  metis_git_url: https://github.com/Wholiver/metis.git
+  metis_git_ref: ale-official-colab-snapshot
+
+  enable_cua_tools: true
+  extension_relpath: adapters/ale_official/extension/cua_tools.ts
+
+  # Host-side path only — resolved into auth_json_content before sandbox entry.
+  # auth_json_path: /tmp/metis-auth.json
