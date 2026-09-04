@@ -139,6 +139,32 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 			expect(existsSync(ws.workspacePath)).toBe(false);
 		});
 
+		it("snapshots nested files in non-git directory or git subdirectory when auto is requested", async () => {
+			const nonGitDir = mkdtempSync(join(tmpdir(), "metis-snapshot-test-"));
+			tempDirs.push(nonGitDir);
+
+			await fs.mkdir(join(nonGitDir, "base/input"), { recursive: true });
+			await fs.writeFile(join(nonGitDir, "base/input/problem_spec.md"), "# Problem Spec");
+			await fs.mkdir(join(nonGitDir, "base/software"), { recursive: true });
+			await fs.writeFile(join(nonGitDir, "base/software/run.sh"), "#!/bin/bash\necho ok");
+
+			const ws = await createIsolatedWorkspace({
+				cwd: nonGitDir,
+				worktree: "auto",
+				agentId: "scope-coordinator",
+			});
+			tempDirs.push(ws.workspacePath);
+
+			expect(existsSync(ws.workspacePath)).toBe(true);
+			expect(ws.isGitWorktree).toBe(false);
+			expect(existsSync(join(ws.workspacePath, "base/input/problem_spec.md"))).toBe(true);
+			expect(await fs.readFile(join(ws.workspacePath, "base/input/problem_spec.md"), "utf-8")).toBe("# Problem Spec");
+			expect(existsSync(join(ws.workspacePath, "base/software/run.sh"))).toBe(true);
+
+			await cleanupIsolatedWorkspace(ws);
+			expect(existsSync(ws.workspacePath)).toBe(false);
+		});
+
 		it("seeds auto worktrees from tracked edits and untracked parent files", async () => {
 			const repo = mkdtempSync(join(tmpdir(), "metis-dirty-worktree-"));
 			tempDirs.push(repo);

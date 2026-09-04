@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
   ChevronRight,
@@ -141,7 +141,8 @@ function instructionSourceLabel(value: unknown): string {
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <section className="space-y-0.5 rounded-[8px] border border-slate-200/80 bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.02)]">{children}</section>;
+  // Card padding is 4px (p-1); rows use 6px, so the enclosing surface is 10px.
+  return <section className="space-y-0.5 rounded-[10px] border border-slate-200/80 bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.02)]">{children}</section>;
 }
 
 function Row({ label, description, children, stacked = false }: { label: string; description: string; children: React.ReactNode; stacked?: boolean }) {
@@ -182,10 +183,29 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>(() => normalizeTab(props.initialTab));
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const mainScrollRef = useRef<HTMLElement | null>(null);
+
+  const handleTabChange = (nextTab: SettingsTab) => {
+    setTab(nextTab);
+    setFeedback('');
+    setError('');
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTop = 0;
+    }
+    setIsScrolled(false);
+  };
 
   useEffect(() => {
     if (props.initialTab) setTab(normalizeTab(props.initialTab));
   }, [props.initialTab]);
+
+  useEffect(() => {
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTop = 0;
+    }
+    setIsScrolled(false);
+  }, [searchQuery, tab]);
 
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -343,9 +363,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   // Section 1: General (Language, Onboarding, Shortcuts)
   const general = (
-    <>
-      <SectionHeading title="General" />
-      <div className="space-y-3">
+    <div className="space-y-3">
         <Card>
           <Row label="Language" description="Applied to Desktop immediately and synchronized to Agent while connected.">
             <select className={selectClass} value={language} onChange={(e) => void setLanguage(e.target.value)} disabled={desktopDisabled}>{languageOptions.map((option) => <option key={option.code} value={option.code}>{option.nativeName}</option>)}</select>
@@ -360,7 +378,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
           ].map(([label, key]) => <Row key={label} label={label} description=""><kbd className="rounded-[6px] border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-600">{key}</kbd></Row>)}
         </Card>
       </div>
-    </>
   );
 
   const modelsFilePath = useMemo(() => {
@@ -437,10 +454,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   const model = (
     <>
-      <SectionHeading title={translate('Custom Models')} />
       <div className="space-y-6">
         {/* Local config file card */}
-        <div className="overflow-hidden rounded-[8px] border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23_42,0.02)]">
+        <div className="overflow-hidden rounded-[10px] border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23_42,0.02)]">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="min-w-0 pr-3">
               <h3 className="text-[13.5px] font-medium text-slate-900 truncate">
@@ -470,7 +486,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </h3>
 
           {customProviders.length === 0 && savedOAuthAndBuiltinProviders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-[8px] border border-dashed border-slate-300/80 bg-slate-50/50 py-10 px-6 text-center">
+            <div className="flex flex-col items-center justify-center rounded-[10px] border border-dashed border-slate-300/80 bg-slate-50/50 py-10 px-6 text-center">
               <p className="text-[13.5px] font-semibold text-slate-700">
                 {translate('No custom models configured yet')}
               </p>
@@ -479,7 +495,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100 overflow-hidden rounded-[8px] border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.02)]">
+            <div className="divide-y divide-slate-100 overflow-hidden rounded-[10px] border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.02)]">
               {customProviders.map((provider) => {
                 const modelNames =
                   provider.modelIds && provider.modelIds.length > 0
@@ -591,9 +607,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   // Section 3: Agent & Workflow (Collaboration mode, message queuing & retry, compaction, Memory, instruction sources)
   const agent = (
-    <>
-      <SectionHeading title="Agent & Workflow" />
-      <div className="space-y-3">
+    <div className="space-y-3">
         <Card>
           <Row label="Collaboration mode" description="Plan uses read-only tools. Build can make changes; neither mode is an OS sandbox.">
             <select className={selectClass} value={props.collaborationMode} onChange={(e) => void props.onSelectCollaborationMode(e.target.value as CollaborationMode)} disabled={disabled}>
@@ -660,7 +674,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <Switch label="Memory" checked={Boolean(currentMemory.enabled)} onChange={() => void run(() => props.request('/memory/settings', 'PUT', { enabled: !currentMemory.enabled }), 'Memory setting saved.')} disabled={disabled} />
             </Row>
           </Card>
-          <div className="mt-2.5 rounded-[8px] border border-slate-200/80 bg-slate-50/70 p-4">
+          <div className="mt-2.5 rounded-[10px] border border-slate-200/80 bg-slate-50/70 p-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 {isConsolidating ? (
@@ -757,14 +771,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </Row>
         </Card>
       </div>
-    </>
   );
 
   // Section 4: Workspace & Server (Connection, Workspace, Trust)
   const server = (
-    <>
-      <SectionHeading title="Workspace & Server" />
-      <div className="space-y-3">
+    <div className="space-y-3">
         <Card>
           <Row label="Connection status" description={String(workspace.path || props.activeProject?.path || 'No workspace selected')}>
             <Status tone={props.isConnected ? 'success' : 'danger'}>
@@ -800,14 +811,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </Row>
         </Card>
       </div>
-    </>
   );
 
   // Section 5: Data & About (Session data, Import/Export/Share, Version, Updates, Maintenance)
   const about = (
-    <>
-      <SectionHeading title="Data & About" />
-      <div className="space-y-3">
+    <div className="space-y-3">
         <Card>
           <Row label="Session name" description="Shown in the conversation list." stacked>
             <div className="flex w-full gap-2">
@@ -869,7 +877,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </Row>
         </Card>
       </div>
-    </>
   );
 
   const sections: Record<SettingsTab, React.ReactNode> = {
@@ -927,10 +934,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
     return map;
   }, [searchResults]);
 
+  const activeTabItem = tabs.find((t) => t.id === tab);
+  const currentTabTitle = activeTabItem ? translate(activeTabItem.label) : translate('Settings');
+
   if (!props.open) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/25 p-5 backdrop-blur-[3px]" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
+      {/* 10px frame radius matches the conversation surface radius. */}
       <section role="dialog" aria-modal="true" aria-labelledby="settings-title" className="flex h-[min(680px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] overflow-hidden rounded-[10px] border border-slate-200/90 bg-white shadow-[0_24px_70px_rgb(15_23_42_/_0.2)]">
         <aside className="flex w-[230px] shrink-0 flex-col border-r border-slate-200/80 bg-[#f6f7f9] px-3 pb-3 pt-6 sm:pt-7 select-none">
           <div className="mb-3.5 px-1 flex items-center h-6">
@@ -968,7 +979,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   key={item.id}
                   type="button"
                   data-settings-panel={item.id}
-                  onClick={() => { setTab(item.id); setFeedback(''); setError(''); }}
+                  onClick={() => handleTabChange(item.id)}
                   className={`w-full min-h-[38px] px-2.5 py-1.5 rounded-[6px] flex items-center justify-between transition-[background-color,color,box-shadow] text-left relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
                     isActive
                       ? 'bg-[#e0e3e8] shadow-[0_1px_2px_rgba(0,0,0,0.03)] font-medium text-[#0f172a]'
@@ -991,53 +1002,79 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </nav>
           <p className="px-1 pt-2 text-[11px] text-[#9ca3af]">{appInfo.version ? `v${appInfo.version}` : 'Loading version…'}</p>
         </aside>
-        <main className="relative min-w-0 flex-1 overflow-y-auto bg-slate-50/30 px-6 pb-6 pt-6 sm:px-7 sm:pb-7 sm:pt-7">
-          <button type="button" className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-slate-400 transition-[background-color,color] hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60" onClick={props.onClose} aria-label="Close settings">
-            <X className="h-4 w-4" />
-          </button>
-          {loading ? (
-            <div className="flex h-full items-center justify-center gap-2 text-[13px] text-slate-400">
-              <LoaderCircle className="h-4 w-4 animate-spin" />Loading settings…
+        <div className="flex min-w-0 flex-1 flex-col bg-slate-50/30">
+          <header
+            className={`flex shrink-0 items-center justify-between px-6 pt-6 pb-3.5 sm:px-7 sm:pt-7 sm:pb-3.5 transition-[border-color,box-shadow,background-color] duration-150 z-10 ${
+              isScrolled
+                ? 'border-b border-slate-200/80 bg-white/85 backdrop-blur-[6px] shadow-[0_1px_3px_rgba(15,23,42,0.03)]'
+                : 'border-b border-transparent bg-transparent'
+            }`}
+          >
+            <div className="flex h-6 min-w-0 items-center">
+              <h2 className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-slate-900 leading-6 truncate">
+                {currentTabTitle}
+              </h2>
             </div>
-          ) : searchQuery && searchResults.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <CircleHelp className="h-8 w-8 text-slate-300" />
-              <p className="mt-3 text-[14px] font-medium text-slate-700">No matching settings</p>
-              <button type="button" className={`mt-4 ${buttonClass}`} onClick={() => setSearchQuery('')}>Clear search</button>
+            <div className="flex h-6 items-center">
+              <button
+                type="button"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-slate-400 transition-[background-color,color] hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 -mr-1"
+                onClick={props.onClose}
+                aria-label="Close settings"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-          ) : searchQuery ? (
-            <div>
-              <SectionHeading title="Search results" description={`Found ${searchResults.length} setting${searchResults.length === 1 ? '' : 's'} matching “${searchQuery}”.`} />
-              <Card>
-                {searchResults.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => { setTab(item.tab); setSearchQuery(''); }}
-                    className="flex cursor-pointer items-center justify-between rounded-[6px] px-3.5 py-2.5 transition-colors hover:bg-slate-50"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[13.5px] font-medium text-slate-800">{item.title}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-medium text-slate-500">
-                          {tabs.find((t) => t.id === item.tab)?.label}
-                        </span>
+          </header>
+          <main
+            ref={mainScrollRef}
+            onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 0)}
+            className="relative min-w-0 flex-1 overflow-y-auto px-6 pb-6 pt-2 sm:px-7 sm:pb-7 sm:pt-2"
+          >
+            {loading ? (
+              <div className="flex h-full items-center justify-center gap-2 text-[13px] text-slate-400">
+                <LoaderCircle className="h-4 w-4 animate-spin" />Loading settings…
+              </div>
+            ) : searchQuery && searchResults.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <CircleHelp className="h-8 w-8 text-slate-300" />
+                <p className="mt-3 text-[14px] font-medium text-slate-700">No matching settings</p>
+                <button type="button" className={`mt-4 ${buttonClass}`} onClick={() => { setSearchQuery(''); if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0; setIsScrolled(false); }}>Clear search</button>
+              </div>
+            ) : searchQuery ? (
+              <div>
+                <SectionHeading title="Search results" description={`Found ${searchResults.length} setting${searchResults.length === 1 ? '' : 's'} matching “${searchQuery}”.`} />
+                <Card>
+                  {searchResults.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => { handleTabChange(item.tab); setSearchQuery(''); }}
+                      className="flex cursor-pointer items-center justify-between rounded-[6px] px-3.5 py-2.5 transition-colors hover:bg-slate-50"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13.5px] font-medium text-slate-800">{item.title}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-medium text-slate-500">
+                            {tabs.find((t) => t.id === item.tab)?.label}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-pretty text-[12px] leading-5 text-slate-500">{item.desc}</p>
                       </div>
-                      <p className="mt-0.5 text-pretty text-[12px] leading-5 text-slate-500">{item.desc}</p>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
                     </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-                  </div>
-                ))}
-              </Card>
-            </div>
-          ) : (
-            sections[tab]
-          )}
-          {(feedback || error) && (
-            <div role={error ? 'alert' : 'status'} className={`sticky bottom-0 mt-5 rounded-[6px] border px-3 py-2 text-[12px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-              {error || feedback}
-            </div>
-          )}
-        </main>
+                  ))}
+                </Card>
+              </div>
+            ) : (
+              sections[tab]
+            )}
+            {(feedback || error) && (
+              <div role={error ? 'alert' : 'status'} className={`sticky bottom-0 mt-5 rounded-[6px] border px-3 py-2 text-[12px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                {error || feedback}
+              </div>
+            )}
+          </main>
+        </div>
       </section>
     </div>
   );

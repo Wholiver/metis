@@ -21,6 +21,7 @@ import concurrent.futures
 from dataclasses import asdict, dataclass
 import datetime
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -80,6 +81,57 @@ def format_tokens(n: int) -> str:
     if n >= 1_000:
         return f"{n / 1_000:.1f}k"
     return str(n)
+
+
+def parse_verifier_score(output: str) -> Optional[float]:
+    """Extract a normalized score from JSON emitted by an official verifier."""
+    reports: List[Dict[str, Any]] = []
+    stripped = output.strip()
+
+    if stripped:
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, dict):
+                reports.append(parsed)
+        except (TypeError, ValueError):
+            decoder = json.JSONDecoder()
+            cursor = 0
+            while cursor < len(output):
+                start = output.find("{", cursor)
+                if start < 0:
+                    break
+                try:
+                    parsed, end = decoder.raw_decode(output, start)
+                except ValueError:
+                    cursor = start + 1
+                    continue
+                if isinstance(parsed, dict):
+                    reports.append(parsed)
+                cursor = max(end, start + 1)
+
+    for report in reversed(reports):
+        for key in ("total_score", "score", "accuracy", "acc"):
+            if key not in report or report[key] is None:
+                continue
+            try:
+                score = float(report[key])
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(score):
+                continue
+            if 0.0 <= score <= 1.0:
+                return score
+
+    return None
+
+
+def classify_verifier_output(output: str, returncode: int) -> tuple[float, str]:
+    """Classify verifier output without treating process success as task success."""
+    score = parse_verifier_score(output)
+    if score is not None:
+        status = "passed" if score >= 1.0 else ("partial" if score > 0 else "failed")
+        return score, status
+    return 0.0, "unverified"
 
 
 class ALERunner:
@@ -577,6 +629,8 @@ class ALERunner:
         temp_dl_dir: Optional[Path],
         res: ALEResult,
         container_id: Optional[str] = None,
+        reference_dir: Optional[Path] = None,
+        allow_download: bool = True,
     ) -> tuple[float, str, str]:
         """
         Execute official verification immediately upon task completion against
@@ -585,8 +639,14 @@ class ALERunner:
         """
         safe_id = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in task.task_id)
         pred_dir = self._find_prediction_dir(ws_dir)
-        temp_ref_root = self._download_task_reference(task.task_id)
-        ref_dir = self._find_reference_dir(temp_ref_root, task.task_id)
+        temp_ref_root = None
+        if reference_dir is not None:
+            ref_dir = reference_dir
+        elif allow_download:
+            temp_ref_root = self._download_task_reference(task.task_id)
+            ref_dir = self._find_reference_dir(temp_ref_root, task.task_id)
+        else:
+            ref_dir = None
 
         official_script = self._find_official_scorer(task.task_id)
         score = 0.0
@@ -624,38 +684,7 @@ class ALERunner:
                         text=True,
                     )
                 output = proc.stdout
-                parsed_report = None
-                for line in reversed([l.strip() for l in output.splitlines() if l.strip()]):
-                    try:
-                        parsed_report = json.loads(line)
-                        if isinstance(parsed_report, dict):
-                            break
-                    except Exception:
-                        continue
-
-                if parsed_report and isinstance(parsed_report, dict):
-                    raw_score = (
-                        parsed_report.get("total_score")
-                        or parsed_report.get("score")
-                        or parsed_report.get("accuracy")
-                        or parsed_report.get("acc")
-                    )
-                    if raw_score is not None:
-                        try:
-                            score = float(raw_score)
-                            if score > 1.0:
-                                score = score / 100.0
-                            score = max(0.0, min(1.0, score))
-                            status = "passed" if score >= 1.0 else ("partial" if score > 0 else "failed")
-                        except Exception:
-                            pass
-                if status == "unverified":
-                    if proc.returncode == 0:
-                        score = 1.0
-                        status = "passed"
-                    else:
-                        score = 0.0
-                        status = "failed"
+                score, status = classify_verifier_output(output, proc.returncode)
             elif ref_dir and ref_dir.exists():
                 ref_files = [f for f in ref_dir.iterdir() if f.is_file() and not f.name.startswith(".")]
                 matched = 0

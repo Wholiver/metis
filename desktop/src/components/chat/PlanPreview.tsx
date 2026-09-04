@@ -101,7 +101,7 @@ export const PlanPreview: React.FC<PlanPreviewProps> = ({
                 onClick={submitRefinement}
                 disabled={!actionsEnabled || !refinement.trim()}
                 data-plan-refine-send=""
-                className="relative h-8 rounded-full border border-[#262626] bg-[#262626] px-3.5 text-[11.5px] font-semibold text-white shadow-[0_2px_7px_rgba(0,0,0,0.16)] transition-[color,background-color,border-color,box-shadow,transform,opacity] before:absolute before:left-0 before:top-1/2 before:h-10 before:w-full before:-translate-y-1/2 before:content-[''] hover:border-[#171717] hover:bg-[#171717] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/55 disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.96]"
+                className="relative h-8 rounded-[10px] bg-[#f1f3f6] px-3.5 text-[11.5px] font-semibold text-[#0f172a] transition-[color,background-color,transform,opacity] before:absolute before:left-0 before:top-1/2 before:h-10 before:w-full before:-translate-y-1/2 before:content-[''] hover:bg-[#e2e6eb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/55 disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.96]"
               >
                 Send
               </button>
@@ -114,7 +114,7 @@ export const PlanPreview: React.FC<PlanPreviewProps> = ({
                   onClick={() => setEditing(true)}
                   disabled={!actionsEnabled}
                   data-plan-refine=""
-                  className="relative flex h-8 items-center gap-1.5 rounded-full border border-[#dedede] bg-[#f5f5f5] px-3 text-[11.5px] font-semibold text-[#525252] shadow-[0_1px_4px_rgba(0,0,0,0.08)] transition-[color,background-color,border-color,box-shadow,transform,opacity] before:absolute before:left-0 before:top-1/2 before:h-10 before:w-full before:-translate-y-1/2 before:content-[''] hover:border-[#d4d4d4] hover:bg-[#ebebeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/55 disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.96]"
+                  className="relative flex h-8 items-center gap-1.5 rounded-[10px] bg-[#f1f3f6] px-3 text-[11.5px] font-medium text-[#475569] transition-[color,background-color,transform,opacity] before:absolute before:left-0 before:top-1/2 before:h-10 before:w-full before:-translate-y-1/2 before:content-[''] hover:bg-[#e2e6eb] hover:text-[#0f172a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/55 disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.96]"
                 >
                   <PencilLine aria-hidden="true" className="h-3.5 w-3.5" />
                   Refine
@@ -125,7 +125,7 @@ export const PlanPreview: React.FC<PlanPreviewProps> = ({
                 onClick={onProcess}
                 disabled={!actionsEnabled}
                 data-plan-process=""
-                className="relative flex h-8 items-center gap-1.5 rounded-full border border-[#262626] bg-[#262626] px-3.5 text-[11.5px] font-semibold text-white shadow-[0_2px_7px_rgba(0,0,0,0.16)] transition-[color,background-color,border-color,box-shadow,transform,opacity] before:absolute before:left-0 before:top-1/2 before:h-10 before:w-full before:-translate-y-1/2 before:content-[''] hover:border-[#171717] hover:bg-[#171717] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/55 disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.96]"
+                className="relative flex h-8 items-center gap-1.5 rounded-[10px] bg-[#f1f3f6] px-3.5 text-[11.5px] font-semibold text-[#0f172a] transition-[color,background-color,transform,opacity] before:absolute before:left-0 before:top-1/2 before:h-10 before:w-full before:-translate-y-1/2 before:content-[''] hover:bg-[#e2e6eb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/55 disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.96]"
               >
                 <Play aria-hidden="true" className="h-3.5 w-3.5 fill-current" />
                 Process plan

@@ -125,7 +125,7 @@ export const SubagentDetailView: React.FC<SubagentDetailViewProps> = ({ subagent
         {/* User Turn: Assigned Task styled like UserBubble */}
         <div className="my-2 flex w-full min-w-0 max-w-full justify-end" data-subagent-task-section="">
           <div className="flex max-w-[500px] flex-col items-end gap-1.5">
-            <div className="border border-slate-900 bg-white text-slate-900 px-5 py-3 rounded-[18px] rounded-br-[4px] max-w-full text-[14px] leading-relaxed shadow-xs font-normal text-left whitespace-pre-wrap break-words text-pretty">
+            <div className="bg-[#f1f3f6] text-[#0f172a] px-4 py-2.5 rounded-[10px] max-w-full text-[14px] leading-relaxed font-normal text-left whitespace-pre-wrap break-words text-pretty">
               <p>{subagent.task || 'No task description'}</p>
               {subagent.context && (
                 <div className="mt-2 text-[12px] text-slate-600 whitespace-pre-wrap">

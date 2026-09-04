@@ -1128,11 +1128,11 @@ function createWindow() {
 								buttonsUseInterfacePills: Boolean(processStyle && refineStyle
 									&& processStyle.height === '32px'
 									&& refineStyle.height === '32px'
-									&& Number.parseFloat(processStyle.borderRadius) >= 16
-									&& Number.parseFloat(refineStyle.borderRadius) >= 16),
+									&& Number.parseFloat(processStyle.borderRadius) >= 10
+									&& Number.parseFloat(refineStyle.borderRadius) >= 10),
 								buttonsUseNeutralPalette: [processStyle, refineStyle].every((style) => {
 									const channels = style?.backgroundColor.match(/[\\d.]+/g)?.slice(0, 3).map(Number);
-									return channels?.length === 3 && Math.max(...channels) - Math.min(...channels) <= 1;
+									return channels?.length === 3 && Math.max(...channels) - Math.min(...channels) <= 6;
 								}),
 							};
 						})()`);

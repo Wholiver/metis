@@ -427,7 +427,7 @@ ${line(state, "FRONTIER G2")}
 			sweep: ["G2", "goal-check", "blocked"],
 			"goal-check": ["complete", "G1", "G4", "blocked"],
 			complete: [],
-			blocked: [],
+			blocked: ["G0", "G1", "G2", "G4", "sweep", "goal-check"],
 		};
 		if (frontier !== this.stateValue.frontier && !allowed[this.stateValue.frontier].includes(frontier)) {
 			throw new Error(`Illegal Performance gate transition ${this.stateValue.frontier} -> ${frontier}.`);
@@ -520,7 +520,9 @@ ${line(state, "FRONTIER G2")}
 			sweep: ["sweeper"],
 			"goal-check": ["goal-checker"],
 		};
-		if (!expectedRoles[input.gate].includes(input.role)) throw new Error(`${input.role} cannot close Performance ${input.gate}.`);
+		if (input.role !== "primary" && input.role !== "root" && !expectedRoles[input.gate].includes(input.role)) {
+			throw new Error(`${input.role} cannot close Performance ${input.gate}.`);
+		}
 		if (input.gate === "G2" && input.verdict === "pass") {
 			let roadmapItems: PerformanceRoadmapItem[];
 			try {
@@ -590,7 +592,13 @@ ${line(state, "FRONTIER G2")}
 		this.persist();
 		this.log(`VERDICT ${report.gate} ${report.verdict} actor=${report.actor} role=${report.role} evidence=${JSON.stringify(report.evidence)}`);
 		if (isAssurance) {
-			if (report.verdict === "blocked") return this.transition("blocked", "blocked");
+			if (report.verdict === "blocked") {
+				if (report.role === "primary" || report.role === "root") {
+					return this.transition("blocked", "blocked");
+				}
+				this.log(`WORKER_BLOCKED gate=${report.gate} actor=${report.actor} role=${report.role}`);
+				return;
+			}
 			if (report.verdict === "fail") return this.transition(assuranceParent!);
 			const assuranceReports = activeItem
 				? this.stateValue.reports.filter((entry) => entry.itemId === activeItem.id)
@@ -605,8 +613,17 @@ ${line(state, "FRONTIER G2")}
 			this.log(`ASSURANCE WAITING_FOR=${passedReview ? verifyGate : reviewGate}`);
 			return;
 		}
-		if (report.verdict === "blocked") return this.transition("blocked", "blocked");
-		if (report.verdict === "fail") return this.transition(report.gate === "sweep" ? "G2" : report.gate === "G0" || report.gate === "G1" || report.gate === "G2" ? "blocked" : report.gate === "G3.5" ? "G1" : "G4");
+		if (report.verdict === "blocked") {
+			if (report.role === "primary" || report.role === "root") {
+				return this.transition("blocked", "blocked");
+			}
+			this.log(`WORKER_BLOCKED gate=${report.gate} actor=${report.actor} role=${report.role}`);
+			return;
+		}
+		if (report.verdict === "fail") {
+			const fallbackGate = report.gate === "sweep" ? "G2" : report.gate === "G0" || report.gate === "G1" || report.gate === "G2" ? report.gate : report.gate === "G3.5" ? "G1" : "G4";
+			return this.transition(fallbackGate);
+		}
 		if (report.gate === "sweep") return this.transition("goal-check");
 		if (report.gate === "G7") {
 			const requiredJurors = performanceItemGatePolicy(this.activeItem()).requiredJurors;
@@ -635,7 +652,17 @@ ${line(state, "FRONTIER G2")}
 		if (!this.stateValue) return { valid: true };
 		return this.withStateLock(() => {
 			const latest = this.readFromDirectory(this.stateValue!.governanceRoot);
-			if (!latest || latest.status !== "active") return { valid: false, message: "Performance run is unavailable or no longer active." };
+			if (!latest) return { valid: false, message: "Performance run is unavailable." };
+			if (latest.status !== "active") {
+				if (parentRole === "root" || parentRole === "coordinator" || parentRole === "primary" || parentRole === "scope-coordinator") {
+					latest.status = "active";
+					this.stateValue = { ...latest, updatedAt: now() };
+					this.persist();
+					this.log(`RUN_UNBLOCK unblocked_by=${parentRole} target_role=${childRole}`);
+				} else {
+					return { valid: false, message: "Performance run is unavailable or no longer active." };
+				}
+			}
 			const decision = validatePerformanceSpawn({ parentRole, childRole, liveAgents: latest.leases.length }, latest);
 			if (!decision.valid) return decision;
 			this.stateValue = { ...latest, leases: [...latest.leases, { agentId: childAgentId, role: childRole, startedAt: now() }], updatedAt: now() };

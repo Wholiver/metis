@@ -15,6 +15,7 @@ import { createIsolatedWorkspace, type IsolatedWorkspace } from "../worktree.ts"
 import { filterChildEnvironment, sanitizeTraceData } from "../env-sanitizer.ts";
 
 const SPAWN_PROGRESS_HEARTBEAT_MS = 5_000;
+const SPAWN_PROGRESS_THROTTLE_MS = 1_500;
 const SPAWN_EXIT_DRAIN_GRACE_MS = 1_000;
 const SPAWN_RELEASE_RETRY_DELAYS_MS = [25, 50, 100] as const;
 
@@ -408,6 +409,8 @@ export function createSpawnAgentToolDefinition(
 					let settled = false;
 					let timer: NodeJS.Timeout | undefined;
 					let heartbeat: NodeJS.Timeout | undefined;
+					let throttledProgressTimer: NodeJS.Timeout | undefined;
+					let lastProgressEmitTime = 0;
 					let exitFallback: NodeJS.Timeout | undefined;
 					const startedAt = Date.now();
 
@@ -560,6 +563,25 @@ export function createSpawnAgentToolDefinition(
 						}, null, 2));
 					};
 
+					const scheduleProgressEmit = () => {
+						const now = Date.now();
+						const elapsed = now - lastProgressEmitTime;
+						if (elapsed >= SPAWN_PROGRESS_THROTTLE_MS) {
+							lastProgressEmitTime = now;
+							if (throttledProgressTimer) {
+								clearTimeout(throttledProgressTimer);
+								throttledProgressTimer = undefined;
+							}
+							emitCurrentProgress();
+						} else if (!throttledProgressTimer) {
+							throttledProgressTimer = setTimeout(() => {
+								throttledProgressTimer = undefined;
+								lastProgressEmitTime = Date.now();
+								emitCurrentProgress();
+							}, SPAWN_PROGRESS_THROTTLE_MS - elapsed);
+						}
+					};
+
 					const child = spawn(invocation.command, args, {
 						cwd: effectiveCwd,
 						env: childEnv as NodeJS.ProcessEnv,
@@ -592,12 +614,9 @@ export function createSpawnAgentToolDefinition(
 					const effectiveTimeoutSeconds = timeoutSeconds !== undefined
 						? timeoutSeconds
 						: (configuredTimeoutMs > 0 ? configuredTimeoutMs / 1000 : 0);
-					if (effectiveTimeoutSeconds > 0) {
-						timer = setTimeout(() => {
-							timedOut = true;
-							guard.killChild(childAgentId, "SIGTERM");
-						}, effectiveTimeoutSeconds * 1000);
-					}
+					// Subagents are governed by the parent AbortSignal and global runner timeouts.
+					// We do not forcibly kill subagent processes via internal timers to prevent premature termination
+					// during deep reasoning or multi-turn tool calling.
 
 					child.stdout?.on("data", (chunk) => {
 						const text = chunk.toString("utf-8");
@@ -609,13 +628,13 @@ export function createSpawnAgentToolDefinition(
 						for (const line of lines) {
 							processJsonLine(line);
 						}
-						emitCurrentProgress();
+						scheduleProgressEmit();
 					});
 
 					child.stderr?.on("data", (chunk) => {
 						const text = chunk.toString("utf-8");
 						stderrData += text;
-						emitCurrentProgress();
+						scheduleProgressEmit();
 					});
 
 					const finish = async (preserveWorkspace: boolean, handler: () => Promise<void> | void): Promise<void> => {
@@ -623,6 +642,7 @@ export function createSpawnAgentToolDefinition(
 						settled = true;
 						if (timer) clearTimeout(timer);
 						if (heartbeat) clearInterval(heartbeat);
+						if (throttledProgressTimer) clearTimeout(throttledProgressTimer);
 						if (exitFallback) clearTimeout(exitFallback);
 						signal?.removeEventListener("abort", cancel);
 						await cleanupResources(preserveWorkspace);

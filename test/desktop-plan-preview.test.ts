@@ -141,11 +141,10 @@ describe('desktop plan preview', () => {
     expect(component).toContain('data-plan-refine=""');
     expect(component).toContain('data-plan-process=""');
     expect(component).toContain('data-plan-refine-send=""');
-    expect(component).toContain('bg-[#f5f5f5]');
-    expect(component).toContain('bg-[#262626]');
+    expect(component).toContain('bg-[#f1f3f6]');
     expect(component).not.toContain('bg-[#e1e7f0]');
     expect(component).not.toContain('bg-[#567a70]');
-    expect(component).toContain('rounded-full');
+    expect(component).toContain('rounded-[10px]');
     expect(component).not.toContain('bg-[#172033]');
     expect(css).toMatch(/\.plan-preview-actions\s*\{[\s\S]*?background:\s*transparent/);
   });

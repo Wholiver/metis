@@ -16,6 +16,17 @@ describe('desktop React settings', () => {
     expect(app).toContain('onOpenSettings={() => setIsSettingsOpen(true)}');
   });
 
+  it('keeps settings surfaces concentric with the conversation surface', () => {
+    const sidebar = source('desktop/src/components/sidebar/AgentItem.tsx');
+    const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
+
+    expect(sidebar).toContain('rounded-[10px]');
+    expect(settings).toMatch(/<section role="dialog"[\s\S]*?rounded-\[10px\]/);
+    expect(settings).toMatch(/function Card[\s\S]*?rounded-\[10px\][\s\S]*?p-1/);
+    expect(settings).toMatch(/function Row[\s\S]*?rounded-\[6px\]/);
+    expect(settings).not.toContain('rounded-[8px]');
+  });
+
   it('retains every former settings category and wires stateful options to the Server bridge', () => {
     const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
     const main = source('desktop/main.cjs');
@@ -177,5 +188,17 @@ describe('desktop React settings', () => {
     expect(settings).toContain('value="wide"');
     expect(settings).toContain('value="custom"');
     expect(settings).toContain('label="Concurrency limit"');
+  });
+
+  it('separates the settings top bar into a fixed header outside the scrollable content container', () => {
+    const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
+    expect(settings).toContain('<header');
+    expect(settings).toContain('currentTabTitle');
+    expect(settings).toContain('onClick={props.onClose}');
+    expect(settings).toContain('ref={mainScrollRef}');
+    expect(settings).toContain('onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 0)}');
+    expect(settings).toContain('isScrolled');
+    expect(settings).toContain('border-b border-slate-200/80');
+    expect(settings).not.toMatch(/<main[^>]*>[\s\S]*?<button[^>]*onClick=\{props\.onClose\}/);
   });
 });

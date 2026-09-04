@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.13] - 2026-09-04
+
+### Subagent Workspace Isolation, UI Polish & ALE Verifier Hardening
+
+- Enhanced workspace isolation with snapshot copy for non-git root environments and hardened git branch worktree validation.
+- Throttled subagent spawn progress emissions and decoupled subagent lifecycle from internal timeout kills.
+- Hardened official ALE benchmark verifier output parsing, score classification, and rescore workflows.
+- Polished Desktop PlanPreview auto-scroll/clearance, UserBubble prompt details, and Settings dialog styles.
+
 ## [1.1.12] - 2026-09-02
 
 ### Performance Runtime Governance & Multi-Process Concurrency Hardening

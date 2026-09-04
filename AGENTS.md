@@ -112,9 +112,32 @@ If a command hangs, identify the exact stage and process, stop only processes st
 - Preserve unrelated modifications in dirty worktrees.
 - Stage explicit files when scope is mixed.
 - Do not use `git reset --hard`, discard user work, or force-push without explicit authorization.
-- Do not commit secrets, `.env`, logs, sessions, local indexes, `outputs/`, or `dist/`.
-- Use concise Conventional Commit messages.
 - Do not publish, open a PR, or change external state unless the user requested it.
+
+## Release Pipeline Guidelines (When Releasing Metis)
+
+When asked to bump, package, or release a new Metis version (e.g., `1.x.y`):
+
+1. **No Subagents**: Run the release process directly in the main thread. Do NOT invoke subagents.
+2. **Pre-commit Cleanliness & Push Protection**:
+   - Never commit hardcoded secret tokens (Hugging Face, NPM, API keys) — read them from `os.environ` / `process.env`.
+   - Ensure large artifacts (e.g., `eval_results/`, `dist/`, `.dmg`, `.zip`) are not tracked by Git.
+3. **Version Synchronization**:
+   - Bump `version` in `package.json` and `desktop/package.json`.
+   - Prepend the new release section to `CHANGELOG.md` with only the version's specific highlights.
+   - Update `latest-version.json` in `Wholiver/metis-check-update` on GitHub `main`.
+4. **NPM Publishing Invariant**:
+   - Always run `npm run build` explicitly first.
+   - To avoid `prepublishOnly` build script lockups or tarball race conditions, invoke NPM publish with `--ignore-scripts`:
+     ```bash
+     npm publish --access public --tag latest --ignore-scripts --//registry.npmjs.org/:_authToken=<TOKEN>
+     ```
+5. **Silent Wait for Windows CI**:
+   - Trigger `gh workflow run release-windows.yml --ref <TAG>`.
+   - Windows build takes ~25 minutes. Do NOT poll in a loop. Use `schedule` with a 25-minute one-shot timer (`DurationSeconds: 1500`).
+6. **GitHub Release Notes Scope**:
+   - When creating `gh release create <TAG>`, pass only the release notes corresponding to that specific release version (not the full `CHANGELOG.md`).
+   - Release only to NPM and GitHub Releases. Strictly do NOT upload or push to Gitee.
 
 ## Handoff
 

@@ -113,6 +113,65 @@ export async function isGitRepository(cwd: string): Promise<boolean> {
 }
 
 /**
+ * Check if a directory is specifically the root / top-level of a Git repository
+ */
+export async function isGitRepositoryRoot(cwd: string): Promise<boolean> {
+	try {
+		const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
+			cwd,
+			timeout: 5000,
+		});
+		const realToplevel = await fs.realpath(stdout.trim()).catch(() => path.resolve(stdout.trim()));
+		const realCwd = await fs.realpath(cwd).catch(() => path.resolve(cwd));
+		if (realToplevel !== realCwd) return false;
+		const gitEntry = path.join(cwd, ".git");
+		return await fs.stat(gitEntry).then(() => true).catch(() => false);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Copy directory snapshot recursively for non-git-root workspaces,
+ * preserving relative layout, permissions, and symlinks while omitting transient files.
+ */
+export async function copyDirectorySnapshot(sourceDir: string, targetDir: string): Promise<void> {
+	try {
+		const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+		for (const entry of entries) {
+			const name = entry.name;
+			if (TRANSIENT_AGENT_FILE.test(name)) continue;
+			const srcPath = path.join(sourceDir, name);
+			const dstPath = path.join(targetDir, name);
+
+			if (entry.isSymbolicLink()) {
+				try {
+					const linkTarget = await fs.readlink(srcPath);
+					await fs.symlink(linkTarget, dstPath);
+				} catch {
+					try {
+						await fs.copyFile(srcPath, dstPath);
+					} catch {}
+				}
+			} else if (entry.isDirectory()) {
+				await fs.mkdir(dstPath, { recursive: true });
+				await copyDirectorySnapshot(srcPath, dstPath);
+			} else if (entry.isFile()) {
+				try {
+					await fs.copyFile(srcPath, dstPath);
+					const stat = await fs.stat(srcPath).catch(() => null);
+					if (stat) {
+						await fs.chmod(dstPath, stat.mode).catch(() => {});
+					}
+				} catch {}
+			}
+		}
+	} catch {
+		// Ignore readdir failure on non-existent or inaccessible source
+	}
+}
+
+/**
  * Create an isolated workspace using Git Worktree or a temporary directory (Feat 25)
  */
 export async function createIsolatedWorkspace(
@@ -148,8 +207,11 @@ export async function createIsolatedWorkspace(
 
 	// 3. Git Worktree mode (auto, isolate, or branch:*)
 	if (!isTemp) {
-		const isGit = await isGitRepository(cwd);
-		if (isGit) {
+		const isGitRoot = await isGitRepositoryRoot(cwd);
+		if (isBranch && !isGitRoot) {
+			throw new Error(`Failed to create current-state worktree: Git branch worktree requested ("${worktree}"), but directory is not a Git repository root: ${cwd}`);
+		}
+		if (isGitRoot) {
 			const randomSuffix = randomBytes(3).toString("hex");
 			const branchName = isBranch
 				? worktree.slice("branch:".length).trim()
@@ -232,13 +294,14 @@ export async function createIsolatedWorkspace(
 		}
 	}
 
-	// 4. Temporary isolated directory mode (fallback or explicit temp mode)
+	// 4. Temporary isolated directory mode (fallback, non-git root, or explicit temp mode)
 	const randomSuffix = randomBytes(4).toString("hex");
 	const tempDir = path.join(
 		tmpdir(),
 		`metis-isolated-${agentId ? agentId.replace(/[^a-zA-Z0-9_-]/g, "") : "agent"}-${randomSuffix}`,
 	);
 	await fs.mkdir(tempDir, { recursive: true });
+	await copyDirectorySnapshot(cwd, tempDir);
 
 	const cleanup = async () => {
 		if (preserveOnExit) return;

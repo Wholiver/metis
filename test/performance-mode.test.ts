@@ -28,6 +28,10 @@ import {
 	NEGATIVE_ROUTING_PROTOCOLS,
 	PERFORMANCE_GATES,
 } from "../src/core/performance-mode.ts";
+import { PerformanceRuntime } from "../src/core/performance-runtime.ts";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { tmpdir } from "node:os";
 import { buildSystemPrompt, DEFAULT_BASE_INSTRUCTIONS } from "../src/core/system-prompt.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
@@ -202,5 +206,78 @@ describe("Performance Mode Engine & Fidelity", () => {
 		expect(sessionAgents.some((a) => a.name === "fresh-verifier")).toBe(true);
 		expect(sessionAgents.some((a) => a.name === "arbiter")).toBe(true);
 	});
+
+	test("subagent reporting blocked verdict records report but preserves run active status and allows parent spawn", () => {
+		const tempDir = fs.mkdtempSync(path.join(tmpdir(), "metis-perf-test-"));
+		try {
+			const runtime = new PerformanceRuntime(tempDir);
+			const state = runtime.start({
+				kind: "start",
+				mission: "Complete test mission",
+			});
+			expect(state.status).toBe("active");
+			expect(state.frontier).toBe("G2");
+
+			fs.mkdirSync(path.join(state.governanceRoot, "artifacts"), { recursive: true });
+			fs.writeFileSync(path.join(state.governanceRoot, "artifacts", "test-evidence.txt"), "Blocked evidence content", "utf8");
+
+			// Subagent (e.g. scoper) reports blocked on G2
+			runtime.recordGateReport({
+				gate: "G2",
+				actor: "scoper-123",
+				role: "scoper",
+				verdict: "blocked",
+				evidence: "artifacts/test-evidence.txt",
+			});
+
+			const summary = runtime.state;
+			// Run status must remain "active" so coordinator/primary is not deadlocked
+			expect(summary?.status).toBe("active");
+			expect(summary?.frontier).toBe("G2");
+
+			// Parent coordinator can spawn another agent
+			const spawnDecision = runtime.reserveSpawn("scope-coordinator", "scoper", "scoper-456");
+			expect(spawnDecision.valid).toBe(true);
+		} finally {
+			fs.rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	test("coordinator or root unblocks a blocked performance run during reserveSpawn", () => {
+		const tempDir = fs.mkdtempSync(path.join(tmpdir(), "metis-perf-test-unblock-"));
+		try {
+			const runtime = new PerformanceRuntime(tempDir);
+			const state = runtime.start({
+				kind: "start",
+				mission: "Complete test mission",
+			});
+
+			fs.mkdirSync(path.join(state.governanceRoot, "artifacts"), { recursive: true });
+			fs.writeFileSync(path.join(state.governanceRoot, "artifacts", "root-blocked.txt"), "Root blocked evidence content", "utf8");
+
+			// Simulate run becoming blocked (e.g. root/primary reporting blocked)
+			runtime.recordGateReport({
+				gate: "G2",
+				actor: "primary",
+				role: "primary",
+				verdict: "blocked",
+				evidence: "artifacts/root-blocked.txt",
+			});
+
+			expect(runtime.state?.status).toBe("blocked");
+
+			// An ordinary worker cannot unblock
+			const workerSpawn = runtime.reserveSpawn("implementer", "reviewer", "rev-1");
+			expect(workerSpawn.valid).toBe(false);
+
+			// Root or coordinator automatically unblocks and allows dispatch
+			const coordinatorSpawn = runtime.reserveSpawn("coordinator", "feature-coordinator", "fc-1");
+			expect(coordinatorSpawn.valid).toBe(true);
+			expect(runtime.state?.status).toBe("active");
+		} finally {
+			fs.rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
 });
+
 
