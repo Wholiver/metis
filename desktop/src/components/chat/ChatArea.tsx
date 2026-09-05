@@ -49,7 +49,7 @@ interface ChatAreaProps {
   tokenBreakdown?: TokenBreakdown;
 }
 
-export const ChatArea: React.FC<ChatAreaProps> = ({
+export const ChatArea = React.memo<ChatAreaProps>(({
   agent,
   messages,
   workspacePath,
@@ -178,4 +178,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       )}
     </main>
   );
-};
+});
+
+ChatArea.displayName = 'ChatArea';

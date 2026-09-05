@@ -28,6 +28,7 @@ type ReasoningMenuState = {
   model: ModelOption;
   left: number;
   top: number;
+  alignLeft?: boolean;
 };
 
 export function modelLabel(model?: ModelOption): string {
@@ -70,8 +71,14 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
   const [menuPosition, setMenuPosition] = useState<MenuPosition>();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const modelIndicatorRef = useRef<HTMLDivElement>(null);
+  const hoveredModelRef = useRef<HTMLElement | null>(null);
   const reasoningMenuRef = useRef<HTMLDivElement>(null);
-  const reasoningCloseTimerRef = useRef<number>();
+  const reasoningIndicatorRef = useRef<HTMLDivElement>(null);
+  const hoveredReasoningRef = useRef<HTMLElement | null>(null);
+  const reasoningCloseTimerRef = useRef<number | null>(null);
+  const reasoningMenuRefState = useRef<ReasoningMenuState>();
+  reasoningMenuRefState.current = reasoningMenu;
   const menuId = useId();
   const displayModel = resolveDisplayModel(activeModel, models);
   const currentLabel = modelLabel(displayModel);
@@ -99,13 +106,136 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
     });
   }, []);
 
+  const positionModelIndicator = useCallback((targetModel?: ModelOption, animate = true) => {
+    const menu = menuRef.current;
+    const indicator = modelIndicatorRef.current;
+    if (!menu || !indicator) return;
+
+    if (!targetModel) {
+      indicator.style.opacity = '0';
+      return;
+    }
+
+    const el = menu.querySelector<HTMLElement>(`[data-model-option="${targetModel.provider}/${targetModel.id}"]`);
+    if (el) {
+      if (!animate) {
+        indicator.style.transition = 'none';
+      } else {
+        indicator.style.transition = '';
+      }
+      indicator.style.transform = `translate3d(0, ${el.offsetTop}px, 0)`;
+      indicator.style.height = `${el.offsetHeight}px`;
+      indicator.style.opacity = '1';
+      if (!animate) {
+        void indicator.offsetHeight;
+        indicator.style.transition = '';
+      }
+    } else {
+      indicator.style.opacity = '0';
+    }
+  }, []);
+
+  const handleModelMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const option = (e.target as HTMLElement).closest<HTMLElement>('[data-model-option]');
+    if (!option || !menuRef.current?.contains(option)) {
+      return;
+    }
+
+    if (hoveredModelRef.current === option) return;
+    hoveredModelRef.current = option;
+
+    const indicator = modelIndicatorRef.current;
+    if (!indicator) return;
+
+    indicator.style.transition = '';
+    indicator.style.transform = `translate3d(0, ${option.offsetTop}px, 0)`;
+    indicator.style.height = `${option.offsetHeight}px`;
+    indicator.style.opacity = '1';
+  }, []);
+
+  const positionReasoningIndicator = useCallback((level?: string, animate = true) => {
+    const menu = reasoningMenuRef.current;
+    const indicator = reasoningIndicatorRef.current;
+    if (!menu || !indicator) return;
+
+    if (!level) {
+      indicator.style.opacity = '0';
+      return;
+    }
+
+    const el = menu.querySelector<HTMLElement>(`[data-reasoning-option="${level}"]`);
+    if (el) {
+      if (!animate) {
+        indicator.style.transition = 'none';
+      } else {
+        indicator.style.transition = '';
+      }
+      indicator.style.transform = `translate3d(0, ${el.offsetTop}px, 0)`;
+      indicator.style.height = `${el.offsetHeight}px`;
+      indicator.style.opacity = '1';
+      if (!animate) {
+        void indicator.offsetHeight;
+        indicator.style.transition = '';
+      }
+    } else {
+      indicator.style.opacity = '0';
+    }
+  }, []);
+
+  const handleReasoningMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const option = (e.target as HTMLElement).closest<HTMLElement>('[data-reasoning-option]');
+    if (!option || !reasoningMenuRef.current?.contains(option)) {
+      return;
+    }
+
+    if (hoveredReasoningRef.current === option) return;
+    hoveredReasoningRef.current = option;
+
+    const indicator = reasoningIndicatorRef.current;
+    if (!indicator) return;
+
+    indicator.style.transition = '';
+    indicator.style.transform = `translate3d(0, ${option.offsetTop}px, 0)`;
+    indicator.style.height = `${option.offsetHeight}px`;
+    indicator.style.opacity = '1';
+  }, []);
+
   useLayoutEffect(() => {
     if (!isOpen) {
       setMenuPosition(undefined);
+      hoveredModelRef.current = null;
       return;
     }
     updateMenuPosition();
-  }, [isOpen, models.length, activeThinkingOptions.length, updateMenuPosition]);
+    requestAnimationFrame(() => {
+      positionModelIndicator(activeModel, false);
+    });
+  }, [isOpen, activeModel, models.length, activeThinkingOptions.length, updateMenuPosition, positionModelIndicator]);
+
+  useLayoutEffect(() => {
+    if (!reasoningMenu) {
+      hoveredReasoningRef.current = null;
+      return;
+    }
+    requestAnimationFrame(() => {
+      if (sameModel(reasoningMenu.model, activeModel)) {
+        positionReasoningIndicator(thinkingLevel, false);
+      } else {
+        const indicator = reasoningIndicatorRef.current;
+        if (indicator) indicator.style.opacity = '0';
+      }
+    });
+  }, [reasoningMenu, thinkingLevel, activeModel, positionReasoningIndicator]);
+
+  useEffect(() => {
+    if (!reasoningMenu && isOpen) {
+      hoveredReasoningRef.current = null;
+      if (!hoveredModelRef.current) {
+        positionModelIndicator(activeModel, true);
+      }
+    }
+  }, [reasoningMenu, isOpen, activeModel, positionModelIndicator]);
+
 
   useEffect(() => {
     if (!isOpen) return;
@@ -134,7 +264,10 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
   }, [unavailable]);
 
   useEffect(() => {
-    if (!isOpen) setReasoningMenu(undefined);
+    if (!isOpen) {
+      setReasoningMenu(undefined);
+      reasoningMenuRefState.current = undefined;
+    }
   }, [isOpen]);
 
   useEffect(() => () => {
@@ -169,13 +302,52 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
   );
 
   const keepReasoningMenuOpen = () => {
-    if (reasoningCloseTimerRef.current) window.clearTimeout(reasoningCloseTimerRef.current);
+    if (reasoningCloseTimerRef.current) {
+      window.clearTimeout(reasoningCloseTimerRef.current);
+      reasoningCloseTimerRef.current = null;
+    }
   };
 
   const scheduleReasoningMenuClose = () => {
     if (reasoningCloseTimerRef.current) window.clearTimeout(reasoningCloseTimerRef.current);
-    reasoningCloseTimerRef.current = window.setTimeout(() => setReasoningMenu(undefined), 120);
+    reasoningCloseTimerRef.current = window.setTimeout(() => {
+      reasoningMenuRefState.current = undefined;
+      setReasoningMenu(undefined);
+    }, 180);
   };
+
+  const handleModelMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const related = e.relatedTarget as Node | null;
+    if (related && reasoningMenuRef.current?.contains(related)) {
+      keepReasoningMenuOpen();
+      return;
+    }
+
+    scheduleReasoningMenuClose();
+    hoveredModelRef.current = null;
+    if (reasoningMenuRefState.current) {
+      positionModelIndicator(reasoningMenuRefState.current.model, true);
+    } else {
+      positionModelIndicator(activeModel, true);
+    }
+  }, [activeModel, positionModelIndicator]);
+
+  const handleReasoningMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const related = e.relatedTarget as Node | null;
+    if (related && menuRef.current?.contains(related)) {
+      keepReasoningMenuOpen();
+      return;
+    }
+
+    scheduleReasoningMenuClose();
+    hoveredReasoningRef.current = null;
+    if (reasoningMenuRefState.current && sameModel(reasoningMenuRefState.current.model, activeModel)) {
+      positionReasoningIndicator(thinkingLevel, true);
+    } else {
+      const indicator = reasoningIndicatorRef.current;
+      if (indicator) indicator.style.opacity = '0';
+    }
+  }, [activeModel, thinkingLevel, positionReasoningIndicator]);
 
   const showReasoningMenu = (model: ModelOption, target: HTMLElement) => {
     keepReasoningMenuOpen();
@@ -183,11 +355,15 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
     const width = 154;
     const estimatedHeight = optionsForModel(model).length * 32 + 10;
     const right = rect.right + 8;
-    setReasoningMenu({
+    const isRight = right + width <= window.innerWidth - 12;
+    const nextState: ReasoningMenuState = {
       model,
-      left: right + width <= window.innerWidth - 12 ? right : Math.max(12, rect.left - width - 8),
+      left: isRight ? right : Math.max(12, rect.left - width - 8),
       top: Math.max(12, Math.min(window.innerHeight - estimatedHeight - 12, rect.top)),
-    });
+      alignLeft: !isRight,
+    };
+    reasoningMenuRefState.current = nextState;
+    setReasoningMenu(nextState);
   };
 
   const menu = isOpen ? createPortal(
@@ -199,7 +375,8 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
       data-model-menu=""
       onKeyDown={handleMenuKeyDown}
       onMouseEnter={keepReasoningMenuOpen}
-      onMouseLeave={scheduleReasoningMenuClose}
+      onMouseMove={handleModelMouseMove}
+      onMouseLeave={handleModelMouseLeave}
       style={menuPosition ? {
         left: menuPosition.left,
         top: menuPosition.top,
@@ -207,7 +384,14 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
       } : { visibility: 'hidden' }}
       className="fixed z-[100] max-h-[300px] overflow-y-auto rounded-2xl border border-slate-200/90 bg-white p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)]"
     >
-      <p className="px-2.5 pb-1 pt-0.5 text-[11px] font-medium text-slate-400">Model</p>
+      {/* Floating unified indicator (smooth sliding cover) */}
+      <div
+        ref={modelIndicatorRef}
+        aria-hidden="true"
+        className="absolute left-1.5 right-1.5 top-0 rounded-[10px] bg-slate-100 pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        style={{ opacity: 0 }}
+      />
+      <p className="relative z-[1] px-2.5 pb-1 pt-0.5 text-[11px] font-medium text-slate-400">Model</p>
       {models.map((model) => {
         const selected = sameModel(model, activeModel);
         const modelThinkingOptions = optionsForModel(model);
@@ -227,8 +411,8 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
                 void onSelectModel(model);
                 requestAnimationFrame(() => triggerRef.current?.focus());
               }}
-              className="group flex min-h-9 w-full items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-left hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none"
-              title={`${model.provider} · ${model.id}`}
+              className="group relative z-[1] flex min-h-9 w-full items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-left transition-[color,transform] focus-visible:bg-slate-100 focus-visible:outline-none"
+              title={showReasoning ? undefined : `${model.provider} · ${model.id}`}
             >
               <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-800">{modelLabel(model)}</span>
               {showReasoning && selected && <span className="shrink-0 text-[11px] font-medium text-slate-500">{currentThinkingLabel}</span>}
@@ -250,10 +434,18 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
       aria-label={`${modelLabel(reasoningMenu.model)} reasoning effort`}
       data-reasoning-menu=""
       onMouseEnter={keepReasoningMenuOpen}
-      onMouseLeave={scheduleReasoningMenuClose}
+      onMouseMove={handleReasoningMouseMove}
+      onMouseLeave={handleReasoningMouseLeave}
       style={{ left: reasoningMenu.left, top: reasoningMenu.top, width: 154 }}
       className="fixed z-[101] overflow-hidden rounded-[14px] border border-slate-200/90 bg-white p-1 shadow-[0_10px_28px_rgba(15,23,42,0.14)]"
     >
+      {/* Floating unified indicator (smooth sliding cover) */}
+      <div
+        ref={reasoningIndicatorRef}
+        aria-hidden="true"
+        className="absolute left-1 right-1 top-0 rounded-[9px] bg-slate-100 pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        style={{ opacity: 0 }}
+      />
       {optionsForModel(reasoningMenu.model).map((option) => {
         const selectedLevel = option.id === thinkingLevel && sameModel(reasoningMenu.model, activeModel);
         return (
@@ -262,6 +454,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
             type="button"
             role="menuitemradio"
             aria-checked={selectedLevel}
+            data-reasoning-option={option.id}
             disabled={thinkingLoading || disabled}
             onClick={async () => {
               if (!sameModel(reasoningMenu.model, activeModel)) await onSelectModel(reasoningMenu.model);
@@ -270,7 +463,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
               setReasoningMenu(undefined);
               requestAnimationFrame(() => triggerRef.current?.focus());
             }}
-            className="flex min-h-8 w-full items-center gap-2 rounded-[9px] px-2.5 text-left text-[12px] font-medium text-slate-700 hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none disabled:opacity-45"
+            className="group relative z-[1] flex min-h-8 w-full items-center gap-2 rounded-[9px] px-2.5 text-left text-[12px] font-medium text-slate-700 transition-[color,transform] focus-visible:bg-slate-100 focus-visible:outline-none disabled:opacity-45"
           >
             <span className="flex-1">{option.label}</span>
             <Check className={`h-3.5 w-3.5 ${selectedLevel ? 'opacity-100' : 'opacity-0'}`} />

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, forwardRef, memo } from 'react';
 import { Check, ChevronDown, Copy, PanelRightClose } from 'lucide-react';
 import { ContextUsage, TokenBreakdown, WorkflowPlanState } from '../../types';
 import { TurnFileChange } from '../../lib/turn-files';
@@ -9,6 +9,7 @@ import { PlanPoints } from './PlanPoints';
 import { SubagentsList } from './SubagentsList';
 import { SubagentDetailView } from './SubagentDetailView';
 import { TokenUsageBar } from '../chat/TokenUsageBar';
+import { UsageQuotaCard, RateLimitWindow } from './UsageQuotaCard';
 
 interface InspectorProps {
   workflowPlan?: WorkflowPlanState;
@@ -19,9 +20,19 @@ interface InspectorProps {
   onCollapse?: () => void;
   contextUsage?: ContextUsage;
   tokenBreakdown?: TokenBreakdown;
+  isOAuth?: boolean;
+  totalCost?: number;
+  totalTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheTokens?: number;
+  quota5h?: RateLimitWindow;
+  quota7d?: RateLimitWindow;
+  dailyTokens?: Record<string, number>;
+  dailyCost?: Record<string, number>;
 }
 
-export const Inspector: React.FC<InspectorProps> = ({
+export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
   workflowPlan,
   fileChanges = [],
   subagents = [],
@@ -30,7 +41,17 @@ export const Inspector: React.FC<InspectorProps> = ({
   onCollapse,
   contextUsage,
   tokenBreakdown,
-}) => {
+  isOAuth = false,
+  totalCost,
+  totalTokens,
+  inputTokens,
+  outputTokens,
+  cacheTokens,
+  quota5h,
+  quota7d,
+  dailyTokens,
+  dailyCost,
+}, ref) => {
   const { t } = useI18n();
   const [filesExpanded, setFilesExpanded] = useState(true);
   const [planExpanded, setPlanExpanded] = useState(true);
@@ -65,6 +86,7 @@ export const Inspector: React.FC<InspectorProps> = ({
 
   return (
     <aside
+      ref={ref}
       style={{ width: `${width}px` }}
       className="h-full min-w-[360px] shrink bg-[#ffffff] border-l border-slate-200/80 flex flex-col overflow-hidden select-none relative"
       aria-label="Workspace context"
@@ -174,12 +196,37 @@ export const Inspector: React.FC<InspectorProps> = ({
             </section>
           </div>
 
-          <div className="px-3.5 pb-4 pt-1 flex items-end no-drag flex-shrink-0 bg-transparent w-full">
-            <TokenUsageBar contextUsage={contextUsage} tokenBreakdown={tokenBreakdown} tooltipPlacement="top" />
+          <div className="px-3.5 pb-4 pt-1 no-drag flex-shrink-0 bg-transparent w-full">
+            <div
+              className="w-full bg-[#ffffff] dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 rounded-[14px] shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all flex flex-col divide-y divide-slate-100 dark:divide-slate-700/50 overflow-visible"
+              data-usage-panel=""
+            >
+              <UsageQuotaCard
+                isOAuth={isOAuth}
+                totalCost={totalCost}
+                totalTokens={totalTokens}
+                inputTokens={inputTokens}
+                outputTokens={outputTokens}
+                cacheTokens={cacheTokens}
+                quota5h={quota5h}
+                quota7d={quota7d}
+                dailyTokens={dailyTokens}
+                dailyCost={dailyCost}
+                className="border-none shadow-none bg-transparent rounded-t-[14px] rounded-b-none"
+              />
+              <TokenUsageBar
+                contextUsage={contextUsage}
+                tokenBreakdown={tokenBreakdown}
+                tooltipPlacement="top"
+                className="border-none shadow-none bg-transparent rounded-b-[14px] rounded-t-none hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+              />
+            </div>
           </div>
         </>
       )}
     </aside>
   );
-};
+}));
+
+Inspector.displayName = 'Inspector';
 

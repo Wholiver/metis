@@ -3,6 +3,7 @@ import { extractToolResultText } from './tool-execution-update';
 
 export interface SubagentItem {
   id: string;
+  sessionId?: string;
   agentId?: string;
   role: string;
   task: string;
@@ -58,6 +59,7 @@ export function parseSubagentHistory(raw: string | null | undefined): SubagentHi
         && typeof (item as SubagentItem).task === 'string'
         && isSubagentStatus((item as SubagentItem).status)
         && Array.isArray((item as SubagentItem).parts)
+        && (!('sessionId' in item) || !(item as SubagentItem).sessionId || (item as SubagentItem).sessionId === sessionId)
       )).map(normalizePersistedSubagentItem);
       if (items.length > 0) history[sessionId] = items;
     }
@@ -95,6 +97,7 @@ function mergeSubagentItem(cached: SubagentItem, current: SubagentItem): Subagen
     ...normalizedCached,
     ...current,
     status,
+    sessionId: current.sessionId || normalizedCached.sessionId,
     startedAt: current.startedAt ?? normalizedCached.startedAt,
     completedAt: current.completedAt ?? normalizedCached.completedAt,
     durationMs: durationCandidates.length > 0 ? Math.max(...durationCandidates) : undefined,
@@ -109,15 +112,12 @@ export function mergeSubagentHistoryItems(
   cachedItems: SubagentItem[],
   currentItems: SubagentItem[],
 ): SubagentItem[] {
+  if (currentItems.length === 0) return [];
   const cachedById = new Map(cachedItems.map((item) => [item.id, item]));
-  const currentIds = new Set(currentItems.map((item) => item.id));
-  return [
-    ...currentItems.map((item) => {
-      const cached = cachedById.get(item.id);
-      return cached ? mergeSubagentItem(cached, item) : item;
-    }),
-    ...cachedItems.filter((item) => !currentIds.has(item.id)),
-  ];
+  return currentItems.map((item) => {
+    const cached = cachedById.get(item.id);
+    return cached ? mergeSubagentItem(cached, item) : item;
+  });
 }
 
 function parsePayload(content: string): {
@@ -537,7 +537,7 @@ function toTimestamp(value: unknown): number | undefined {
   return undefined;
 }
 
-export function collectSubagentItems(messages: Message[]): SubagentItem[] {
+export function collectSubagentItems(messages: Message[], sessionId?: string): SubagentItem[] {
   const items: SubagentItem[] = [];
 
   for (const message of messages) {
@@ -603,6 +603,7 @@ export function collectSubagentItems(messages: Message[]): SubagentItem[] {
 
       items.push({
         id: part.id,
+        sessionId,
         agentId: payload?.agentId || args.agentId,
         role,
         task,

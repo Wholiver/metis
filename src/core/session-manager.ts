@@ -202,6 +202,7 @@ export interface SessionInfo {
 	modified: Date;
 	messageCount: number;
 	firstMessage: string;
+	lastMessage?: string;
 	allMessagesText: string;
 	/** Daily activity used by Desktop statistics. Omitted by older/custom providers. */
 	dailyActivity?: SessionDailyActivity[];
@@ -759,6 +760,7 @@ async function buildSessionInfo(
 		let header: SessionHeader | null = null;
 		let messageCount = 0;
 		let firstMessage = "";
+		let lastMessage = "";
 		const allMessages: string[] = [];
 		let name: string | undefined;
 		let lastActivityTime: number | undefined;
@@ -835,14 +837,17 @@ async function buildSessionInfo(
 				}
 			}
 
-			if (!includeMessageText && firstMessage) continue;
+			if (!includeMessageText && message.role !== "user") continue;
 
 			const textContent = extractTextContent(message);
 			if (!textContent) continue;
 
 			if (includeMessageText) allMessages.push(textContent);
-			if (!firstMessage && message.role === "user") {
-				firstMessage = textContent;
+			if (message.role === "user") {
+				if (!firstMessage) {
+					firstMessage = textContent;
+				}
+				lastMessage = textContent;
 			}
 		}
 
@@ -880,6 +885,7 @@ async function buildSessionInfo(
 			modified,
 			messageCount,
 			firstMessage: firstMessage || "(no messages)",
+			lastMessage: lastMessage || firstMessage || "(no messages)",
 			allMessagesText: allMessages.join(" "),
 			dailyActivity: [...dailyActivity.values()].sort((a, b) => a.date.localeCompare(b.date)),
 		};

@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.14] - 2026-09-05
+
+### Usage Quota Card, Subagents Indicator & Desktop UX Upgrades
+
+- Added interactive UsageQuotaCard with rich 5-hour/7-day quota meters, daily token & cost breakdowns, and full OAuth integration.
+- Added 120Hz continuous floating hover indicator to Inspector SubagentsList.
+- Exposed `lastMessage` in SessionInfo to improve session preview freshness and conversation list fidelity.
+- Refined desktop token usage bar, turn files summary, message auto-scroll, and settings dialog styling.
+
 ## [1.1.13] - 2026-09-04
 
 ### Subagent Workspace Isolation, UI Polish & ALE Verifier Hardening

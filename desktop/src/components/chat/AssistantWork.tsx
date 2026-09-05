@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { AssistantContentPart } from '../../types';
 import { formatThinkingDuration } from '../../lib/thinking';
@@ -47,7 +47,7 @@ export function groupAssistantWorkItems(items: AssistantContentPart[]): Assistan
   return grouped;
 }
 
-export const AssistantWork: React.FC<AssistantWorkProps> = ({
+export const AssistantWork = React.memo<AssistantWorkProps>(({
   items,
   streaming = false,
   durationMs,
@@ -87,7 +87,7 @@ export const AssistantWork: React.FC<AssistantWorkProps> = ({
   }, [durationMs, streaming]);
 
   const title = assistantWorkTitle(streaming, elapsedMs, durationMs);
-  const renderItems = groupAssistantWorkItems(items);
+  const renderItems = useMemo(() => groupAssistantWorkItems(items), [items]);
   const [revealedCount, setRevealedCount] = useState(() => (
     streaming && !preserveExistingItems ? Math.min(1, renderItems.length) : renderItems.length
   ));
@@ -173,5 +173,7 @@ export const AssistantWork: React.FC<AssistantWorkProps> = ({
       </div>
     </section>
   );
-};
+});
+
+AssistantWork.displayName = 'AssistantWork';
 

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 	sessionTokens: {
 		totals: (sessionPaths) => ipcRenderer.invoke("session-tokens:totals", sessionPaths),
 		activity: (sessionPaths) => ipcRenderer.invoke("session-tokens:activity", sessionPaths),
+		costActivity: (sessionPaths) => ipcRenderer.invoke("session-tokens:cost-activity", sessionPaths),
 	},
 	workspace: {
 		get: () => ipcRenderer.invoke("workspace:get"),

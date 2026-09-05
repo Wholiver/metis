@@ -114,8 +114,82 @@ async function readSessionTokenTotals(filePaths) {
 	return (await readSessionTokenActivity(filePaths)).totals;
 }
 
+async function readSessionCostActivity(filePaths) {
+	const paths = normalizedSessionPaths(filePaths);
+	let tokenTotal = 0;
+	let costTotal = 0;
+	let inputTokens = 0;
+	let outputTokens = 0;
+	let cacheTokens = 0;
+	let recent5hTokens = 0;
+	let recent7dTokens = 0;
+	const dailyTokens = {};
+	const dailyCost = {};
+
+	const now = Date.now();
+	const fiveHoursAgo = now - 5 * 3600 * 1000;
+	const sevenDaysAgo = now - 7 * 24 * 3600 * 1000;
+
+	for (const filePath of paths) {
+		const resolvedPath = path.resolve(String(filePath || ""));
+		if (!path.isAbsolute(String(filePath || "")) || path.extname(resolvedPath).toLowerCase() !== ".jsonl") continue;
+		try {
+			const lines = createInterface({
+				input: createReadStream(resolvedPath, { encoding: "utf8" }),
+				crlfDelay: Infinity,
+			});
+			for await (const line of lines) {
+				let entry;
+				try {
+					entry = JSON.parse(line);
+				} catch {
+					continue;
+				}
+				if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
+				const u = entry.message?.usage;
+				const tokens = usageTokenTotal(u);
+				const cost = finiteNonNegative(u?.cost);
+				const input = finiteNonNegative(u?.input);
+				const output = finiteNonNegative(u?.output);
+				const cache = finiteNonNegative(u?.cacheRead) + finiteNonNegative(u?.cacheWrite);
+
+				tokenTotal += tokens;
+				costTotal += cost;
+				inputTokens += input;
+				outputTokens += output;
+				cacheTokens += cache;
+
+				const ts = Number(new Date(entry.timestamp ?? entry.message?.timestamp).getTime());
+				if (Number.isFinite(ts)) {
+					if (ts >= fiveHoursAgo) recent5hTokens += tokens;
+					if (ts >= sevenDaysAgo) recent7dTokens += tokens;
+				}
+
+				const date = localDateKey(entry.timestamp ?? entry.message?.timestamp);
+				if (date) {
+					if (tokens > 0) dailyTokens[date] = (dailyTokens[date] || 0) + tokens;
+					if (cost > 0) dailyCost[date] = (dailyCost[date] || 0) + cost;
+				}
+			}
+		} catch {}
+	}
+
+	return {
+		tokenTotal,
+		costTotal,
+		inputTokens,
+		outputTokens,
+		cacheTokens,
+		recent5hTokens,
+		recent7dTokens,
+		dailyTokens,
+		dailyCost,
+	};
+}
+
 module.exports = {
 	localDateKey,
+	readSessionCostActivity,
 	readSessionTokenActivity,
 	readSessionTokenStats,
 	readSessionTokenTotal,

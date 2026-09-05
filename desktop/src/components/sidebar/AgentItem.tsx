@@ -8,16 +8,16 @@ interface AgentItemProps {
   onClick: () => void;
 }
 
-export const AgentItem: React.FC<AgentItemProps> = ({ agent, isActive, onClick }) => {
+export const AgentItem = React.memo<AgentItemProps>(({ agent, isActive, onClick }) => {
   return (
     <button
       onClick={onClick}
       aria-current={isActive ? 'page' : undefined}
       data-conversation-row={agent.id}
-      className={`w-full min-h-[56px] px-2.5 py-1.5 rounded-[10px] flex items-center gap-2.5 transition-[background-color,color,box-shadow,transform] active:scale-[0.96] text-left relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
+      className={`w-full min-h-[56px] px-2.5 py-1.5 rounded-[10px] flex items-center gap-2.5 transition-[color,transform] active:scale-[0.96] motion-reduce:active:scale-100 text-left relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 z-[1] ${
         isActive
-          ? 'bg-[#e0e3e8] shadow-[0_1px_2px_rgba(0,0,0,0.03)] font-medium text-[#0f172a]'
-          : 'hover:bg-black/[0.035] text-[#334155]'
+          ? 'font-medium text-[#0f172a]'
+          : 'text-[#334155] hover:text-[#0f172a]'
       }`}
     >
       <ConversationIcon seed={agent.id} />
@@ -33,7 +33,7 @@ export const AgentItem: React.FC<AgentItemProps> = ({ agent, isActive, onClick }
         </div>
 
         <div className="flex items-center justify-between gap-1.5 w-full">
-          <p className="text-[12px] text-[#64748b] truncate leading-tight">
+          <p className="text-[12px] text-[#64748b] truncate leading-tight" title={agent.subtitle}>
             {agent.subtitle}
           </p>
           {agent.unread && (
@@ -43,5 +43,6 @@ export const AgentItem: React.FC<AgentItemProps> = ({ agent, isActive, onClick }
       </div>
     </button>
   );
-};
+});
 
+AgentItem.displayName = 'AgentItem';

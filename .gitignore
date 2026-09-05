@@ -37,3 +37,4 @@ vendor/*/dist/**/* 2/
 vendor/*/dist/**/.claude/
 
 eval_results/
+.venv/

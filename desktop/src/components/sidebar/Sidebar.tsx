@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, forwardRef, memo, useRef, useLayoutEffect, useEffect, useCallback } from 'react';
 import { Search, Plus, Settings, PanelLeftClose } from 'lucide-react';
 import { Agent, ProjectItem } from '../../types';
 import { AgentItem } from './AgentItem';
@@ -20,7 +20,7 @@ interface SidebarProps {
   onToggleSidebar?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
+export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
   agents,
   activeAgentId,
   projects = [],
@@ -34,17 +34,143 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNewChat,
   onOpenSettings,
   onToggleSidebar,
-}) => {
+}, ref) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [optimisticActiveId, setOptimisticActiveId] = useState<string | null>(null);
+  const currentActiveId = optimisticActiveId ?? activeAgentId;
 
-  const filteredAgents = agents.filter(
+  useEffect(() => {
+    setOptimisticActiveId(null);
+  }, [activeAgentId]);
+
+  const filteredAgents = useMemo(() => agents.filter(
     (a) =>
       a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       a.subtitle.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ), [agents, searchQuery]);
+
+  const itemsContainerRef = useRef<HTMLDivElement>(null);
+  const indicatorRef = useRef<HTMLDivElement>(null);
+  const hoveredRowRef = useRef<HTMLElement | null>(null);
+  const isInitialMountRef = useRef(true);
+  const prevProjectIdRef = useRef(activeProjectId);
+  const prevSearchQueryRef = useRef(searchQuery);
+
+  const positionIndicatorOnAgent = useCallback((agentId: string, animate = true) => {
+    const container = itemsContainerRef.current;
+    const indicator = indicatorRef.current;
+    if (!container || !indicator) return;
+
+    if (!agentId) {
+      indicator.style.opacity = '0';
+      return;
+    }
+
+    const el = container.querySelector<HTMLElement>(`[data-conversation-row="${agentId}"]`);
+    if (el) {
+      if (!animate) {
+        indicator.style.transition = 'none';
+      } else {
+        indicator.style.transition = '';
+      }
+      indicator.style.transform = `translate3d(0, ${el.offsetTop}px, 0)`;
+      indicator.style.height = `${el.offsetHeight}px`;
+      indicator.style.opacity = '1';
+      if (!animate) {
+        void indicator.offsetHeight;
+        indicator.style.transition = '';
+      }
+    } else {
+      indicator.style.opacity = '0';
+    }
+  }, []);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('[data-conversation-row]');
+    // When passing through the 2px gap between rows or list padding:
+    // Do NOT jump back to active conversation! Maintain current position.
+    if (!row || !itemsContainerRef.current?.contains(row)) {
+      return;
+    }
+
+    if (hoveredRowRef.current === row) return;
+    hoveredRowRef.current = row;
+
+    const indicator = indicatorRef.current;
+    if (!indicator) return;
+
+    indicator.style.transition = '';
+    indicator.style.transform = `translate3d(0, ${row.offsetTop}px, 0)`;
+    indicator.style.height = `${row.offsetHeight}px`;
+    indicator.style.opacity = '1';
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    hoveredRowRef.current = null;
+    positionIndicatorOnAgent(currentActiveId, true);
+  }, [currentActiveId, positionIndicatorOnAgent]);
+
+  useEffect(() => {
+    if (prevProjectIdRef.current !== activeProjectId) {
+      prevProjectIdRef.current = activeProjectId;
+      isInitialMountRef.current = true;
+      hoveredRowRef.current = null;
+      positionIndicatorOnAgent(currentActiveId, false);
+    }
+  }, [activeProjectId, currentActiveId, positionIndicatorOnAgent]);
+
+  useLayoutEffect(() => {
+    const searchChanged = prevSearchQueryRef.current !== searchQuery;
+    prevSearchQueryRef.current = searchQuery;
+
+    if (isInitialMountRef.current || searchChanged) {
+      isInitialMountRef.current = false;
+      hoveredRowRef.current = null;
+      positionIndicatorOnAgent(currentActiveId, false);
+      return;
+    }
+
+    // If currently hovering over a valid row in the container, maintain position on that row!
+    if (hoveredRowRef.current && itemsContainerRef.current?.contains(hoveredRowRef.current)) {
+      const rowId = hoveredRowRef.current.getAttribute('data-conversation-row');
+      if (rowId) {
+        positionIndicatorOnAgent(rowId, false);
+        return;
+      }
+    }
+
+    positionIndicatorOnAgent(currentActiveId, true);
+  }, [currentActiveId, filteredAgents, searchQuery, positionIndicatorOnAgent]);
+
+  useEffect(() => {
+    const container = itemsContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      const activeTargetId = hoveredRowRef.current
+        ? hoveredRowRef.current.getAttribute('data-conversation-row') || currentActiveId
+        : currentActiveId;
+      positionIndicatorOnAgent(activeTargetId, false);
+    });
+
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [currentActiveId, positionIndicatorOnAgent]);
+
+  const handleSelectAgent = useCallback((agentId: string) => {
+    if (agentId === currentActiveId) return;
+    const container = itemsContainerRef.current;
+    const clickedEl = container?.querySelector<HTMLElement>(`[data-conversation-row="${agentId}"]`);
+    if (clickedEl) {
+      hoveredRowRef.current = clickedEl;
+    }
+    setOptimisticActiveId(agentId);
+    onSelectAgent(agentId);
+  }, [currentActiveId, onSelectAgent]);
 
   return (
     <aside
+      ref={ref}
       style={{ width: `${width}px` }}
       className="h-full min-w-[240px] shrink bg-[#f6f7f9] border-r border-slate-200/80 flex flex-col overflow-hidden select-none relative"
     >
@@ -88,7 +214,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Session conversation list for the active project */}
-      <div className="flex-1 overflow-y-auto px-3 space-y-0.5 no-drag scrollbar-none">
+      <div
+        className="flex-1 overflow-y-auto px-3 no-drag scrollbar-none"
+        onMouseLeave={handleMouseLeave}
+      >
         {isLoading && agents.length === 0 && (
           <p className="px-3 py-4 text-[12px] text-[#94a3b8]" role="status">
             Loading conversations…
@@ -104,14 +233,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {searchQuery ? 'No matching conversations' : 'No conversations yet'}
           </p>
         )}
-        {filteredAgents.map((agent) => (
-          <AgentItem
-            key={agent.id}
-            agent={agent}
-            isActive={agent.id === activeAgentId}
-            onClick={() => onSelectAgent(agent.id)}
+        <div
+          ref={itemsContainerRef}
+          className="relative flex flex-col gap-0.5"
+          onMouseMove={handleMouseMove}
+        >
+          {/* Floating unified indicator (direct 120Hz GPU-accelerated motion tracking) */}
+          <div
+            ref={indicatorRef}
+            aria-hidden="true"
+            className="absolute left-0 right-0 top-0 rounded-[10px] bg-[#e0e3e8] shadow-[0_1px_2px_rgba(0,0,0,0.03)] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+            style={{ opacity: 0 }}
           />
-        ))}
+          {filteredAgents.map((agent) => (
+            <AgentItem
+              key={agent.id}
+              agent={agent}
+              isActive={agent.id === currentActiveId}
+              onClick={() => handleSelectAgent(agent.id)}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Bottom Footer: Project Switcher (. . . +) above Settings */}
@@ -136,5 +278,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
     </aside>
   );
-};
+}));
+
+Sidebar.displayName = 'Sidebar';
 

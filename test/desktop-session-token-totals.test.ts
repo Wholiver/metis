@@ -58,9 +58,27 @@ describe("desktop-local session token totals", () => {
 		const build = require("node:fs").readFileSync(resolve(process.cwd(), "desktop/scripts/build.mjs"), "utf8");
 		expect(main).toContain('ipcMain.handle("session-tokens:totals"');
 		expect(main).toContain('ipcMain.handle("session-tokens:activity"');
+		expect(main).toContain('ipcMain.handle("session-tokens:cost-activity"');
 		expect(preload).toContain('ipcRenderer.invoke("session-tokens:totals", sessionPaths)');
 		expect(preload).toContain('ipcRenderer.invoke("session-tokens:activity", sessionPaths)');
+		expect(preload).toContain('ipcRenderer.invoke("session-tokens:cost-activity", sessionPaths)');
 		expect(build).toContain('"session-token-totals.cjs"');
+	});
+
+	it("computes cumulative cost and token breakdown across sessions", async () => {
+		const sessionPath = join(directory, "cost-session.jsonl");
+		const now = new Date().toISOString();
+		await writeFile(sessionPath, [
+			JSON.stringify({ type: "message", timestamp: now, message: { role: "assistant", usage: { totalTokens: 100, input: 60, output: 40, cost: 0.05 } } }),
+			JSON.stringify({ type: "message", timestamp: now, message: { role: "assistant", usage: { totalTokens: 50, input: 30, output: 20, cost: 0.025 } } }),
+		].join("\n"), "utf8");
+
+		const result = await (tokenTotals as any).readSessionCostActivity([sessionPath]);
+		expect(result.tokenTotal).toBe(150);
+		expect(result.costTotal).toBeCloseTo(0.075);
+		expect(result.inputTokens).toBe(90);
+		expect(result.outputTokens).toBe(60);
+		expect(result.recent5hTokens).toBe(150);
 	});
 });
 

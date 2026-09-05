@@ -8,7 +8,7 @@ const { promisify } = require("node:util");
 const { createApplicationMenuTemplate, createEditorContextMenuTemplate } = require("./main-menu.cjs");
 const customProviderConfig = require("./provider-config.cjs");
 const { getMetisRuntimeIntegrityError } = require("./runtime-integrity.cjs");
-const { readSessionTokenActivity, readSessionTokenTotals } = require("./session-token-totals.cjs");
+const { readSessionCostActivity, readSessionTokenActivity, readSessionTokenTotals } = require("./session-token-totals.cjs");
 const {
 	DEFAULT_METIS_SERVER,
 	localServerTarget,
@@ -1727,6 +1727,7 @@ function registerIpc() {
 	});
 	ipcMain.handle("session-tokens:totals", (_event, sessionPaths) => readSessionTokenTotals(sessionPaths));
 	ipcMain.handle("session-tokens:activity", (_event, sessionPaths) => readSessionTokenActivity(sessionPaths));
+	ipcMain.handle("session-tokens:cost-activity", (_event, sessionPaths) => readSessionCostActivity(sessionPaths));
 
 	ipcMain.handle("workspace:get", () => workspaceSummary());
 	ipcMain.handle("workspace:set", (_event, workspacePath) => {

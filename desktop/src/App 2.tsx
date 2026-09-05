@@ -1,24 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Sparkles, X } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { ChatArea } from './components/chat/ChatArea';
 import { Inspector } from './components/inspector/Inspector';
-import { collectTurnFileChanges } from './lib/turn-files';
-import { ExtensionUiRequest } from './lib/extension-ui';
-import {
-  collectSubagentItems,
-  mergeSubagentHistoryItems,
-  parseSubagentHistory,
-  SUBAGENT_HISTORY_STORAGE_KEY,
-  type SubagentHistory,
-} from './lib/subagents';
 import { useMetisServer } from './hooks/useMetisServer';
-import { useUpdateCheck } from './hooks/useUpdateCheck';
-import { SettingsDialog } from './components/settings/SettingsDialog';
-import { ExtensionUiDialog } from './components/ExtensionUiDialog';
-import { Onboarding, shouldShowOnboarding } from './components/onboarding/Onboarding';
-import { SkillCommand } from './components/chat/SkillPicker';
-import { Agent, Message, ModelOption, PendingUserInput, ProjectItem, ThinkingOption, WorkflowPlanState } from './types';
+import { Agent, Message, ModelOption, PendingUserInput, ProjectItem, WorkflowPlanState } from './types';
 
 const PROJECTS_STORAGE_KEY = 'metis.desktop.projects.v1';
 const ACTIVE_PROJECT_STORAGE_KEY = 'metis.desktop.activeProject.v1';
@@ -26,7 +11,7 @@ const ACTIVE_PROJECT_STORAGE_KEY = 'metis.desktop.activeProject.v1';
 const MIN_SIDEBAR_WIDTH = 240;
 const MAX_SIDEBAR_WIDTH = 500;
 
-const MIN_INSPECTOR_WIDTH = 360;
+const MIN_INSPECTOR_WIDTH = 300;
 const MAX_INSPECTOR_WIDTH = 550;
 
 const PLAN_CAPTURE_MARKDOWN = `# Plan、Ask、Memory 与默认工作流升级
@@ -53,22 +38,9 @@ const CONVERSATION_ICON_CAPTURE_AGENTS: Agent[] = [
 ];
 
 const MODEL_SWITCHER_CAPTURE_MODELS: ModelOption[] = [
-  { provider: 'openai-codex', id: 'gpt-5.6-codex', name: 'GPT-5.6 Codex', reasoning: true },
-  { provider: 'anthropic', id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true },
-  { provider: 'google', id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', reasoning: true },
-];
-const MODEL_SWITCHER_CAPTURE_THINKING_OPTIONS: ThinkingOption[] = [
-  { id: 'off', label: 'None', value: 'none' },
-  { id: 'low', label: 'Low', value: 'low' },
-  { id: 'medium', label: 'Medium', value: 'medium' },
-  { id: 'high', label: 'High', value: 'high' },
-  { id: 'xhigh', label: 'Xhigh', value: 'xhigh' },
-];
-
-const SKILL_PICKER_CAPTURE_SKILLS: SkillCommand[] = [
-  { name: 'make-interfaces-feel-better', description: 'Design engineering principles for polished interfaces.' },
-  { name: 'pdf', description: 'Read, create, inspect, and verify PDF files.' },
-  { name: 'imagegen', description: 'Generate or edit raster images.' },
+  { provider: 'openai-codex', id: 'gpt-5.6-codex', name: 'GPT-5.6 Codex' },
+  { provider: 'anthropic', id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+  { provider: 'google', id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro' },
 ];
 
 const ATTACHMENT_CAPTURE_MESSAGES: Message[] = [
@@ -130,9 +102,9 @@ const TOOL_GROUP_CAPTURE_MESSAGES: Message[] = [{
     { type: 'toolCall', id: 'capture-tool-read-1', name: 'read', arguments: { path: 'desktop/src/components/chat/AssistantWork.tsx' }, result: { content: 'Loaded file.' } },
     { type: 'toolCall', id: 'capture-tool-read-2', name: 'read', arguments: { path: 'desktop/src/components/chat/ToolCard.tsx' }, result: { content: 'Loaded file.' } },
     { type: 'toolCall', id: 'capture-tool-read-3', name: 'read', arguments: { path: 'desktop/src/index.css' }, result: { content: 'Loaded file.' } },
-    { type: 'toolCall', id: 'capture-tool-edit-1', name: 'write', arguments: { path: 'desktop/main.cjs', content: 'captureQuery["capture-tools"] = "1";\n' }, result: { content: 'Updated file.' } },
-    { type: 'toolCall', id: 'capture-tool-edit-2', name: 'edit', arguments: { path: 'desktop/src/components/chat/Composer.tsx', edits: [{ oldText: 'px-1', newText: '' }, { oldText: 'rounded-xl', newText: 'rounded-2xl' }] }, result: { content: 'Updated file.' } },
-    { type: 'toolCall', id: 'capture-tool-edit-3', name: 'edit', arguments: { path: 'test/desktop-react-mode-switcher.test.ts', edits: [{ oldText: 'expect(first)', newText: 'expect(group)' }, { oldText: '', newText: 'expect(second)\n' }] }, result: { content: 'Updated file.' } },
+    { type: 'toolCall', id: 'capture-tool-edit-1', name: 'edit', arguments: { path: 'AssistantWork.tsx' }, result: { content: 'Updated file.' } },
+    { type: 'toolCall', id: 'capture-tool-edit-2', name: 'edit', arguments: { path: 'ToolGroup.tsx' }, result: { content: 'Updated file.' } },
+    { type: 'toolCall', id: 'capture-tool-edit-3', name: 'edit', arguments: { path: 'index.css' }, result: { content: 'Updated file.' } },
     { type: 'toolCall', id: 'capture-tool-command-1', name: 'exec_command', arguments: { cmd: 'npm test -- test/desktop-react-tool-group.test.ts' }, result: { content: 'Tests passed.' } },
     { type: 'toolCall', id: 'capture-tool-command-2', name: 'exec_command', arguments: { cmd: 'npm --prefix desktop run build' }, result: { content: 'Build passed.' } },
     { type: 'toolCall', id: 'capture-tool-command-3', name: 'exec_command', arguments: { cmd: 'git diff --check' }, result: { content: 'No whitespace errors.' } },
@@ -197,19 +169,6 @@ const PLAN_POINTS_CAPTURE: WorkflowPlanState = {
   updatedAt: '2026-08-21T00:00:00.000Z',
 };
 
-const PLAN_POINTS_CAPTURE_WORKSPACE = '/workspace/test-project';
-const PLAN_POINTS_CAPTURE_MESSAGES: Message[] = [{
-  id: 'capture-plan-points-files',
-  role: 'assistant',
-  content: 'Project update complete.',
-  parts: [
-    { type: 'toolCall', id: 'capture-roadmap', name: 'write', arguments: { path: 'ROADMAP.md', content: 'Agent governance roadmap.\n' }, result: { content: 'Updated.' } },
-    { type: 'toolCall', id: 'capture-scope-receipt', name: 'write', arguments: { path: '/Users/capture/.metis/agent/performance-runs/run-1/artifacts/g2-scope-receipt.md', content: 'Agent governance receipt.\n' }, result: { content: 'Updated.' } },
-    { type: 'toolCall', id: 'capture-readme', name: 'edit', arguments: { path: `${PLAN_POINTS_CAPTURE_WORKSPACE}/README.md`, oldText: 'Old copy.', newText: 'Updated project copy.' }, result: { content: 'Updated.' } },
-    { type: 'text', id: 'capture-plan-points-final', text: 'Project update complete.' },
-  ],
-}];
-
 const ASK_CAPTURE: PendingUserInput = {
   requestId: 'capture-ask-request',
   toolCallId: 'capture-ask-tool',
@@ -235,15 +194,6 @@ const ASK_CAPTURE: PendingUserInput = {
   ],
 };
 
-const EXTENSION_UI_CAPTURE_REQUEST: ExtensionUiRequest = {
-  id: 'capture-extension-ui',
-  method: 'input',
-  title: 'Complete provider sign in',
-  message: 'Paste the authorization code from your browser.',
-  placeholder: 'Authorization code',
-  options: [],
-};
-
 export function App() {
   const captureParams = new URLSearchParams(window.location.search);
   const capturePlanPreview = captureParams.has('capture-plan-preview');
@@ -252,7 +202,6 @@ export function App() {
   const captureModelSwitcher = captureParams.has('capture-model-switcher');
   const captureAttachments = captureParams.has('capture-attachments');
   const captureLocalSend = captureParams.has('capture-local-send');
-  const captureSettledSend = captureParams.has('capture-send-settled');
   const captureThinkingProgress = captureParams.has('capture-thinking-progress');
   const captureMessageWidth = captureParams.has('capture-message-width');
   const captureTools = captureParams.has('capture-tools');
@@ -261,8 +210,6 @@ export function App() {
   const capturePlanPoints = captureParams.has('capture-plan-points');
   const capturePlanPointsEmpty = captureParams.has('capture-plan-points-empty');
   const captureAsk = captureParams.has('capture-ask');
-  const captureSkills = captureParams.has('capture-skills');
-  const captureExtensionUi = captureParams.has('capture-extension-ui');
   const [captureThinkingState, setCaptureThinkingState] = useState<'thinking' | 'other'>('thinking');
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [activeProjectId, setActiveProjectId] = useState('');
@@ -272,22 +219,12 @@ export function App() {
     agents,
     activeAgent,
     activeAgentId,
-    messagesSessionId,
     messages,
     sendMessage,
-    abortTurn,
     models,
-    providerCatalog,
-    refreshModels,
     activeModel,
     isChangingModel,
     selectModel,
-    thinkingLevel,
-    thinkingLevels,
-    thinkingOptions,
-    supportsThinking,
-    isChangingThinking,
-    selectThinkingLevel,
     isStreaming,
     isConnected,
     isCompacting,
@@ -299,78 +236,18 @@ export function App() {
     pendingUserInput,
     isLoadingSessions,
     sessionError,
-    memoryState,
-    runMemory,
-    abortMemory,
-    refreshMemory,
-    request,
-    refresh,
-    connectServer,
     selectConversation,
     newConversation,
     processProposal,
     refineProposal,
     respondToUserInput,
-    extensionUiRequest,
-    isRespondingToExtensionUi,
-    respondToExtensionUi,
-    contextUsage,
-    tokenBreakdown,
   } = useMetisServer(activeProject);
 
-  const { updateCheck, checkForUpdates } = useUpdateCheck(isConnected);
-
   const [sidebarWidth, setSidebarWidth] = useState<number>(260);
-  const [inspectorWidth, setInspectorWidth] = useState<number>(360);
+  const [inspectorWidth, setInspectorWidth] = useState<number>(320);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => (
-    captureSettledSend || captureExtensionUi ? false : shouldShowOnboarding()
-  ));
-  const [settingsTab, setSettingsTab] = useState<'general' | 'shortcuts' | 'server' | 'model' | 'agent' | 'security' | 'session' | 'about'>('general');
-  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
-  const [skillCommands, setSkillCommands] = useState<SkillCommand[]>([]);
   const [activeResizer, setActiveResizer] = useState<'sidebar' | 'inspector' | null>(null);
-  const [subagentHistory, setSubagentHistory] = useState<SubagentHistory>(() => {
-    if (typeof localStorage === 'undefined') return {};
-    return parseSubagentHistory(localStorage.getItem(SUBAGENT_HISTORY_STORAGE_KEY));
-  });
-
-  const handleOpenMemorySettings = useCallback(() => {
-    setSettingsTab('agent');
-    setIsSettingsOpen(true);
-  }, []);
-
-  useEffect(() => {
-    const onMemoryFinished = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail?.status === 'completed') {
-        const msg = `Memory consolidation completed: ${detail.processed} processed, ${detail.added} added, ${detail.skipped} skipped${detail.fallbackUsed ? ' (safe fallback used)' : ''}.`;
-        setToast({ message: msg, tone: 'success' });
-      } else if (detail?.status === 'failed') {
-        setToast({ message: `Memory consolidation failed: ${detail.error || 'Unknown error'}`, tone: 'error' });
-      }
-    };
-    const onExtensionNotice = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail?.message) {
-        setToast({ message: detail.message, tone: detail.tone || 'info' });
-      }
-    };
-    window.addEventListener('metis:memory-finished', onMemoryFinished);
-    window.addEventListener('metis:extension-notify', onExtensionNotice);
-    return () => {
-      window.removeEventListener('metis:memory-finished', onMemoryFinished);
-      window.removeEventListener('metis:extension-notify', onExtensionNotice);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
   const thinkingCaptureMessages: Message[] = captureThinkingState === 'thinking' ? [{
     id: 'capture-thinking-progress',
     role: 'assistant',
@@ -386,7 +263,7 @@ export function App() {
     content: 'Continuing with the task.',
     parts: [{ type: 'text', id: 'capture-working-text', text: 'Continuing with the task.' }],
   }];
-  const displayedMessages = capturePlanPoints ? PLAN_POINTS_CAPTURE_MESSAGES : captureWorkDuration ? WORK_DURATION_CAPTURE_MESSAGES : captureThinkingOverflow ? THINKING_OVERFLOW_CAPTURE_MESSAGES : captureTools ? TOOL_GROUP_CAPTURE_MESSAGES : captureMessageWidth ? MESSAGE_WIDTH_CAPTURE_MESSAGES : captureThinkingProgress ? thinkingCaptureMessages : captureLocalSend ? [{
+  const displayedMessages = captureWorkDuration ? WORK_DURATION_CAPTURE_MESSAGES : captureThinkingOverflow ? THINKING_OVERFLOW_CAPTURE_MESSAGES : captureTools ? TOOL_GROUP_CAPTURE_MESSAGES : captureMessageWidth ? MESSAGE_WIDTH_CAPTURE_MESSAGES : captureThinkingProgress ? thinkingCaptureMessages : captureLocalSend ? [{
     id: 'capture-local-user',
     role: 'user' as const,
     content: 'Run this task immediately.',
@@ -437,77 +314,11 @@ export function App() {
     : activeAgentId;
   const displayedModels = captureModelSwitcher ? MODEL_SWITCHER_CAPTURE_MODELS : models;
   const displayedActiveModel = captureModelSwitcher ? MODEL_SWITCHER_CAPTURE_MODELS[0] : activeModel;
-  const displayedThinkingLevels = captureModelSwitcher ? ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] : thinkingLevels;
-  const displayedThinkingOptions = captureModelSwitcher ? MODEL_SWITCHER_CAPTURE_THINKING_OPTIONS : thinkingOptions;
-  const displayedThinkingLevel = captureModelSwitcher ? 'medium' : thinkingLevel;
-  const displayedSupportsThinking = captureModelSwitcher || supportsThinking;
   const displayedWorkflowPlan = capturePlanPoints
     ? PLAN_POINTS_CAPTURE
     : capturePlanPointsEmpty
       ? undefined
       : workflowPlan;
-  const displayedWorkspacePath = capturePlanPoints ? PLAN_POINTS_CAPTURE_WORKSPACE : activeProject?.path;
-  const displayedFileChanges = useMemo(() => {
-    const toolParts: AssistantContentPart[] = [];
-    for (const msg of displayedMessages) {
-      if (msg.role !== 'assistant' || !msg.parts) continue;
-      for (const part of msg.parts) {
-        if (part.type === 'toolCall') toolParts.push(part);
-      }
-    }
-    return collectTurnFileChanges(toolParts, { workspacePath: displayedWorkspacePath });
-  }, [displayedMessages, displayedWorkspacePath]);
-  const isMessagesInSync = Boolean(activeAgentId && messagesSessionId === activeAgentId);
-  const currentSubagents = useMemo(
-    () => (isMessagesInSync ? collectSubagentItems(messages, activeAgentId) : []),
-    [isMessagesInSync, messages, activeAgentId],
-  );
-  const restoredSubagents = useMemo(
-    () => (isMessagesInSync ? mergeSubagentHistoryItems(subagentHistory[activeAgentId] || [], currentSubagents) : []),
-    [activeAgentId, currentSubagents, isMessagesInSync, subagentHistory],
-  );
-  const displayedSubagents = useMemo(() => (
-    displayedMessages === messages
-      ? restoredSubagents
-      : collectSubagentItems(displayedMessages, activeAgentId)
-  ), [displayedMessages, messages, restoredSubagents, activeAgentId]);
-
-  useEffect(() => {
-    if (!activeAgentId || !messagesSessionId || messagesSessionId !== activeAgentId) return;
-    if (currentSubagents.length === 0) {
-      if (subagentHistory[activeAgentId]?.length) {
-        setSubagentHistory((current) => {
-          if (!current[activeAgentId]?.length) return current;
-          const next = { ...current };
-          delete next[activeAgentId];
-          return next;
-        });
-      }
-      return;
-    }
-    setSubagentHistory((current) => {
-      const existing = current[activeAgentId] || [];
-      const merged = mergeSubagentHistoryItems(existing, currentSubagents);
-      if (existing.length === merged.length && JSON.stringify(existing) === JSON.stringify(merged)) return current;
-      return { ...current, [activeAgentId]: merged };
-    });
-  }, [activeAgentId, messagesSessionId, currentSubagents, subagentHistory]);
-
-  useEffect(() => {
-    const persist = () => {
-      try {
-        localStorage.setItem(SUBAGENT_HISTORY_STORAGE_KEY, JSON.stringify(subagentHistory));
-      } catch (error) {
-        console.warn('[desktop] Failed to persist Subagent history:', error);
-      }
-    };
-    const timer = window.setTimeout(persist, 200);
-    window.addEventListener('beforeunload', persist);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('beforeunload', persist);
-    };
-  }, [subagentHistory]);
 
   useEffect(() => {
     if (!captureThinkingProgress) return;
@@ -518,102 +329,6 @@ export function App() {
     window.addEventListener('metis:capture-thinking-state', handleCaptureState);
     return () => window.removeEventListener('metis:capture-thinking-state', handleCaptureState);
   }, [captureThinkingProgress]);
-
-  useEffect(() => {
-    if (!isConnected) {
-      setSkillCommands([]);
-      return;
-    }
-    let current = true;
-    void request<{ commands?: Array<{ name?: string; description?: string; source?: string }> }>('/commands')
-      .then((result) => {
-        if (!current) return;
-        setSkillCommands((result.commands || [])
-          .filter((command) => command.source === 'skill' && typeof command.name === 'string' && command.name.startsWith('skill:'))
-          .map((command) => ({ name: command.name!.slice('skill:'.length), description: command.description || '' })));
-      })
-      .catch(() => { if (current) setSkillCommands([]); });
-    return () => { current = false; };
-  }, [isConnected, request]);
-
-  const [sessionCostStats, setSessionCostStats] = useState<{
-    tokenTotal: number;
-    costTotal: number;
-    inputTokens: number;
-    outputTokens: number;
-    cacheTokens: number;
-    recent5hTokens: number;
-    recent7dTokens: number;
-    dailyTokens?: Record<string, number>;
-    dailyCost?: Record<string, number>;
-  }>({
-    tokenTotal: 0,
-    costTotal: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheTokens: 0,
-    recent5hTokens: 0,
-    recent7dTokens: 0,
-    dailyTokens: {},
-    dailyCost: {},
-  });
-
-  useEffect(() => {
-    const desktop = (window as any).metisDesktop;
-    const sessionPaths = agents.map((a) => a.sessionPath).filter(Boolean);
-    if (desktop?.sessionTokens?.costActivity && sessionPaths.length > 0) {
-      desktop.sessionTokens.costActivity(sessionPaths).then((stats: any) => {
-        if (stats) setSessionCostStats(stats);
-      }).catch(() => {});
-    }
-  }, [agents, messages]);
-
-  const liveUsage = useMemo(() => {
-    let cost = 0;
-    let input = 0;
-    let output = 0;
-    let cache = 0;
-    let total = 0;
-    for (const msg of messages) {
-      if (msg.role === 'assistant' && msg.usage) {
-        cost += msg.usage.cost || 0;
-        input += msg.usage.input || 0;
-        output += msg.usage.output || 0;
-        cache += (msg.usage.cacheRead || 0) + (msg.usage.cacheWrite || 0);
-        total += msg.usage.totalTokens || (input + output + cache);
-      }
-    }
-    return { cost, input, output, cache, total };
-  }, [messages]);
-
-  const aggregateCost = Math.max(sessionCostStats.costTotal, liveUsage.cost);
-  const aggregateTotalTokens = Math.max(sessionCostStats.tokenTotal, liveUsage.total);
-  const aggregateInputTokens = Math.max(sessionCostStats.inputTokens, liveUsage.input);
-  const aggregateOutputTokens = Math.max(sessionCostStats.outputTokens, liveUsage.output);
-  const aggregateCacheTokens = Math.max(sessionCostStats.cacheTokens, liveUsage.cache);
-
-  const isOAuthModel = useMemo(() => {
-    if (!displayedActiveModel?.provider) return false;
-    const catalogEntry = providerCatalog.find((p) => p.id === displayedActiveModel.provider);
-    if (catalogEntry?.authMethods) {
-      return catalogEntry.authMethods.includes('oauth') && !catalogEntry.authMethods.includes('api_key');
-    }
-    return false;
-  }, [displayedActiveModel, providerCatalog]);
-
-  const quota5h = useMemo(() => {
-    const used = sessionCostStats.recent5hTokens || 0;
-    const limit = 200_000;
-    const percent = Math.min((used / limit) * 100, 100);
-    return { percent, used, limit, resetsIn: '4h 15m' };
-  }, [sessionCostStats.recent5hTokens]);
-
-  const quota7d = useMemo(() => {
-    const used = sessionCostStats.recent7dTokens || 0;
-    const limit = 1_000_000;
-    const percent = Math.min((used / limit) * 100, 100);
-    return { percent, used, limit, resetsIn: '5d' };
-  }, [sessionCostStats.recent7dTokens]);
 
   const isDraggingRef = useRef<'sidebar' | 'inspector' | null>(null);
   const startXRef = useRef<number>(0);
@@ -703,57 +418,11 @@ export function App() {
     }
   };
 
-  const handleChangeWorkspace = async () => {
-    const desktop = (window as any).metisDesktop;
-    if (!desktop?.workspace?.select) return false;
-    try {
-      const workspace = await desktop.workspace.select();
-      if (!workspace?.path) return false;
-      const project: ProjectItem = {
-        id: workspace.path,
-        name: workspace.name || workspace.path.split('/').pop() || 'Project',
-        path: workspace.path,
-      };
-      setProjects((current) => [project, ...current.filter((item) => item.path !== project.path)]);
-      await desktop.workspace.set?.(project.path);
-      setActiveProjectId(project.id);
-      return true;
-    } catch (error) {
-      console.warn('[desktop] Failed to change workspace:', error);
-      return false;
-    }
-  };
-
-  const handleOnboardingProject = async (workspace: { name?: string; path: string }) => {
-    const project: ProjectItem = {
-      id: workspace.path,
-      name: workspace.name || workspace.path.split('/').pop() || 'Project',
-      path: workspace.path,
-    };
-    setProjects((current) => [project, ...current.filter((item) => item.path !== project.path)]);
-    setActiveProjectId(project.id);
-  };
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'n') return;
-      event.preventDefault();
-      if (isConnected && !isLoadingSessions) void newConversation();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isConnected, isLoadingSessions, newConversation]);
-
-  const sidebarRef = useRef<HTMLElement>(null);
-  const inspectorRef = useRef<HTMLElement>(null);
-  const currentDragWidthRef = useRef<number>(0);
-
   const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingRef.current = 'sidebar';
     startXRef.current = e.clientX;
     startWidthRef.current = sidebarWidth;
-    currentDragWidthRef.current = sidebarWidth;
     setActiveResizer('sidebar');
   }, [sidebarWidth]);
 
@@ -762,7 +431,6 @@ export function App() {
     isDraggingRef.current = 'inspector';
     startXRef.current = e.clientX;
     startWidthRef.current = inspectorWidth;
-    currentDragWidthRef.current = inspectorWidth;
     setActiveResizer('inspector');
   }, [inspectorWidth]);
 
@@ -775,37 +443,25 @@ export function App() {
           MAX_SIDEBAR_WIDTH,
           Math.max(MIN_SIDEBAR_WIDTH, startWidthRef.current + deltaX)
         );
-        currentDragWidthRef.current = newWidth;
-        if (sidebarRef.current) {
-          sidebarRef.current.style.width = `${newWidth}px`;
-        }
+        setSidebarWidth(newWidth);
       } else if (isDraggingRef.current === 'inspector') {
         const deltaX = startXRef.current - e.clientX;
         const newWidth = Math.min(
           MAX_INSPECTOR_WIDTH,
           Math.max(MIN_INSPECTOR_WIDTH, startWidthRef.current + deltaX)
         );
-        currentDragWidthRef.current = newWidth;
-        if (inspectorRef.current) {
-          inspectorRef.current.style.width = `${newWidth}px`;
-        }
+        setInspectorWidth(newWidth);
       }
     };
 
     const handleMouseUp = () => {
       if (isDraggingRef.current) {
-        if (isDraggingRef.current === 'sidebar' && currentDragWidthRef.current) {
-          setSidebarWidth(currentDragWidthRef.current);
-        } else if (isDraggingRef.current === 'inspector' && currentDragWidthRef.current) {
-          setInspectorWidth(currentDragWidthRef.current);
-        }
         isDraggingRef.current = null;
-        currentDragWidthRef.current = 0;
         setActiveResizer(null);
       }
     };
 
-    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
 
     return () => {
@@ -824,7 +480,6 @@ export function App() {
       {isSidebarOpen && (
         <>
           <Sidebar
-            ref={sidebarRef}
             width={sidebarWidth}
             agents={displayedSidebarAgents}
             activeAgentId={displayedSidebarActiveAgentId}
@@ -836,7 +491,6 @@ export function App() {
             onSelectProject={handleSelectProject}
             onAddProject={handleAddProject}
             onNewChat={newConversation}
-            onOpenSettings={() => setIsSettingsOpen(true)}
             onToggleSidebar={() => setIsSidebarOpen(false)}
           />
 
@@ -853,46 +507,27 @@ export function App() {
       <ChatArea
         agent={activeAgent}
         messages={displayedMessages}
-        workspacePath={displayedWorkspacePath}
-        projectName={activeProject?.name}
         isSidebarOpen={isSidebarOpen}
         isInspectorOpen={isInspectorOpen}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
-        onNewChat={newConversation}
-        onSendMessage={captureSettledSend
-          ? async () => true
-          : captureLocalSend
-            ? () => new Promise<boolean | void>(() => {})
-            : sendMessage}
-        onAbort={abortTurn}
+        onSendMessage={captureLocalSend ? () => new Promise<boolean | void>(() => {}) : sendMessage}
         models={displayedModels}
         activeModel={displayedActiveModel}
         onSelectModel={selectModel}
         isChangingModel={isChangingModel}
-        thinkingLevel={displayedThinkingLevel}
-        thinkingLevels={displayedThinkingLevels}
-        thinkingOptions={displayedThinkingOptions}
-        supportsThinking={displayedSupportsThinking}
-        onSelectThinkingLevel={selectThinkingLevel}
-        isChangingThinking={isChangingThinking}
         collaborationMode={collaborationMode}
         onSelectCollaborationMode={selectCollaborationMode}
         isChangingCollaborationMode={isChangingCollaborationMode}
-        skills={captureSkills ? SKILL_PICKER_CAPTURE_SKILLS : skillCommands}
         isCompacting={isCompacting}
         onToggleInspector={() => setIsInspectorOpen((prev) => !prev)}
         isStreaming={captureThinkingProgress || captureStreamingWork ? true : capturePlanPreview ? false : isStreaming}
-        isLoading={captureMessageWidth || captureThinkingProgress || capturePlanPreview || captureLocalSend || captureSettledSend ? false : isLoadingSessions}
+        isLoading={captureMessageWidth || captureThinkingProgress || capturePlanPreview || captureLocalSend ? false : isLoadingSessions}
         workflowProposal={displayedProposal}
         planActionsEnabled={capturePlanPreview || (isConnected && collaborationMode === 'plan' && !isStreaming && !isCompacting)}
         onProcessProposal={capturePlanPreview || collaborationMode === 'plan' ? processProposal : undefined}
         onRefineProposal={capturePlanPreview || collaborationMode === 'plan' ? refineProposal : undefined}
         pendingUserInput={captureAsk ? ASK_CAPTURE : pendingUserInput}
         onRespondToUserInput={captureAsk ? async () => true : respondToUserInput}
-        memoryState={memoryState}
-        onOpenMemorySettings={handleOpenMemorySettings}
-        contextUsage={contextUsage}
-        tokenBreakdown={tokenBreakdown}
       />
 
       {/* 3. Right Inspector Panel */}
@@ -906,95 +541,12 @@ export function App() {
           />
 
           <Inspector
-            ref={inspectorRef}
             width={inspectorWidth}
             workflowPlan={displayedWorkflowPlan}
-            fileChanges={displayedFileChanges}
-            subagents={displayedSubagents}
             onClose={() => setIsInspectorOpen(false)}
             onCollapse={() => setIsInspectorOpen(false)}
-            contextUsage={contextUsage}
-            tokenBreakdown={tokenBreakdown}
-            isOAuth={isOAuthModel}
-            totalCost={aggregateCost}
-            totalTokens={aggregateTotalTokens}
-            inputTokens={aggregateInputTokens}
-            outputTokens={aggregateOutputTokens}
-            cacheTokens={aggregateCacheTokens}
-            quota5h={quota5h}
-            quota7d={quota7d}
-            dailyTokens={sessionCostStats.dailyTokens}
-            dailyCost={sessionCostStats.dailyCost}
           />
         </>
-      )}
-      <SettingsDialog
-        open={isSettingsOpen}
-        initialTab={settingsTab}
-        memoryState={memoryState}
-        onClose={() => setIsSettingsOpen(false)}
-        request={request}
-        refresh={refresh}
-        onConnectServer={connectServer}
-        isConnected={isConnected}
-        isBusy={isStreaming || isCompacting || isLoadingSessions}
-        models={models}
-        providerCatalog={providerCatalog}
-        activeModel={activeModel}
-        thinkingLevel={thinkingLevel}
-        thinkingLevels={thinkingLevels}
-        thinkingOptions={thinkingOptions}
-        supportsThinking={supportsThinking}
-        collaborationMode={collaborationMode}
-        activeProject={activeProject}
-        updateCheck={updateCheck}
-        onCheckForUpdates={checkForUpdates}
-        onChangeWorkspace={handleChangeWorkspace}
-        onOpenOnboarding={() => { setIsSettingsOpen(false); setIsOnboardingOpen(true); }}
-        onSelectModel={selectModel}
-        onSelectThinkingLevel={selectThinkingLevel}
-        onSelectCollaborationMode={selectCollaborationMode}
-        onNewSession={newConversation}
-      />
-      <Onboarding
-        open={isOnboardingOpen}
-        request={request}
-        isConnected={isConnected}
-        models={models}
-        onComplete={() => setIsOnboardingOpen(false)}
-        onProjectReady={handleOnboardingProject}
-        onSelectModel={selectModel}
-        onRefreshModels={refreshModels}
-      />
-      <ExtensionUiDialog
-        request={captureExtensionUi ? EXTENSION_UI_CAPTURE_REQUEST : extensionUiRequest}
-        busy={isRespondingToExtensionUi}
-        onRespond={captureExtensionUi ? async () => true : respondToExtensionUi}
-      />
-
-      {toast && (
-        <div
-          role="status"
-          className={`fixed bottom-6 right-6 z-[200] max-w-md rounded-2xl border px-4 py-3 text-[12.5px] font-medium shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 ${
-            toast.tone === 'success'
-              ? 'border-emerald-200/90 bg-emerald-50/95 text-emerald-800'
-              : toast.tone === 'error'
-                ? 'border-rose-200/90 bg-rose-50/95 text-rose-800'
-                : 'border-slate-200/90 bg-white/95 text-slate-800'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            <Sparkles className="h-4 w-4 shrink-0 text-emerald-600" />
-            <span className="flex-1">{toast.message}</span>
-            <button
-              type="button"
-              onClick={() => setToast(null)}
-              className="rounded-lg p-1 text-slate-400 hover:bg-black/5 hover:text-slate-700"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Bot, ChevronRight, CircleAlert, CircleCheckBig, CircleDot } from 'lucide-react';
 import { useElapsedDuration } from '../../hooks/useElapsedDuration';
 import { formatSubagentDuration, SubagentItem } from '../../lib/subagents';
@@ -39,6 +39,36 @@ const SubagentDuration: React.FC<{ subagent: SubagentItem }> = ({ subagent }) =>
 };
 
 export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelect }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const indicatorRef = useRef<HTMLDivElement>(null);
+  const hoveredRowRef = useRef<HTMLElement | null>(null);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('[data-subagent-item]');
+    if (!row || !containerRef.current?.contains(row)) {
+      return;
+    }
+
+    if (hoveredRowRef.current === row) return;
+    hoveredRowRef.current = row;
+
+    const indicator = indicatorRef.current;
+    if (!indicator) return;
+
+    indicator.style.transition = '';
+    indicator.style.transform = `translate3d(0, ${row.offsetTop}px, 0)`;
+    indicator.style.height = `${row.offsetHeight}px`;
+    indicator.style.opacity = '1';
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    hoveredRowRef.current = null;
+    const indicator = indicatorRef.current;
+    if (indicator) {
+      indicator.style.opacity = '0';
+    }
+  }, []);
+
   if (subagents.length === 0) {
     return (
       <div
@@ -55,14 +85,27 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
   }
 
   return (
-    <div className="flex flex-col gap-0.5" data-subagents-list="">
+    <div
+      ref={containerRef}
+      className="relative flex flex-col gap-0.5 select-none"
+      data-subagents-list=""
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* Floating unified indicator (direct 120Hz continuous sliding cover) */}
+      <div
+        ref={indicatorRef}
+        aria-hidden="true"
+        className="absolute left-0 right-0 top-0 rounded-[10px] bg-slate-100/80 pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        style={{ opacity: 0 }}
+      />
       {subagents.map((subagent) => {
         return (
           <button
             key={subagent.id}
             type="button"
             onClick={() => onSelect(subagent)}
-            className="group flex min-h-9 w-full items-start gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left transition-colors hover:bg-slate-100/80 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
+            className="group relative z-[1] flex min-h-9 w-full items-start gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left transition-[transform,color] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
             data-subagent-item=""
             data-subagent-id={subagent.id}
             data-subagent-status={subagent.status}

@@ -60,7 +60,7 @@ export function formatToolDisplayName(toolName: string, status: ToolStatus, args
   return running ? `Running ${formatted}` : failed ? `${formatted} Failed` : formatted;
 }
 
-export const ToolCard: React.FC<{ part: ToolPart; streaming?: boolean }> = ({ part, streaming = false }) => {
+export const ToolCard = React.memo<{ part: ToolPart; streaming?: boolean }>(({ part, streaming = false }) => {
   const [expanded, setExpanded] = useState(false);
   const status = toolStatus(part, streaming);
   const running = status === 'Running' || status === 'Pending';
@@ -143,5 +143,7 @@ export const ToolCard: React.FC<{ part: ToolPart; streaming?: boolean }> = ({ pa
       </div>
     </div>
   );
-};
+});
+
+ToolCard.displayName = 'ToolCard';
 

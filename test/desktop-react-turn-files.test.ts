@@ -63,7 +63,7 @@ describe('Desktop per-turn file changes', () => {
     expect(source).toContain("files.slice(0, 3)");
     expect(source).toContain('已编辑 {files.length} 个文件');
     expect(source).toContain('再显示 ${hiddenCount} 个文件');
-    expect(source).toContain('rounded-[24px]');
+    expect(source).toContain('rounded-[10px]');
     expect(source).not.toContain('shadow-[');
     expect(source).not.toMatch(/撤销|审核|border-b|divide-y/);
   });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { ContextUsage, TokenBreakdown } from '../../types';
 import { useI18n } from '../../i18n';
 
@@ -7,6 +7,7 @@ interface TokenUsageBarProps {
   contextUsage?: ContextUsage;
   tokenBreakdown?: TokenBreakdown;
   tooltipPlacement?: 'top' | 'bottom';
+  className?: string;
 }
 
 export function formatTokenCount(tokens: number): string {
@@ -30,10 +31,57 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
   contextUsage,
   tokenBreakdown,
   tooltipPlacement = 'top',
+  className = '',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const leaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { t } = useI18n();
+
+  const handleMouseEnter = () => {
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
+    setIsOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+    }
+    leaveTimeoutRef.current = setTimeout(() => {
+      setIsOpen(false);
+      leaveTimeoutRef.current = null;
+    }, 80);
+  };
+
+  const handleFocus = () => {
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
+    setIsOpen(true);
+  };
+
+  const handleBlur = (event: React.FocusEvent) => {
+    if (containerRef.current?.contains(event.relatedTarget as Node)) {
+      return;
+    }
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
+    setIsOpen(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (leaveTimeoutRef.current) {
+        clearTimeout(leaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -75,129 +123,105 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
 
   const percentDisplay = percent > 0 ? `${percent >= 10 ? percent.toFixed(0) : percent.toFixed(1)}%` : '0%';
 
-  const items = [
-    { label: t('tokenInput'), count: inputTokens, color: 'bg-blue-500' },
-    { label: t('tokenCache'), count: cacheTokens, color: 'bg-emerald-500' },
-    { label: t('tokenOutput'), count: outputTokens, color: 'bg-orange-500' },
-  ];
-
   return (
     <div
       ref={containerRef}
-      className="flex flex-col select-none w-full gap-1.5"
+      className="relative flex flex-col select-none w-full"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
     >
-      {/* Integrated Breakdown Panel in the same visual layer without shadow */}
-      {isOpen && (
-        <div
-          className="w-full bg-slate-50 dark:bg-slate-800/40 text-slate-800 dark:text-slate-100 rounded-[8px] p-2.5 border border-slate-200/80 dark:border-slate-700/80 flex flex-col shadow-none select-none"
-          role="region"
-          aria-label="Context"
-        >
-          {/* Header: Title, % Full, Token count, and Close Button */}
-          <div className="flex items-center justify-between gap-1.5">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-[11.5px] font-semibold text-slate-700 dark:text-slate-200 truncate">
-                {t('contextUsageTitle') || 'Context Usage'}
-              </span>
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 shrink-0">
-                ({percentDisplay})
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                {formatTokenCount(usedTokens)} / {formatTokenCount(contextWindow)}
-              </span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsOpen(false);
-                }}
-                className="w-4 h-4 rounded-[3px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="w-3 h-3 stroke-[1.8]" />
-              </button>
-            </div>
-          </div>
-
-          {/* Segmented Progress Bar */}
-          <div className="w-full h-1.5 bg-slate-200/70 dark:bg-slate-700/60 rounded-full overflow-hidden flex my-1.5">
-            {inputPercent > 0 && (
-              <div
-                className="h-full bg-blue-500 transition-all duration-300"
-                style={{ width: `${inputPercent}%` }}
-              />
-            )}
-            {cachePercent > 0 && (
-              <div
-                className="h-full bg-emerald-500 transition-all duration-300"
-                style={{ width: `${cachePercent}%` }}
-              />
-            )}
-            {outputPercent > 0 && (
-              <div
-                className="h-full bg-orange-500 transition-all duration-300"
-                style={{ width: `${outputPercent}%` }}
-              />
-            )}
-          </div>
-
-          {/* List Breakdown Rows */}
-          <div className="flex flex-col">
-            {items.map((item) => (
-              <div
-                key={item.label}
-                className="flex items-center justify-between py-0.5 px-0.5 rounded-[4px] hover:bg-slate-200/40 dark:hover:bg-slate-700/30 transition-colors text-[11px] leading-4"
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-[2px] ${item.color} shrink-0`} />
-                  <span className="font-normal text-slate-600 dark:text-slate-300">
-                    {item.label}
-                  </span>
-                </div>
-                <span className="font-mono text-slate-700 dark:text-slate-300 tabular-nums">
-                  {formatTokenCount(item.count)}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {isHighLoad && (
-            <div className="mt-1.5 pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px] text-amber-700 dark:text-amber-300 flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3 flex-shrink-0 text-amber-500" />
-              <span>{t('tokenUsageHighWarning', { percent: percentDisplay })}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        className={`group flex items-center gap-2.5 px-2 py-1.5 rounded-[8px] text-xs transition-all duration-150 cursor-pointer w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
+      {/* Floating Breakdown Tooltip matching UsageQuotaCard style */}
+      <div
+        className={`absolute ${
+          tooltipPlacement === 'bottom'
+            ? 'top-[calc(100%+6px)] origin-top'
+            : 'bottom-[calc(100%+6px)] origin-bottom'
+        } left-0 right-0 z-30 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md text-slate-800 dark:text-slate-100 rounded-[8px] px-2.5 py-1.5 border border-slate-200/90 dark:border-slate-700/90 shadow-lg shadow-slate-900/10 dark:shadow-black/30 flex flex-col text-[11px] gap-0.5 pointer-events-none transition-all duration-100 ease-out select-none ${
           isOpen
-            ? 'bg-slate-100 dark:bg-slate-700/60 ring-1 ring-slate-300/80 dark:ring-slate-600'
-            : isCritical
-            ? 'bg-rose-50/80 text-rose-700 hover:bg-rose-100/80'
-            : isHighLoad
-            ? 'bg-amber-50/80 text-amber-700 hover:bg-amber-100/80'
-            : 'hover:bg-black/5 text-slate-600'
+            ? 'opacity-100 scale-100 translate-y-0 visible'
+            : tooltipPlacement === 'bottom'
+            ? 'opacity-0 scale-[0.98] -translate-y-0.5 invisible'
+            : 'opacity-0 scale-[0.98] translate-y-0.5 invisible'
         }`}
-        role="region"
-        aria-label="Context"
-        aria-expanded={isOpen}
+        role="tooltip"
+        aria-hidden={!isOpen}
       >
-        {isHighLoad && (
-          <AlertTriangle
-            className={`w-3.5 h-3.5 flex-shrink-0 animate-pulse ${
-              isCritical ? 'text-rose-500' : 'text-amber-500'
-            }`}
-          />
+        <div className="flex items-center justify-between w-full">
+          <span className="font-semibold text-slate-700 dark:text-slate-200">
+            {t('contextUsageTitle') || '上下文使用'}
+          </span>
+          <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] tabular-nums">
+            {percentDisplay}
+          </span>
+        </div>
+
+        <span className="text-slate-500 dark:text-slate-400 font-mono tabular-nums text-[10.5px]">
+          {formatExactNumber(usedTokens)} / {formatExactNumber(contextWindow)} {t('tokensUnit') || 'Tokens'}
+        </span>
+
+        {(inputTokens > 0 || cacheTokens > 0 || outputTokens > 0) && (
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500 tabular-nums">
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block shrink-0" />
+              <span>{t('tokenInput') || '输入'}:</span>
+              <span className="font-mono">{formatTokenCount(inputTokens)}</span>
+            </span>
+            <span>·</span>
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block shrink-0" />
+              <span>{t('tokenCache') || '缓存'}:</span>
+              <span className="font-mono">{formatTokenCount(cacheTokens)}</span>
+            </span>
+            <span>·</span>
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-400 inline-block shrink-0" />
+              <span>{t('tokenOutput') || '输出'}:</span>
+              <span className="font-mono">{formatTokenCount(outputTokens)}</span>
+            </span>
+          </div>
         )}
 
-        {/* Progress Bar with segmented multi-colors stretching full width */}
-        <div className="flex-1 min-w-[60px] h-[14px] bg-slate-100 dark:bg-slate-700/50 rounded-[4px] overflow-hidden flex flex-shrink-0">
+        {isHighLoad && (
+          <div className="mt-0.5 pt-0.5 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3 flex-shrink-0 text-amber-500" />
+            <span>{t('tokenUsageHighWarning', { percent: percentDisplay })}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Main Bar Container matching UsageQuotaCard style */}
+      <button
+        type="button"
+        onMouseEnter={handleMouseEnter}
+        className={`group flex items-center justify-between w-full h-[28px] gap-2 text-xs transition-all duration-150 cursor-default select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
+          className
+            ? `px-3.5 ${className} ${
+                isOpen
+                  ? 'bg-slate-50/50 dark:bg-slate-800/80'
+                  : isCritical
+                  ? 'bg-rose-50/30 text-rose-700'
+                  : isHighLoad
+                  ? 'bg-amber-50/30 text-amber-700'
+                  : ''
+              }`
+            : `px-2.5 bg-[#ffffff] dark:bg-slate-800/50 border rounded-[12px] shadow-[0_1px_2px_rgba(0,0,0,0.02)] ${
+                isOpen
+                  ? 'border-slate-300 dark:border-slate-600 bg-slate-50/50 dark:bg-slate-800/80'
+                  : isCritical
+                  ? 'border-rose-300 dark:border-rose-800/60 bg-rose-50/40 text-rose-700'
+                  : isHighLoad
+                  ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50/40 text-amber-700'
+                  : 'border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
+              }`
+        }`}
+        role="region"
+        aria-label={t('contextUsageTitle')}
+        aria-expanded={isOpen}
+      >
+        {/* Sleek Segmented Progress Bar */}
+        <div className="flex-1 min-w-[60px] h-[5px] bg-slate-100 dark:bg-slate-700/50 rounded-full overflow-hidden flex flex-shrink-0">
           {inputPercent > 0 && (
             <div
               className="h-full bg-blue-500 transition-all duration-300"
@@ -217,17 +241,24 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
             />
           )}
           {percent === 0 && (
-            <div className="h-full w-[2px] bg-slate-300" />
+            <div className="h-full w-[2px] bg-slate-300 dark:bg-slate-600" />
           )}
         </div>
 
-        {/* Compact Readout without percentage */}
-        <div className="flex items-center gap-1 font-mono text-[12px] leading-none flex-shrink-0">
-          <span className="font-medium text-slate-700 dark:text-slate-200 tabular-nums">
+        {/* Compact Readout with exact styling */}
+        <div className="flex items-center gap-1 font-mono text-[11px] leading-none flex-shrink-0 tabular-nums">
+          {isHighLoad && (
+            <AlertTriangle
+              className={`w-3 h-3 flex-shrink-0 mr-0.5 ${
+                isCritical ? 'text-rose-500' : 'text-amber-500'
+              }`}
+            />
+          )}
+          <span className="font-semibold text-slate-700 dark:text-slate-200">
             {formatTokenCount(usedTokens)}
           </span>
           <span className="text-slate-400">/</span>
-          <span className="text-slate-500 tabular-nums">
+          <span className="text-slate-400 dark:text-slate-500">
             {formatTokenCount(contextWindow)}
           </span>
         </div>

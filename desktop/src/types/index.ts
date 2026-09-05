@@ -236,6 +236,7 @@ export interface ServerSessionItem {
   modified: string;
   messageCount: number;
   firstMessage: string;
+  lastMessage?: string;
 }
 
 export type MemoryPhase = 'idle' | 'extracting' | 'consolidating' | 'retry_wait' | 'error' | 'disabled';

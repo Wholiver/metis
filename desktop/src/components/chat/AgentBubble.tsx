@@ -13,7 +13,7 @@ interface AgentBubbleProps {
   onRefineProposal?: (request: string) => void;
 }
 
-export const AgentBubble: React.FC<AgentBubbleProps> = ({
+export const AgentBubble = React.memo<AgentBubbleProps>(({
   message,
   workflowProposal,
   planActionsEnabled = false,
@@ -67,5 +67,7 @@ export const AgentBubble: React.FC<AgentBubbleProps> = ({
       )}
     </div>
   );
-};
+});
+
+AgentBubble.displayName = 'AgentBubble';
 

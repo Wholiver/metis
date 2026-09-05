@@ -584,5 +584,109 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(html).toContain('text-emerald-500');
     expect(html).toContain('Async');
   });
+
+  it('drops alien subagents from other conversations when merging subagent history', () => {
+    const cachedWithAliens = [
+      {
+        id: 'call-alien-old-1',
+        sessionId: 'session-old-1',
+        role: 'Scope-Coordinator',
+        task: 'Old task from 12 days ago',
+        status: 'running' as const,
+        durationMs: 1059842000,
+        parts: [],
+      },
+      {
+        id: 'call-alien-old-2',
+        sessionId: 'session-old-2',
+        role: 'Feature-Coordinator',
+        task: 'Old feature from 9 days ago',
+        status: 'running' as const,
+        durationMs: 816082000,
+        parts: [],
+      },
+      {
+        id: 'call-current-1',
+        sessionId: 'session-current',
+        role: 'Scope-Coordinator',
+        task: 'Active task',
+        status: 'running' as const,
+        durationMs: 195000,
+        rawOutput: 'Detailed cached live output',
+        parts: [{ type: 'text' as const, id: 't1', text: 'Detailed cached live output' }],
+      },
+    ];
+
+    const currentMessages: Message[] = [
+      {
+        id: 'msg-current',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'toolCall',
+            id: 'call-current-1',
+            name: 'spawn_agent',
+            arguments: { agent: 'Scope-Coordinator', task: 'Active task' },
+            result: { content: 'Started' },
+          },
+        ],
+      },
+    ];
+
+    const currentSubagents = collectSubagentItems(currentMessages, 'session-current');
+    expect(currentSubagents).toHaveLength(1);
+    expect(currentSubagents[0].id).toBe('call-current-1');
+    expect(currentSubagents[0].sessionId).toBe('session-current');
+
+    const merged = mergeSubagentHistoryItems(cachedWithAliens, currentSubagents);
+    // Must contain ONLY current session subagent, completely purging the alien subagents!
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe('call-current-1');
+    expect(merged[0].rawOutput).toBe('Detailed cached live output');
+    expect(merged[0].parts).toHaveLength(1);
+  });
+
+  it('returns empty subagents when current session messages have no subagents', () => {
+    const cachedWithAliens = [
+      {
+        id: 'call-alien-1',
+        role: 'Scope-Coordinator',
+        task: 'Orphaned subagent',
+        status: 'running' as const,
+        durationMs: 1059842000,
+        parts: [],
+      },
+    ];
+
+    const merged = mergeSubagentHistoryItems(cachedWithAliens, []);
+    expect(merged).toEqual([]);
+  });
+
+  it('parses subagent history while filtering out items whose sessionId does not match', () => {
+    const historyJson = JSON.stringify({
+      'session-clean': [
+        { id: 'call-1', sessionId: 'session-clean', role: 'planner', task: 'Plan', status: 'completed', parts: [] },
+        { id: 'call-leaked', sessionId: 'session-foreign', role: 'leaked', task: 'Foreign task', status: 'running', parts: [] },
+      ],
+    });
+
+    const parsed = parseSubagentHistory(historyJson);
+    expect(parsed['session-clean']).toHaveLength(1);
+    expect(parsed['session-clean'][0].id).toBe('call-1');
+  });
+
+  it('wires messagesSessionId and conversation switch message reset in useMetisServer and App.tsx', () => {
+    const hook = source('desktop/src/hooks/useMetisServer.ts');
+    const app = source('desktop/src/App.tsx');
+
+    expect(hook).toContain('const [messagesSessionId, setMessagesSessionId] = useState(');
+    expect(hook).toContain('setMessagesSessionId(state.sessionId');
+    expect(hook).toContain('messagesSessionId,');
+    expect(hook).toContain("setMessages([]);\n    setMessagesSessionId('');");
+
+    expect(app).toContain('messagesSessionId,');
+    expect(app).toContain('isMessagesInSync = Boolean(activeAgentId && messagesSessionId === activeAgentId)');
+    expect(app).toContain('messagesSessionId !== activeAgentId');
+  });
 });
 

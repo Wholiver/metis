@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
   ChevronRight,
@@ -185,8 +185,113 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [loading, setLoading] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const mainScrollRef = useRef<HTMLElement | null>(null);
+  const navContainerRef = useRef<HTMLElement | null>(null);
+  const itemsContainerRef = useRef<HTMLDivElement>(null);
+  const indicatorRef = useRef<HTMLDivElement>(null);
+  const hoveredRowRef = useRef<HTMLElement | null>(null);
+  const isInitialMountRef = useRef(true);
+
+  const positionIndicatorOnTab = useCallback((tabId: string, animate = true) => {
+    const container = itemsContainerRef.current;
+    const indicator = indicatorRef.current;
+    if (!container || !indicator) return;
+
+    if (!tabId) {
+      indicator.style.opacity = '0';
+      return;
+    }
+
+    const el = container.querySelector<HTMLElement>(`[data-settings-panel="${tabId}"]`);
+    if (el) {
+      if (!animate) {
+        indicator.style.transition = 'none';
+      } else {
+        indicator.style.transition = '';
+      }
+      indicator.style.transform = `translate3d(0, ${el.offsetTop}px, 0)`;
+      indicator.style.height = `${el.offsetHeight}px`;
+      indicator.style.opacity = '1';
+      if (!animate) {
+        void indicator.offsetHeight;
+        indicator.style.transition = '';
+      }
+    } else {
+      indicator.style.opacity = '0';
+    }
+  }, []);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('[data-settings-panel]');
+    if (!row || !itemsContainerRef.current?.contains(row)) {
+      return;
+    }
+
+    if (hoveredRowRef.current === row) return;
+    hoveredRowRef.current = row;
+
+    const indicator = indicatorRef.current;
+    if (!indicator) return;
+
+    indicator.style.transition = '';
+    indicator.style.transform = `translate3d(0, ${row.offsetTop}px, 0)`;
+    indicator.style.height = `${row.offsetHeight}px`;
+    indicator.style.opacity = '1';
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    hoveredRowRef.current = null;
+    positionIndicatorOnTab(tab, true);
+  }, [tab, positionIndicatorOnTab]);
+
+  useLayoutEffect(() => {
+    if (!props.open) return;
+
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      hoveredRowRef.current = null;
+      positionIndicatorOnTab(tab, false);
+      return;
+    }
+
+    if (hoveredRowRef.current && itemsContainerRef.current?.contains(hoveredRowRef.current)) {
+      const tabId = hoveredRowRef.current.getAttribute('data-settings-panel');
+      if (tabId) {
+        positionIndicatorOnTab(tabId, false);
+        return;
+      }
+    }
+
+    positionIndicatorOnTab(tab, true);
+  }, [props.open, tab, positionIndicatorOnTab]);
+
+  useEffect(() => {
+    if (!props.open) {
+      isInitialMountRef.current = true;
+      hoveredRowRef.current = null;
+    }
+  }, [props.open]);
+
+  useEffect(() => {
+    const container = itemsContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      const activeTargetId = hoveredRowRef.current
+        ? (hoveredRowRef.current.getAttribute('data-settings-panel') as SettingsTab) || tab
+        : tab;
+      positionIndicatorOnTab(activeTargetId, false);
+    });
+
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [tab, positionIndicatorOnTab]);
 
   const handleTabChange = (nextTab: SettingsTab) => {
+    const container = itemsContainerRef.current;
+    const clickedEl = container?.querySelector<HTMLElement>(`[data-settings-panel="${nextTab}"]`);
+    if (clickedEl) {
+      hoveredRowRef.current = clickedEl;
+    }
     setTab(nextTab);
     setFeedback('');
     setError('');
@@ -970,35 +1075,50 @@ export function SettingsDialog(props: SettingsDialogProps) {
               )}
             </div>
           </div>
-          <nav className="min-h-0 flex-1 overflow-y-auto space-y-0.5" aria-label="Settings sections">
-            {tabs.map((item) => {
-              const matchCount = searchResultsByTab.get(item.id) || 0;
-              const isActive = tab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  data-settings-panel={item.id}
-                  onClick={() => handleTabChange(item.id)}
-                  className={`w-full min-h-[38px] px-2.5 py-1.5 rounded-[6px] flex items-center justify-between transition-[background-color,color,box-shadow] text-left relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
-                    isActive
-                      ? 'bg-[#e0e3e8] shadow-[0_1px_2px_rgba(0,0,0,0.03)] font-medium text-[#0f172a]'
-                      : 'hover:bg-black/[0.035] text-[#334155]'
-                  }`}
-                  aria-current={isActive ? 'page' : undefined}
-                >
-                  <span className="flex items-center gap-2.5 truncate">
-                    <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-[#0f172a]' : 'text-[#64748b]'}`} />
-                    <span className="truncate text-[13.5px]">{item.label}</span>
-                  </span>
-                  {searchQuery && matchCount > 0 && (
-                    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-300/70 px-1.5 text-[10.5px] font-semibold text-slate-700">
-                      {matchCount}
+          <nav
+            ref={navContainerRef}
+            className="min-h-0 flex-1 overflow-y-auto"
+            aria-label="Settings sections"
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+          >
+            <div ref={itemsContainerRef} className="relative flex flex-col gap-0.5">
+              {/* Floating unified indicator (direct 120Hz GPU-accelerated motion tracking) */}
+              <div
+                ref={indicatorRef}
+                aria-hidden="true"
+                className="absolute left-0 right-0 top-0 rounded-[6px] bg-[#e0e3e8] shadow-[0_1px_2px_rgba(0,0,0,0.03)] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+                style={{ opacity: 0 }}
+              />
+              {tabs.map((item) => {
+                const matchCount = searchResultsByTab.get(item.id) || 0;
+                const isActive = tab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    data-settings-panel={item.id}
+                    onClick={() => handleTabChange(item.id)}
+                    className={`w-full min-h-[38px] px-2.5 py-1.5 rounded-[6px] flex items-center justify-between transition-[color,transform] text-left relative z-[1] active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
+                      isActive
+                        ? 'font-medium text-[#0f172a]'
+                        : 'text-[#334155] hover:text-[#0f172a]'
+                    }`}
+                    aria-current={isActive ? 'page' : undefined}
+                  >
+                    <span className="flex items-center gap-2.5 truncate">
+                      <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-[#0f172a]' : 'text-[#64748b]'}`} />
+                      <span className="truncate text-[13.5px]">{item.label}</span>
                     </span>
-                  )}
-                </button>
-              );
-            })}
+                    {searchQuery && matchCount > 0 && (
+                      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-300/70 px-1.5 text-[10.5px] font-semibold text-slate-700">
+                        {matchCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </nav>
           <p className="px-1 pt-2 text-[11px] text-[#9ca3af]">{appInfo.version ? `v${appInfo.version}` : 'Loading version…'}</p>
         </aside>

@@ -32,7 +32,7 @@ export function thinkingBody(thinking: string): string {
   return trimmed;
 }
 
-export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ thinking, streaming = false }) => {
+export const ThinkingBlock = React.memo<ThinkingBlockProps>(({ thinking, streaming = false }) => {
   const contentId = useId();
   const [expanded, setExpanded] = useState(streaming);
   const [hasOverflow, setHasOverflow] = useState(false);
@@ -102,5 +102,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ thinking, streamin
       </div>
     </section>
   );
-};
+});
+
+ThinkingBlock.displayName = 'ThinkingBlock';
 

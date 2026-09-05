@@ -86,5 +86,13 @@ describe('desktop React model switcher', () => {
     expect(inspector).not.toContain('select-none flex-shrink-0 relative');
     expect(240 + 360 + 360).toBeLessThan(1040);
   });
+
+  it('preserves the model indicator on the hovered model while its reasoning submenu is open', () => {
+    const switcher = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/ModelSwitcher.tsx'), 'utf8');
+    expect(switcher).toContain('positionModelIndicator(reasoningMenuRefState.current.model, true)');
+    expect(switcher).toContain('sameModel(reasoningMenu.model, activeModel)');
+    expect(switcher).toContain('sameModel(reasoningMenuRefState.current.model, activeModel)');
+    expect(switcher).toContain('title={showReasoning ? undefined : `${model.provider} · ${model.id}`}');
+  });
 });
 

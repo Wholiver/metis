@@ -78,7 +78,28 @@ export function resolveCompletedWorkDurationMs(
   return thinkingItems.reduce((total, part) => total + (part.durationMs ?? estimateThinkingDurationMs(part.thinking)), 0);
 }
 
-export const AssistantTurn: React.FC<AssistantTurnProps> = ({
+function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTurnProps): boolean {
+  if (prev.streaming !== next.streaming) return false;
+  if (prev.showProgress !== next.showProgress) return false;
+  if (prev.startedAt !== next.startedAt) return false;
+  if (prev.workspacePath !== next.workspacePath) return false;
+  if (prev.planActionsEnabled !== next.planActionsEnabled) return false;
+  if (prev.workflowProposal !== next.workflowProposal) return false;
+  if (prev.pendingUserInput !== next.pendingUserInput) return false;
+  if (prev.onProcessProposal !== next.onProcessProposal) return false;
+  if (prev.onRefineProposal !== next.onRefineProposal) return false;
+
+  const prevMsgs = prev.messages;
+  const nextMsgs = next.messages;
+  if (prevMsgs === nextMsgs) return true;
+  if (prevMsgs.length !== nextMsgs.length) return false;
+  for (let i = 0; i < prevMsgs.length; i++) {
+    if (prevMsgs[i] !== nextMsgs[i]) return false;
+  }
+  return true;
+}
+
+const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   messages,
   startedAt,
   workspacePath,
@@ -187,4 +208,7 @@ export const AssistantTurn: React.FC<AssistantTurnProps> = ({
     </div>
   );
 };
+
+export const AssistantTurn = React.memo<AssistantTurnProps>(AssistantTurnComponent, areAssistantTurnPropsEqual);
+AssistantTurn.displayName = 'AssistantTurn';
 

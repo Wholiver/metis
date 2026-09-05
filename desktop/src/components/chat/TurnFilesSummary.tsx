@@ -17,11 +17,11 @@ export const TurnFilesSummary: React.FC<TurnFilesSummaryProps> = ({ files }) => 
 
   return (
     <div
-      className="mt-4 w-full min-w-0 rounded-[24px] border border-slate-200 bg-white p-3"
+      className="mt-4 w-full min-w-0 rounded-[10px] border border-slate-200 bg-white p-3"
       data-turn-files-summary
     >
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex size-11 shrink-0 items-center justify-center rounded-[12px] bg-slate-100 text-slate-600">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-[8px] bg-slate-100 text-slate-600">
           <FilePenLine size={21} strokeWidth={1.8} aria-hidden="true" />
         </div>
         <div className="min-w-0">

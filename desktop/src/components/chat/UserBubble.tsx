@@ -6,7 +6,7 @@ interface UserBubbleProps {
   message: Message;
 }
 
-export const UserBubble: React.FC<UserBubbleProps> = ({ message }) => {
+export const UserBubble = React.memo<UserBubbleProps>(({ message }) => {
   return (
     <div
       className="my-2 flex w-full min-w-0 max-w-full justify-end"
@@ -57,5 +57,7 @@ export const UserBubble: React.FC<UserBubbleProps> = ({ message }) => {
       </div>
     </div>
   );
-};
+});
+
+UserBubble.displayName = 'UserBubble';
 

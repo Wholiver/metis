@@ -124,6 +124,11 @@ export function sessionTitle(session: ServerSessionItem): string {
   return !title || title === '(no messages)' ? 'New conversation' : title;
 }
 
+export function sessionSubtitle(session: ServerSessionItem): string {
+  const prompt = session.lastMessage?.trim() || session.firstMessage?.trim();
+  return !prompt || prompt === '(no messages)' ? 'No messages yet' : prompt;
+}
+
 export function sessionToAgent(session: ServerSessionItem): Agent {
   const title = sessionTitle(session);
   return {
@@ -131,7 +136,7 @@ export function sessionToAgent(session: ServerSessionItem): Agent {
     name: title,
     avatarType: 'blob',
     gradient: 'from-slate-500 to-slate-700',
-    subtitle: session.messageCount > 0 ? `${session.messageCount} messages` : 'No messages yet',
+    subtitle: sessionSubtitle(session),
     time: formatSessionTime(session.modified || session.created),
     sessionPath: session.path,
     projectPath: session.cwd,
@@ -563,6 +568,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [activeAgentId, setActiveAgentId] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messagesSessionId, setMessagesSessionId] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
@@ -596,6 +602,8 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const serverInstanceIdRef = useRef('');
   const lastServerSequenceRef = useRef(0);
   const extensionUiResponsePendingRef = useRef(false);
+  const switchVersionRef = useRef(0);
+  const pendingSwitchAgentIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     activeProjectRef.current = activeProject;
@@ -664,6 +672,24 @@ export function useMetisServer(activeProject?: ProjectItem) {
       }
       return nextMessages;
     });
+    setMessagesSessionId(state.sessionId || '');
+    let latestUserPrompt: string | undefined;
+    for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
+      if (nextMessages[index].role === 'user' && typeof nextMessages[index].content === 'string') {
+        const trimmed = nextMessages[index].content.trim();
+        if (trimmed) {
+          latestUserPrompt = trimmed;
+          break;
+        }
+      }
+    }
+    if (state.sessionId && latestUserPrompt) {
+      setAgents((current) => current.map((agent) => (
+        (agent.id === state.sessionId || (state.sessionFile && agent.sessionPath === state.sessionFile))
+          ? { ...agent, subtitle: latestUserPrompt! }
+          : agent
+      )));
+    }
     const nextStreaming = Boolean(state.isStreaming);
     const nextCompacting = Boolean(state.isCompacting);
     setIsStreaming(nextStreaming);
@@ -1039,11 +1065,22 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const selectConversation = useCallback(async (agentId: string) => {
     const agent = agentsRef.current.find((item) => item.id === agentId);
     if (!agent?.sessionPath) return;
-    if (agentId === activeSessionIdRef.current) return;
+    if (agentId === activeSessionIdRef.current || agentId === pendingSwitchAgentIdRef.current) return;
+    const previousAgentId = activeSessionIdRef.current;
+    pendingSwitchAgentIdRef.current = agentId;
+    setActiveAgentId(agentId);
+    setMessages([]);
+    setMessagesSessionId('');
+    setWorkflowPlan(undefined);
+    setWorkflowProposal(undefined);
+    setPendingUserInput(undefined);
     setIsLoadingSessions(true);
     setSessionError('');
+    const currentSwitchVersion = ++switchVersionRef.current;
     try {
       const switchResult = await request<SessionState & { cancelled: boolean }>('/session/switch', 'POST', { sessionPath: agent.sessionPath });
+      if (currentSwitchVersion !== switchVersionRef.current) return;
+      pendingSwitchAgentIdRef.current = null;
       messageLoadVersionRef.current += 1;
       const targetSessionId = switchResult.sessionId || agentId;
       activeSessionIdRef.current = targetSessionId;
@@ -1067,9 +1104,16 @@ export function useMetisServer(activeProject?: ProjectItem) {
       }
       await loadMessages(targetSessionId, true);
     } catch (error) {
-      setSessionError(error instanceof Error ? error.message : String(error));
+      if (currentSwitchVersion === switchVersionRef.current) {
+        pendingSwitchAgentIdRef.current = null;
+        setActiveAgentId(previousAgentId);
+        setSessionError(error instanceof Error ? error.message : String(error));
+        if (previousAgentId) void loadMessages(previousAgentId, true);
+      }
     } finally {
-      setIsLoadingSessions(false);
+      if (currentSwitchVersion === switchVersionRef.current) {
+        setIsLoadingSessions(false);
+      }
     }
   }, [loadMessages, request]);
 
@@ -1083,6 +1127,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
       activeSessionIdRef.current = state.sessionId || '';
       setActiveAgentId(state.sessionId || '');
       setMessages([]);
+      setMessagesSessionId(state.sessionId || '');
       setWorkflowPlan(undefined);
       setWorkflowProposal(undefined);
       setPendingUserInput(undefined);
@@ -1105,6 +1150,14 @@ export function useMetisServer(activeProject?: ProjectItem) {
     };
     setMessages((current) => [...current, optimistic]);
     setIsStreaming(true);
+    const promptText = (options.displayText ?? text).trim();
+    if (promptText && activeSessionIdRef.current) {
+      setAgents((current) => current.map((agent) => (
+        agent.id === activeSessionIdRef.current
+          ? { ...agent, subtitle: promptText }
+          : agent
+      )));
+    }
     try {
       await request('/session/prompt', 'POST', {
         message: text,
@@ -1265,6 +1318,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     agents,
     activeAgent,
     activeAgentId,
+    messagesSessionId,
     messages,
     sendMessage,
     abortTurn,

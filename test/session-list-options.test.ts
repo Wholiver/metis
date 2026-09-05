@@ -75,6 +75,7 @@ describe("SessionListOptions.includeMessageText", () => {
 		// listing must stay complete without it.
 		expect(session!.allMessagesText).toBe("");
 		expect(session!.firstMessage).toBe("first user question");
+		expect(session!.lastMessage).toBe("second user question");
 		expect(session!.messageCount).toBe(3);
 		expect(session!.dailyActivity).toEqual([
 			{
@@ -120,6 +121,7 @@ describe("SessionListOptions.includeMessageText", () => {
 
 		const [after] = await SessionManager.listAll(sessionDir);
 		expect(after!.messageCount).toBe(4);
+		expect(after!.lastMessage).toBe("third user question");
 		expect(after!.dailyActivity[0]?.userMessages).toBe(3);
 	});
 });

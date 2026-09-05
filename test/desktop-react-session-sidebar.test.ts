@@ -15,6 +15,7 @@ import {
   getSubagentProgress,
   mergeAssistantParts,
   reconcileSessionAgents,
+  sessionSubtitle,
   sessionTitle,
   sessionToAgent,
   toMessage,
@@ -119,12 +120,16 @@ describe('desktop React session sidebar', () => {
 
   it('maps server sessions to selectable sidebar conversations', () => {
     expect(sessionTitle(session)).toBe('Investigate sidebar sessions');
+    expect(sessionSubtitle(session)).toBe('Investigate sidebar sessions');
     expect(sessionToAgent(session)).toMatchObject({
       id: 'session-1',
       name: 'Investigate sidebar sessions',
-      subtitle: '4 messages',
+      subtitle: 'Investigate sidebar sessions',
       sessionPath: '/tmp/project/session-1.jsonl',
       projectPath: '/tmp/project',
+    });
+    expect(sessionToAgent({ ...session, lastMessage: 'Latest user prompt' })).toMatchObject({
+      subtitle: 'Latest user prompt',
     });
   });
 

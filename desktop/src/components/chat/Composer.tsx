@@ -1,7 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Plus, ArrowUp, Square, File as FileIcon, FileText, FileUp, ListTree, LoaderCircle, Maximize2, Minimize2, Video, X } from 'lucide-react';
 import { Agent, CollaborationMode, MessageAttachment, ModelOption, SendMessageOptions, ThinkingOption } from '../../types';
-import { composerTextareaHeight, hasComposerLineBreak } from '../../lib/composer';
+import {
+  COMPOSER_MULTILINE_MIN_TEXTAREA_HEIGHT,
+  composerTextareaHeight,
+  hasComposerLineBreak,
+} from '../../lib/composer';
 import {
   classifyAttachment,
   composeAttachmentPayload,
@@ -104,7 +108,7 @@ function bufferedAttachmentBytes(attachment: MessageAttachment): number {
   return 0;
 }
 
-export const Composer: React.FC<ComposerProps> = ({
+export const Composer = React.memo<ComposerProps>(({
   agent,
   onSendMessage,
   onAbort,
@@ -162,27 +166,45 @@ export const Composer: React.FC<ComposerProps> = ({
   useLayoutEffect(() => {
     const input = inputRef.current;
     if (!input) return;
+    if (!isExpanded && !hasComposerLineBreak(text) && text.length < 35 && textareaHeight === COMPOSER_MULTILINE_MIN_TEXTAREA_HEIGHT) {
+      if (input.style.height !== `${COMPOSER_MULTILINE_MIN_TEXTAREA_HEIGHT}px`) {
+        input.style.height = `${COMPOSER_MULTILINE_MIN_TEXTAREA_HEIGHT}px`;
+      }
+      return;
+    }
     input.style.height = 'auto';
     const nextHeight = composerTextareaHeight(input.scrollHeight, isExpanded);
     input.style.height = `${nextHeight}px`;
-    setTextareaHeight(nextHeight);
-  }, [isExpanded, text]);
+    if (nextHeight !== textareaHeight) {
+      setTextareaHeight(nextHeight);
+    }
+  }, [isExpanded, text, textareaHeight]);
 
   useLayoutEffect(() => {
     const shell = shellRef.current;
     const main = shell?.closest<HTMLElement>('[data-purpose="main-chat"]');
     if (!shell || !main) return;
+    let lastHeight = 0;
+    let rafId: number | null = null;
+
     const updateOverlayHeight = () => {
-      main.style.setProperty(
-        '--composer-overlay-height',
-        `${Math.ceil(shell.getBoundingClientRect().height)}px`,
-      );
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (!shell || !main) return;
+        const nextHeight = Math.ceil(shell.getBoundingClientRect().height);
+        if (Math.abs(nextHeight - lastHeight) >= 1) {
+          lastHeight = nextHeight;
+          main.style.setProperty('--composer-overlay-height', `${nextHeight}px`);
+        }
+      });
     };
     updateOverlayHeight();
 
     const observer = new ResizeObserver(updateOverlayHeight);
     observer.observe(shell);
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
       observer.disconnect();
       main.style.removeProperty('--composer-overlay-height');
     };
@@ -383,6 +405,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 onSelectSkill={chooseSkill}
                 onSelect={chooseSkill}
                 onSelectFiles={() => fileInputRef.current?.click()}
+                onClick={() => fileInputRef.current?.click()}
                 onClose={() => {
                   setPlusMenuOpen(false);
                   setSkillMenuOpen(false);
@@ -395,6 +418,18 @@ export const Composer: React.FC<ComposerProps> = ({
 
           <form
         onSubmit={handleSubmit}
+        onDragEnter={(event) => {
+          if (!transferHasFiles(event.dataTransfer)) return;
+          event.preventDefault();
+          setIsDraggingFiles(true);
+        }}
+        onDrop={(event) => {
+          if (!transferHasFiles(event.dataTransfer)) return;
+          event.preventDefault();
+          setIsDraggingFiles(false);
+          const files = filesFromTransfer(event.dataTransfer);
+          if (files.length > 0) void addAttachments(files);
+        }}
         data-composer=""
         data-composer-multiline="true"
         style={{ height: composerHeight }}
@@ -604,4 +639,6 @@ export const Composer: React.FC<ComposerProps> = ({
       </div>
     </div>
   );
-};
+});
+
+Composer.displayName = 'Composer';

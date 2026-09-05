@@ -82,7 +82,7 @@ export function formatToolGroupItem(part: ToolPart, status: ToolStatus): string 
   return formatToolDisplayName(part.name, status, part.arguments);
 }
 
-export const ToolGroup: React.FC<ToolGroupProps> = ({ parts, streaming = false, preserveExistingItems = false }) => {
+export const ToolGroup = React.memo<ToolGroupProps>(({ parts, streaming = false, preserveExistingItems = false }) => {
   const contentId = useId();
   const [expanded, setExpanded] = useState(streaming);
   const [hasOverflow, setHasOverflow] = useState(false);
@@ -201,5 +201,7 @@ export const ToolGroup: React.FC<ToolGroupProps> = ({ parts, streaming = false, 
       </div>
     </section>
   );
-};
+});
+
+ToolGroup.displayName = 'ToolGroup';
 

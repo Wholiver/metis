@@ -64,5 +64,17 @@ describe('desktop token usage bar and formatting', () => {
     expect(tokenBar).toContain('bg-emerald-500');
     expect(tokenBar).toContain('bg-orange-400');
   });
+
+  it('triggers breakdown panel display on mouse hover rather than click', () => {
+    const tokenBar = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/TokenUsageBar.tsx'), 'utf8');
+
+    // Shows on hover / mouse enter
+    expect(tokenBar).toContain('onMouseEnter={handleMouseEnter}');
+    expect(tokenBar).toContain('onMouseLeave={handleMouseLeave}');
+    expect(tokenBar).toContain('cursor-default');
+
+    // Does not toggle via onClick on the bar button
+    expect(tokenBar).not.toMatch(/<button[^>]*onClick=\{\(\)\s*=>\s*setIsOpen/);
+  });
 });
 
