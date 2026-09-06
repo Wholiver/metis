@@ -39,6 +39,22 @@
 .onboarding-secondary:hover { background: #f8fafc; }
 .onboarding-secondary:active { transform: scale(.98); }
 
+html.dark .onboarding-primary {
+  background: #2563eb;
+  color: #fff;
+}
+html.dark .onboarding-primary:hover {
+  background: #1d4ed8;
+}
+html.dark .onboarding-secondary {
+  background: #1c2027;
+  border-color: #2b303c;
+  color: #e2e8f0;
+}
+html.dark .onboarding-secondary:hover {
+  background: #252a34;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .onboarding-primary,
   .onboarding-secondary { transition: none; }

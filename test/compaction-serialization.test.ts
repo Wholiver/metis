@@ -76,5 +76,73 @@ describe("serializeConversation", () => {
 		expect(result).not.toContain("truncated");
 		expect(result).toContain(longText);
 	});
+
+	it("should truncate oversized tool call arguments", () => {
+		const hugeContent = "z".repeat(5000);
+		const messages: Message[] = [
+			{
+				role: "assistant",
+				content: [
+					{
+						type: "toolCall",
+						id: "tc-write",
+						name: "write",
+						arguments: { path: "large.ts", content: hugeContent },
+					},
+				],
+				api: "anthropic",
+				provider: "anthropic",
+				model: "test",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			},
+		];
+
+		const result = serializeConversation(messages);
+		expect(result).toContain("[Assistant tool calls]: write(");
+		expect(result).toContain("[... 4000 more characters truncated]");
+		expect(result).not.toContain("z".repeat(2000));
+	});
+
+	it("should omit verbose thinking when text is present by default", () => {
+		const messages: Message[] = [
+			{
+				role: "assistant",
+				content: [
+					{ type: "thinking", thinking: "Internal reasoning about algorithms..." },
+					{ type: "text", text: "Here is the final answer." },
+				],
+				api: "anthropic",
+				provider: "anthropic",
+				model: "test",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			},
+		];
+
+		const defaultResult = serializeConversation(messages);
+		expect(defaultResult).not.toContain("[Assistant thinking]");
+		expect(defaultResult).toContain("[Assistant]: Here is the final answer.");
+
+		const withThinking = serializeConversation(messages, { includeThinking: true });
+		expect(withThinking).toContain("[Assistant thinking]: Internal reasoning about algorithms...");
+		expect(withThinking).toContain("[Assistant]: Here is the final answer.");
+	});
 });
 

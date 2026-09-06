@@ -309,7 +309,9 @@ export function toMessage(
   const source = (raw.type === 'message' && raw.message && typeof raw.message === 'object')
     ? raw.message as Record<string, unknown>
     : raw;
-  const role = source.role || raw.role;
+  const rawRole = source.role || raw.role;
+  const isCompaction = rawRole === 'compactionSummary';
+  const role = isCompaction ? 'assistant' : rawRole;
   if (role !== 'user' && role !== 'assistant') return undefined;
   const timestamp = typeof source.timestamp === 'string' || typeof source.timestamp === 'number'
     ? source.timestamp
@@ -317,17 +319,19 @@ export function toMessage(
       ? raw.timestamp
       : undefined;
   const rawId = typeof source.id === 'string' ? source.id : typeof raw.id === 'string' ? raw.id : undefined;
-  const messageId = rawId || `${role}-${String(timestamp ?? index)}`;
+  const messageId = rawId || `${rawRole}-${String(timestamp ?? index)}`;
   const stopReason = typeof source.stopReason === 'string'
     ? source.stopReason
     : typeof raw.stopReason === 'string' ? raw.stopReason : undefined;
   const errorMessage = typeof source.errorMessage === 'string'
     ? source.errorMessage.trim()
     : typeof raw.errorMessage === 'string' ? raw.errorMessage.trim() : '';
-  const rawText = extractText(source.content)
-    || (typeof source.text === 'string' ? source.text : '')
-    || extractText(raw.content)
-    || (role === 'assistant' && stopReason === 'error' ? errorMessage : '');
+  const rawText = isCompaction
+    ? `**[Context Compacted]** (Tokens before: ${source.tokensBefore ?? raw.tokensBefore ?? 'unknown'})\n\n${source.summary || raw.summary || extractText(source.content) || ''}`
+    : (extractText(source.content)
+        || (typeof source.text === 'string' ? source.text : '')
+        || extractText(raw.content)
+        || (role === 'assistant' && stopReason === 'error' ? errorMessage : ''));
   const parsedPayload = parseAttachmentPayloadText(rawText);
   const content = parsedPayload.text;
   const imageAttachments = extractImageAttachments(source.content || raw.content);
@@ -353,6 +357,7 @@ export function toMessage(
     role: role as 'user' | 'assistant',
     content,
   };
+  if (isCompaction) message.tags = ['compaction'];
   if (thinking) message.thinking = thinking;
   if (thinkingDurationMs !== undefined) message.thinkingDurationMs = thinkingDurationMs;
   if (parts && parts.length > 0) message.parts = parts;

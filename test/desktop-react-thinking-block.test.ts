@@ -38,6 +38,8 @@ describe('desktop React thinking block', () => {
     expect(css).not.toMatch(/\.cot-thinking\.has-overflow \.thinking-body::after\s*\{[^}]*backdrop-filter/);
     expect(component).toContain('setScrolledFromTop(scroll.scrollTop > 1)');
     expect(component).toContain('data-thinking-scrolled-from-top');
+    expect(component).toContain('data-thinking-scrolled-to-bottom');
+    expect(css).toContain('.cot-thinking.has-overflow.scrolled-to-bottom .thinking-body::after');
     expect(component).toContain('onScroll=');
     expect(css).toContain('--work-visual-inset: 0px');
     expect(css).toContain('--work-item-gap: 8px');

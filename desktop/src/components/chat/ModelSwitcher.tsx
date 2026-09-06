@@ -382,16 +382,16 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
         top: menuPosition.top,
         width: menuPosition.width,
       } : { visibility: 'hidden' }}
-      className="fixed z-[100] max-h-[300px] overflow-y-auto rounded-2xl border border-slate-200/90 bg-white p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)]"
+      className="fixed z-[100] max-h-[300px] overflow-y-auto rounded-2xl border border-slate-200/90 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] dark:shadow-[0_14px_36px_rgba(0,0,0,0.5)]"
     >
       {/* Floating unified indicator (smooth sliding cover) */}
       <div
         ref={modelIndicatorRef}
         aria-hidden="true"
-        className="absolute left-1.5 right-1.5 top-0 rounded-[10px] bg-slate-100 pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        className="absolute left-1.5 right-1.5 top-0 rounded-[10px] bg-slate-100 dark:bg-[#252a35] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ opacity: 0 }}
       />
-      <p className="relative z-[1] px-2.5 pb-1 pt-0.5 text-[11px] font-medium text-slate-400">Model</p>
+      <p className="relative z-[1] px-2.5 pb-1 pt-0.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">Model</p>
       {models.map((model) => {
         const selected = sameModel(model, activeModel);
         const modelThinkingOptions = optionsForModel(model);
@@ -411,13 +411,13 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
                 void onSelectModel(model);
                 requestAnimationFrame(() => triggerRef.current?.focus());
               }}
-              className="group relative z-[1] flex min-h-9 w-full items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-left transition-[color,transform] focus-visible:bg-slate-100 focus-visible:outline-none"
+              className="group relative z-[1] flex min-h-9 w-full items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-left transition-[color,transform] focus-visible:bg-slate-100 dark:focus-visible:bg-[#252a35] focus-visible:outline-none"
               title={showReasoning ? undefined : `${model.provider} · ${model.id}`}
             >
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-800">{modelLabel(model)}</span>
-              {showReasoning && selected && <span className="shrink-0 text-[11px] font-medium text-slate-500">{currentThinkingLabel}</span>}
-              {selected ? <Check className="h-3.5 w-3.5 flex-none text-slate-700" /> : showReasoning
-                ? <ChevronRight className="h-3.5 w-3.5 flex-none text-slate-500" />
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-800 dark:text-slate-100">{modelLabel(model)}</span>
+              {showReasoning && selected && <span className="shrink-0 text-[11px] font-medium text-slate-500 dark:text-slate-400">{currentThinkingLabel}</span>}
+              {selected ? <Check className="h-3.5 w-3.5 flex-none text-slate-700 dark:text-slate-200" /> : showReasoning
+                ? <ChevronRight className="h-3.5 w-3.5 flex-none text-slate-500 dark:text-slate-400" />
                 : <span className="h-3.5 w-3.5 flex-none" />}
             </button>
           </React.Fragment>
@@ -437,13 +437,13 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
       onMouseMove={handleReasoningMouseMove}
       onMouseLeave={handleReasoningMouseLeave}
       style={{ left: reasoningMenu.left, top: reasoningMenu.top, width: 154 }}
-      className="fixed z-[101] overflow-hidden rounded-[14px] border border-slate-200/90 bg-white p-1 shadow-[0_10px_28px_rgba(15,23,42,0.14)]"
+      className="fixed z-[101] overflow-hidden rounded-[14px] border border-slate-200/90 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] p-1 shadow-[0_10px_28px_rgba(15,23,42,0.14)] dark:shadow-[0_10px_28px_rgba(0,0,0,0.5)]"
     >
       {/* Floating unified indicator (smooth sliding cover) */}
       <div
         ref={reasoningIndicatorRef}
         aria-hidden="true"
-        className="absolute left-1 right-1 top-0 rounded-[9px] bg-slate-100 pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        className="absolute left-1 right-1 top-0 rounded-[9px] bg-slate-100 dark:bg-[#252a35] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ opacity: 0 }}
       />
       {optionsForModel(reasoningMenu.model).map((option) => {
@@ -463,7 +463,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
               setReasoningMenu(undefined);
               requestAnimationFrame(() => triggerRef.current?.focus());
             }}
-            className="group relative z-[1] flex min-h-8 w-full items-center gap-2 rounded-[9px] px-2.5 text-left text-[12px] font-medium text-slate-700 transition-[color,transform] focus-visible:bg-slate-100 focus-visible:outline-none disabled:opacity-45"
+            className="group relative z-[1] flex min-h-8 w-full items-center gap-2 rounded-[9px] px-2.5 text-left text-[12px] font-medium text-slate-700 dark:text-slate-200 transition-[color,transform] focus-visible:bg-slate-100 dark:focus-visible:bg-[#252a35] focus-visible:outline-none disabled:opacity-45"
           >
             <span className="flex-1">{option.label}</span>
             <Check className={`h-3.5 w-3.5 ${selectedLevel ? 'opacity-100' : 'opacity-0'}`} />
@@ -492,7 +492,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
             setIsOpen(true);
           }
         }}
-        className="flex h-[30px] min-w-0 max-w-[220px] items-center gap-1 rounded-full px-2 text-[12px] font-medium text-slate-500 hover:bg-black/[0.045] hover:text-slate-800 active:scale-[0.98] transition-[color,background-color,transform,opacity] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
+        className="flex h-[30px] min-w-0 max-w-[220px] items-center gap-1 rounded-full px-2 text-[12px] font-medium text-slate-500 dark:text-slate-400 hover:bg-black/[0.045] dark:hover:bg-white/10 hover:text-slate-800 dark:hover:text-slate-100 active:scale-[0.98] transition-[color,background-color,transform,opacity] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
       >
         <span className="truncate" data-model-trigger-label="">{triggerLabel}</span>
         {loading ? (

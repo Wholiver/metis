@@ -88,7 +88,7 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
     <aside
       ref={ref}
       style={{ width: `${width}px` }}
-      className="h-full min-w-[360px] shrink bg-[#ffffff] border-l border-slate-200/80 flex flex-col overflow-hidden select-none relative"
+      className="h-full min-w-[360px] shrink bg-[#ffffff] dark:bg-[#16171a] border-l border-slate-200/80 dark:border-[#232730] flex flex-col overflow-hidden select-none relative"
       aria-label="Workspace context"
       data-plan-inspector=""
     >
@@ -102,7 +102,7 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
           <div className="h-[50px] px-3.5 flex items-center justify-end flex-shrink-0 titlebar-drag">
             <button
               onClick={onCollapse || onClose}
-              className="relative w-7 h-7 rounded-lg flex items-center justify-center text-[#8e95a2] hover:bg-black/5 hover:text-[#0f172a] no-drag before:absolute before:left-1/2 before:top-1/2 before:h-10 before:w-10 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] active:scale-[0.96] transition-[color,background-color,transform]"
+              className="relative w-7 h-7 rounded-lg flex items-center justify-center text-[#8e95a2] dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-[#0f172a] dark:hover:text-slate-200 no-drag before:absolute before:left-1/2 before:top-1/2 before:h-10 before:w-10 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] active:scale-[0.96] transition-[color,background-color,transform]"
               title="Collapse Inspector"
               aria-label="Collapse workspace context"
             >
@@ -114,12 +114,12 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
             <section data-changed-files-section="">
               <button
                 type="button"
-                className="flex min-h-8 w-full items-center gap-2 rounded-[10px] px-2.5 text-left text-[14px] font-medium text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
+                className="flex min-h-8 w-full items-center gap-2 rounded-[10px] px-2.5 text-left text-[14px] font-medium text-slate-600 dark:text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
                 onClick={() => setFilesExpanded((value) => !value)}
                 aria-expanded={filesExpanded}
               >
                 <span>Files Changed</span>
-                <span className="text-[13px] leading-4 tabular-nums text-slate-400 font-normal">{fileChanges.length}</span>
+                <span className="text-[13px] leading-4 tabular-nums text-slate-400 dark:text-slate-500 font-normal">{fileChanges.length}</span>
                 <ChevronDown size={16} strokeWidth={2} className={`ml-auto transition-transform ${filesExpanded ? '' : '-rotate-90'}`} aria-hidden="true" />
               </button>
               {filesExpanded && <ChangedFiles files={fileChanges} />}
@@ -129,18 +129,18 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
               <div className="flex min-h-8 w-full items-center rounded-[10px]">
                 <button
                   type="button"
-                  className="flex min-h-8 flex-1 items-center gap-2 rounded-[10px] px-2.5 text-left text-[14px] font-medium text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
+                  className="flex min-h-8 flex-1 items-center gap-2 rounded-[10px] px-2.5 text-left text-[14px] font-medium text-slate-600 dark:text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
                   onClick={() => setPlanExpanded((value) => !value)}
                   aria-expanded={planExpanded}
                 >
                   <span data-plan-points-title="">Plan</span>
-                  <span className="text-[13px] leading-4 tabular-nums text-slate-400 font-normal">{workflowPlan?.plan.length || 0}</span>
+                  <span className="text-[13px] leading-4 tabular-nums text-slate-400 dark:text-slate-500 font-normal">{workflowPlan?.plan.length || 0}</span>
                 </button>
                 {workflowPlan?.plan && workflowPlan.plan.length > 0 && (
                   <button
                     type="button"
                     onClick={handleCopyPlan}
-                    className="flex h-7 items-center gap-1 rounded-lg px-2 text-[12px] font-medium text-slate-500 hover:bg-black/5 hover:text-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50 mr-1"
+                    className="flex h-7 items-center gap-1 rounded-lg px-2 text-[12px] font-medium text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-slate-800 dark:hover:text-slate-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50 mr-1"
                     title={planCopied ? (t('planCopied') || 'Copied') : (t('copyPlan') || 'Copy Plan')}
                     aria-label={t('copyPlan') || 'Copy Plan'}
                     data-copy-plan-button=""
@@ -161,7 +161,7 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
                 <button
                   type="button"
                   onClick={() => setPlanExpanded((value) => !value)}
-                  className="flex h-8 w-8 items-center justify-center text-slate-400 hover:text-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50 rounded-[10px] mr-0.5"
+                  className="flex h-8 w-8 items-center justify-center text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50 rounded-[10px] mr-0.5"
                   aria-label={planExpanded ? 'Collapse plan' : 'Expand plan'}
                   tabIndex={-1}
                 >
@@ -174,12 +174,12 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
             <section data-subagents-section="">
               <button
                 type="button"
-                className="flex min-h-8 w-full items-center gap-2 rounded-[10px] px-2.5 text-left text-[14px] font-medium text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
+                className="flex min-h-8 w-full items-center gap-2 rounded-[10px] px-2.5 text-left text-[14px] font-medium text-slate-600 dark:text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
                 onClick={() => setSubagentsExpanded((value) => !value)}
                 aria-expanded={subagentsExpanded}
               >
                 <span data-subagents-title="">Subagents</span>
-                <span className="text-[13px] leading-4 tabular-nums text-slate-400 font-normal flex items-center gap-1">
+                <span className="text-[13px] leading-4 tabular-nums text-slate-400 dark:text-slate-500 font-normal flex items-center gap-1">
                   {runningSubagentsCount > 0 && (
                     <span className="h-1.5 w-1.5 rounded-full bg-blue-600 animate-pulse" />
                   )}
@@ -198,7 +198,7 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
 
           <div className="px-3.5 pb-4 pt-1 no-drag flex-shrink-0 bg-transparent w-full">
             <div
-              className="w-full bg-[#ffffff] dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 rounded-[14px] shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all flex flex-col divide-y divide-slate-100 dark:divide-slate-700/50 overflow-visible"
+              className="w-full h-[108px] flex flex-col justify-between overflow-visible"
               data-usage-panel=""
             >
               <UsageQuotaCard
@@ -212,13 +212,13 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
                 quota7d={quota7d}
                 dailyTokens={dailyTokens}
                 dailyCost={dailyCost}
-                className="border-none shadow-none bg-transparent rounded-t-[14px] rounded-b-none"
+                className="border-0 shadow-none bg-transparent"
               />
               <TokenUsageBar
                 contextUsage={contextUsage}
                 tokenBreakdown={tokenBreakdown}
                 tooltipPlacement="top"
-                className="border-none shadow-none bg-transparent rounded-b-[14px] rounded-t-none hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                className="border-0 shadow-none bg-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04] rounded-[8px]"
               />
             </div>
           </div>

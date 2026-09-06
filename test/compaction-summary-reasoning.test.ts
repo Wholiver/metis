@@ -76,6 +76,26 @@ describe("generateSummary reasoning options", () => {
 		});
 	});
 
+	it("caps high thinking level to medium for reasoning-capable models", async () => {
+		await generateSummary(
+			messages,
+			createModel(true),
+			2000,
+			"test-key",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			"high",
+		);
+
+		expect(completeSimpleMock).toHaveBeenCalledTimes(1);
+		expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({
+			reasoning: "medium",
+			apiKey: "test-key",
+		});
+	});
+
 	it("does not set reasoning when thinking is off", async () => {
 		await generateSummary(
 			messages,

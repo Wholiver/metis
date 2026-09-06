@@ -87,6 +87,7 @@ export const ToolGroup = React.memo<ToolGroupProps>(({ parts, streaming = false,
   const [expanded, setExpanded] = useState(streaming);
   const [hasOverflow, setHasOverflow] = useState(false);
   const [scrolledFromTop, setScrolledFromTop] = useState(false);
+  const [scrolledToBottom, setScrolledToBottom] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const wasStreaming = useRef(streaming);
   const userOverrideRef = useRef(false);
@@ -107,12 +108,19 @@ export const ToolGroup = React.memo<ToolGroupProps>(({ parts, streaming = false,
 
   useLayoutEffect(() => {
     if (!expanded || !listRef.current) return;
+    const list = listRef.current;
+    list.scrollTop = list.scrollHeight;
+    setHasOverflow(list.scrollHeight > list.clientHeight + 1);
+    setScrolledFromTop(list.scrollTop > 1);
+    setScrolledToBottom(Math.ceil(list.scrollTop + list.clientHeight) >= list.scrollHeight - 2);
+
     const frame = requestAnimationFrame(() => {
-      const list = listRef.current;
-      if (list) {
-        list.scrollTop = list.scrollHeight;
-        setHasOverflow(list.scrollHeight > list.clientHeight + 1);
-        setScrolledFromTop(list.scrollTop > 1);
+      const el = listRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+        setHasOverflow(el.scrollHeight > el.clientHeight + 1);
+        setScrolledFromTop(el.scrollTop > 1);
+        setScrolledToBottom(Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 2);
       }
     });
     return () => cancelAnimationFrame(frame);
@@ -139,11 +147,12 @@ export const ToolGroup = React.memo<ToolGroupProps>(({ parts, streaming = false,
 
   return (
     <section
-      className={`tool-group ${expanded ? '' : 'collapsed'} ${hasOverflow ? 'has-overflow' : ''} ${scrolledFromTop ? 'scrolled-from-top' : ''}`}
+      className={`tool-group ${expanded ? '' : 'collapsed'} ${hasOverflow ? 'has-overflow' : ''} ${scrolledFromTop ? 'scrolled-from-top' : ''} ${scrolledToBottom ? 'scrolled-to-bottom' : ''}`}
       data-tool-group=""
       data-tool-count={parts.length}
       data-tool-group-overflow={hasOverflow ? 'true' : 'false'}
       data-tool-group-scrolled-from-top={scrolledFromTop ? 'true' : 'false'}
+      data-tool-group-scrolled-to-bottom={scrolledToBottom ? 'true' : 'false'}
     >
       <button
         type="button"
@@ -165,7 +174,11 @@ export const ToolGroup = React.memo<ToolGroupProps>(({ parts, streaming = false,
             id={contentId}
             className="tool-group-list min-h-0"
             data-tool-group-scroll=""
-            onScroll={(event) => setScrolledFromTop(event.currentTarget.scrollTop > 1)}
+            onScroll={(event) => {
+              const el = event.currentTarget;
+              setScrolledFromTop(el.scrollTop > 1);
+              setScrolledToBottom(Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 2);
+            }}
           >
             {visibleParts.map((part, index) => {
               const status = toolStatus(part, streaming && index === visibleParts.length - 1);

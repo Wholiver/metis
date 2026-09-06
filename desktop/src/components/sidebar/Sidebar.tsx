@@ -172,7 +172,7 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
     <aside
       ref={ref}
       style={{ width: `${width}px` }}
-      className="h-full min-w-[240px] shrink bg-[#f6f7f9] border-r border-slate-200/80 flex flex-col overflow-hidden select-none relative"
+      className="h-full min-w-[240px] shrink bg-[#f6f7f9] dark:bg-[#121316] border-r border-slate-200/80 dark:border-[#232730] flex flex-col overflow-hidden select-none relative"
     >
       {/* 50px Top Header: Native traffic lights spacer + Collapse button on left, New chat (+) on right */}
       <div className="h-[50px] px-3.5 flex items-center justify-between flex-shrink-0 titlebar-drag">
@@ -181,7 +181,7 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
           <div className="w-[66px] h-[16px]" />
           <button
             onClick={onToggleSidebar}
-            className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[#8e95a2] hover:bg-black/5 hover:text-[#1e293b] transition-colors"
+            className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[#8e95a2] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[#1e293b] dark:hover:text-[#f1f5f9] transition-colors"
             title="Toggle Sidebar"
           >
             <PanelLeftClose className="w-4 h-4 stroke-[1.8]" />
@@ -191,7 +191,7 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
         {/* Right action: New chat (+) */}
         <button
           onClick={onNewChat}
-          className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[#8e95a2] hover:bg-black/5 hover:text-[#1e293b] transition-colors no-drag"
+          className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[#8e95a2] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[#1e293b] dark:hover:text-[#f1f5f9] transition-colors no-drag"
           title="New Chat"
         >
           <Plus className="w-4 h-4 stroke-[2]" />
@@ -200,15 +200,15 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
 
       {/* Search Bar: small rounded-[8px] matching macOS spotlight style */}
       <div className="px-3 pb-2 flex-shrink-0 no-drag">
-        <div className="relative flex items-center w-full bg-[#eef0f3] rounded-[8px] h-[34px] px-2.5 transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-slate-300/60 focus-within:shadow-sm">
-          <Search className="w-4 h-4 text-[#9ca3af] mr-2 flex-shrink-0" />
+        <div className="relative flex items-center w-full bg-[#eef0f3] dark:bg-[#1a1d24] rounded-[8px] h-[34px] px-2.5 transition-all focus-within:bg-white dark:focus-within:bg-[#20242d] focus-within:ring-2 focus-within:ring-slate-300/60 dark:focus-within:ring-slate-600/60 focus-within:shadow-sm">
+          <Search className="w-4 h-4 text-[#9ca3af] dark:text-[#64748b] mr-2 flex-shrink-0" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search conversations"
             aria-label="Search conversations"
-            className="w-full bg-transparent text-[13.5px] text-[#1e293b] outline-none placeholder-[#9ca3af]"
+            className="w-full bg-transparent text-[13.5px] text-[#1e293b] dark:text-[#e2e8f0] outline-none placeholder-[#9ca3af] dark:placeholder-[#64748b]"
           />
         </div>
       </div>
@@ -242,7 +242,7 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
           <div
             ref={indicatorRef}
             aria-hidden="true"
-            className="absolute left-0 right-0 top-0 rounded-[10px] bg-[#e0e3e8] shadow-[0_1px_2px_rgba(0,0,0,0.03)] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+            className="absolute left-0 right-0 top-0 rounded-[10px] bg-[#e0e3e8] dark:bg-[#1e222b] shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.2)] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
             style={{ opacity: 0 }}
           />
           {filteredAgents.map((agent) => (
@@ -270,9 +270,9 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
         <button
           id="sidebarSettingsButton"
           onClick={onOpenSettings}
-          className="w-full h-9 px-2.5 rounded-[8px] flex items-center gap-2.5 text-[13px] font-medium text-[#4b5563] hover:bg-black/5 hover:text-[#0f172a] transition-colors"
+          className="w-full h-9 px-2.5 rounded-[8px] flex items-center gap-2.5 text-[13px] font-medium text-[#4b5563] dark:text-[#94a3b8] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[#0f172a] dark:hover:text-[#f1f5f9] transition-colors"
         >
-          <Settings className="w-4 h-4 text-[#64748b]" />
+          <Settings className="w-4 h-4 text-[#64748b] dark:text-[#94a3b8]" />
           <span>Settings</span>
         </button>
       </div>

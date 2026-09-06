@@ -173,7 +173,7 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
   return (
     <div
       ref={containerRef}
-      className="pointer-events-auto inline-flex relative h-8 items-center gap-0 rounded-xl bg-[#eef2f6] p-0.5 select-none shadow-[0_0_0_1px_rgba(215,222,232,0.9),0_1px_2px_rgba(15,23,42,0.08)]"
+      className="pointer-events-auto inline-flex relative h-8 items-center gap-0 rounded-xl bg-[#eef2f6] p-0.5 dark:bg-[#1a1d24] select-none shadow-[0_0_0_1px_rgba(215,222,232,0.9),0_1px_2px_rgba(15,23,42,0.08)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.3)]"
       role="radiogroup"
       aria-label="Agent mode"
       aria-busy={loading}
@@ -205,8 +205,8 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
               selected
                 ? 'text-white'
                 : option.id === 'plan'
-                ? 'text-[#586e90] hover:text-white'
-                : 'text-[#4f7068] hover:text-white'
+                ? 'text-[#586e90] dark:text-[#8ba4c9] hover:text-white'
+                : 'text-[#4f7068] dark:text-[#88b5a9] hover:text-white'
             }`}
             title={option.description}
           >

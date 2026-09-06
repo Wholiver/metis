@@ -57,6 +57,8 @@ describe('desktop React Tool grouping', () => {
     expect(source).toContain('setHasOverflow(list.scrollHeight > list.clientHeight + 1)');
     expect(source).toContain('setScrolledFromTop(list.scrollTop > 1)');
     expect(source).toContain('data-tool-group-scrolled-from-top');
+    expect(source).toContain('data-tool-group-scrolled-to-bottom');
+    expect(css).toContain('.tool-group.has-overflow.scrolled-to-bottom .tool-group-body::after');
     expect(source).toContain('onScroll=');
     expect(source).toContain('[expanded, updateKey]');
     expect(source).toContain('data-tool-group-scroll');

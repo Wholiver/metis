@@ -16,7 +16,7 @@ function fileParts(path: string): { name: string; parent: string } {
 
 export const ChangedFiles: React.FC<ChangedFilesProps> = ({ files }) => {
   if (files.length === 0) {
-    return <p className="px-3 py-2 text-[13px] leading-5 text-slate-400" data-changed-files-empty="">No files changed yet</p>;
+    return <p className="px-3 py-2 text-[13px] leading-5 text-slate-400 dark:text-slate-500" data-changed-files-empty="">No files changed yet</p>;
   }
 
   return (
@@ -26,16 +26,16 @@ export const ChangedFiles: React.FC<ChangedFilesProps> = ({ files }) => {
         return (
           <div
             key={file.path}
-            className="flex min-h-8 min-w-0 items-center gap-2 rounded-[8px] px-3 py-0.5 text-[13px] text-slate-700"
+            className="flex min-h-8 min-w-0 items-center gap-2 rounded-[8px] px-3 py-0.5 text-[13px] text-slate-700 dark:text-slate-200 hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
             title={file.path}
             data-changed-file=""
             data-changed-file-path={file.path}
           >
-            <FileCode2 size={16} strokeWidth={1.8} className="shrink-0 text-blue-500" aria-hidden="true" />
+            <FileCode2 size={16} strokeWidth={1.8} className="shrink-0 text-blue-500 dark:text-blue-400" aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
-            {parent && <span className="max-w-[88px] shrink truncate text-slate-400">{parent}</span>}
-            <span className="shrink-0 tabular-nums text-[12px] text-emerald-600">+{file.additions}</span>
-            <span className="shrink-0 tabular-nums text-[12px] text-red-500">-{file.deletions}</span>
+            {parent && <span className="max-w-[88px] shrink truncate text-slate-400 dark:text-slate-500">{parent}</span>}
+            <span className="shrink-0 tabular-nums text-[12px] text-emerald-600 dark:text-emerald-400">+{file.additions}</span>
+            <span className="shrink-0 tabular-nums text-[12px] text-red-500 dark:text-red-400">-{file.deletions}</span>
           </div>
         );
       })}

@@ -201,18 +201,18 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
                 isOpen
                   ? 'bg-slate-50/50 dark:bg-slate-800/80'
                   : isCritical
-                  ? 'bg-rose-50/30 text-rose-700'
+                  ? 'bg-rose-50/30 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300'
                   : isHighLoad
-                  ? 'bg-amber-50/30 text-amber-700'
+                  ? 'bg-amber-50/30 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300'
                   : ''
               }`
             : `px-2.5 bg-[#ffffff] dark:bg-slate-800/50 border rounded-[12px] shadow-[0_1px_2px_rgba(0,0,0,0.02)] ${
                 isOpen
                   ? 'border-slate-300 dark:border-slate-600 bg-slate-50/50 dark:bg-slate-800/80'
                   : isCritical
-                  ? 'border-rose-300 dark:border-rose-800/60 bg-rose-50/40 text-rose-700'
+                  ? 'border-rose-300 dark:border-rose-800/60 bg-rose-50/40 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300'
                   : isHighLoad
-                  ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50/40 text-amber-700'
+                  ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300'
                   : 'border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
               }`
         }`}

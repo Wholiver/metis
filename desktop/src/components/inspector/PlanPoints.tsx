@@ -29,9 +29,9 @@ export const PlanPoints: React.FC<PlanPointsProps> = ({ points }) => {
         className="flex min-h-[240px] flex-1 flex-col items-center justify-center px-6 text-center"
         data-plan-points-empty=""
       >
-        <ListTodo className="mb-2.5 h-6 w-6 stroke-[1.5] text-[#94a3b8]" aria-hidden="true" />
-        <p className="text-[13px] font-semibold text-[#334155] text-balance">No plan points yet</p>
-        <p className="mt-1 max-w-[210px] text-[12px] leading-[1.55] text-[#94a3b8] text-pretty">
+        <ListTodo className="mb-2.5 h-6 w-6 stroke-[1.5] text-[#94a3b8] dark:text-slate-500" aria-hidden="true" />
+        <p className="text-[13px] font-semibold text-[#334155] dark:text-slate-300 text-balance">No plan points yet</p>
+        <p className="mt-1 max-w-[210px] text-[12px] leading-[1.55] text-[#94a3b8] dark:text-slate-500 text-pretty">
           Points created by update_plan will appear here.
         </p>
       </div>
@@ -43,24 +43,24 @@ export const PlanPoints: React.FC<PlanPointsProps> = ({ points }) => {
       {points.map((point, index) => (
         <li
           key={`${index}-${point.step}`}
-          className="group flex min-h-9 gap-2.5 rounded-[10px] px-2.5 py-1.5"
+          className="group flex min-h-9 gap-2.5 rounded-[10px] px-2.5 py-1.5 hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
           data-plan-point=""
           data-plan-status={point.status}
         >
           <span
             className={`mt-px flex h-5 w-5 flex-shrink-0 items-center justify-center ${
               point.status === 'completed'
-                ? 'text-emerald-500'
+                ? 'text-emerald-500 dark:text-emerald-400'
                 : point.status === 'in_progress'
-                  ? 'text-blue-600'
-                  : 'text-[#b0b7c3]'
+                  ? 'text-blue-600 dark:text-blue-400'
+                  : 'text-[#b0b7c3] dark:text-slate-600'
             }`}
           >
             <StatusIcon status={point.status} />
           </span>
           <div className="min-w-0 flex-1">
             <p data-plan-point-text="" className={`text-[13px] leading-5 text-pretty ${
-              point.status === 'completed' ? 'text-[#64748b]' : 'font-medium text-[#1e293b]'
+              point.status === 'completed' ? 'text-[#64748b] dark:text-slate-400' : 'font-medium text-[#1e293b] dark:text-slate-200'
             }`}>
               {point.step}
             </p>

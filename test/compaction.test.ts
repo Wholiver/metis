@@ -10,6 +10,8 @@ import {
 	compact,
 	DEFAULT_COMPACTION_SETTINGS,
 	estimateContextTokens,
+	estimateTextTokens,
+	estimateTokens,
 	findCutPoint,
 	getLastAssistantUsage,
 	prepareCompaction,
@@ -183,6 +185,27 @@ describe("Token calculation", () => {
 	it("should handle zero values", () => {
 		const usage = createMockUsage(0, 0, 0, 0);
 		expect(calculateContextTokens(usage)).toBe(0);
+	});
+
+	it("should estimate ASCII text tokens using 4 chars per token", () => {
+		expect(estimateTextTokens("abcd")).toBe(1);
+		expect(estimateTextTokens("abcdefgh")).toBe(2);
+		expect(estimateTextTokens("")).toBe(0);
+	});
+
+	it("should accurately estimate CJK text tokens", () => {
+		// 4 Chinese characters should be ~6 tokens (1.3 each -> ceil(5.2) = 6), not 1 token
+		const cjkText = "你好世界";
+		expect(estimateTextTokens(cjkText)).toBe(6);
+
+		// Mixed English and Chinese
+		// "Hello 世界": "Hello " is 6 chars -> 1.5, "世界" is 2 chars -> 2.6 => 4.1 -> 5
+		expect(estimateTextTokens("Hello 世界")).toBe(5);
+
+		// Message containing CJK
+		const userMsg = createUserMessage("这是一段中文测试消息");
+		// 10 Chinese characters -> 13 tokens
+		expect(estimateTokens(userMsg)).toBe(13);
 	});
 });
 

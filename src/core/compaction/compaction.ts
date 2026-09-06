@@ -233,62 +233,85 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
 
 const ESTIMATED_IMAGE_CHARS = 4800;
 
-function estimateTextAndImageContentChars(content: string | Array<{ type: string; text?: string }>): number {
-	if (typeof content === "string") {
-		return content.length;
-	}
-
-	let chars = 0;
-	for (const block of content) {
-		if (block.type === "text" && block.text) {
-			chars += block.text.length;
-		} else if (block.type === "image") {
-			chars += ESTIMATED_IMAGE_CHARS;
+/**
+ * Estimate token count for a text string.
+ * For ASCII / code characters, approx 4 characters = 1 token (0.25).
+ * For CJK characters (Chinese, Japanese, Korean), approx 1 character = 1.3 tokens.
+ */
+export function estimateTextTokens(text: string): number {
+	if (!text) return 0;
+	let cjkCount = 0;
+	let otherCount = 0;
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i);
+		if (
+			(code >= 0x4e00 && code <= 0x9fff) ||
+			(code >= 0x3400 && code <= 0x4dbf) ||
+			(code >= 0x3040 && code <= 0x30ff) ||
+			(code >= 0xac00 && code <= 0xd7af) ||
+			(code >= 0x3000 && code <= 0x303f) ||
+			(code >= 0xff00 && code <= 0xffef)
+		) {
+			cjkCount++;
+		} else {
+			otherCount++;
 		}
 	}
-	return chars;
+	return Math.ceil(cjkCount * 1.3 + otherCount / 4);
+}
+
+function estimateTextAndImageContentTokens(content: string | Array<{ type: string; text?: string }>): number {
+	if (typeof content === "string") {
+		return estimateTextTokens(content);
+	}
+
+	let tokens = 0;
+	for (const block of content) {
+		if (block.type === "text" && block.text) {
+			tokens += estimateTextTokens(block.text);
+		} else if (block.type === "image") {
+			tokens += Math.ceil(ESTIMATED_IMAGE_CHARS / 4);
+		}
+	}
+	return tokens;
 }
 
 /**
- * Estimate token count for a message using chars/4 heuristic.
- * This is conservative (overestimates tokens).
+ * Estimate token count for a message using heuristic:
+ * - chars/4 for ASCII / code characters
+ * - 1.3 tokens/char for CJK characters
  */
 export function estimateTokens(message: AgentMessage): number {
-	let chars = 0;
-
 	switch (message.role) {
 		case "user": {
-			chars = estimateTextAndImageContentChars(
+			return estimateTextAndImageContentTokens(
 				(message as { content: string | Array<{ type: string; text?: string }> }).content,
 			);
-			return Math.ceil(chars / 4);
 		}
 		case "assistant": {
 			const assistant = message as AssistantMessage;
+			let tokens = 0;
 			for (const block of assistant.content) {
 				if (block.type === "text") {
-					chars += block.text.length;
+					tokens += estimateTextTokens(block.text);
 				} else if (block.type === "thinking") {
-					chars += block.thinking.length;
+					tokens += estimateTextTokens(block.thinking);
 				} else if (block.type === "toolCall") {
-					chars += block.name.length + JSON.stringify(block.arguments).length;
+					tokens += estimateTextTokens(block.name + JSON.stringify(block.arguments));
 				}
 			}
-			return Math.ceil(chars / 4);
+			return tokens;
 		}
 		case "custom":
 		case "toolResult": {
-			chars = estimateTextAndImageContentChars(message.content);
-			return Math.ceil(chars / 4);
+			return estimateTextAndImageContentTokens(message.content);
 		}
 		case "bashExecution": {
-			chars = message.command.length + message.output.length;
-			return Math.ceil(chars / 4);
+			return estimateTextTokens(message.command + (message.output ? "\n" + message.output : ""));
 		}
 		case "branchSummary":
 		case "compactionSummary": {
-			chars = message.summary.length;
-			return Math.ceil(chars / 4);
+			return estimateTextTokens(message.summary);
 		}
 	}
 
@@ -526,7 +549,9 @@ function createSummarizationOptions(
 ): SimpleStreamOptions {
 	const options: SimpleStreamOptions = { maxTokens, signal, apiKey, headers, env };
 	if (model.reasoning && thinkingLevel && thinkingLevel !== "off") {
-		options.reasoning = thinkingLevel;
+		// Summarization does not need high reasoning. Cap thinking level at "medium"
+		// to prevent reasoning tokens from exhausting the maxTokens output budget.
+		options.reasoning = thinkingLevel === "high" ? "medium" : thinkingLevel;
 	}
 	return options;
 }

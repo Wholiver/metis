@@ -11,7 +11,7 @@ const providerLabel = 'Configure API / OAuth / Base URL';
 
 // Inner interactive button radius = 10px (matching Settings sidebar tab)
 const ONBOARDING_BTN_CLASS =
-  'group inline-flex h-9 min-w-[110px] items-center justify-center rounded-[10px] border border-slate-200 bg-white px-4 text-[13.5px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed';
+  'group inline-flex h-9 min-w-[110px] items-center justify-center rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-4 text-[13.5px] font-medium text-slate-700 dark:text-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all duration-200 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-[#252a34] hover:text-slate-900 dark:hover:text-white active:scale-[0.98] cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed';
 
 type Request = <T>(path: string, method?: string, body?: unknown, timeoutMs?: number) => Promise<T>;
 type Workspace = { name?: string; path: string };
@@ -60,12 +60,12 @@ function Switch({ label, checked, onChange, disabled }: { label: string; checked
       disabled={disabled}
       onClick={onChange}
       className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 disabled:cursor-not-allowed disabled:opacity-40 ${
-        checked ? 'bg-blue-600' : 'bg-slate-200'
+        checked ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
       }`}
     >
       <span
         aria-hidden="true"
-        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2)] ring-0 transition duration-200 ease-in-out ${
+        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white dark:bg-slate-100 shadow-[0_1px_2px_rgba(0,0,0,0.2)] ring-0 transition duration-200 ease-in-out ${
           checked ? 'translate-x-4' : 'translate-x-0'
         }`}
       />
@@ -320,7 +320,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
 
   return (
     <div
-      className="fixed inset-0 z-[300] flex flex-col items-center justify-center overflow-y-auto bg-[#f8fafc] p-6 select-none"
+      className="fixed inset-0 z-[300] flex flex-col items-center justify-center overflow-y-auto bg-[#f8fafc] dark:bg-[#16171a] p-6 select-none"
       role="dialog"
       aria-modal="true"
       aria-labelledby="onboarding-title"
@@ -332,7 +332,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
             <MetisBrandLogo />
           </div>
 
-          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl">
+          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 dark:text-slate-100 sm:text-4xl">
             Welcome to Metis
           </h1>
 
@@ -351,7 +351,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
       {/* Step 1: Language Selection - Fullscreen Centered */}
       {step === 1 && (
         <div className="flex flex-col items-center justify-center text-center max-w-xl w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
-          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl">
+          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 dark:text-slate-100 sm:text-4xl">
             Choose your language
           </h1>
 
@@ -366,8 +366,8 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                   aria-pressed={isSelected}
                   className={`flex h-10 items-center justify-between rounded-[10px] border px-3.5 text-left text-[13.5px] font-medium transition-[background-color,border-color,color,transform,box-shadow] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
                     isSelected
-                      ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50/80 shadow-[0_1px_2px_rgba(0,0,0,0.02)]'
+                      ? 'border-slate-900 bg-slate-900 dark:border-blue-500 dark:bg-blue-600 text-white shadow-xs'
+                      : 'border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50/80 dark:hover:bg-[#252a34] shadow-[0_1px_2px_rgba(0,0,0,0.02)]'
                   }`}
                 >
                   <span>{languageName(item)}</span>
@@ -402,18 +402,18 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
       {/* Step 2: Credentials & Memory - Fullscreen Centered */}
       {step === 2 && (
         <div className="flex flex-col items-center justify-center max-w-xl w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
-          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl text-center">
+          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 dark:text-slate-100 sm:text-4xl text-center">
             Configure AI credentials
           </h1>
 
           <div className="mt-8 w-full space-y-4">
             {/* Credentials Card: Inner controls R=10px, padding=16px -> Outer R = 10 + 16 = 26px */}
-            <div className="space-y-4 rounded-[26px] border border-slate-200/90 bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+            <div className="space-y-4 rounded-[26px] border border-slate-200/90 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
               {/* Tablist: Inner tabs R=8px, padding=4px (p-1) -> Outer R = 8 + 4 = 12px */}
               <div
                 role="tablist"
                 aria-label="Configure API / OAuth / Base URL"
-                className="inline-flex w-full gap-1 rounded-[12px] border border-slate-200/60 bg-slate-100/90 p-1"
+                className="inline-flex w-full gap-1 rounded-[12px] border border-slate-200/60 dark:border-[#272b36] bg-slate-100/90 dark:bg-[#16171a] p-1"
               >
                 {(['api', 'oauth', 'custom'] as ProviderMethod[]).map((item) => (
                   <button
@@ -424,8 +424,8 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                     onClick={() => setMethod(item)}
                     className={`min-h-8 flex-1 rounded-[8px] text-[12.5px] font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
                       method === item
-                        ? 'bg-white font-semibold text-slate-900 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-800'
+                        ? 'bg-white dark:bg-[#252a34] font-semibold text-slate-900 dark:text-slate-100 shadow-xs'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                     }`}
                   >
                     {item === 'api' ? 'API Key' : item === 'oauth' ? 'OAuth' : 'Custom Base URL'}
@@ -437,11 +437,11 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                 {method === 'api' && (
                   <>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">{providerLabel}</label>
+                      <label className="text-[12.5px] font-medium text-slate-700 dark:text-slate-300">{providerLabel}</label>
                       <select
                         value={provider}
                         onChange={(event) => setProvider(event.target.value)}
-                        className="h-9 w-full rounded-[10px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
+                        className="h-9 w-full rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-800 dark:text-slate-200 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-400/20"
                       >
                         {providerChoices.map((item) => (
                           <option key={item} value={item}>{item}</option>
@@ -449,14 +449,14 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">API Key</label>
+                      <label className="text-[12.5px] font-medium text-slate-700 dark:text-slate-300">API Key</label>
                       <input
                         type="password"
                         value={apiKey}
                         onChange={(event) => setApiKey(event.target.value)}
                         autoComplete="off"
                         placeholder="Enter an API Key"
-                        className="h-9 w-full rounded-[10px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 placeholder:text-slate-400 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
+                        className="h-9 w-full rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-400/20"
                       />
                     </div>
                   </>
@@ -466,11 +466,11 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                   <>
                     {oauthProviders.length ? (
                       <div className="space-y-1.5">
-                        <label className="text-[12.5px] font-medium text-slate-700">{providerLabel}</label>
+                        <label className="text-[12.5px] font-medium text-slate-700 dark:text-slate-300">{providerLabel}</label>
                         <select
                           value={oauthProvider}
                           onChange={(event) => setOauthProvider(event.target.value)}
-                          className="h-9 w-full rounded-[10px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
+                          className="h-9 w-full rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-800 dark:text-slate-200 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-400/20"
                         >
                           {oauthProviders.map((item) => (
                             <option key={item} value={item}>{item}</option>
@@ -478,7 +478,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                         </select>
                       </div>
                     ) : (
-                      <p className="rounded-[10px] bg-slate-50 border border-slate-100 p-3 text-[12px] text-slate-500">
+                      <p className="rounded-[10px] bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-[#272b36] p-3 text-[12px] text-slate-500 dark:text-slate-400">
                         No OAuth Providers available
                       </p>
                     )}
@@ -488,32 +488,32 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                 {method === 'custom' && (
                   <>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">Provider name</label>
+                      <label className="text-[12.5px] font-medium text-slate-700 dark:text-slate-300">Provider name</label>
                       <input
                         value={customName}
                         onChange={(event) => setCustomName(event.target.value)}
                         placeholder="Enter a Provider name"
-                        className="h-9 w-full rounded-[10px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 placeholder:text-slate-400 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
+                        className="h-9 w-full rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-400/20"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">Base URL</label>
+                      <label className="text-[12.5px] font-medium text-slate-700 dark:text-slate-300">Base URL</label>
                       <input
                         value={baseUrl}
                         onChange={(event) => setBaseUrl(event.target.value)}
                         placeholder="Enter a Base URL"
-                        className="h-9 w-full rounded-[10px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 placeholder:text-slate-400 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
+                        className="h-9 w-full rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-400/20"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">API Key</label>
+                      <label className="text-[12.5px] font-medium text-slate-700 dark:text-slate-300">API Key</label>
                       <input
                         type="password"
                         value={apiKey}
                         onChange={(event) => setApiKey(event.target.value)}
                         autoComplete="off"
                         placeholder="Enter an API Key"
-                        className="h-9 w-full rounded-[10px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 placeholder:text-slate-400 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
+                        className="h-9 w-full rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-400/20"
                       />
                     </div>
                     <div className="flex items-center gap-2 pt-0.5">
@@ -521,24 +521,24 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                         type="button"
                         disabled={busy || !baseUrl.trim()}
                         onClick={discoverModels}
-                        className="inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-[8px] border border-slate-200 bg-white text-slate-700 text-[12px] font-medium hover:bg-slate-50 active:scale-[0.98] transition-all disabled:opacity-45"
+                        className="inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-[8px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] text-slate-700 dark:text-slate-200 text-[12px] font-medium hover:bg-slate-50 dark:hover:bg-[#252a34] active:scale-[0.98] transition-all disabled:opacity-45"
                       >
                         <Server size={14} />
                         <span>Discover models</span>
                       </button>
                       {discoveredModels.length > 0 && (
-                        <span className="text-[11.5px] text-emerald-600 font-medium truncate">
+                        <span className="text-[11.5px] text-emerald-600 dark:text-emerald-400 font-medium truncate">
                           {discoveredModels.map((m) => m.id).join(', ')}
                         </span>
                       )}
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">Model</label>
+                      <label className="text-[12.5px] font-medium text-slate-700 dark:text-slate-300">Model</label>
                       <input
                         value={modelIds}
                         onChange={(event) => setModelIds(event.target.value)}
                         placeholder="Enter model IDs manually; separate multiple IDs with commas"
-                        className="h-9 w-full rounded-[10px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 placeholder:text-slate-400 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
+                        className="h-9 w-full rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-400/20"
                       />
                     </div>
                   </>
@@ -547,11 +547,11 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
             </div>
 
             {/* Memory Setting Card: Inner row R=10px, padding=4px (p-1) -> Outer R = 10 + 4 = 14px */}
-            <div className="space-y-0.5 rounded-[14px] border border-slate-200/80 bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.02)]">
-              <div className="flex min-h-[48px] items-center justify-between gap-4 rounded-[10px] px-3.5 py-2 transition-colors hover:bg-slate-50/80">
+            <div className="space-y-0.5 rounded-[14px] border border-slate-200/80 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] p-1 shadow-[0_1px_2px_rgba(15,23,42,0.02)]">
+              <div className="flex min-h-[48px] items-center justify-between gap-4 rounded-[10px] px-3.5 py-2 transition-colors hover:bg-slate-50/80 dark:hover:bg-white/[0.03]">
                 <div className="min-w-0">
-                  <p className="text-[13.5px] font-medium text-slate-800">AI Long-term Memory</p>
-                  <p className="mt-0.5 text-pretty text-[12px] leading-[18px] text-slate-500">
+                  <p className="text-[13.5px] font-medium text-slate-800 dark:text-slate-200">AI Long-term Memory</p>
+                  <p className="mt-0.5 text-pretty text-[12px] leading-[18px] text-slate-500 dark:text-slate-400">
                     Automatically consolidates work experience and historical context to retrieve in future conversations.
                   </p>
                 </div>
@@ -568,7 +568,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
           </div>
 
           {feedback && (
-            <p role="status" className="w-full mt-4 rounded-[10px] bg-rose-50 border border-rose-200/80 px-3.5 py-2.5 text-[12.5px] leading-5 text-rose-700 text-center">
+            <p role="status" className="w-full mt-4 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/60 px-3.5 py-2.5 text-[12.5px] leading-5 text-rose-700 dark:text-rose-300 text-center">
               {translateExact(feedback, language)}
             </p>
           )}
@@ -599,18 +599,18 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
       {/* Step 3: Workspace - Fullscreen Centered */}
       {step === 3 && (
         <div className="flex flex-col items-center justify-center max-w-xl w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
-          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl text-center">
+          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-slate-900 dark:text-slate-100 sm:text-4xl text-center">
             Select a project workspace
           </h1>
 
           <div className="mt-8 w-full space-y-4">
             {/* Workspace Card: Inner controls R=10px, padding=16px -> Outer R = 10 + 16 = 26px */}
-            <div className="space-y-4 rounded-[26px] border border-slate-200/90 bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+            <div className="space-y-4 rounded-[26px] border border-slate-200/90 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
               {/* Tablist: Inner tabs R=8px, padding=4px (p-1) -> Outer R = 8 + 4 = 12px */}
               <div
                 role="tablist"
                 aria-label="Add a project workspace"
-                className="inline-flex w-full gap-1 rounded-[12px] border border-slate-200/60 bg-slate-100/90 p-1"
+                className="inline-flex w-full gap-1 rounded-[12px] border border-slate-200/60 dark:border-[#272b36] bg-slate-100/90 dark:bg-[#16171a] p-1"
               >
                 <button
                   type="button"
@@ -619,8 +619,8 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                   onClick={() => setProjectMode('create')}
                   className={`min-h-8 flex-1 rounded-[8px] text-[12.5px] font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
                     projectMode === 'create'
-                      ? 'bg-white font-semibold text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
+                      ? 'bg-white dark:bg-[#252a34] font-semibold text-slate-900 dark:text-slate-100 shadow-xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
                 >
                   <Plus size={14} className="mr-1.5 inline" />New Project
@@ -632,8 +632,8 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                   onClick={() => setProjectMode('import')}
                   className={`min-h-8 flex-1 rounded-[8px] text-[12.5px] font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
                     projectMode === 'import'
-                      ? 'bg-white font-semibold text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
+                      ? 'bg-white dark:bg-[#252a34] font-semibold text-slate-900 dark:text-slate-100 shadow-xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
                 >
                   <FolderOpen size={14} className="mr-1.5 inline" />Open Existing Project
@@ -644,31 +644,31 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                 {projectMode === 'create' ? (
                   <>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">Project name</label>
+                      <label className="text-[12.5px] font-medium text-slate-700 dark:text-slate-300">Project name</label>
                       <input
                         value={projectName}
                         onChange={(event) => setProjectName(event.target.value)}
                         placeholder="my-awesome-project"
-                        className="h-9 w-full rounded-[10px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 placeholder:text-slate-400 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
+                        className="h-9 w-full rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-400/20"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-slate-700">Save location</label>
+                      <label className="text-[12.5px] font-medium text-slate-700 dark:text-slate-300">Save location</label>
                       <button
                         type="button"
                         onClick={selectParent}
                         disabled={busy}
-                        className="flex h-9 w-full items-center justify-between rounded-[10px] border border-slate-200 bg-white px-3 text-[13px] text-slate-700 transition-colors hover:bg-slate-50"
+                        className="flex h-9 w-full items-center justify-between rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-50 dark:hover:bg-[#252a34]"
                       >
                         <span className="truncate">{parentPath || 'Select folder'}</span>
-                        <FolderOpen size={15} className="shrink-0 text-slate-400" />
+                        <FolderOpen size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
                       </button>
                     </div>
                     <button
                       type="button"
                       onClick={createProject}
                       disabled={busy || !parentPath || !projectName.trim()}
-                      className="group inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[10px] border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 active:scale-[0.98] disabled:opacity-45"
+                      className="group inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3.5 text-[13px] font-medium text-slate-700 dark:text-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:bg-slate-50 dark:hover:bg-[#252a34] hover:border-slate-300 dark:hover:border-slate-600 hover:text-slate-900 dark:hover:text-white active:scale-[0.98] disabled:opacity-45"
                     >
                       <Plus size={14} />
                       <span>Create & Enter Workspace</span>
@@ -676,14 +676,14 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                   </>
                 ) : (
                   <div className="space-y-3">
-                    <p className="text-[12.5px] text-slate-500">
+                    <p className="text-[12.5px] text-slate-500 dark:text-slate-400">
                       Select a local project folder, Metis will provide project-wide Agent collaboration.
                     </p>
                     <button
                       type="button"
                       onClick={importProject}
                       disabled={busy}
-                      className="group inline-flex h-9 w-full items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 active:scale-[0.98] disabled:opacity-45"
+                      className="group inline-flex h-9 w-full items-center justify-center gap-2 rounded-[10px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3.5 text-[13px] font-medium text-slate-700 dark:text-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:bg-slate-50 dark:hover:bg-[#252a34] hover:border-slate-300 dark:hover:border-slate-600 hover:text-slate-900 dark:hover:text-white active:scale-[0.98] disabled:opacity-45"
                     >
                       <FolderOpen size={15} />
                       <span>Choose Project Folder</span>
@@ -694,15 +694,15 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
             </div>
 
             {selectedProject?.path && (
-              <div className="flex items-center gap-2 rounded-[10px] border border-emerald-200/80 bg-emerald-50 px-3.5 py-2.5 text-[12.5px] font-medium text-emerald-800 animate-in fade-in">
-                <Check size={15} className="shrink-0 text-emerald-600" />
+              <div className="flex items-center gap-2 rounded-[10px] border border-emerald-200/80 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-2.5 text-[12.5px] font-medium text-emerald-800 dark:text-emerald-300 animate-in fade-in">
+                <Check size={15} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
                 <span className="truncate">{selectedProject.path}</span>
               </div>
             )}
           </div>
 
           {feedback && (
-            <p role="status" className="w-full mt-4 rounded-[10px] bg-rose-50 border border-rose-200/80 px-3.5 py-2.5 text-[12.5px] leading-5 text-rose-700 text-center">
+            <p role="status" className="w-full mt-4 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/60 px-3.5 py-2.5 text-[12.5px] leading-5 text-rose-700 dark:text-rose-300 text-center">
               {translateExact(feedback, language)}
             </p>
           )}

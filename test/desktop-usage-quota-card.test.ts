@@ -49,11 +49,15 @@ describe('desktop usage quota card', () => {
   it('uses compact h-[72px] height to align Inspector footer (72px + 8px gap + 28px bar = 108px) with Composer', () => {
     const quotaCard = readFileSync(resolve(process.cwd(), 'desktop/src/components/inspector/UsageQuotaCard.tsx'), 'utf8');
     const composer = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/Composer.tsx'), 'utf8');
+    const inspector = readFileSync(resolve(process.cwd(), 'desktop/src/components/inspector/Inspector.tsx'), 'utf8');
 
     // UsageQuotaCard container height
     expect(quotaCard).toContain('h-[72px]');
     // Composer default height
     expect(composer).toContain('108 + attachmentsHeight');
+    // Inspector usage panel is aligned to 108px without outer border or divide-y
+    expect(inspector).toContain('h-[108px]');
+    expect(inspector).not.toContain('divide-y');
   });
 
   it('renders a 7-day usage sparkline line chart with Catmull-Rom curve and gradient in API Key mode', () => {

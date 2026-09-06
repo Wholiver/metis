@@ -88,6 +88,9 @@ export function formatFileOperations(readFiles: string[], modifiedFiles: string[
 /** Maximum characters for a tool result in serialized summaries. */
 const TOOL_RESULT_MAX_CHARS = 2000;
 
+/** Maximum characters for a single tool call argument value in serialized summaries. */
+const TOOL_ARG_MAX_CHARS = 1000;
+
 /**
  * Truncate text to a maximum character length for summarization.
  * Keeps the beginning and appends a truncation marker.
@@ -99,15 +102,42 @@ function truncateForSummary(text: string, maxChars: number): string {
 }
 
 /**
+ * Recursively truncate large string values in tool call arguments to prevent context explosion.
+ */
+function truncateArgForSummary(val: unknown): unknown {
+	if (typeof val === "string") {
+		return truncateForSummary(val, TOOL_ARG_MAX_CHARS);
+	}
+	if (Array.isArray(val)) {
+		return val.map(truncateArgForSummary);
+	}
+	if (val && typeof val === "object") {
+		const result: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(val)) {
+			result[k] = truncateArgForSummary(v);
+		}
+		return result;
+	}
+	return val;
+}
+
+export interface SerializeConversationOptions {
+	/** Whether to include assistant thinking blocks. Defaults to false to save context and prevent hallucination. */
+	includeThinking?: boolean;
+}
+
+/**
  * Serialize LLM messages to text for summarization.
  * This prevents the model from treating it as a conversation to continue.
  * Call convertToLlm() first to handle custom message types.
  *
- * Tool results are truncated to keep the summarization request within
- * reasonable token budgets. Full content is not needed for summarization.
+ * Tool results and tool call arguments are truncated to keep the summarization
+ * request within reasonable token budgets. Assistant internal thinking blocks
+ * are omitted by default to avoid prompt bloat.
  */
-export function serializeConversation(messages: Message[]): string {
+export function serializeConversation(messages: Message[], options?: SerializeConversationOptions): string {
 	const parts: string[] = [];
+	const includeThinking = options?.includeThinking ?? false;
 
 	for (const msg of messages) {
 		if (msg.role === "user") {
@@ -131,15 +161,19 @@ export function serializeConversation(messages: Message[]): string {
 					thinkingParts.push(block.thinking);
 				} else if (block.type === "toolCall") {
 					const args = block.arguments as Record<string, unknown>;
-					const argsStr = Object.entries(args)
+					const truncatedArgs = truncateArgForSummary(args) as Record<string, unknown>;
+					const argsStr = Object.entries(truncatedArgs)
 						.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
 						.join(", ");
 					toolCalls.push(`${block.name}(${argsStr})`);
 				}
 			}
 
-			if (thinkingParts.length > 0) {
-				parts.push(`[Assistant thinking]: ${thinkingParts.join("\n")}`);
+			if (includeThinking && thinkingParts.length > 0) {
+				parts.push(`[Assistant thinking]: ${truncateForSummary(thinkingParts.join("\n"), TOOL_RESULT_MAX_CHARS)}`);
+			} else if (!includeThinking && textParts.length === 0 && toolCalls.length === 0 && thinkingParts.length > 0) {
+				// Preserve a brief excerpt if assistant turn had only thinking
+				parts.push(`[Assistant thinking]: ${truncateForSummary(thinkingParts.join("\n"), 500)}`);
 			}
 			if (textParts.length > 0) {
 				parts.push(`[Assistant]: ${textParts.join("\n")}`);

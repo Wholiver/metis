@@ -25,9 +25,9 @@ export const ChatHomeEmptyState: React.FC<ChatHomeEmptyStateProps> = ({
       </div>
 
       {/* Heading - Scaled up proportionally */}
-      <h2 className="text-[24px] sm:text-[28px] font-normal text-slate-800 tracking-normal text-center select-text">
+      <h2 className="text-[24px] sm:text-[28px] font-normal text-slate-800 dark:text-slate-100 tracking-normal text-center select-text">
         {prefix ? `${prefix} ` : ''}
-        <span className="underline decoration-slate-400 decoration-1 underline-offset-4 mx-1.5">
+        <span className="underline decoration-slate-400 dark:decoration-slate-500 decoration-1 underline-offset-4 mx-1.5">
           {displayProject}
         </span>
         {suffix ? (suffix.startsWith(' ') || suffix.startsWith('?') || suffix.startsWith('？') ? suffix : ` ${suffix}`) : ''}

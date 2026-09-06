@@ -119,14 +119,14 @@ const tabs: Array<{ id: SettingsTab; label: string; icon: typeof Settings2 }> = 
 ];
 
 function Status({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'success' | 'danger' }) {
-  const colors = tone === 'success' ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/15'
-    : tone === 'danger' ? 'bg-rose-50 text-rose-700 ring-rose-600/15'
-      : 'bg-slate-100 text-slate-600 ring-slate-500/15';
+  const colors = tone === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 ring-emerald-600/15 dark:ring-emerald-500/20'
+    : tone === 'danger' ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 ring-rose-600/15 dark:ring-rose-500/20'
+      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 ring-slate-500/15 dark:ring-slate-400/20';
   return <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${colors}`}>{children}</span>;
 }
 
 function SectionHeading({ title, description }: { title: string; description?: string }) {
-  return <header className="mb-4 max-w-2xl"><h2 className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-slate-900 leading-6">{title}</h2>{description && <p className="mt-1 text-pretty text-[12.5px] leading-5 text-slate-500">{description}</p>}</header>;
+  return <header className="mb-4 max-w-2xl"><h2 className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-slate-900 dark:text-slate-100 leading-6">{title}</h2>{description && <p className="mt-1 text-pretty text-[12.5px] leading-5 text-slate-500 dark:text-slate-400">{description}</p>}</header>;
 }
 
 function instructionSourceLabel(value: unknown): string {
@@ -142,12 +142,12 @@ function instructionSourceLabel(value: unknown): string {
 
 function Card({ children }: { children: React.ReactNode }) {
   // Card padding is 4px (p-1); rows use 6px, so the enclosing surface is 10px.
-  return <section className="space-y-0.5 rounded-[10px] border border-slate-200/80 bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.02)]">{children}</section>;
+  return <section className="space-y-0.5 rounded-[10px] border border-slate-200/80 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] p-1 shadow-[0_1px_2px_rgba(15,23,42,0.02)]">{children}</section>;
 }
 
 function Row({ label, description, children, stacked = false }: { label: string; description: string; children: React.ReactNode; stacked?: boolean }) {
-  return <div className={`flex min-h-[48px] gap-4 rounded-[6px] px-3.5 py-2 transition-colors hover:bg-slate-50/80 ${stacked ? 'flex-col items-start gap-2' : 'items-center justify-between'} `}>
-    <div className="min-w-0"><p className="text-[13.5px] font-medium text-slate-800">{label}</p>{description && <p className="mt-0.5 text-pretty text-[12px] leading-[18px] text-slate-500">{description}</p>}</div>
+  return <div className={`flex min-h-[48px] gap-4 rounded-[6px] px-3.5 py-2 transition-colors hover:bg-slate-50/80 dark:hover:bg-white/[0.03] ${stacked ? 'flex-col items-start gap-2' : 'items-center justify-between'} `}>
+    <div className="min-w-0"><p className="text-[13.5px] font-medium text-slate-800 dark:text-slate-200">{label}</p>{description && <p className="mt-0.5 text-pretty text-[12px] leading-[18px] text-slate-500 dark:text-slate-400">{description}</p>}</div>
     <div className={stacked ? 'w-full' : 'shrink-0'}>{children}</div>
   </div>;
 }
@@ -162,12 +162,12 @@ function Switch({ checked, onChange, disabled, label }: { checked: boolean; onCh
       disabled={disabled}
       onClick={onChange}
       className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 disabled:cursor-not-allowed disabled:opacity-40 ${
-        checked ? 'bg-blue-600' : 'bg-slate-200'
+        checked ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
       }`}
     >
       <span
         aria-hidden="true"
-        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2)] ring-0 transition duration-200 ease-in-out ${
+        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white dark:bg-slate-100 shadow-[0_1px_2px_rgba(0,0,0,0.2)] ring-0 transition duration-200 ease-in-out ${
           checked ? 'translate-x-4' : 'translate-x-0'
         }`}
       />
@@ -175,9 +175,9 @@ function Switch({ checked, onChange, disabled, label }: { checked: boolean; onCh
   );
 }
 
-const controlClass = 'h-[34px] rounded-[6px] border border-slate-200 bg-white px-3 text-[13px] text-slate-800 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-300/50 disabled:cursor-not-allowed disabled:opacity-50';
-const selectClass = 'h-[34px] rounded-[6px] border border-slate-200 bg-white pl-3 pr-8 text-[13px] text-slate-800 outline-none transition-[border-color,box-shadow] focus:border-slate-400 focus:ring-2 focus:ring-slate-300/50 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer appearance-none bg-[url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2714%27%20height=%2714%27%20viewBox=%270%200%2024%2024%27%20fill=%27none%27%20stroke=%27%2364748b%27%20stroke-width=%272%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27%3E%3Cpath%20d=%27m6%209%206%206%206-6%27/%3E%3C/svg%3E")] bg-no-repeat bg-[right_10px_center]';
-const buttonClass = 'inline-flex h-[34px] items-center justify-center gap-1.5 rounded-[6px] border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 transition-[background-color,color,box-shadow] hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 disabled:cursor-not-allowed disabled:opacity-45 shadow-[0_1px_2px_rgba(0,0,0,0.02)]';
+const controlClass = 'h-[34px] rounded-[6px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-800 dark:text-slate-200 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50 dark:focus:ring-slate-700/50 disabled:cursor-not-allowed disabled:opacity-50';
+const selectClass = 'h-[34px] rounded-[6px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] pl-3 pr-8 text-[13px] text-slate-800 dark:text-slate-200 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-300/50 dark:focus:ring-slate-700/50 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer appearance-none bg-[url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2714%27%20height=%2714%27%20viewBox=%270%200%2024%2024%27%20fill=%27none%27%20stroke=%27%2364748b%27%20stroke-width=%272%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27%3E%3Cpath%20d=%27m6%209%206%206%206-6%27/%3E%3C/svg%3E")] bg-no-repeat bg-[right_10px_center]';
+const buttonClass = 'inline-flex h-[34px] items-center justify-center gap-1.5 rounded-[6px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] font-medium text-slate-700 dark:text-slate-200 transition-[background-color,color,box-shadow] hover:bg-slate-50 dark:hover:bg-[#252a34] hover:text-slate-900 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 disabled:cursor-not-allowed disabled:opacity-45 shadow-[0_1px_2px_rgba(0,0,0,0.02)]';
 
 export function SettingsDialog(props: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>(() => normalizeTab(props.initialTab));
@@ -480,7 +480,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
         <Card>
           {[
             ['New task', '⌘ N'], ['Send message', 'Enter'], ['New line', 'Shift Enter'], ['Close settings', 'Esc'],
-          ].map(([label, key]) => <Row key={label} label={label} description=""><kbd className="rounded-[6px] border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-600">{key}</kbd></Row>)}
+          ].map(([label, key]) => <Row key={label} label={label} description=""><kbd className="rounded-[6px] border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 font-mono text-[11px] text-slate-600 dark:text-slate-300">{key}</kbd></Row>)}
         </Card>
       </div>
   );
@@ -561,13 +561,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
     <>
       <div className="space-y-6">
         {/* Local config file card */}
-        <div className="overflow-hidden rounded-[10px] border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23_42,0.02)]">
+        <div className="overflow-hidden rounded-[10px] border border-slate-200/80 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] shadow-[0_1px_2px_rgba(15,23,42,0.02)]">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="min-w-0 pr-3">
-              <h3 className="text-[13.5px] font-medium text-slate-900 truncate">
+              <h3 className="text-[13.5px] font-medium text-slate-900 dark:text-slate-100 truncate">
                 {translate('Local configuration file')}
               </h3>
-              <p className="mt-0.5 text-[11.5px] text-slate-400 truncate">
+              <p className="mt-0.5 text-[11.5px] text-slate-400 dark:text-slate-500 truncate">
                 {translate(`Manage local custom model configurations written to ${modelsFilePath}.`)}
               </p>
             </div>
@@ -575,7 +575,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <button
                 type="button"
                 onClick={() => setShowAddModal(true)}
-                className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-[6px] border border-slate-200 bg-white px-3 text-[12.5px] font-medium text-slate-700 shadow-sm transition-[background-color,color,box-shadow] hover:bg-slate-50 hover:text-slate-900"
+                className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-[6px] border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[12.5px] font-medium text-slate-700 dark:text-slate-200 shadow-sm transition-[background-color,color,box-shadow] hover:bg-slate-50 dark:hover:bg-[#252a34] hover:text-slate-900 dark:hover:text-white"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>{translate('Add model')}</span>
@@ -586,21 +586,21 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
         {/* Saved models section */}
         <div className="space-y-2.5">
-          <h3 className="text-[13px] font-semibold text-slate-900">
+          <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
             {translate('Saved models')}
           </h3>
 
           {customProviders.length === 0 && savedOAuthAndBuiltinProviders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-[10px] border border-dashed border-slate-300/80 bg-slate-50/50 py-10 px-6 text-center">
-              <p className="text-[13.5px] font-semibold text-slate-700">
+            <div className="flex flex-col items-center justify-center rounded-[10px] border border-dashed border-slate-300/80 dark:border-[#272b36] bg-slate-50/50 dark:bg-[#1a1d24]/50 py-10 px-6 text-center">
+              <p className="text-[13.5px] font-semibold text-slate-700 dark:text-slate-300">
                 {translate('No custom models configured yet')}
               </p>
-              <p className="mt-1.5 max-w-md text-[12px] text-slate-400 leading-normal">
+              <p className="mt-1.5 max-w-md text-[12px] text-slate-400 dark:text-slate-500 leading-normal">
                 {translate('Added models will automatically be written to local models.json and appear in the chat model dropdown under the "Custom Models" group.')}
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100 overflow-hidden rounded-[10px] border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.02)]">
+            <div className="divide-y divide-slate-100 dark:divide-[#272b36] overflow-hidden rounded-[10px] border border-slate-200/80 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] shadow-[0_1px_2px_rgba(15,23,42,0.02)]">
               {customProviders.map((provider) => {
                 const modelNames =
                   provider.modelIds && provider.modelIds.length > 0
@@ -611,18 +611,18 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 return (
                   <div
                     key={provider.providerId}
-                    className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-slate-50/80"
+                    className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-slate-50/80 dark:hover:bg-white/[0.03]"
                   >
                     <div className="min-w-0 pr-3">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[13.5px] font-medium text-slate-900 truncate">
+                        <span className="text-[13.5px] font-medium text-slate-900 dark:text-slate-100 truncate">
                           {provider.name || provider.providerId}
                         </span>
-                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                        <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
                           {modelNames}
                         </span>
                       </div>
-                      <p className="mt-0.5 text-[11.5px] text-slate-400 truncate">
+                      <p className="mt-0.5 text-[11.5px] text-slate-400 dark:text-slate-500 truncate">
                         {provider.baseUrl}
                       </p>
                     </div>
@@ -646,7 +646,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                             }, translate('Custom model deleted successfully.'));
                           }
                         }}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-slate-400 dark:text-slate-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 dark:hover:text-rose-400"
                         aria-label="Delete"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -659,23 +659,23 @@ export function SettingsDialog(props: SettingsDialogProps) {
               {savedOAuthAndBuiltinProviders.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-slate-50/80"
+                  className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-slate-50/80 dark:hover:bg-white/[0.03]"
                 >
                   <div className="min-w-0 pr-3">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[13.5px] font-medium text-slate-900 truncate">
+                      <span className="text-[13.5px] font-medium text-slate-900 dark:text-slate-100 truncate">
                         {item.name}
                       </span>
-                      <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                      <span className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-300">
                         {item.tag}
                       </span>
                       {item.modelsSummary && item.modelsSummary !== item.tag && (
-                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                        <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
                           {item.modelsSummary}
                         </span>
                       )}
                     </div>
-                    <p className="mt-0.5 text-[11.5px] text-slate-400 truncate">
+                    <p className="mt-0.5 text-[11.5px] text-slate-400 dark:text-slate-500 truncate">
                       {item.baseUrl}
                     </p>
                   </div>
@@ -684,7 +684,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                       type="button"
                       title={translate('Sign out')}
                       onClick={() => void handleRemoveCredential(item.id, item.name)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-slate-400 dark:text-slate-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 dark:hover:text-rose-400"
                       aria-label="Sign out"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -779,12 +779,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <Switch label="Memory" checked={Boolean(currentMemory.enabled)} onChange={() => void run(() => props.request('/memory/settings', 'PUT', { enabled: !currentMemory.enabled }), 'Memory setting saved.')} disabled={disabled} />
             </Row>
           </Card>
-          <div className="mt-2.5 rounded-[10px] border border-slate-200/80 bg-slate-50/70 p-4">
+          <div className="mt-2.5 rounded-[10px] border border-slate-200/80 dark:border-[#272b36] bg-slate-50/70 dark:bg-[#1a1d24]/60 p-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 {isConsolidating ? (
                   <Status tone="success">
-                    <LoaderCircle className="h-3 w-3 animate-spin text-emerald-600" />
+                    <LoaderCircle className="h-3 w-3 animate-spin text-emerald-600 dark:text-emerald-400" />
                     {currentMemory.phase === 'consolidating' ? 'Saving memory' : 'Extracting memory'}
                   </Status>
                 ) : (
@@ -792,7 +792,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     {currentMemory.enabled ? 'Memory enabled' : 'Memory off'}
                   </Status>
                 )}
-                <p className="mt-2.5 max-w-lg text-pretty text-[12.5px] leading-5 text-slate-600">
+                <p className="mt-2.5 max-w-lg text-pretty text-[12.5px] leading-5 text-slate-600 dark:text-slate-300">
                   {isConsolidating
                     ? (currentMemory.phase === 'consolidating'
                         ? 'New candidates are being validated, deduplicated, and saved.'
@@ -802,7 +802,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </div>
               <div className="flex gap-2">
                 {isConsolidating ? (
-                  <button className={`${buttonClass} border-rose-200 text-rose-700 hover:bg-rose-50`} disabled={saving} onClick={() => void run(() => props.request('/memory/abort', 'POST'), 'Memory extraction stopped.')}>
+                  <button className={`${buttonClass} border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40`} disabled={saving} onClick={() => void run(() => props.request('/memory/abort', 'POST'), 'Memory extraction stopped.')}>
                     <Square className="h-3.5 w-3.5 fill-current" />Stop
                   </button>
                 ) : (
@@ -816,55 +816,55 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </div>
             </div>
             {isConsolidating && (
-              <div className="mt-4 rounded-[6px] border border-emerald-200/80 bg-emerald-50/50 p-3.5">
+              <div className="mt-4 rounded-[6px] border border-emerald-200/80 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/40 p-3.5">
                 <div className="flex items-center justify-between text-[12px]">
-                  <span className="font-semibold text-emerald-900">
+                  <span className="font-semibold text-emerald-900 dark:text-emerald-200">
                     {currentMemory.phase === 'consolidating'
                       ? 'Consolidating & saving records…'
                       : `Extracting checkpoints (${processedJobs} / ${totalJobs})`}
                   </span>
-                  <span className="font-semibold tabular-nums text-emerald-800">{progressPercent}%</span>
+                  <span className="font-semibold tabular-nums text-emerald-800 dark:text-emerald-300">{progressPercent}%</span>
                 </div>
-                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-emerald-200/60">
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-emerald-200/60 dark:bg-emerald-900/40">
                   <div className="h-full rounded-full bg-emerald-500 transition-all duration-300 ease-out" style={{ width: `${progressPercent}%` }} />
                 </div>
-                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-emerald-700">
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-emerald-700 dark:text-emerald-400">
                   <div className="flex items-center gap-3">
-                    <span className="font-medium text-emerald-800">+{currentMemory.extractingAdded ?? 0} added</span>
-                    <span className="text-emerald-600">{currentMemory.extractingSkipped ?? 0} skipped</span>
+                    <span className="font-medium text-emerald-800 dark:text-emerald-300">+{currentMemory.extractingAdded ?? 0} added</span>
+                    <span className="text-emerald-600 dark:text-emerald-400">{currentMemory.extractingSkipped ?? 0} skipped</span>
                   </div>
-                  {currentMemory.fallbackUsed && <span className="font-medium text-amber-700">Safe fallback active</span>}
+                  {currentMemory.fallbackUsed && <span className="font-medium text-amber-700 dark:text-amber-400">Safe fallback active</span>}
                 </div>
               </div>
             )}
             <dl className="mt-4 grid grid-cols-2 gap-3 text-[12px] sm:grid-cols-4">
-              <div><dt className="text-slate-400">Records</dt><dd className="mt-0.5 font-semibold tabular-nums text-slate-700">{currentMemory.recordCount ?? (currentMemory.globalCount !== undefined ? currentMemory.globalCount + (currentMemory.projectCount || 0) : 0)}</dd></div>
-              <div><dt className="text-slate-400">Pending</dt><dd className="mt-0.5 font-semibold tabular-nums text-slate-700">{currentMemory.pendingJobs ?? 0}</dd></div>
-              <div><dt className="text-slate-400">Last run</dt><dd className="mt-0.5 font-semibold text-slate-700">{currentMemory.lastRunAt || currentMemory.lastExtractedAt ? new Date(currentMemory.lastRunAt || currentMemory.lastExtractedAt).toLocaleString() : '—'}</dd></div>
-              <div><dt className="text-slate-400">Method</dt><dd className="mt-0.5 font-semibold text-slate-700">{currentMemory.extractionMethod || currentMemory.lastExtractionMethod || '—'}</dd></div>
+              <div><dt className="text-slate-400 dark:text-slate-500">Records</dt><dd className="mt-0.5 font-semibold tabular-nums text-slate-700 dark:text-slate-300">{currentMemory.recordCount ?? (currentMemory.globalCount !== undefined ? currentMemory.globalCount + (currentMemory.projectCount || 0) : 0)}</dd></div>
+              <div><dt className="text-slate-400 dark:text-slate-500">Pending</dt><dd className="mt-0.5 font-semibold tabular-nums text-slate-700 dark:text-slate-300">{currentMemory.pendingJobs ?? 0}</dd></div>
+              <div><dt className="text-slate-400 dark:text-slate-500">Last run</dt><dd className="mt-0.5 font-semibold text-slate-700 dark:text-slate-300">{currentMemory.lastRunAt || currentMemory.lastExtractedAt ? new Date(currentMemory.lastRunAt || currentMemory.lastExtractedAt).toLocaleString() : '—'}</dd></div>
+              <div><dt className="text-slate-400 dark:text-slate-500">Method</dt><dd className="mt-0.5 font-semibold text-slate-700 dark:text-slate-300">{currentMemory.extractionMethod || currentMemory.lastExtractionMethod || '—'}</dd></div>
             </dl>
             {currentMemory.lastRunProcessed !== undefined && currentMemory.lastRunProcessed > 0 && !isConsolidating && (
-              <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 rounded-[6px] bg-slate-100/90 px-3 py-2 text-[12px] text-slate-600">
+              <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 rounded-[6px] bg-slate-100/90 dark:bg-slate-800/80 px-3 py-2 text-[12px] text-slate-600 dark:text-slate-300">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-3.5 w-3.5 text-slate-400" />
+                  <Sparkles className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                   <span>
                     Last run: {currentMemory.lastRunProcessed} processed · {currentMemory.lastRunAdded ?? 0} added · {currentMemory.lastRunSkipped ?? 0} skipped
                     {currentMemory.fallbackUsed ? ' (safe fallback used)' : ''}
                   </span>
                 </div>
                 {currentMemory.modelFailureReason && (
-                  <span className="max-w-xs truncate text-[11px] text-amber-600" title={currentMemory.modelFailureReason}>{currentMemory.modelFailureReason}</span>
+                  <span className="max-w-xs truncate text-[11px] text-amber-600 dark:text-amber-400" title={currentMemory.modelFailureReason}>{currentMemory.modelFailureReason}</span>
                 )}
               </div>
             )}
             {currentMemory.error && !isConsolidating && (
-              <div className="mt-3 rounded-[6px] border border-rose-200 bg-rose-50/80 p-3 text-[12px] text-rose-700">
+              <div className="mt-3 rounded-[6px] border border-rose-200 dark:border-rose-900/60 bg-rose-50/80 dark:bg-rose-950/40 p-3 text-[12px] text-rose-700 dark:text-rose-300">
                 Last failure: {currentMemory.error}
                 {currentMemory.nextRetryAt && ` (Retry scheduled at ${new Date(currentMemory.nextRetryAt).toLocaleTimeString()})`}
               </div>
             )}
-            <div className="mt-4 border-t border-slate-200 pt-3.5">
-              <button className={`${buttonClass} text-rose-700 hover:bg-rose-50`} disabled={disabled || isConsolidating} onClick={() => { if (window.confirm(translate('Reset all stored Memory records? This cannot be undone.'))) void run(() => props.request('/memory/reset', 'POST', { confirm: 'RESET_MEMORY' }), 'Memory reset.'); }}>
+            <div className="mt-4 border-t border-slate-200 dark:border-[#272b36] pt-3.5">
+              <button className={`${buttonClass} text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40`} disabled={disabled || isConsolidating} onClick={() => { if (window.confirm(translate('Reset all stored Memory records? This cannot be undone.'))) void run(() => props.request('/memory/reset', 'POST', { confirm: 'RESET_MEMORY' }), 'Memory reset.'); }}>
                 <Trash2 className="h-3.5 w-3.5" />Reset Memory…
               </button>
             </div>
@@ -872,7 +872,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
         </div>
         <Card>
           <Row label="Loaded instructions" description="The active session’s trusted context and instruction sources.">
-            <span className="max-w-72 truncate text-right text-[12px] text-slate-500" title={instructionSources.join(', ')}>{instructionSources.length ? instructionSources.join(', ') : 'No sources reported'}</span>
+            <span className="max-w-72 truncate text-right text-[12px] text-slate-500 dark:text-slate-400" title={instructionSources.join(', ')}>{instructionSources.length ? instructionSources.join(', ') : 'No sources reported'}</span>
           </Row>
         </Card>
       </div>
@@ -1045,19 +1045,19 @@ export function SettingsDialog(props: SettingsDialogProps) {
   if (!props.open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/25 p-5 backdrop-blur-[3px]" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/25 dark:bg-black/60 p-5 backdrop-blur-[3px]" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
       {/* 10px frame radius matches the conversation surface radius. */}
-      <section role="dialog" aria-modal="true" aria-labelledby="settings-title" className="flex h-[min(680px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] overflow-hidden rounded-[10px] border border-slate-200/90 bg-white shadow-[0_24px_70px_rgb(15_23_42_/_0.2)]">
-        <aside className="flex w-[230px] shrink-0 flex-col border-r border-slate-200/80 bg-[#f6f7f9] px-3 pb-3 pt-6 sm:pt-7 select-none">
+      <section role="dialog" aria-modal="true" aria-labelledby="settings-title" className="flex h-[min(680px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] overflow-hidden rounded-[10px] border border-slate-200/90 dark:border-[#272b36] bg-white dark:bg-[#16171a] shadow-[0_24px_70px_rgb(15_23_42_/_0.2)] dark:shadow-[0_24px_70px_rgba(0,0,0,0.5)]">
+        <aside className="flex w-[230px] shrink-0 flex-col border-r border-slate-200/80 dark:border-[#272b36] bg-[#f6f7f9] dark:bg-[#131417] px-3 pb-3 pt-6 sm:pt-7 select-none">
           <div className="mb-3.5 px-1 flex items-center h-6">
-            <h1 id="settings-title" className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-slate-900 leading-6">Settings</h1>
+            <h1 id="settings-title" className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-slate-900 dark:text-slate-100 leading-6">Settings</h1>
           </div>
           <div className="pb-2.5 flex-shrink-0">
-            <div className="relative flex items-center w-full bg-[#eef0f3] rounded-[6px] h-[34px] px-2.5 transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-slate-300/60 focus-within:shadow-sm">
+            <div className="relative flex items-center w-full bg-[#eef0f3] dark:bg-[#1e222b] rounded-[6px] h-[34px] px-2.5 transition-all focus-within:bg-white dark:focus-within:bg-[#1e222b] focus-within:ring-2 focus-within:ring-slate-300/60 dark:focus-within:ring-slate-600/60 focus-within:shadow-sm">
               <Search className="w-4 h-4 text-[#9ca3af] mr-2 flex-shrink-0" />
               <input
                 type="text"
-                className="w-full bg-transparent text-[13px] text-[#1e293b] outline-none placeholder-[#9ca3af]"
+                className="w-full bg-transparent text-[13px] text-[#1e293b] dark:text-slate-200 outline-none placeholder-[#9ca3af] dark:placeholder-slate-500"
                 placeholder={translate('Search settings…')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -1067,7 +1067,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="p-0.5 text-[#9ca3af] hover:text-slate-600"
+                  className="p-0.5 text-[#9ca3af] hover:text-slate-600 dark:hover:text-slate-300"
                   aria-label="Clear search"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -1087,7 +1087,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <div
                 ref={indicatorRef}
                 aria-hidden="true"
-                className="absolute left-0 right-0 top-0 rounded-[6px] bg-[#e0e3e8] shadow-[0_1px_2px_rgba(0,0,0,0.03)] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+                className="absolute left-0 right-0 top-0 rounded-[6px] bg-[#e0e3e8] dark:bg-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
                 style={{ opacity: 0 }}
               />
               {tabs.map((item) => {
@@ -1101,17 +1101,17 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     onClick={() => handleTabChange(item.id)}
                     className={`w-full min-h-[38px] px-2.5 py-1.5 rounded-[6px] flex items-center justify-between transition-[color,transform] text-left relative z-[1] active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
                       isActive
-                        ? 'font-medium text-[#0f172a]'
-                        : 'text-[#334155] hover:text-[#0f172a]'
+                        ? 'font-medium text-[#0f172a] dark:text-slate-100'
+                        : 'text-[#334155] dark:text-slate-400 hover:text-[#0f172a] dark:hover:text-slate-100'
                     }`}
                     aria-current={isActive ? 'page' : undefined}
                   >
                     <span className="flex items-center gap-2.5 truncate">
-                      <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-[#0f172a]' : 'text-[#64748b]'}`} />
+                      <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-[#0f172a] dark:text-slate-100' : 'text-[#64748b] dark:text-slate-500'}`} />
                       <span className="truncate text-[13.5px]">{item.label}</span>
                     </span>
                     {searchQuery && matchCount > 0 && (
-                      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-300/70 px-1.5 text-[10.5px] font-semibold text-slate-700">
+                      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-300/70 dark:bg-slate-700/70 px-1.5 text-[10.5px] font-semibold text-slate-700 dark:text-slate-300">
                         {matchCount}
                       </span>
                     )}
@@ -1120,25 +1120,25 @@ export function SettingsDialog(props: SettingsDialogProps) {
               })}
             </div>
           </nav>
-          <p className="px-1 pt-2 text-[11px] text-[#9ca3af]">{appInfo.version ? `v${appInfo.version}` : 'Loading version…'}</p>
+          <p className="px-1 pt-2 text-[11px] text-[#9ca3af] dark:text-slate-500">{appInfo.version ? `v${appInfo.version}` : 'Loading version…'}</p>
         </aside>
-        <div className="flex min-w-0 flex-1 flex-col bg-slate-50/30">
+        <div className="flex min-w-0 flex-1 flex-col bg-slate-50/30 dark:bg-[#16171a]">
           <header
             className={`flex shrink-0 items-center justify-between px-6 pt-6 pb-3.5 sm:px-7 sm:pt-7 sm:pb-3.5 transition-[border-color,box-shadow,background-color] duration-150 z-10 ${
               isScrolled
-                ? 'border-b border-slate-200/80 bg-white/85 backdrop-blur-[6px] shadow-[0_1px_3px_rgba(15,23,42,0.03)]'
+                ? 'border-b border-slate-200/80 dark:border-[#272b36] bg-white/85 dark:bg-[#16171a]/85 backdrop-blur-[6px] shadow-[0_1px_3px_rgba(15,23,42,0.03)]'
                 : 'border-b border-transparent bg-transparent'
             }`}
           >
             <div className="flex h-6 min-w-0 items-center">
-              <h2 className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-slate-900 leading-6 truncate">
+              <h2 className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-slate-900 dark:text-slate-100 leading-6 truncate">
                 {currentTabTitle}
               </h2>
             </div>
             <div className="flex h-6 items-center">
               <button
                 type="button"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-slate-400 transition-[background-color,color] hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 -mr-1"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-slate-400 dark:text-slate-500 transition-[background-color,color] hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-700 dark:hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 -mr-1"
                 onClick={props.onClose}
                 aria-label="Close settings"
               >
@@ -1152,13 +1152,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
             className="relative min-w-0 flex-1 overflow-y-auto px-6 pb-6 pt-2 sm:px-7 sm:pb-7 sm:pt-2"
           >
             {loading ? (
-              <div className="flex h-full items-center justify-center gap-2 text-[13px] text-slate-400">
+              <div className="flex h-full items-center justify-center gap-2 text-[13px] text-slate-400 dark:text-slate-500">
                 <LoaderCircle className="h-4 w-4 animate-spin" />Loading settings…
               </div>
             ) : searchQuery && searchResults.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center text-center">
-                <CircleHelp className="h-8 w-8 text-slate-300" />
-                <p className="mt-3 text-[14px] font-medium text-slate-700">No matching settings</p>
+                <CircleHelp className="h-8 w-8 text-slate-300 dark:text-slate-600" />
+                <p className="mt-3 text-[14px] font-medium text-slate-700 dark:text-slate-300">No matching settings</p>
                 <button type="button" className={`mt-4 ${buttonClass}`} onClick={() => { setSearchQuery(''); if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0; setIsScrolled(false); }}>Clear search</button>
               </div>
             ) : searchQuery ? (
@@ -1169,18 +1169,18 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     <div
                       key={item.id}
                       onClick={() => { handleTabChange(item.tab); setSearchQuery(''); }}
-                      className="flex cursor-pointer items-center justify-between rounded-[6px] px-3.5 py-2.5 transition-colors hover:bg-slate-50"
+                      className="flex cursor-pointer items-center justify-between rounded-[6px] px-3.5 py-2.5 transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.03]"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-[13.5px] font-medium text-slate-800">{item.title}</span>
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-medium text-slate-500">
+                          <span className="text-[13.5px] font-medium text-slate-800 dark:text-slate-200">{item.title}</span>
+                          <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10.5px] font-medium text-slate-500 dark:text-slate-400">
                             {tabs.find((t) => t.id === item.tab)?.label}
                           </span>
                         </div>
-                        <p className="mt-0.5 text-pretty text-[12px] leading-5 text-slate-500">{item.desc}</p>
+                        <p className="mt-0.5 text-pretty text-[12px] leading-5 text-slate-500 dark:text-slate-400">{item.desc}</p>
                       </div>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
                     </div>
                   ))}
                 </Card>
@@ -1189,7 +1189,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               sections[tab]
             )}
             {(feedback || error) && (
-              <div role={error ? 'alert' : 'status'} className={`sticky bottom-0 mt-5 rounded-[6px] border px-3 py-2 text-[12px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+              <div role={error ? 'alert' : 'status'} className={`sticky bottom-0 mt-5 rounded-[6px] border px-3 py-2 text-[12px] ${error ? 'border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300' : 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'}`}>
                 {error || feedback}
               </div>
             )}

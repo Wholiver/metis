@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.1.15] - 2026-09-06
+
+### Compaction Optimization & Desktop Interaction Refinement
+
+- 精简上下文压缩输入：默认剔除冗余思维链（Thinking Blocks）并递归截断巨型工具调用参数，防止上下文膨胀。
+- 校准多语言 Token 估算：针对中文/CJK 字符引入加权计算，大幅提升会话压缩触发与上下文计算准确度。
+- 修复总结模型思考超额截断与桌面端压缩记录静默丢失问题。
+- 全面优化桌面端交互细节（主题响应式钩子 useSystemTheme、侧边栏、工具卡片及设置弹窗交互）。
+
 ## [1.1.14] - 2026-09-05
 
 ### Usage Quota Card, Subagents Indicator & Desktop UX Upgrades

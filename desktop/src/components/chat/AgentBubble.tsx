@@ -36,7 +36,7 @@ export const AgentBubble = React.memo<AgentBubbleProps>(({
       data-streaming={message.streaming ? 'true' : undefined}
     >
       {message.content && (
-        <div className="w-full min-w-0 max-w-full py-0.5 text-[14.5px] font-normal leading-relaxed text-[#1e293b]">
+        <div className="w-full min-w-0 max-w-full py-0.5 text-[14.5px] font-normal leading-relaxed text-[#1e293b] dark:text-[#f1f5f9]">
           {proposedPlan ? (
             <>
               {proposedPlan.before && <MarkdownContent markdown={proposedPlan.before} className="mb-2" />}

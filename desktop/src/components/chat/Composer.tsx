@@ -359,7 +359,7 @@ export const Composer = React.memo<ComposerProps>(({
     >
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 -top-7 -z-10 bg-gradient-to-t from-white from-75% via-white/95 to-transparent"
+        className="pointer-events-none absolute inset-x-0 bottom-0 -top-7 -z-10 bg-gradient-to-t from-white from-75% via-white/95 to-transparent dark:from-[#16171a] dark:via-[#16171a]/95 dark:to-transparent"
         data-composer-fade-mask=""
       />
       <input
@@ -434,16 +434,16 @@ export const Composer = React.memo<ComposerProps>(({
         data-composer-multiline="true"
         style={{ height: composerHeight }}
         aria-busy={isAttaching}
-        className={`pointer-events-auto relative w-full max-w-[620px] overflow-hidden bg-white border grid grid-cols-[30px_minmax(0,1fr)_auto_30px] grid-rows-[minmax(44px,auto)_30px] gap-y-1.5 gap-x-2 items-center rounded-[22px] px-3 pt-2.5 pb-2.5 transition-[height,border-radius,border-color] duration-200 ease-out motion-reduce:transition-none focus-within:border-slate-300 ${
+        className={`pointer-events-auto relative w-full max-w-[620px] overflow-hidden bg-white border dark:bg-[#1a1d24] grid grid-cols-[30px_minmax(0,1fr)_auto_30px] grid-rows-[minmax(44px,auto)_30px] gap-y-1.5 gap-x-2 items-center rounded-[22px] px-3 pt-2.5 pb-2.5 transition-[height,border-radius,border-color] duration-200 ease-out motion-reduce:transition-none focus-within:border-slate-300 dark:focus-within:border-slate-500 ${
           isDraggingFiles ? 'border-slate-500' : 'border-slate-200/90'
-        }`}
+        } dark:border-[#272b36]`}
       >
         {isDraggingFiles && (
           <div
-            className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[22px] bg-slate-900/[0.03] backdrop-blur-[2px] border-2 border-dashed border-slate-400 text-slate-700 font-medium text-[13px] gap-2 animate-in fade-in duration-150"
+            className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[22px] bg-slate-900/[0.03] dark:bg-white/[0.05] backdrop-blur-[2px] border-2 border-dashed border-slate-400 dark:border-slate-500 text-slate-700 dark:text-slate-200 font-medium text-[13px] gap-2 animate-in fade-in duration-150"
             data-composer-drop-overlay=""
           >
-            <FileUp className="w-4 h-4 stroke-[2] text-slate-600" />
+            <FileUp className="w-4 h-4 stroke-[2] text-slate-600 dark:text-slate-300" />
             <span>Drop files here to attach</span>
           </div>
         )}
@@ -457,8 +457,8 @@ export const Composer = React.memo<ComposerProps>(({
           }}
           className={`col-start-1 row-start-2 self-end w-[30px] h-[30px] rounded-full flex items-center justify-center active:scale-[0.96] transition-[color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
             plusMenuOpen
-              ? 'bg-slate-200 text-slate-900'
-              : 'bg-slate-100/90 hover:bg-slate-200/80 text-[#64748b] hover:text-[#0f172a]'
+              ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white'
+              : 'bg-slate-100/90 dark:bg-white/10 hover:bg-slate-200/80 dark:hover:bg-white/15 text-[#64748b] dark:text-[#94a3b8] hover:text-[#0f172a] dark:hover:text-white'
           }`}
           title="Add attachment, mode, or skill"
         >
@@ -483,7 +483,7 @@ export const Composer = React.memo<ComposerProps>(({
                   data-attachment-preview={attachment.kind}
                 >
                   {attachment.kind === 'image' && attachment.previewUrl ? (
-                    <div className="relative h-[46px] w-[46px] rounded-[14px] overflow-hidden border border-slate-200/90 shadow-[0_1px_3px_rgba(0,0,0,0.04)] bg-slate-100">
+                    <div className="relative h-[46px] w-[46px] rounded-[14px] overflow-hidden border border-slate-200/90 dark:border-[#272b36] shadow-[0_1px_3px_rgba(0,0,0,0.04)] bg-slate-100 dark:bg-[#14161c]">
                       <img
                         src={attachment.previewUrl}
                         alt={attachment.name}
@@ -499,8 +499,8 @@ export const Composer = React.memo<ComposerProps>(({
                       </button>
                     </div>
                   ) : (
-                    <div className="flex h-[46px] max-w-[240px] items-center gap-2.5 rounded-[14px] border border-slate-200/90 bg-white px-2.5 py-1.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-                      <span className="grid h-8 w-8 flex-none place-items-center rounded-[8px] bg-slate-100/90 text-slate-500">
+                    <div className="flex h-[46px] max-w-[240px] items-center gap-2.5 rounded-[14px] border border-slate-200/90 dark:border-[#272b36] bg-white dark:bg-[#14161c] px-2.5 py-1.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                      <span className="grid h-8 w-8 flex-none place-items-center rounded-[8px] bg-slate-100/90 dark:bg-[#20242d] text-slate-500 dark:text-slate-400">
                         {attachment.kind === 'video' ? (
                           <Video className="h-4 w-4 stroke-[1.7]" />
                         ) : attachment.kind === 'text' ? (
@@ -510,14 +510,14 @@ export const Composer = React.memo<ComposerProps>(({
                         )}
                       </span>
                       <span className="min-w-0 flex-1 pr-0.5">
-                        <span className="block truncate text-[12.5px] font-medium text-slate-800 leading-snug">{attachment.name}</span>
-                        <span className="block text-[11px] text-slate-400 tabular-nums leading-none mt-0.5">{attachment.sizeText}</span>
+                        <span className="block truncate text-[12.5px] font-medium text-slate-800 dark:text-slate-200 leading-snug">{attachment.name}</span>
+                        <span className="block text-[11px] text-slate-400 dark:text-slate-500 tabular-nums leading-none mt-0.5">{attachment.sizeText}</span>
                       </span>
                       <button
                         type="button"
                         aria-label={`Remove ${attachment.name}`}
                         onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-                        className="grid h-5 w-5 flex-none place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 active:scale-95 transition-colors"
+                        className="grid h-5 w-5 flex-none place-items-center rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-700 dark:hover:text-slate-200 active:scale-95 transition-colors"
                       >
                         <X className="h-3.5 w-3.5 stroke-[2]" />
                       </button>
@@ -549,16 +549,16 @@ export const Composer = React.memo<ComposerProps>(({
             disabled={disabled}
             aria-label="Type / to open commands..."
             data-composer-input=""
-            className="mt-0.5 overflow-y-auto pl-1 pr-9 py-0 min-w-0 w-full resize-none bg-transparent text-[14px] leading-5 text-[#1e293b] placeholder-[#9ca3af] outline-none disabled:cursor-not-allowed"
+            className="mt-0.5 overflow-y-auto pl-1 pr-9 py-0 min-w-0 w-full resize-none bg-transparent text-[14px] leading-5 text-[#1e293b] dark:text-[#f1f5f9] placeholder-[#9ca3af] dark:placeholder-[#64748b] outline-none disabled:cursor-not-allowed"
           />
         </div>
 
         {collaborationMode === 'plan' && (
           <span
-            className="col-start-2 row-start-2 self-end inline-flex h-[30px] items-center gap-2 rounded-full bg-[#f8ede2] pl-3 pr-2 text-[13px] font-medium text-[#925712] select-none transition-colors justify-self-start"
+            className="col-start-2 row-start-2 self-end inline-flex h-[30px] items-center gap-2 rounded-full bg-[#f8ede2] dark:bg-amber-950/40 pl-3 pr-2 text-[13px] font-medium text-[#925712] dark:text-amber-300 select-none transition-colors justify-self-start"
             data-plan-badge=""
           >
-            <ListTree className="h-4 w-4 stroke-[2] text-[#b8782a]" />
+            <ListTree className="h-4 w-4 stroke-[2] text-[#b8782a] dark:text-amber-400" />
             <span>Plan</span>
             <button
               type="button"
@@ -568,7 +568,7 @@ export const Composer = React.memo<ComposerProps>(({
                 void onSelectCollaborationMode('build');
                 requestAnimationFrame(() => inputRef.current?.focus());
               }}
-              className="grid h-4 w-4 place-items-center rounded-full text-[#925712]/70 hover:bg-[#925712]/15 hover:text-[#925712] active:scale-95 transition-[color,background-color,transform] focus:outline-none"
+              className="grid h-4 w-4 place-items-center rounded-full text-[#925712]/70 dark:text-amber-300/70 hover:bg-[#925712]/15 dark:hover:bg-amber-300/15 hover:text-[#925712] dark:hover:text-amber-200 active:scale-95 transition-[color,background-color,transform] focus:outline-none"
             >
               <X className="h-3 w-3 stroke-[2.5]" />
             </button>
@@ -583,7 +583,7 @@ export const Composer = React.memo<ComposerProps>(({
             setIsExpanded((current) => !current);
             requestAnimationFrame(() => inputRef.current?.focus());
           }}
-          className="absolute right-2.5 top-2.5 w-[30px] h-[30px] rounded-full grid place-items-center text-[#94a3b8] hover:text-[#475569] hover:bg-black/[0.035] active:scale-[0.96] transition-[color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
+          className="absolute right-2.5 top-2.5 w-[30px] h-[30px] rounded-full grid place-items-center text-[#94a3b8] hover:text-[#475569] dark:hover:text-[#f1f5f9] hover:bg-black/[0.035] dark:hover:bg-white/10 active:scale-[0.96] transition-[color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
           title={isExpanded ? 'Collapse composer' : 'Expand composer'}
         >
           {isExpanded ? (
@@ -617,7 +617,7 @@ export const Composer = React.memo<ComposerProps>(({
               void onAbort?.();
             }}
             aria-label={t('stopGeneration') || 'Stop'}
-            className="col-start-4 row-start-2 self-end w-[30px] h-[30px] rounded-full bg-[#0d0e11] text-white flex items-center justify-center hover:bg-black active:scale-[0.96] transition-[background-color,opacity,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 cursor-pointer"
+            className="col-start-4 row-start-2 self-end w-[30px] h-[30px] rounded-full bg-[#0d0e11] dark:bg-[#252a35] text-white flex items-center justify-center hover:bg-black dark:hover:bg-[#313745] active:scale-[0.96] transition-[background-color,opacity,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 cursor-pointer"
             title={t('stopGeneration') || 'Stop'}
             data-stop-button=""
           >
@@ -628,7 +628,7 @@ export const Composer = React.memo<ComposerProps>(({
             type="submit"
             disabled={disabled || isAttaching || (!text.trim() && attachments.length === 0)}
             aria-label="Send message"
-            className="col-start-4 row-start-2 self-end w-[30px] h-[30px] rounded-full bg-[#0d0e11] text-white flex items-center justify-center hover:bg-black active:scale-[0.96] transition-[background-color,opacity,transform] disabled:opacity-35 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
+            className="col-start-4 row-start-2 self-end w-[30px] h-[30px] rounded-full bg-[#0d0e11] dark:bg-[#252a35] text-white flex items-center justify-center hover:bg-black dark:hover:bg-[#313745] active:scale-[0.96] transition-[background-color,opacity,transform] disabled:opacity-35 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
             title="Send"
           >
             <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" data-send-icon="" />

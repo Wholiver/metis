@@ -30,7 +30,7 @@ const DEFAULT_ROUTINES: RoutineItem[] = [
 export const Routines: React.FC<RoutinesProps> = ({ routines = DEFAULT_ROUTINES }) => {
   return (
     <div className="flex flex-col gap-2.5 pt-2">
-      <h2 className="text-[12px] font-semibold text-[#94a3b8] uppercase tracking-wider">
+      <h2 className="text-[12px] font-semibold text-[#94a3b8] dark:text-slate-500 uppercase tracking-wider">
         Routines
       </h2>
 
@@ -41,15 +41,15 @@ export const Routines: React.FC<RoutinesProps> = ({ routines = DEFAULT_ROUTINES 
               {routine.status === 'active' ? (
                 <Clock className="w-4 h-4 text-emerald-500 stroke-[2]" />
               ) : (
-                <PauseCircle className="w-4 h-4 text-slate-400 stroke-[1.8]" />
+                <PauseCircle className="w-4 h-4 text-slate-400 dark:text-slate-500 stroke-[1.8]" />
               )}
             </div>
 
             <div className="flex flex-col">
-              <span className="text-[13px] font-semibold text-[#1e293b]">
+              <span className="text-[13px] font-semibold text-[#1e293b] dark:text-slate-200">
                 {routine.title}
               </span>
-              <span className="text-[11.5px] text-[#64748b] tabular-nums">
+              <span className="text-[11.5px] text-[#64748b] dark:text-slate-400 tabular-nums">
                 {routine.scheduleText}
               </span>
             </div>

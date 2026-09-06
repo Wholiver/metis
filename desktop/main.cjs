@@ -47,9 +47,9 @@ function loadDesktopPreferences() {
 	try {
 		const saved = JSON.parse(fs.readFileSync(desktopPreferencesPath(), "utf8"));
 		desktopLanguage = desktopI18n.languages.includes(saved?.language) ? saved.language : "auto";
-		desktopTheme = ["system", "light", "dark"].includes(saved?.theme) ? saved.theme : "system";
+		desktopTheme = "system";
 		metisServer = restoreMetisServer(saved?.server);
-		nativeTheme.themeSource = desktopTheme;
+		nativeTheme.themeSource = "system";
 	} catch {
 		desktopLanguage = "auto";
 		desktopTheme = "system";
@@ -292,13 +292,14 @@ function createWindow() {
 	const icon = createAppIcon();
 	const isMac = process.platform === "darwin";
 	const isWin = process.platform === "win32";
+	const isDark = nativeTheme.shouldUseDarkColors;
 	mainWindow = new BrowserWindow({
 		width: 1540,
 		height: 960,
 		minWidth: 1040,
 		minHeight: 700,
 		show: false,
-		backgroundColor: "#ffffff",
+		backgroundColor: isDark ? "#16171a" : "#ffffff",
 		transparent: false,
 		roundedCorners: true,
 		title: "Metis",
@@ -308,8 +309,8 @@ function createWindow() {
 		trafficLightPosition: isMac ? { x: 16, y: 16 } : undefined,
 		titleBarOverlay: isWin
 			? {
-					color: "#fbfbfa",
-					symbolColor: "#202324",
+					color: isDark ? "#16171a" : "#fbfbfa",
+					symbolColor: isDark ? "#ffffff" : "#202324",
 					height: 52,
 				}
 			: undefined,
@@ -320,6 +321,21 @@ function createWindow() {
 			webviewTag: true,
 			sandbox: false,
 		},
+	});
+
+	nativeTheme.on("updated", () => {
+		if (!mainWindow || mainWindow.isDestroyed()) return;
+		const dark = nativeTheme.shouldUseDarkColors;
+		mainWindow.setBackgroundColor(dark ? "#16171a" : "#ffffff");
+		if (process.platform === "win32") {
+			try {
+				mainWindow.setTitleBarOverlay({
+					color: dark ? "#16171a" : "#fbfbfa",
+					symbolColor: dark ? "#ffffff" : "#202324",
+					height: 52,
+				});
+			} catch {}
+		}
 	});
 
 	const captureQuery = {};

@@ -14,11 +14,12 @@ import {
 } from './lib/subagents';
 import { useMetisServer } from './hooks/useMetisServer';
 import { useUpdateCheck } from './hooks/useUpdateCheck';
+import { useSystemTheme } from './hooks/useSystemTheme';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { ExtensionUiDialog } from './components/ExtensionUiDialog';
 import { Onboarding, shouldShowOnboarding } from './components/onboarding/Onboarding';
 import { SkillCommand } from './components/chat/SkillPicker';
-import { Agent, Message, ModelOption, PendingUserInput, ProjectItem, ThinkingOption, WorkflowPlanState } from './types';
+import { Agent, AssistantContentPart, Message, ModelOption, PendingUserInput, ProjectItem, ThinkingOption, WorkflowPlanState } from './types';
 
 const PROJECTS_STORAGE_KEY = 'metis.desktop.projects.v1';
 const ACTIVE_PROJECT_STORAGE_KEY = 'metis.desktop.activeProject.v1';
@@ -245,6 +246,7 @@ const EXTENSION_UI_CAPTURE_REQUEST: ExtensionUiRequest = {
 };
 
 export function App() {
+  useSystemTheme();
   const captureParams = new URLSearchParams(window.location.search);
   const capturePlanPreview = captureParams.has('capture-plan-preview');
   const captureStreamingWork = captureParams.has('capture-streaming-work');
@@ -816,7 +818,7 @@ export function App() {
 
   return (
     <div
-      className={`flex h-screen w-screen bg-white select-none overflow-hidden ${
+      className={`flex h-screen w-screen bg-white dark:bg-[#16171a] text-slate-900 dark:text-slate-100 select-none overflow-hidden ${
         activeResizer ? 'cursor-col-resize select-none' : ''
       }`}
     >
@@ -864,7 +866,7 @@ export function App() {
           : captureLocalSend
             ? () => new Promise<boolean | void>(() => {})
             : sendMessage}
-        onAbort={abortTurn}
+        onAbort={() => { void abortTurn(); }}
         models={displayedModels}
         activeModel={displayedActiveModel}
         onSelectModel={selectModel}

@@ -37,6 +37,7 @@ export const ThinkingBlock = React.memo<ThinkingBlockProps>(({ thinking, streami
   const [expanded, setExpanded] = useState(streaming);
   const [hasOverflow, setHasOverflow] = useState(false);
   const [scrolledFromTop, setScrolledFromTop] = useState(false);
+  const [scrolledToBottom, setScrolledToBottom] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasStreaming = useRef(streaming);
   const userOverrideRef = useRef(false);
@@ -53,12 +54,19 @@ export const ThinkingBlock = React.memo<ThinkingBlockProps>(({ thinking, streami
 
   useLayoutEffect(() => {
     if (!expanded || !scrollRef.current) return;
+    const scroll = scrollRef.current;
+    scroll.scrollTop = scroll.scrollHeight;
+    setHasOverflow(scroll.scrollHeight > scroll.clientHeight + 1);
+    setScrolledFromTop(scroll.scrollTop > 1);
+    setScrolledToBottom(Math.ceil(scroll.scrollTop + scroll.clientHeight) >= scroll.scrollHeight - 2);
+
     const frame = requestAnimationFrame(() => {
-      const scroll = scrollRef.current;
-      if (scroll) {
-        scroll.scrollTop = scroll.scrollHeight;
-        setHasOverflow(scroll.scrollHeight > scroll.clientHeight + 1);
-        setScrolledFromTop(scroll.scrollTop > 1);
+      const el = scrollRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+        setHasOverflow(el.scrollHeight > el.clientHeight + 1);
+        setScrolledFromTop(el.scrollTop > 1);
+        setScrolledToBottom(Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 2);
       }
     });
     return () => cancelAnimationFrame(frame);
@@ -66,13 +74,14 @@ export const ThinkingBlock = React.memo<ThinkingBlockProps>(({ thinking, streami
 
   return (
     <section
-      className={`cot-thinking ${expanded ? '' : 'collapsed'} ${hasOverflow ? 'has-overflow' : ''} ${scrolledFromTop ? 'scrolled-from-top' : ''}`}
+      className={`cot-thinking ${expanded ? '' : 'collapsed'} ${hasOverflow ? 'has-overflow' : ''} ${scrolledFromTop ? 'scrolled-from-top' : ''} ${scrolledToBottom ? 'scrolled-to-bottom' : ''}`}
       data-thinking-block=""
       data-thinking-content=""
       data-direct-thinking="true"
       data-part-type="thinking"
       data-thinking-overflow={hasOverflow ? 'true' : 'false'}
       data-thinking-scrolled-from-top={scrolledFromTop ? 'true' : 'false'}
+      data-thinking-scrolled-to-bottom={scrolledToBottom ? 'true' : 'false'}
     >
       <button
         type="button"
@@ -94,7 +103,11 @@ export const ThinkingBlock = React.memo<ThinkingBlockProps>(({ thinking, streami
             id={contentId}
             className="tool-group-list thinking-scroll min-h-0"
             data-thinking-scroll=""
-            onScroll={(event) => setScrolledFromTop(event.currentTarget.scrollTop > 1)}
+            onScroll={(event) => {
+              const el = event.currentTarget;
+              setScrolledFromTop(el.scrollTop > 1);
+              setScrolledToBottom(Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 2);
+            }}
           >
             <MarkdownContent markdown={body} className="cot-thinking-markdown" />
           </div>

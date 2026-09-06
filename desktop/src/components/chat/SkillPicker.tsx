@@ -158,7 +158,7 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
     <div
       ref={menuRef}
       onKeyDown={handleKeyDown}
-      className="pointer-events-auto w-full max-w-[620px] overflow-hidden rounded-[12px] border border-slate-200/90 bg-white p-1 shadow-none"
+      className="pointer-events-auto w-full max-w-[620px] overflow-hidden rounded-[12px] border border-slate-200/90 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] p-1 shadow-none"
       data-skill-picker=""
       data-plus-menu=""
       role="dialog"
@@ -171,7 +171,7 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search skills, context, chats..."
-          className="w-full bg-transparent text-[12px] text-slate-800 placeholder-slate-400 outline-none px-0.5"
+          className="w-full bg-transparent text-[12px] text-slate-800 dark:text-[#f1f5f9] placeholder-slate-400 dark:placeholder-slate-500 outline-none px-0.5"
           aria-label="Search skills and modes"
         />
       </div>
@@ -198,15 +198,15 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
                     onClose?.();
                   }}
                   className={`group flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left transition-[background-color,color] focus-visible:outline-none ${
-                    active ? 'bg-[#f4f4f5] text-slate-900' : 'text-slate-700 hover:bg-[#f4f4f5]/70'
+                    active ? 'bg-[#f4f4f5] dark:bg-[#252a35] text-slate-900 dark:text-[#f1f5f9]' : 'text-slate-700 dark:text-slate-300 hover:bg-[#f4f4f5]/70 dark:hover:bg-[#252a35]/70'
                   }`}
                 >
                   <Icon className={`h-3.5 w-3.5 flex-none stroke-[2] ${modeOption.colorClass}`} />
                   <span className="flex items-center min-w-0 flex-1 gap-2">
-                    <span className="text-[12px] font-medium text-slate-800 shrink-0">{modeOption.label}</span>
-                    <span className="text-[11px] text-slate-400 font-normal truncate">{modeOption.description}</span>
+                    <span className="text-[12px] font-medium text-slate-800 dark:text-slate-200 shrink-0">{modeOption.label}</span>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500 font-normal truncate">{modeOption.description}</span>
                   </span>
-                  {selected && <Check className="h-3.5 w-3.5 flex-none text-slate-700 ml-auto" />}
+                  {selected && <Check className="h-3.5 w-3.5 flex-none text-slate-700 dark:text-slate-200 ml-auto" />}
                 </button>
               );
             })}
@@ -227,13 +227,13 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
                 onClose?.();
               }}
               className={`group flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left transition-[background-color,color] focus-visible:outline-none ${
-                active ? 'bg-[#f4f4f5] text-slate-900' : 'text-slate-700 hover:bg-[#f4f4f5]/70'
+                active ? 'bg-[#f4f4f5] dark:bg-[#252a35] text-slate-900 dark:text-[#f1f5f9]' : 'text-slate-700 dark:text-slate-300 hover:bg-[#f4f4f5]/70 dark:hover:bg-[#252a35]/70'
               }`}
             >
               <Paperclip className="h-3.5 w-3.5 flex-none stroke-[1.8] text-slate-400" />
               <span className="flex items-center min-w-0 flex-1 gap-2">
-                <span className="text-[12px] font-medium text-slate-800 shrink-0">Files</span>
-                <span className="text-[11px] text-slate-400 font-normal truncate">Attach files or images</span>
+                <span className="text-[12px] font-medium text-slate-800 dark:text-slate-200 shrink-0">Files</span>
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 font-normal truncate">Attach files or images</span>
               </span>
             </button>
           );
@@ -256,13 +256,13 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
                 onClose?.();
               }}
               className={`group flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left transition-[background-color,color] focus-visible:outline-none ${
-                active ? 'bg-[#f4f4f5] text-slate-900' : 'text-slate-700 hover:bg-[#f4f4f5]/70'
+                active ? 'bg-[#f4f4f5] dark:bg-[#252a35] text-slate-900 dark:text-[#f1f5f9]' : 'text-slate-700 dark:text-slate-300 hover:bg-[#f4f4f5]/70 dark:hover:bg-[#252a35]/70'
               }`}
             >
               <Wand2 className="h-3.5 w-3.5 flex-none stroke-[1.8] text-[#7c6bb2]" />
               <span className="flex items-center min-w-0 flex-1 gap-2">
-                <span className="text-[12px] font-medium text-slate-800 shrink-0">/{skill.name}</span>
-                <span className="text-[11px] text-slate-400 font-normal truncate">{skill.description}</span>
+                <span className="text-[12px] font-medium text-slate-800 dark:text-slate-200 shrink-0">/{skill.name}</span>
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 font-normal truncate">{skill.description}</span>
               </span>
               <Command className="h-3 w-3 flex-none text-slate-400 ml-auto" aria-hidden="true" />
             </button>
@@ -270,7 +270,7 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
         })}
 
         {allItems.length === 0 && (
-          <div className="px-2.5 py-2.5 text-[11px] text-slate-400 text-center">
+          <div className="px-2.5 py-2.5 text-[11px] text-slate-400 dark:text-slate-500 text-center">
             No matching modes or skills
           </div>
         )}

@@ -187,7 +187,7 @@ const OAuthUsageCard: React.FC<{
 
   return (
     <div
-      className={`w-full h-[72px] px-3 flex items-center justify-between select-none transition-all ${baseCardStyle}`}
+      className={`w-full h-[72px] px-3.5 flex items-center justify-between select-none transition-all ${baseCardStyle}`}
       role="region"
       aria-label={t('quota5h')}
       data-usage-card="oauth"

@@ -75,9 +75,9 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
         className="flex min-h-[220px] flex-1 flex-col items-center justify-center px-6 text-center"
         data-subagents-empty=""
       >
-        <Bot className="mb-2.5 h-6 w-6 stroke-[1.5] text-[#94a3b8]" aria-hidden="true" />
-        <p className="text-[13px] font-semibold text-[#334155] text-balance">No subagents yet</p>
-        <p className="mt-1 max-w-[220px] text-[12px] leading-[1.55] text-[#94a3b8] text-pretty">
+        <Bot className="mb-2.5 h-6 w-6 stroke-[1.5] text-[#94a3b8] dark:text-slate-500" aria-hidden="true" />
+        <p className="text-[13px] font-semibold text-[#334155] dark:text-slate-300 text-balance">No subagents yet</p>
+        <p className="mt-1 max-w-[220px] text-[12px] leading-[1.55] text-[#94a3b8] dark:text-slate-500 text-pretty">
           Subagents spawned by spawn_agent will appear here.
         </p>
       </div>
@@ -96,7 +96,7 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
       <div
         ref={indicatorRef}
         aria-hidden="true"
-        className="absolute left-0 right-0 top-0 rounded-[10px] bg-slate-100/80 pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        className="absolute left-0 right-0 top-0 rounded-[10px] bg-slate-100/80 dark:bg-white/[0.06] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ opacity: 0 }}
       />
       {subagents.map((subagent) => {
@@ -113,10 +113,10 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
             <span
               className={`mt-px flex h-5 w-5 flex-shrink-0 items-center justify-center ${
                 subagent.status === 'completed'
-                  ? 'text-emerald-500'
+                  ? 'text-emerald-500 dark:text-emerald-400'
                   : subagent.status === 'running'
-                    ? 'text-blue-600'
-                    : 'text-rose-500'
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-rose-500 dark:text-rose-400'
               }`}
             >
               <StatusIcon status={subagent.status} />
@@ -124,18 +124,18 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <span className="font-medium text-[13px] text-[#1e293b] capitalize truncate">
+                <span className="font-medium text-[13px] text-[#1e293b] dark:text-slate-200 capitalize truncate">
                   {subagent.role}
                 </span>
                 {subagent.mode === 'async' && (
-                  <span className="rounded bg-slate-100 px-1 py-0.2 text-[10px] font-medium text-slate-500">
+                  <span className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.2 text-[10px] font-medium text-slate-500 dark:text-slate-400">
                     Async
                   </span>
                 )}
                 <SubagentDuration subagent={subagent} />
               </div>
               <p
-                className="text-[12px] leading-5 text-slate-500 truncate mt-0.5"
+                className="text-[12px] leading-5 text-slate-500 dark:text-slate-400 truncate mt-0.5"
                 title={subagent.task}
               >
                 {subagent.task || 'No task description'}
@@ -146,7 +146,7 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
             <ChevronRight
               size={16}
               strokeWidth={1.8}
-              className="mt-1 text-slate-400 opacity-60 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
+              className="mt-1 text-slate-400 dark:text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
               aria-hidden="true"
             />
           </button>

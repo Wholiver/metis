@@ -118,7 +118,7 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   );
 
   return (
-    <main data-purpose="main-chat" className="flex-1 h-full bg-[#ffffff] flex flex-col min-w-[360px] overflow-hidden relative">
+    <main data-purpose="main-chat" className="flex-1 h-full bg-[#ffffff] dark:bg-[#16171a] flex flex-col min-w-[360px] overflow-hidden relative">
       <ChatHeader
         agent={agent}
         isSidebarOpen={isSidebarOpen}

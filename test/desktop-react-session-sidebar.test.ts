@@ -284,6 +284,25 @@ describe('desktop React session sidebar', () => {
     ]);
   });
 
+  it('preserves compactionSummary as an informative assistant message', () => {
+    const compactionMsg = toMessage({
+      id: 'cmp-1',
+      role: 'compactionSummary',
+      summary: 'Summary of earlier work',
+      tokensBefore: 45000,
+      timestamp: 123456789,
+    });
+    expect(compactionMsg).toBeDefined();
+    expect(compactionMsg).toMatchObject({
+      id: 'cmp-1',
+      role: 'assistant',
+      tags: ['compaction'],
+    });
+    expect(compactionMsg?.content).toContain('Context Compacted');
+    expect(compactionMsg?.content).toContain('45000');
+    expect(compactionMsg?.content).toContain('Summary of earlier work');
+  });
+
   it('replaces optimistic sends and incrementally updates streamed replies', () => {
     const optimistic = {
       id: 'optimistic-user-1',
