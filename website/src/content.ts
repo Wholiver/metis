@@ -1,0 +1,165 @@
+export type Locale = 'en' | 'zh-CN';
+
+export const LINKS = {
+  repository: 'https://github.com/Wholiver/metis',
+  benchmark: 'https://github.com/Wholiver/metis#benchmark--comparison',
+  releases: 'https://github.com/Wholiver/metis/releases/latest',
+  docs: 'https://github.com/Wholiver/metis/tree/main/docs',
+  npm: 'https://www.npmjs.com/package/@wholiver_hu/metis',
+  license: 'https://github.com/Wholiver/metis/blob/main/LICENSE',
+} as const;
+
+export const INSTALL_COMMAND = 'npm install -g @wholiver_hu/metis';
+
+export const BENCHMARK = {
+  tasks: '89',
+  metisSolved: '73 / 89',
+  metisAccuracy: '82.02%',
+  baselineSolved: '60 / 89',
+  baselineAccuracy: '67.42%',
+  delta: '+13',
+  pointsDelta: '+14.6',
+} as const;
+
+export const copy = {
+  en: {
+    metaTitle: 'Metis | Make any model a better coder',
+    metaDescription: 'Metis adds planning, memory, delegation, and verification around the coding model you already use.',
+    skip: 'Skip to content',
+    nav: {
+      github: 'GitHub',
+      language: '切换为中文',
+      releases: 'Releases',
+      docs: 'Docs',
+      benchmark: 'Benchmark',
+      how: 'How it works',
+    },
+    hero: {
+      badge: 'Terminal-Bench 2.1: 82.02% · +13 tasks solved',
+      badgeSubtitle: 'Same DeepSeek V4 Flash · 89 real-world tasks',
+      headline: 'Make any model a better coder.',
+      subhead: 'Planning, memory, subagents, and verification around the coding model you already use.',
+      copy: 'Copy install command',
+      copied: 'Copied',
+      downloadApp: 'Download Metis',
+      platforms: 'macOS & Windows',
+      viewGithub: 'GitHub',
+      cloudAlt: 'Metis cloud coding agent',
+    },
+    harness: {
+      title: 'One model. A complete harness.',
+      body: 'Metis turns a single coding model into a system that can reason, retain context, split work, and check results.',
+      roles: [
+        { name: 'Plan', body: 'Explore first. Change code with intent.' },
+        { name: 'Remember', body: 'Keep decisions in persistent SQLite memory.' },
+        { name: 'Delegate', body: 'Split focused work across recursive agents.' },
+        { name: 'Verify', body: 'Use tests and runtime evidence to finish.' },
+      ],
+    },
+    choreography: {
+      title: 'Hard tasks become coordinated work.',
+      body: 'Each agent gets a clear role. Findings return to the parent. Verification closes the loop.',
+      flow: ['Search', 'Plan', 'Delegate', 'Execute', 'Verify', 'Remember', 'Resume'],
+    },
+    benchmark: {
+      title: 'Same model. More solved.',
+      body: 'DeepSeek V4 Flash. The same 89 Terminal-Bench 2.1 tasks, budget, and environment.',
+      metis: 'Metis',
+      baseline: 'OpenCode',
+      solved: 'solved',
+      more: 'more tasks solved',
+      points: 'percentage points higher',
+      source: 'Read benchmark details',
+      ...BENCHMARK,
+    },
+    action: {
+      title: 'Give your model a better way to work.',
+      body: 'Start in the terminal or download the desktop app.',
+      download: 'Download Metis',
+      copy: 'Copy',
+      copied: 'Copied',
+      mac: 'macOS',
+      windows: 'Windows',
+      npm: 'npm',
+    },
+    footer: {
+      releases: 'Releases',
+      docs: 'Docs',
+      npm: 'npm',
+      github: 'GitHub',
+      license: 'MIT License',
+      tagline: 'Open Source Coding Agent Harness',
+    },
+  },
+  'zh-CN': {
+    metaTitle: 'Metis | 让任何模型更会写代码',
+    metaDescription: 'Metis 为你正在使用的编程模型加入规划、记忆、子智能体与闭环验证能力。',
+    skip: '跳到主要内容',
+    nav: {
+      github: 'GitHub',
+      language: 'Switch to English',
+      releases: '版本发布',
+      docs: '文档',
+      benchmark: '基准测试',
+      how: '工作方式',
+    },
+    hero: {
+      badge: 'Terminal-Bench 2.1: 82.02% 准确率 · 净多解决 13 题',
+      badgeSubtitle: '同一 DeepSeek V4 Flash 模型 · 89 道真实工程难题',
+      headline: '让任何模型更会写代码。',
+      subhead: '为你正在使用的编程模型加入规划、持久记忆、子智能体与闭环验证能力。',
+      copy: '复制安装命令',
+      copied: '已复制',
+      downloadApp: '下载 Metis',
+      platforms: 'macOS 与 Windows',
+      viewGithub: 'GitHub',
+      cloudAlt: 'Metis 云朵编程智能体',
+    },
+    harness: {
+      title: '一个模型，一套完整 Harness。',
+      body: 'Metis 把单个编程模型变成能够推理、保留上下文、拆分工作并检查结果的系统。',
+      roles: [
+        { name: '规划', body: '先探索，再有目的地修改代码。' },
+        { name: '记忆', body: '用 SQLite 持久保存决定与上下文。' },
+        { name: '委派', body: '把聚焦任务拆给递归智能体。' },
+        { name: '验证', body: '用测试与运行时证据完成工作。' },
+      ],
+    },
+    choreography: {
+      title: '把难任务变成协调工作。',
+      body: '每个智能体都有明确角色，发现回到父智能体，验证完成闭环。',
+      flow: ['搜索', '规划', '委派', '执行', '验证', '记忆', '恢复'],
+    },
+    benchmark: {
+      title: '同一模型，完成更多。',
+      body: '同一 DeepSeek V4 Flash，同一组 89 个 Terminal-Bench 2.1 任务、预算与环境。',
+      metis: 'Metis',
+      baseline: 'OpenCode',
+      solved: '完成',
+      more: '多解决任务',
+      points: '高出百分点',
+      source: '查看基准详情',
+      ...BENCHMARK,
+    },
+    action: {
+      title: '给你的模型更好的工作方式。',
+      body: '从终端开始，或下载桌面应用。',
+      download: '下载 Metis',
+      copy: '复制',
+      copied: '已复制',
+      mac: 'macOS',
+      windows: 'Windows',
+      npm: 'npm',
+    },
+    footer: {
+      releases: '版本',
+      docs: '文档',
+      npm: 'npm',
+      github: 'GitHub',
+      license: 'MIT 许可证',
+      tagline: '开源编程智能体架构',
+    },
+  },
+} as const;
+
+export type SiteCopy = (typeof copy)[Locale];

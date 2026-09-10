@@ -1,5 +1,4 @@
 import React from 'react';
-import { CloudAvatar } from './CloudAvatar';
 import { useI18n } from '../../i18n';
 
 interface ChatHomeEmptyStateProps {
@@ -16,18 +15,12 @@ export const ChatHomeEmptyState: React.FC<ChatHomeEmptyStateProps> = ({
 
   return (
     <div
-      className="flex flex-1 flex-col items-center justify-center my-auto py-8 w-full max-w-[620px] select-none pointer-events-none animate-in fade-in duration-300"
+      className="flex flex-1 flex-col items-center justify-center my-auto py-10 w-full max-w-[620px] select-none pointer-events-none"
       data-home-empty-state=""
     >
-      {/* Cloud Avatar - Scaled up proportionally */}
-      <div className="mb-6 flex items-center justify-center" data-home-cloud="">
-        <CloudAvatar size={110} className="drop-shadow-sm" />
-      </div>
-
-      {/* Heading - Scaled up proportionally */}
-      <h2 className="text-[24px] sm:text-[28px] font-normal text-slate-800 dark:text-slate-100 tracking-normal text-center select-text">
+      <h2 className="text-[15px] font-normal text-ink-2 tracking-normal text-center select-text max-w-[420px] leading-relaxed">
         {prefix ? `${prefix} ` : ''}
-        <span className="underline decoration-slate-400 dark:decoration-slate-500 decoration-1 underline-offset-4 mx-1.5">
+        <span className="text-ink font-medium">
           {displayProject}
         </span>
         {suffix ? (suffix.startsWith(' ') || suffix.startsWith('?') || suffix.startsWith('？') ? suffix : ` ${suffix}`) : ''}
@@ -35,4 +28,3 @@ export const ChatHomeEmptyState: React.FC<ChatHomeEmptyStateProps> = ({
     </div>
   );
 };
-

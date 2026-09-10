@@ -1,74 +1,67 @@
 import React from 'react';
-import { Circle, CircleCheckBig, CircleDot, ListTodo } from 'lucide-react';
+import { ListTodo } from 'lucide-react';
 import { WorkflowPlanStep } from '../../types';
+import { useI18n } from '../../i18n';
+import TaskRows, { type TaskRow } from '../primitives/TaskRows';
 
 interface PlanPointsProps {
   points: WorkflowPlanStep[];
+  compactEmpty?: boolean;
+  /** Clamp the list to this many visible rows; additional rows scroll. */
+  maxVisibleRows?: number;
 }
 
-const STATUS_LABELS: Record<WorkflowPlanStep['status'], string> = {
-  pending: 'Pending',
-  in_progress: 'In progress',
-  completed: 'Completed',
-};
+export const PlanPoints: React.FC<PlanPointsProps> = ({
+  points,
+  compactEmpty = false,
+  maxVisibleRows,
+}) => {
+  const { t } = useI18n();
 
-function StatusIcon({ status }: { status: WorkflowPlanStep['status'] }) {
-  if (status === 'completed') {
-    return <CircleCheckBig className="h-[18px] w-[18px] stroke-[1.8]" aria-hidden="true" />;
-  }
-  if (status === 'in_progress') {
-    return <CircleDot className="h-[18px] w-[18px] stroke-[1.8]" aria-hidden="true" />;
-  }
-  return <Circle className="h-[18px] w-[18px] stroke-[1.6]" aria-hidden="true" />;
-}
-
-export const PlanPoints: React.FC<PlanPointsProps> = ({ points }) => {
   if (points.length === 0) {
     return (
       <div
-        className="flex min-h-[240px] flex-1 flex-col items-center justify-center px-6 text-center"
+        className={compactEmpty
+          ? 'rounded-[12px] border border-dashed border-line px-3 py-3 text-center'
+          : 'flex min-h-[240px] flex-1 flex-col items-center justify-center px-6 text-center'}
         data-plan-points-empty=""
       >
-        <ListTodo className="mb-2.5 h-6 w-6 stroke-[1.5] text-[#94a3b8] dark:text-slate-500" aria-hidden="true" />
-        <p className="text-[13px] font-semibold text-[#334155] dark:text-slate-300 text-balance">No plan points yet</p>
-        <p className="mt-1 max-w-[210px] text-[12px] leading-[1.55] text-[#94a3b8] dark:text-slate-500 text-pretty">
+        {!compactEmpty ? (
+          <ListTodo className="mb-2.5 h-6 w-6 stroke-[1.5] text-ink-3" aria-hidden="true" />
+        ) : null}
+        <p className={`font-semibold text-ink-2 text-balance ${compactEmpty ? 'text-[12px]' : 'text-[13px]'}`}>
+          {t('noPlanPointsYet') || 'No plan points yet'}
+        </p>
+        <p className={`mt-1 text-[12px] leading-[1.55] text-ink-3 text-pretty ${compactEmpty ? 'max-w-none' : 'max-w-[210px]'}`}>
           Points created by update_plan will appear here.
         </p>
       </div>
     );
   }
 
+  const rows: TaskRow[] = points.map((point, index) => {
+    return {
+      key: `${index}-${point.step}`,
+      label: point.step,
+      amount: '',
+      status: point.status === 'completed'
+        ? 'done'
+        : point.status === 'in_progress'
+          ? 'running'
+          : 'pending',
+      step: index + 1,
+      details: [],
+    };
+  });
+
   return (
-    <ol className="flex flex-col gap-0.5" data-plan-points-list="">
-      {points.map((point, index) => (
-        <li
-          key={`${index}-${point.step}`}
-          className="group flex min-h-9 gap-2.5 rounded-[10px] px-2.5 py-1.5 hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
-          data-plan-point=""
-          data-plan-status={point.status}
-        >
-          <span
-            className={`mt-px flex h-5 w-5 flex-shrink-0 items-center justify-center ${
-              point.status === 'completed'
-                ? 'text-emerald-500 dark:text-emerald-400'
-                : point.status === 'in_progress'
-                  ? 'text-blue-600 dark:text-blue-400'
-                  : 'text-[#b0b7c3] dark:text-slate-600'
-            }`}
-          >
-            <StatusIcon status={point.status} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p data-plan-point-text="" className={`text-[13px] leading-5 text-pretty ${
-              point.status === 'completed' ? 'text-[#64748b] dark:text-slate-400' : 'font-medium text-[#1e293b] dark:text-slate-200'
-            }`}>
-              {point.step}
-            </p>
-            <span className="sr-only">{STATUS_LABELS[point.status]}</span>
-          </div>
-        </li>
-      ))}
-    </ol>
+    <TaskRows
+      variant="List"
+      rows={rows}
+      labels={{ completed: t('completedStatus') || 'Completed' }}
+      maxVisibleRows={maxVisibleRows}
+      expandable={false}
+      className="plan-points-task-rows"
+    />
   );
 };
-

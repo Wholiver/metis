@@ -16,13 +16,19 @@ const localizedAttributes = new WeakMap<Element, Map<string, LocalizedValueState
 const localizableAttributes = ['aria-label', 'placeholder', 'title'];
 
 function catalogs(): Catalogs {
-  return window.metisDesktopI18nCatalogs || { en: {} };
+  if (typeof window !== 'undefined' && window.metisDesktopI18nCatalogs) {
+    return window.metisDesktopI18nCatalogs;
+  }
+  if (typeof (globalThis as any).metisDesktopI18nCatalogs !== 'undefined') {
+    return (globalThis as any).metisDesktopI18nCatalogs;
+  }
+  return { en: {} };
 }
 
 export function resolveLanguage(preference: string): string {
   const available = catalogs();
   if (preference !== 'auto' && available[preference]) return preference;
-  const browserLanguage = navigator.language || 'en';
+  const browserLanguage = (typeof navigator !== 'undefined' ? navigator.language : undefined) || 'en';
   if (/^zh-(HK|MO|TW)$/i.test(browserLanguage) && available['zh-TW']) return 'zh-TW';
   if (/^zh-(CN|SG)$/i.test(browserLanguage) && available['zh-CN']) return 'zh-CN';
   return available[browserLanguage] ? browserLanguage : available[browserLanguage.split('-')[0]] ? browserLanguage.split('-')[0] : 'en';

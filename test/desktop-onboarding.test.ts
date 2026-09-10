@@ -13,7 +13,7 @@ const preload = source("desktop/preload.cjs");
 const build = source("desktop/scripts/build.mjs");
 
 describe("Desktop React first-run onboarding", () => {
-	it("uses a fullscreen flow with Step 0 Welcome home page, SVG branding, and preserves legacy completion", () => {
+	it("uses a fullscreen flow with Beautiful UI branding and preserves legacy completion", () => {
 		expect(onboarding).toContain("metis.desktopOnboardingCompleted.v3");
 		expect(onboarding).toContain("metis.desktopOnboardingCompleted.v2");
 		expect(onboarding).not.toContain("Configure later in settings");
@@ -21,7 +21,7 @@ describe("Desktop React first-run onboarding", () => {
 		expect(onboarding).toContain("step === 1");
 		expect(onboarding).toContain("step === 2");
 		expect(onboarding).toContain("step === 3");
-		expect(onboarding).toContain("bot-mask-in5s39");
+		expect(onboarding).toContain('grid size-24 grid-cols-3');
 		expect(onboarding).toContain(">Get Started</span>");
 		expect(onboarding).toContain("detectSystemLanguage");
 		expect(onboarding).not.toContain("Your Intelligent AI Pair Programming Workspace");
@@ -84,4 +84,3 @@ describe("Desktop React first-run onboarding", () => {
 		expect(build).toContain('"workspace-create.cjs"');
 	});
 });
-

@@ -57,15 +57,12 @@ describe('Desktop per-turn file changes', () => {
     ]);
   });
 
-  it('uses a compact expandable summary without review controls or row dividers', () => {
-    const source = readFileSync(new URL('../desktop/src/components/chat/TurnFilesSummary.tsx', import.meta.url), 'utf8');
+  it('does not render a per-turn edited-files summary card in the chat turn', () => {
+    const source = readFileSync(new URL('../desktop/src/components/chat/AssistantTurn.tsx', import.meta.url), 'utf8');
 
-    expect(source).toContain("files.slice(0, 3)");
-    expect(source).toContain('已编辑 {files.length} 个文件');
-    expect(source).toContain('再显示 ${hiddenCount} 个文件');
-    expect(source).toContain('rounded-[10px]');
-    expect(source).not.toContain('shadow-[');
-    expect(source).not.toMatch(/撤销|审核|border-b|divide-y/);
+    expect(source).not.toContain('TurnFilesSummary');
+    expect(source).not.toContain('collectTurnFileChanges');
+    expect(source).not.toContain('data-turn-files-summary');
+    expect(source).not.toContain('已编辑');
   });
 });
-

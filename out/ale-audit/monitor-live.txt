@@ -1,0 +1,58 @@
+2026-09-07 15:51:46 poll=1
+==== 2026-09-07 15:51:47 ====
+active
+run.json finished: 10
+eval_result: 10
+last done lines:
+2026-09-07 13:25:06,787  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/financial_stmt_reconstruction_aapl_fy2024/v0] done: status=completed score=1.0 duration=929.6s (attempt 1/3)
+2026-09-07 13:28:42,915  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/internal_employee_agent_instance_1/v0] done: status=completed score=1.0 duration=207.8s (attempt 1/3)
+2026-09-07 13:36:54,955  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/legal_ma_consistency_audit_01/v0] done: status=completed score=0.0 duration=490.5s (attempt 1/3)
+2026-09-07 13:49:25,007  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/llm_ecosystem_privacy_audit_realdata_1/v0] done: status=completed score=0.5 duration=750.5s (attempt 1/3)
+2026-09-07 15:49:41,612  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/sec_10k_financial_parsing/v0] done: status=completed score=0.5398 duration=6964.7s (attempt 1/3)
+tail log (no otel):
+2026-09-07 15:49:41,612  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/sec_10k_financial_parsing/v0] done: status=completed score=0.5398 duration=6964.7s (attempt 1/3)
+2026-09-07 15:50:56,344  INFO     ale_run.environments.providers.gcloud  CUA server ready at http://localhost:32869
+2026-09-07 15:50:56,345  INFO     computer  Logger set to INFO level
+2026-09-07 15:50:56,345  INFO     computer  Initializing Computer...
+2026-09-07 15:50:56,345  INFO     computer  Logger set to INFO level
+2026-09-07 15:50:56,345  INFO     computer.vm  Logger set to INFO level
+2026-09-07 15:50:56,345  INFO     computer.interface  Logger set to INFO level
+2026-09-07 15:50:56,345  INFO     core.telemetry  Recording event: computer_initialized with properties: {'version': '0.1.8', 'os': 'linux', 'os_version': '6.8.0-138-generic', 'python_version': '3.12.3', 'provider_type': 'lume'}
+2026-09-07 15:50:56,364  INFO     core.telemetry  Sent event to PostHog: computer_initialized
+2026-09-07 15:50:57,870  INFO     cua.interface  Logger set to INFO level
+2026-09-07 15:50:57,871  INFO     computer.interface.linux  Logger set to INFO level
+2026-09-07 15:50:59,223  INFO     ale_run.environments.task_data.local_host  local: staged ['input', 'software'] for sse_northbound_programmatic_trading_01 from task-data/business_finance/sse_northbound_programmatic_trading_01/base
+2026-09-07 15:50:59,250  INFO     ale_run.tasks.loader  Loaded task config via load() function
+2026-09-07 15:50:59,251  INFO     ale_run.tasks.driver  Running task setup (attempt 1/4)...
+2026-09-07 15:50:59,251  INFO     ale_run.tasks.driver  Task setup completed
+cats {'pending_or_running': 88, 'completed_score>0': 7, 'completed_score=0': 3}
+daemon_start 2026-09-07 15:52:21 pid=63978
+2026-09-07 15:52:21 poll=1
+==== 2026-09-07 15:52:24 ====
+active
+run.json finished: 10
+eval_result: 10
+last done lines:
+2026-09-07 13:25:06,787  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/financial_stmt_reconstruction_aapl_fy2024/v0] done: status=completed score=1.0 duration=929.6s (attempt 1/3)
+2026-09-07 13:28:42,915  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/internal_employee_agent_instance_1/v0] done: status=completed score=1.0 duration=207.8s (attempt 1/3)
+2026-09-07 13:36:54,955  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/legal_ma_consistency_audit_01/v0] done: status=completed score=0.0 duration=490.5s (attempt 1/3)
+2026-09-07 13:49:25,007  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/llm_ecosystem_privacy_audit_realdata_1/v0] done: status=completed score=0.5 duration=750.5s (attempt 1/3)
+2026-09-07 15:49:41,612  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/sec_10k_financial_parsing/v0] done: status=completed score=0.5398 duration=6964.7s (attempt 1/3)
+tail log (no otel):
+2026-09-07 15:49:41,612  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/business_finance/sec_10k_financial_parsing/v0] done: status=completed score=0.5398 duration=6964.7s (attempt 1/3)
+2026-09-07 15:50:56,344  INFO     ale_run.environments.providers.gcloud  CUA server ready at http://localhost:32869
+2026-09-07 15:50:56,345  INFO     computer  Logger set to INFO level
+2026-09-07 15:50:56,345  INFO     computer  Initializing Computer...
+2026-09-07 15:50:56,345  INFO     computer  Logger set to INFO level
+2026-09-07 15:50:56,345  INFO     computer.vm  Logger set to INFO level
+2026-09-07 15:50:56,345  INFO     computer.interface  Logger set to INFO level
+2026-09-07 15:50:56,345  INFO     core.telemetry  Recording event: computer_initialized with properties: {'version': '0.1.8', 'os': 'linux', 'os_version': '6.8.0-138-generic', 'python_version': '3.12.3', 'provider_type': 'lume'}
+2026-09-07 15:50:56,364  INFO     core.telemetry  Sent event to PostHog: computer_initialized
+2026-09-07 15:50:57,870  INFO     cua.interface  Logger set to INFO level
+2026-09-07 15:50:57,871  INFO     computer.interface.linux  Logger set to INFO level
+2026-09-07 15:50:59,223  INFO     ale_run.environments.task_data.local_host  local: staged ['input', 'software'] for sse_northbound_programmatic_trading_01 from task-data/business_finance/sse_northbound_programmatic_trading_01/base
+2026-09-07 15:50:59,250  INFO     ale_run.tasks.loader  Loaded task config via load() function
+2026-09-07 15:50:59,251  INFO     ale_run.tasks.driver  Running task setup (attempt 1/4)...
+2026-09-07 15:50:59,251  INFO     ale_run.tasks.driver  Task setup completed
+cats {'pending_or_running': 88, 'completed_score>0': 7, 'completed_score=0': 3}
+parsed finished=10 active=active

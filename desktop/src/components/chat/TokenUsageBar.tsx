@@ -138,7 +138,7 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
           tooltipPlacement === 'bottom'
             ? 'top-[calc(100%+6px)] origin-top'
             : 'bottom-[calc(100%+6px)] origin-bottom'
-        } left-0 right-0 z-30 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md text-slate-800 dark:text-slate-100 rounded-[8px] px-2.5 py-1.5 border border-slate-200/90 dark:border-slate-700/90 shadow-lg shadow-slate-900/10 dark:shadow-black/30 flex flex-col text-[11px] gap-0.5 pointer-events-none transition-all duration-100 ease-out select-none ${
+        } left-0 right-0 z-30 flex flex-col gap-0.5 rounded-control bg-surface px-2.5 py-1.5 text-[11px] text-ink shadow-overlay pointer-events-none transition-all duration-100 ease-out select-none ${
           isOpen
             ? 'opacity-100 scale-100 translate-y-0 visible'
             : tooltipPlacement === 'bottom'
@@ -149,34 +149,34 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
         aria-hidden={!isOpen}
       >
         <div className="flex items-center justify-between w-full">
-          <span className="font-semibold text-slate-700 dark:text-slate-200">
+          <span className="font-semibold text-ink">
             {t('contextUsageTitle') || '上下文使用'}
           </span>
-          <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] tabular-nums">
+          <span className="font-mono text-[10px] tabular-nums text-ink-3">
             {percentDisplay}
           </span>
         </div>
 
-        <span className="text-slate-500 dark:text-slate-400 font-mono tabular-nums text-[10.5px]">
+        <span className="font-mono text-[10.5px] tabular-nums text-ink-2">
           {formatExactNumber(usedTokens)} / {formatExactNumber(contextWindow)} {t('tokensUnit') || 'Tokens'}
         </span>
 
         {(inputTokens > 0 || cacheTokens > 0 || outputTokens > 0) && (
-          <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500 tabular-nums">
+          <div className="flex items-center gap-1.5 text-[10px] text-ink-3 tabular-nums">
             <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block shrink-0" />
+              <span className="w-1.5 h-1.5 rounded-full bg-accent inline-block shrink-0" />
               <span>{t('tokenInput') || '输入'}:</span>
               <span className="font-mono">{formatTokenCount(inputTokens)}</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block shrink-0" />
+              <span className="w-1.5 h-1.5 rounded-full bg-green inline-block shrink-0" />
               <span>{t('tokenCache') || '缓存'}:</span>
               <span className="font-mono">{formatTokenCount(cacheTokens)}</span>
             </span>
             <span>·</span>
             <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-orange-400 inline-block shrink-0" />
+              <span className="w-1.5 h-1.5 rounded-full bg-orange inline-block shrink-0" />
               <span>{t('tokenOutput') || '输出'}:</span>
               <span className="font-mono">{formatTokenCount(outputTokens)}</span>
             </span>
@@ -184,8 +184,8 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
         )}
 
         {isHighLoad && (
-          <div className="mt-0.5 pt-0.5 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3 flex-shrink-0 text-amber-500" />
+          <div className="mt-0.5 flex items-center gap-1 border-t border-line pt-0.5 text-[10px] text-orange">
+            <AlertTriangle className="w-3 h-3 flex-shrink-0 text-orange" />
             <span>{t('tokenUsageHighWarning', { percent: percentDisplay })}</span>
           </div>
         )}
@@ -195,25 +195,25 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
       <button
         type="button"
         onMouseEnter={handleMouseEnter}
-        className={`group flex items-center justify-between w-full h-[28px] gap-2 text-xs transition-all duration-150 cursor-default select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
+        className={`group flex h-[28px] w-full cursor-default select-none items-center justify-between gap-2 text-xs transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] ${
           className
             ? `px-3.5 ${className} ${
                 isOpen
-                  ? 'bg-slate-50/50 dark:bg-slate-800/80'
+                  ? 'bg-hover'
                   : isCritical
-                  ? 'bg-rose-50/30 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300'
+                  ? 'bg-red-tint text-red'
                   : isHighLoad
-                  ? 'bg-amber-50/30 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300'
+                  ? 'bg-orange-tint text-orange'
                   : ''
               }`
-            : `px-2.5 bg-[#ffffff] dark:bg-slate-800/50 border rounded-[12px] shadow-[0_1px_2px_rgba(0,0,0,0.02)] ${
+            : `rounded-card bg-surface px-2.5 shadow-card ${
                 isOpen
-                  ? 'border-slate-300 dark:border-slate-600 bg-slate-50/50 dark:bg-slate-800/80'
+                  ? 'bg-hover'
                   : isCritical
-                  ? 'border-rose-300 dark:border-rose-800/60 bg-rose-50/40 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300'
+                  ? 'bg-red-tint text-red'
                   : isHighLoad
-                  ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300'
-                  : 'border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
+                  ? 'bg-orange-tint text-orange'
+                  : 'hover:bg-hover'
               }`
         }`}
         role="region"
@@ -221,27 +221,27 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
         aria-expanded={isOpen}
       >
         {/* Sleek Segmented Progress Bar */}
-        <div className="flex-1 min-w-[60px] h-[5px] bg-slate-100 dark:bg-slate-700/50 rounded-full overflow-hidden flex flex-shrink-0">
+        <div className="flex h-[5px] min-w-[60px] flex-1 flex-shrink-0 overflow-hidden rounded-full bg-line">
           {inputPercent > 0 && (
             <div
-              className="h-full bg-blue-500 transition-all duration-300"
+              className="h-full bg-accent transition-all duration-300"
               style={{ width: `${inputPercent}%` }}
             />
           )}
           {cachePercent > 0 && (
             <div
-              className="h-full bg-emerald-500 transition-all duration-300"
+              className="h-full bg-green transition-all duration-300"
               style={{ width: `${cachePercent}%` }}
             />
           )}
           {outputPercent > 0 && (
             <div
-              className="h-full bg-orange-400 transition-all duration-300"
+              className="h-full bg-orange transition-all duration-300"
               style={{ width: `${outputPercent}%` }}
             />
           )}
           {percent === 0 && (
-            <div className="h-full w-[2px] bg-slate-300 dark:bg-slate-600" />
+            <div className="h-full w-[2px] bg-line-strong" />
           )}
         </div>
 
@@ -250,15 +250,15 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
           {isHighLoad && (
             <AlertTriangle
               className={`w-3 h-3 flex-shrink-0 mr-0.5 ${
-                isCritical ? 'text-rose-500' : 'text-amber-500'
+                isCritical ? 'text-red' : 'text-orange'
               }`}
             />
           )}
-          <span className="font-semibold text-slate-700 dark:text-slate-200">
+          <span className="font-semibold text-ink">
             {formatTokenCount(usedTokens)}
           </span>
-          <span className="text-slate-400">/</span>
-          <span className="text-slate-400 dark:text-slate-500">
+          <span className="text-ink-3">/</span>
+          <span className="text-ink-3">
             {formatTokenCount(contextWindow)}
           </span>
         </div>
@@ -266,4 +266,3 @@ export const TokenUsageBar: React.FC<TokenUsageBarProps> = ({
     </div>
   );
 };
-

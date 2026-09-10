@@ -1,0 +1,11 @@
+I built Metis, an open-source AI coding agent for macOS + terminal.
+
+Same DeepSeek V4 Flash, same Terminal-Bench 2.1 setup:
+Metis: 73/89 (82.02%)
+OpenCode: 60/89 (67.42%)
+
+13 more tasks solved without changing the model.
+
+https://github.com/Wholiver/metis
+
+#AIcoding #OpenSource

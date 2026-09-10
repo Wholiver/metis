@@ -18,35 +18,31 @@ describe('desktop React collaboration mode switching', () => {
     expect(switcher).toContain("label: 'Plan'");
     expect(switcher).toContain("label: 'Build'");
     expect(switcher).toContain('h-7 min-w-[64px]');
-    expect(switcher).toContain('h-8 items-center gap-0 rounded-xl bg-[#eef2f6] p-0.5');
-    expect(switcher).toContain('shadow-[0_0_0_1px_rgba(215,222,232,0.9),0_1px_2px_rgba(15,23,42,0.08)]');
-    expect(switcher).toContain('rounded-[12px]');
+    expect(switcher).toContain('rounded-control bg-field p-0.5 shadow-inset-field');
     expect(switcher).toContain('before:h-10 before:w-full');
-    expect(switcher).toContain("bg-[#5b7198] text-white");
-    expect(switcher).toContain("text-[#586e90] hover:bg-white/70");
-    expect(switcher).toContain("bg-[#567a70] text-white");
-    expect(switcher).toContain("text-[#4f7068] hover:bg-white/70");
-    expect(switcher).not.toContain("bg-[#172033]");
-    expect(switcher).not.toContain("bg-[#f3f6f9]");
-    expect(switcher).toContain('shadow-[0_1px_3px_rgba');
-    expect(switcher).toContain('font-semibold');
+    expect(switcher).toContain("color: 'var(--orange)'");
+    expect(switcher).toContain("color: 'var(--green)'");
+    expect(switcher).toContain('shadow: \'var(--shadow-btn)\'');
+    expect(switcher).toContain('font-medium');
+    expect(switcher).not.toContain('font-[530]');
+    expect(switcher).not.toContain('font-semibold');
     expect(switcher).not.toContain('transition-all');
 
     // ModeSwitcher button row positioned above form
-    expect(composer.indexOf('<ModeSwitcher')).toBeLessThan(composer.indexOf('<form'));
+    expect(composer.indexOf('<ModeSwitcher')).toBeLessThan(composer.indexOf('<PromptBar'));
     expect(composer).toContain('data-mode-switcher-row');
     expect(composer).toContain('max-w-[620px] justify-start" data-mode-switcher-row');
 
-    // Skill picker is dedicated to skills
+    // Skill picker is dedicated to skills; faint elevation below composer shadow
     expect(skillPicker).toContain('data-skill-picker');
     expect(skillPicker).toContain('Sparkles');
+    expect(skillPicker).toContain('rounded-window bg-surface');
+    expect(skillPicker).toContain('shadow-overlay');
+    expect(skillPicker).not.toContain('shadow-none');
 
-    // Composer container styling
+    // Composer container styling — soft floating shadow matches elevated input chrome
     expect(composer).toContain('data-composer-shell');
-    expect(composer).toContain('overflow-hidden bg-white border');
-    expect(composer).toContain("'border-slate-200/90'");
-    expect(composer).toContain('w-full bg-transparent');
-    expect(composer).not.toContain('shadow-[0_4px_18px');
+    expect(composer).toContain('<PromptBar');
     expect(composer).not.toContain('focus-within:shadow-md');
   });
 
@@ -75,4 +71,3 @@ describe('desktop React collaboration mode switching', () => {
     expect(main).toContain('optionBorderColors');
   });
 });
-

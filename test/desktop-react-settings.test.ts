@@ -16,15 +16,14 @@ describe('desktop React settings', () => {
     expect(app).toContain('onOpenSettings={() => setIsSettingsOpen(true)}');
   });
 
-  it('keeps settings surfaces concentric with the conversation surface', () => {
+  it('keeps settings surfaces unchanged while the conversation row follows the sidebar reference', () => {
     const sidebar = source('desktop/src/components/sidebar/AgentItem.tsx');
     const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
 
-    expect(sidebar).toContain('rounded-[10px]');
+    expect(sidebar).toContain('rounded-[8px]');
     expect(settings).toMatch(/<section role="dialog"[\s\S]*?rounded-\[10px\]/);
     expect(settings).toMatch(/function Card[\s\S]*?rounded-\[10px\][\s\S]*?p-1/);
-    expect(settings).toMatch(/function Row[\s\S]*?rounded-\[6px\]/);
-    expect(settings).not.toContain('rounded-[8px]');
+    expect(settings).toMatch(/function Row[\s\S]*?rounded-chip/);
   });
 
   it('retains every former settings category and wires stateful options to the Server bridge', () => {
@@ -198,7 +197,7 @@ describe('desktop React settings', () => {
     expect(settings).toContain('ref={mainScrollRef}');
     expect(settings).toContain('onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 0)}');
     expect(settings).toContain('isScrolled');
-    expect(settings).toContain('border-b border-slate-200/80');
+    expect(settings).toContain('border-b border-line');
     expect(settings).not.toMatch(/<main[^>]*>[\s\S]*?<button[^>]*onClick=\{props\.onClose\}/);
   });
 });

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { AssistantWork } from '../desktop/src/components/chat/AssistantWork';
+import { AgentResponse } from '../desktop/src/components/chat/AgentResponse';
 import { SubagentsList } from '../desktop/src/components/inspector/SubagentsList';
 import {
   collectSubagentItems,
@@ -171,11 +171,10 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(subagents[0].parts.some((part) => part.type === 'text' && (part as any).text.includes('still running'))).toBe(true);
   });
 
-  it('restores every existing Subagent work item without replaying its reveal animation', () => {
-    const renderWorkLog = () => renderToStaticMarkup(React.createElement(AssistantWork, {
+  it('renders every existing Subagent work item through the integrated agent response', () => {
+    const renderWorkLog = () => renderToStaticMarkup(React.createElement(AgentResponse, {
       streaming: true,
       durationMs: 68000,
-      preserveExistingItems: true,
       items: [
         {
           type: 'toolCall',
@@ -203,16 +202,15 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     renderWorkLog();
     const html = renderWorkLog();
 
-    expect(html).toContain('Working for 1m 8s');
+    expect(html).toContain('Working…');
     expect(html).toContain('data-part-key="tool-existing-1"');
     expect(html).toContain('data-part-key="tool-existing-2"');
     expect(html).toContain('data-part-key="tool-existing-3"');
-    expect(html).not.toContain('cot-work-item-enter');
-    expect(html).not.toContain('tool-row-enter');
+    expect(html).toContain('data-agent-response');
   });
 
-  it('keeps staged reveal enabled for normal live assistant work', () => {
-    const html = renderToStaticMarkup(React.createElement(AssistantWork, {
+  it('keeps all backend-reported live Tool calls visible', () => {
+    const html = renderToStaticMarkup(React.createElement(AgentResponse, {
       streaming: true,
       items: [
         { type: 'toolCall', id: 'chat-tool-1', name: 'read', arguments: {}, progress: { jobId: '1', state: 'completed' } },
@@ -221,9 +219,8 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     }));
 
     expect(html).toContain('data-part-key="chat-tool-1"');
-    expect(html).not.toContain('data-part-key="chat-tool-2"');
-    expect(html).toContain('cot-work-item-enter');
-    expect(html).toContain('tool-row-enter');
+    expect(html).toContain('data-part-key="chat-tool-2"');
+    expect(html).toContain('data-agent-response');
   });
 
   it('keeps richer Subagent history when a restored Server snapshot is sparse', () => {
@@ -516,15 +513,14 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(parts.filter((part) => part.type === 'text')).toHaveLength(1);
     expect(parts.some((part) => part.type === 'text' && part.text.includes('message_start'))).toBe(false);
 
-    const html = renderToStaticMarkup(React.createElement(AssistantWork, {
+    const html = renderToStaticMarkup(React.createElement(AgentResponse, {
       items: parts.filter((part) => part.type === 'toolCall'),
       streaming: false,
-      preserveExistingItems: true,
     }));
     expect(html.match(/data-part-key="call-fresh-verifier"/g)).toHaveLength(1);
-    expect(html).toContain('data-tool-status="Error"');
-    expect(html).toContain('fresh-verifier: Subagent task');
-    expect(html).toContain('subagent-tool-status failed">Failed');
+    expect(html).toContain('data-tool-status="failed"');
+    expect(html).toContain('fresh-verifier Failed');
+    expect(html).toContain('data-tool-status="failed"');
     expect(html).not.toContain('message_start');
     expect(html).not.toContain('message_end');
   });
@@ -545,7 +541,7 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(subagentsListSource).toContain('CircleAlert');
     expect(subagentsListSource).toContain('gap-2.5 rounded-[10px]');
     expect(subagentsListSource).toContain('mt-px flex h-5 w-5 flex-shrink-0 items-center justify-center');
-    expect(subagentsListSource).toContain('text-[#1e293b]');
+    expect(subagentsListSource).toContain('text-ink capitalize');
 
     const subagents = [
       {
@@ -576,12 +572,12 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(html).toContain('data-subagents-list');
     expect(html).toContain('data-subagent-id="subagent-1"');
     expect(html).toContain('data-subagent-status="running"');
-    expect(html).toContain('text-blue-600');
+    expect(html).toContain('text-accent');
     expect(html).toContain('Scope-Coordinator');
     expect(html).toContain('Drive Wave 1 scope');
     expect(html).toContain('data-subagent-id="subagent-2"');
     expect(html).toContain('data-subagent-status="completed"');
-    expect(html).toContain('text-emerald-500');
+    expect(html).toContain('text-green');
     expect(html).toContain('Async');
   });
 
@@ -689,4 +685,3 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(app).toContain('messagesSessionId !== activeAgentId');
   });
 });
-

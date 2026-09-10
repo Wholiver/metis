@@ -17,6 +17,7 @@ const {
 } = require("./server-connection.cjs");
 const desktopI18n = require("./i18n.cjs");
 const { WorkspaceCreateError, createWorkspaceDirectory } = require("./workspace-create.cjs");
+const workspaceGit = require("./workspace-git.cjs");
 
 app.commandLine.appendSwitch("log-level", "3");
 
@@ -293,13 +294,18 @@ function createWindow() {
 	const isMac = process.platform === "darwin";
 	const isWin = process.platform === "win32";
 	const isDark = nativeTheme.shouldUseDarkColors;
+	const shellColors = {
+		light: { page: "#fbfbfc", canvas: "#f2f3f4", ink: "#343439" },
+		dark: { page: "#222326", canvas: "#27282c", ink: "#f2f2f3" },
+	};
+	const shell = isDark ? shellColors.dark : shellColors.light;
 	mainWindow = new BrowserWindow({
 		width: 1540,
 		height: 960,
 		minWidth: 1040,
 		minHeight: 700,
 		show: false,
-		backgroundColor: isDark ? "#16171a" : "#ffffff",
+		backgroundColor: shell.page,
 		transparent: false,
 		roundedCorners: true,
 		title: "Metis",
@@ -309,8 +315,8 @@ function createWindow() {
 		trafficLightPosition: isMac ? { x: 16, y: 16 } : undefined,
 		titleBarOverlay: isWin
 			? {
-					color: isDark ? "#16171a" : "#fbfbfa",
-					symbolColor: isDark ? "#ffffff" : "#202324",
+					color: shell.canvas,
+					symbolColor: shell.ink,
 					height: 52,
 				}
 			: undefined,
@@ -326,12 +332,13 @@ function createWindow() {
 	nativeTheme.on("updated", () => {
 		if (!mainWindow || mainWindow.isDestroyed()) return;
 		const dark = nativeTheme.shouldUseDarkColors;
-		mainWindow.setBackgroundColor(dark ? "#16171a" : "#ffffff");
+		const nextShell = dark ? shellColors.dark : shellColors.light;
+		mainWindow.setBackgroundColor(nextShell.page);
 		if (process.platform === "win32") {
 			try {
 				mainWindow.setTitleBarOverlay({
-					color: dark ? "#16171a" : "#fbfbfa",
-					symbolColor: dark ? "#ffffff" : "#202324",
+					color: nextShell.canvas,
+					symbolColor: nextShell.ink,
 					height: 52,
 				});
 			} catch {}
@@ -339,7 +346,7 @@ function createWindow() {
 	});
 
 	const captureQuery = {};
-	if (process.env.METIS_DESKTOP_CAPTURE_PLAN_PREVIEW || process.env.METIS_DESKTOP_CAPTURE_PROGRESS || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_DEFAULT || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_COMPLETED) {
+	if (process.env.METIS_DESKTOP_CAPTURE_PLAN_PREVIEW || process.env.METIS_DESKTOP_CAPTURE_PLAN_CARD || process.env.METIS_DESKTOP_CAPTURE_PROGRESS || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_DEFAULT || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_COMPLETED) {
 		captureQuery["capture-plan-preview"] = "1";
 	}
 	if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS || process.env.METIS_DESKTOP_CAPTURE_PROGRESS_DEFAULT) captureQuery["capture-streaming-work"] = "1";
@@ -355,6 +362,8 @@ function createWindow() {
 	if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_THINKING) captureQuery["capture-thinking-progress"] = "1";
 	if (process.env.METIS_DESKTOP_CAPTURE_PLAN_POINTS) captureQuery["capture-plan-points"] = "1";
 	if (process.env.METIS_DESKTOP_CAPTURE_PLAN_POINTS_EMPTY) captureQuery["capture-plan-points-empty"] = "1";
+	if (process.env.METIS_DESKTOP_CAPTURE_WORKFLOW_PLAN) captureQuery["capture-workflow-plan"] = "1";
+	if (process.env.METIS_DESKTOP_CAPTURE_INSPECTOR_TABS) captureQuery["capture-inspector-tabs"] = "1";
 	if (process.env.METIS_DESKTOP_CAPTURE_MESSAGE_WIDTH) captureQuery["capture-message-width"] = "1";
 	if (process.env.METIS_DESKTOP_CAPTURE_TOOLS) captureQuery["capture-tools"] = "1";
 	if (process.env.METIS_DESKTOP_CAPTURE_SKILLS) captureQuery["capture-skills"] = "1";
@@ -565,6 +574,24 @@ function createWindow() {
 					}))()`);
 					console.error(`[capture:skills] ${JSON.stringify(skillMetrics)}`);
 				}
+				if (process.env.METIS_DESKTOP_CAPTURE_PLUS_MENU) {
+					await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-plus-button]')?.click()`);
+					await new Promise((resolve) => setTimeout(resolve, 220));
+					const plusMenuMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+						const menu = document.querySelector('[data-plus-menu]');
+						const composer = document.querySelector('[data-composer]');
+						const menuRect = menu?.getBoundingClientRect();
+						const composerRect = composer?.getBoundingClientRect();
+						return {
+							visible: Boolean(menu),
+							actions: [...document.querySelectorAll('[data-composer-action]')].map((item) => item.getAttribute('data-composer-action')),
+							menuWidth: Math.round(menuRect?.width || 0),
+							composerWidth: Math.round(composerRect?.width || 0),
+							anchoredAbove: Boolean(menuRect && composerRect && menuRect.bottom < composerRect.top),
+						};
+					})()`);
+					console.error(`[capture:plus-menu] ${JSON.stringify(plusMenuMetrics)}`);
+				}
 				if (process.env.METIS_DESKTOP_CAPTURE_SIDEBAR_COLLAPSED) {
 					await mainWindow.webContents.executeJavaScript("document.querySelector('#sidebarToggle').click()");
 					await new Promise((resolve) => setTimeout(resolve, 300));
@@ -744,7 +771,40 @@ function createWindow() {
 					console.error(`[capture:work-trace] ${JSON.stringify(workTraceMetrics)}`);
 				}
 					if (process.env.METIS_DESKTOP_CAPTURE_SESSION_SIDEBAR) {
-					const sidebarMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+					const sidebarMetrics = await mainWindow.webContents.executeJavaScript(`(async () => {
+						const sidebar = document.querySelector('[data-sidebar]');
+						const mainChat = document.querySelector('[data-purpose="main-chat"]');
+						const inspector = document.querySelector('[data-plan-inspector]');
+						const sidebarResizer = document.querySelector('[data-sidebar-resizer]');
+						const inspectorResizer = document.querySelector('[data-inspector-resizer]');
+						const initiallyDark = document.documentElement.classList.contains('dark');
+						const readSurfaces = () => {
+							const sidebarStyle = sidebar ? getComputedStyle(sidebar) : null;
+							const mainChatStyle = mainChat ? getComputedStyle(mainChat) : null;
+							const inspectorStyle = inspector ? getComputedStyle(inspector) : null;
+							const sidebarResizerStyle = sidebarResizer ? getComputedStyle(sidebarResizer) : null;
+							const inspectorResizerStyle = inspectorResizer ? getComputedStyle(inspectorResizer) : null;
+							return {
+								sidebarBackground: sidebarStyle?.backgroundColor || null,
+								mainChatBackground: mainChatStyle?.backgroundColor || null,
+								inspectorBackground: inspectorStyle?.backgroundColor || null,
+								mainChatMatchesInspector: Boolean(mainChatStyle && inspectorStyle && mainChatStyle.backgroundColor === inspectorStyle.backgroundColor),
+								backgroundsMatch: Boolean(sidebarStyle && mainChatStyle && sidebarStyle.backgroundColor === mainChatStyle.backgroundColor),
+								sidebarDiffersFromMainChat: Boolean(sidebarStyle && mainChatStyle && sidebarStyle.backgroundColor !== mainChatStyle.backgroundColor),
+								sidebarMatchesReferenceGray: sidebarStyle?.backgroundColor === 'rgb(233, 233, 233)',
+								sidebarBackdropFilter: sidebarStyle?.backdropFilter || null,
+								sidebarDivider: sidebarResizerStyle ? { background: sidebarResizerStyle.backgroundColor, width: sidebarResizerStyle.width } : null,
+								inspectorDivider: inspectorResizerStyle ? { background: inspectorResizerStyle.backgroundColor, width: inspectorResizerStyle.width } : null,
+								dividersAreSinglePixelAndNotWhite: Boolean(sidebarResizerStyle && inspectorResizerStyle && sidebarResizerStyle.width === '1px' && inspectorResizerStyle.width === '1px' && sidebarResizerStyle.backgroundColor !== 'rgb(255, 255, 255)' && inspectorResizerStyle.backgroundColor !== 'rgb(255, 255, 255)'),
+							};
+						};
+						document.documentElement.classList.remove('dark');
+						await new Promise((resolve) => setTimeout(resolve, 300));
+						const lightSurfaces = readSurfaces();
+						document.documentElement.classList.add('dark');
+						await new Promise((resolve) => setTimeout(resolve, 300));
+						const darkSurfaces = readSurfaces();
+						document.documentElement.classList.toggle('dark', initiallyDark);
 						const projectGroup = document.querySelector('[aria-label="Projects"]');
 						const projectButtons = [...document.querySelectorAll('[aria-label^="Open project "]')];
 						const activeProject = document.querySelector('[aria-label^="Open project "][aria-pressed="true"]');
@@ -753,6 +813,8 @@ function createWindow() {
 						const addRect = addProject?.getBoundingClientRect();
 						const activeMarkRect = activeProject?.querySelector('span')?.getBoundingClientRect();
 						return {
+							lightSurfaces,
+							darkSurfaces,
 							hasProjectGroup: Boolean(projectGroup),
 							projectCount: projectButtons.length,
 							activeProjectCount: activeProject ? 1 : 0,
@@ -768,6 +830,20 @@ function createWindow() {
 						const iconMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
 							const rows = [...document.querySelectorAll('[data-conversation-row]')];
 							const icons = [...document.querySelectorAll('[data-conversation-icon]')];
+							const sidebar = document.querySelector('[data-sidebar]');
+							const activeRow = document.querySelector('[data-conversation-row][aria-current="page"]');
+							const activeIndicator = document.querySelector('[data-conversation-indicator]');
+							const settingsButton = document.querySelector('#sidebarSettingsButton');
+							const boxMetrics = (element) => {
+								if (!element) return null;
+								const rect = element.getBoundingClientRect();
+								const style = getComputedStyle(element);
+								return {
+									size: [Math.round(rect.width), Math.round(rect.height)],
+									radius: style.borderRadius,
+									padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+								};
+							};
 							const iconSizes = icons.map((icon) => {
 								const rect = icon.getBoundingClientRect();
 								return [Math.round(rect.width), Math.round(rect.height)];
@@ -799,6 +875,10 @@ function createWindow() {
 								return Math.round(contentRect.left - graphicRight);
 							});
 							return {
+								sidebar: boxMetrics(sidebar),
+								activeRow: boxMetrics(activeRow),
+								activeIndicator: boxMetrics(activeIndicator),
+								settingsButton: boxMetrics(settingsButton),
 								conversationCount: rows.length,
 								iconCount: icons.length,
 								allRowsHaveIcon: rows.every((row) => Boolean(row.querySelector('[data-conversation-icon]'))),
@@ -975,9 +1055,18 @@ function createWindow() {
 						console.error(`[capture:mode-switcher] ${JSON.stringify(modeMetrics)}`);
 					}
 					if (process.env.METIS_DESKTOP_CAPTURE_PLAN_POINTS || process.env.METIS_DESKTOP_CAPTURE_PLAN_POINTS_EMPTY) {
-						const planPointMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+						const planPointMetrics = await mainWindow.webContents.executeJavaScript(`(async () => {
 							const inspector = document.querySelector('[data-plan-inspector]');
-							const points = [...document.querySelectorAll('[data-plan-point]')];
+							const initiallyDark = document.documentElement.classList.contains('dark');
+							document.documentElement.classList.remove('dark');
+							await new Promise((resolve) => setTimeout(resolve, 220));
+							const lightBackground = inspector ? getComputedStyle(inspector).backgroundColor : null;
+							document.documentElement.classList.add('dark');
+							await new Promise((resolve) => setTimeout(resolve, 220));
+							const darkBackground = inspector ? getComputedStyle(inspector).backgroundColor : null;
+							document.documentElement.classList.toggle('dark', initiallyDark);
+							const taskRowsRoot = document.querySelector('[data-inspector-plan-todos] [data-task-rows]');
+							const points = [...(taskRowsRoot?.querySelectorAll('[data-task-row]') || [])];
 							const changedFiles = [...document.querySelectorAll('[data-changed-file]')];
 							const empty = document.querySelector('[data-plan-points-empty]');
 							const inspectorRect = inspector?.getBoundingClientRect();
@@ -985,24 +1074,204 @@ function createWindow() {
 							const titleRange = title?.firstChild ? document.createRange() : null;
 							titleRange?.selectNodeContents(title);
 							const titleRect = titleRange?.getBoundingClientRect();
-							const firstPointIconRect = inspector?.querySelector('[data-plan-point] svg')?.getBoundingClientRect();
-							const firstPointTextRect = inspector?.querySelector('[data-plan-point-text]')?.getBoundingClientRect();
+							const firstPointIconRect = points[0]?.querySelector('svg')?.getBoundingClientRect();
+							const firstPointTextRect = points[0]?.querySelector('button > span:nth-child(2)')?.getBoundingClientRect();
+							const planTab = inspector?.querySelector('[data-inspector-tab-kind="plan"][aria-selected="true"]');
+							const header = planTab?.closest('.titlebar-drag') || inspector?.querySelector('.titlebar-drag');
+							const todos = inspector?.querySelector('[data-inspector-plan-todos]');
+							const planTabRect = planTab?.getBoundingClientRect();
+							const headerRect = header?.getBoundingClientRect();
+							const todosRect = todos?.getBoundingClientRect();
+							const headerBorderBottom = header ? Number.parseFloat(getComputedStyle(header).borderBottomWidth) || 0 : 0;
+							const dividerTop = headerRect ? headerRect.bottom - headerBorderBottom : null;
+							const capsuleToDivider = planTabRect && dividerTop != null
+								? Math.round((dividerTop - planTabRect.bottom) * 10) / 10
+								: null;
+							const dividerToTodos = headerRect && todosRect
+								? Math.round((todosRect.top - headerRect.bottom) * 10) / 10
+								: null;
+							const todosHeadingText = [...(todos?.querySelectorAll('h1, h2, h3, h4') || [])]
+								.map((node) => node.textContent?.trim() || '')
+								.filter(Boolean);
+							const completedTasks = points.filter((point) => point.dataset.taskStatus === 'done');
+							const inProgressTasks = points.filter((point) => point.dataset.taskStatus === 'running');
+							const pendingTasks = points.filter((point) => point.dataset.taskStatus === 'pending');
+							const firstPoint = points[0];
+							const secondPoint = points[1];
+							const firstPointRect = firstPoint?.getBoundingClientRect();
+							const secondPointRect = secondPoint?.getBoundingClientRect();
+							const firstPointStyle = firstPoint ? getComputedStyle(firstPoint) : null;
+							const secondPointStyle = secondPoint ? getComputedStyle(secondPoint) : null;
+							const rowGap = firstPointRect && secondPointRect
+								? Math.round((secondPointRect.top - firstPointRect.bottom) * 10) / 10
+								: null;
+							const scroll = taskRowsRoot;
+							const scrollItems = points;
+							const scrollRect = scroll?.getBoundingClientRect();
+							const thirdItemRect = scrollItems[2]?.getBoundingClientRect();
+							const fourthItemRect = scrollItems[3]?.getBoundingClientRect();
+							const maxVisibleRows = scroll ? Number(scroll.getAttribute('data-max-visible-rows') || 0) : 0;
+							const scrollsBeyondThree = Boolean(
+								scroll
+								&& scrollItems.length > 3
+								&& scroll.scrollHeight > scroll.clientHeight + 1
+							);
+							const thirdFullyVisible = Boolean(
+								scrollRect && thirdItemRect
+								&& thirdItemRect.top >= scrollRect.top - 1
+								&& thirdItemRect.bottom <= scrollRect.bottom + 1
+							);
+							const fourthClipped = Boolean(
+								scrollRect && fourthItemRect
+								&& fourthItemRect.bottom > scrollRect.bottom + 1
+							);
 							return {
+								lightBackground,
+								darkBackground,
 								visible: Boolean(inspectorRect && inspectorRect.width > 0 && inspectorRect.height > 0),
 								title: title?.textContent?.trim() || null,
 								pointCount: points.length,
 								changedFileCount: changedFiles.length,
 								changedFilePaths: changedFiles.map((file) => file.getAttribute('data-changed-file-path')),
-								statuses: points.map((point) => point.dataset.planStatus),
+								statuses: points.map((point) => point.dataset.taskStatus),
 								titleLeft: titleRect ? Math.round(titleRect.left) : null,
 								firstPointIconLeft: firstPointIconRect ? Math.round(firstPointIconRect.left) : null,
 								firstPointTextLeft: firstPointTextRect ? Math.round(firstPointTextRect.left) : null,
 								titleAlignedWithIcon: Boolean(titleRect && firstPointIconRect && Math.abs(titleRect.left - firstPointIconRect.left) <= 1),
 								emptyVisible: Boolean(empty?.getBoundingClientRect().height),
 								hasLegacyPreview: Boolean(inspector?.querySelector('[data-screen-preview], [data-routines]')),
+								capsuleToDivider,
+								dividerToTodos,
+								todosMatchesCapsuleGap: capsuleToDivider != null && dividerToTodos != null
+									&& Math.abs(capsuleToDivider - dividerToTodos) <= 1,
+								todosHeadingText,
+								todosTitleRemoved: todosHeadingText.length === 0,
+								completedTaskCount: completedTasks.length,
+								inProgressTaskCount: inProgressTasks.length,
+								pendingTaskCount: pendingTasks.length,
+								hasRowDividers: Boolean(firstPointStyle && firstPointStyle.borderBottomWidth !== '0px'),
+								rowGap,
+								taskRowHeights: points.map((point) => Math.round(point.querySelector('button')?.getBoundingClientRect().height || 0)),
+								taskRowsRadius: taskRowsRoot ? getComputedStyle(taskRowsRoot).borderRadius : null,
+								rowsExpandable: points.some((point) => point.querySelector('button')?.hasAttribute('aria-expanded')),
+								maxVisibleRows,
+								scrollsBeyondThree,
+								thirdFullyVisible,
+								fourthClipped,
+								scrollClientHeight: scroll ? Math.round(scroll.clientHeight) : null,
+								scrollScrollHeight: scroll ? Math.round(scroll.scrollHeight) : null,
 							};
 						})()`);
 						console.error(`[capture:plan-points] ${JSON.stringify(planPointMetrics)}`);
+					}
+					if (process.env.METIS_DESKTOP_CAPTURE_INSPECTOR_TABS) {
+						const initialNativeThemeSource = nativeTheme.themeSource;
+						nativeTheme.themeSource = "light";
+						await new Promise((resolve) => setTimeout(resolve, 120));
+						const inspectorTabMetrics = await mainWindow.webContents.executeJavaScript(`(async () => {
+							const wait = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));
+							const readTabs = () => [...document.querySelectorAll('[data-inspector-tab]')];
+							const strip = document.querySelector('[data-inspector-tab-strip]');
+							const initialTabs = readTabs();
+							const initialIds = initialTabs.map((tab) => tab.dataset.inspectorTabId);
+							const initialKinds = initialTabs.map((tab) => tab.dataset.inspectorTabKind);
+							const initialActive = initialTabs.find((tab) => tab.getAttribute('aria-selected') === 'true');
+							const stripRect = strip?.getBoundingClientRect();
+							const activeRect = initialActive?.getBoundingClientRect();
+							const activeInitiallyVisible = Boolean(stripRect && activeRect && activeRect.left >= stripRect.left - 1 && activeRect.right <= stripRect.right + 1);
+							const initialOverflowing = Boolean(strip && strip.scrollWidth > strip.clientWidth);
+							const initialSelectedCount = initialTabs.filter((tab) => tab.getAttribute('aria-selected') === 'true').length;
+
+							initialTabs[0]?.focus();
+							initialTabs[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+							await wait();
+							const keyboardActiveId = document.querySelector('[data-inspector-tab][aria-selected="true"]')?.dataset.inspectorTabId || null;
+							const keyboardMovedRight = keyboardActiveId === initialIds[1];
+
+							const middleTarget = document.querySelector('[data-inspector-tab][aria-selected="true"]');
+							middleTarget?.dispatchEvent(new MouseEvent('auxclick', { button: 1, bubbles: true, cancelable: true }));
+							await wait();
+							const middleClickClosed = readTabs().length === 19;
+
+							let dragReordered = false;
+							try {
+								const beforeDrag = readTabs();
+								const first = beforeDrag[0];
+								const last = beforeDrag[beforeDrag.length - 1];
+								const lastId = last?.dataset.inspectorTabId;
+								const transfer = new DataTransfer();
+								last?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+								await wait();
+								const currentFirst = readTabs()[0];
+								const rect = currentFirst?.getBoundingClientRect();
+								currentFirst?.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: rect?.left || 0, dataTransfer: transfer }));
+								await wait();
+								document.querySelector('[data-inspector-tab][draggable="true"]')?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: transfer }));
+								await wait();
+								dragReordered = readTabs()[0]?.dataset.inspectorTabId === lastId;
+							} catch {}
+
+							document.querySelector('[data-inspector-collapse-button]')?.click();
+							await wait(60);
+							const collapsed = !document.querySelector('[data-plan-inspector]');
+							document.querySelector('[data-inspector-expand-button]')?.click();
+							await wait(60);
+							const retainedAfterCollapse = readTabs().length === 19;
+
+							while (readTabs().length > 0) {
+								const activeClose = document.querySelector('[data-inspector-tab][aria-selected="true"] [data-inspector-tab-close]');
+								if (!activeClose) break;
+								activeClose.click();
+								await wait(8);
+							}
+							const hubVisibleAfterLastClose = Boolean(document.querySelector('[data-inspector-hub]'));
+							document.querySelector('[data-inspector-hub-item="files"]')?.click();
+							await wait();
+							document.querySelector('[data-inspector-panel-menu-button]')?.click();
+							await wait();
+							document.querySelector('[data-inspector-panel-option="files"]')?.click();
+							await wait();
+							const finalTabs = readTabs();
+
+							const activeTabForTheme = document.querySelector('[data-inspector-tab][aria-selected="true"]');
+							const lightActiveStyle = getComputedStyle(activeTabForTheme);
+							const lightActiveBackground = lightActiveStyle.backgroundColor;
+							const lightActiveToken = lightActiveStyle.getPropertyValue('--surface-tab-active').trim();
+
+							return {
+								initialCount: initialTabs.length,
+								initialKinds,
+								uniqueIds: new Set(initialIds).size,
+								overflowing: initialOverflowing,
+								activeInitiallyVisible,
+								selectedCount: initialSelectedCount,
+								keyboardMovedRight,
+								middleClickClosed,
+								dragReordered,
+								collapsed,
+								retainedAfterCollapse,
+								hubVisibleAfterLastClose,
+								duplicateTabsOpened: finalTabs.length === 2 && finalTabs.every((tab) => tab.dataset.inspectorTabKind === 'files'),
+								lightActiveBackground,
+								lightActiveToken,
+								tablistRole: document.querySelector('[data-inspector-tab-strip]')?.getAttribute('role') || null,
+							};
+						})()`);
+						nativeTheme.themeSource = "dark";
+						await new Promise((resolve) => setTimeout(resolve, 120));
+						const darkThemeMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
+							const activeTab = document.querySelector('[data-inspector-tab][aria-selected="true"]');
+							const style = activeTab ? getComputedStyle(activeTab) : null;
+							return {
+								darkActiveBackground: style?.backgroundColor || null,
+								darkActiveToken: style?.getPropertyValue('--surface-tab-active').trim() || null,
+								darkClassApplied: document.documentElement.classList.contains('dark'),
+							};
+						})()`);
+						Object.assign(inspectorTabMetrics, darkThemeMetrics);
+						nativeTheme.themeSource = initialNativeThemeSource;
+						await new Promise((resolve) => setTimeout(resolve, 120));
+						console.error(`[capture:inspector-tabs] ${JSON.stringify(inspectorTabMetrics)}`);
 					}
 					if (process.env.METIS_DESKTOP_CAPTURE_MESSAGE_WIDTH) {
 						const messageWidthMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
@@ -1080,27 +1349,28 @@ function createWindow() {
 					if (process.env.METIS_DESKTOP_CAPTURE_PLAN_PREVIEW) {
 						const planMetrics = await mainWindow.webContents.executeJavaScript(`(async () => {
 							const preview = document.querySelector('[data-plan-preview]');
-							const heading = preview?.querySelector('h2');
-							const body = preview?.querySelector('.plan-preview-body');
-							const actions = preview?.querySelector('.plan-preview-actions');
-							const processButton = preview?.querySelector('[data-plan-process]');
-							const refineButton = preview?.querySelector('[data-plan-refine]');
+							const previewCard = preview?.querySelector('[data-recommendation-card]');
+							const previewTitle = preview?.querySelector('[data-recommendation-title]');
+							const previewFooter = preview?.querySelector('[data-recommendation-footer]');
+							const previewExpand = preview?.querySelector('[data-recommendation-expand]');
+							const panel = document.querySelector('[data-inspector-plan-panel]');
+							const markdown = document.querySelector('[data-inspector-plan-markdown]');
+							const todos = document.querySelector('[data-inspector-plan-todos]');
+							const actions = document.querySelector('[data-inspector-plan-actions]');
+							const processButton = document.querySelector('[data-plan-process]');
+							const refineButton = document.querySelector('[data-plan-refine]');
 							const previewRect = preview?.getBoundingClientRect();
 							const processRect = processButton?.getBoundingClientRect();
 							const actionsStyle = actions ? getComputedStyle(actions) : null;
 							const processStyle = processButton ? getComputedStyle(processButton) : null;
 							const refineStyle = refineButton ? getComputedStyle(refineButton) : null;
+							const previewStyle = preview ? getComputedStyle(preview) : null;
+							const previewCardStyle = previewCard ? getComputedStyle(previewCard) : null;
+							const previewFooterStyle = previewFooter ? getComputedStyle(previewFooter) : null;
 							const messageLane = document.querySelector('[data-message-lane]');
 							const messageScroll = document.querySelector('[data-message-scroll]');
 							const messageLaneRect = messageLane?.getBoundingClientRect();
 							const composerRect = document.querySelector('[data-composer]')?.getBoundingClientRect();
-							const previewStyle = preview ? getComputedStyle(preview) : null;
-							const bodyStyle = body ? getComputedStyle(body) : null;
-							const collapsedMaxHeight = bodyStyle?.maxHeight || null;
-							const expandButton = preview?.querySelector('[aria-label="Expand plan"]');
-							expandButton?.click();
-							await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-							const expandedBodyStyle = body ? getComputedStyle(body) : null;
 							const overflowProbe = document.createElement('div');
 							overflowProbe.style.height = '2000px';
 							overflowProbe.style.flex = '0 0 auto';
@@ -1109,16 +1379,22 @@ function createWindow() {
 							const overflowLaneRect = messageLane?.getBoundingClientRect();
 							const overflowComposerRect = document.querySelector('[data-composer]')?.getBoundingClientRect();
 							overflowProbe.remove();
+							const title = previewTitle?.textContent?.trim() || null;
+							const actionsCard = document.querySelector('[data-inspector-plan-actions-card]');
+							const actionsCardStyle = actionsCard ? getComputedStyle(actionsCard) : null;
 							return {
 								hasPreview: Boolean(preview),
-								title: heading?.textContent?.trim() || null,
+								title,
 								isCurrent: preview?.getAttribute('data-plan-current') || null,
 								width: previewRect ? Math.round(previewRect.width) : null,
 								borderRadius: previewStyle?.borderRadius || null,
 								borderWidth: previewStyle?.borderTopWidth || null,
-								collapsedMaxHeight,
-								expanded: expandButton?.getAttribute('aria-expanded') || null,
-								expandedMaxHeight: expandedBodyStyle?.maxHeight || null,
+								cardSize: previewCard ? [Math.round(previewCard.getBoundingClientRect().width), Math.round(previewCard.getBoundingClientRect().height)] : null,
+								cardRadius: previewCardStyle?.borderRadius || null,
+								hasRecommendationCard: Boolean(previewCard),
+								previewHasHorizontalDivider: Boolean(previewFooterStyle && Number.parseFloat(previewFooterStyle.borderTopWidth) > 0),
+								hasExpandControl: Boolean(previewExpand),
+								inspectorShowsProposalAndTodos: Boolean(panel && markdown && todos),
 								messageLane: messageLaneRect ? { left: Math.round(messageLaneRect.left), right: Math.round(messageLaneRect.right), width: Math.round(messageLaneRect.width) } : null,
 								composer: composerRect ? { left: Math.round(composerRect.left), right: Math.round(composerRect.right), width: Math.round(composerRect.width) } : null,
 								laneMatchesComposer: Boolean(messageLaneRect && composerRect && Math.abs(messageLaneRect.left - composerRect.left) < 1 && Math.abs(messageLaneRect.right - composerRect.right) < 1),
@@ -1126,9 +1402,15 @@ function createWindow() {
 								overflowLaneMatchesComposer: Boolean(overflowLaneRect && overflowComposerRect && Math.abs(overflowLaneRect.left - overflowComposerRect.left) < 1 && Math.abs(overflowLaneRect.right - overflowComposerRect.right) < 1),
 								processHitArea: processRect ? [Math.round(processRect.width), Math.round(processRect.height)] : null,
 								actionsBackgroundColor: actionsStyle?.backgroundColor || null,
-								actionsBackgroundTransparent: actionsStyle?.backgroundColor === 'rgba(0, 0, 0, 0)',
+								actionsBackgroundTransparent: actionsStyle?.backgroundColor === 'rgba(0, 0, 0, 0)' || Boolean(actionsStyle?.backgroundColor?.includes('244, 244, 244')),
 								actionsBorderTopWidth: actionsStyle?.borderTopWidth || null,
 								actionsDividerRemoved: actionsStyle?.borderTopWidth === '0px',
+								hasActionsCard: Boolean(actionsCard),
+								actionsCardMatchesUserBubble: Boolean(actionsCardStyle
+									&& actionsCardStyle.backgroundColor === 'rgb(255, 255, 255)'
+									&& actionsCardStyle.borderTopWidth === '1px'
+									&& actionsCardStyle.borderTopColor === 'rgb(230, 230, 230)'
+									&& Math.abs(Number.parseFloat(actionsCardStyle.borderTopLeftRadius) - 10) <= 0.5),
 								processButtonStyle: processStyle ? {
 									height: processStyle.height,
 									borderRadius: processStyle.borderRadius,
@@ -1144,15 +1426,114 @@ function createWindow() {
 								buttonsUseInterfacePills: Boolean(processStyle && refineStyle
 									&& processStyle.height === '32px'
 									&& refineStyle.height === '32px'
-									&& Number.parseFloat(processStyle.borderRadius) >= 10
-									&& Number.parseFloat(refineStyle.borderRadius) >= 10),
-								buttonsUseNeutralPalette: [processStyle, refineStyle].every((style) => {
-									const channels = style?.backgroundColor.match(/[\\d.]+/g)?.slice(0, 3).map(Number);
-									return channels?.length === 3 && Math.max(...channels) - Math.min(...channels) <= 6;
-								}),
+									&& Number.parseFloat(processStyle.borderRadius) >= 16
+									&& Number.parseFloat(refineStyle.borderRadius) >= 16),
+								buttonsUseNeutralPalette: Boolean(processStyle && refineStyle
+									&& processStyle.backgroundColor === 'rgb(28, 28, 28)'
+									&& refineStyle.backgroundColor === 'rgb(236, 238, 241)'),
+							};
+						})()`).catch((error) => ({
+							captureError: error?.message || String(error),
+							captureStack: error?.stack || null,
+						}));
+						console.error(`[capture:plan-preview] ${JSON.stringify(planMetrics)}`);
+					}
+					if (process.env.METIS_DESKTOP_CAPTURE_PLAN_CARD) {
+						const planCardMetrics = await mainWindow.webContents.executeJavaScript(`(async () => {
+							const card = document.querySelector('[data-plan-preview] [data-recommendation-card]');
+							const expand = card?.querySelector('[data-recommendation-expand]');
+							const collapsedRect = card?.getBoundingClientRect();
+							const expandRect = expand?.getBoundingClientRect();
+							expand?.click();
+							await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+							const expandedRect = card?.getBoundingClientRect();
+							const expandedState = expand?.getAttribute('aria-expanded') || null;
+							expand?.click();
+							await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+							return {
+								visible: Boolean(card && collapsedRect && collapsedRect.width > 0 && collapsedRect.height > 0),
+								collapsedSize: collapsedRect ? [Math.round(collapsedRect.width), Math.round(collapsedRect.height)] : null,
+								expandedSize: expandedRect ? [Math.round(expandedRect.width), Math.round(expandedRect.height)] : null,
+								widthPreserved: Boolean(collapsedRect && expandedRect && Math.abs(collapsedRect.width - expandedRect.width) < 1),
+								cardExpanded: Boolean(expandRect && expandedState === 'true'),
+								expandedState,
+								collapsedAgain: expand?.getAttribute('aria-expanded') === 'false',
 							};
 						})()`);
-						console.error(`[capture:plan-preview] ${JSON.stringify(planMetrics)}`);
+						console.error(`[capture:plan-card] ${JSON.stringify(planCardMetrics)}`);
+					}
+					if (process.env.METIS_DESKTOP_CAPTURE_WORKFLOW_PLAN) {
+						const workflowPlanMetrics = await mainWindow.webContents.executeJavaScript(`(async () => {
+							const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+							await wait(300);
+							const card = document.querySelector('[data-workflow-plan-card]');
+							const header = card?.querySelector('[data-workflow-plan-header]');
+							const body = card?.querySelector('[data-workflow-plan-body]');
+							const progress = document.querySelector('[data-composer-progress-slot]');
+							const composer = document.querySelector('[data-composer]');
+							const planSlot = document.querySelector('[data-composer-plan-slot]');
+							const steps = card ? Array.from(card.querySelectorAll('[data-workflow-plan-step]')) : [];
+							const progressRect = progress?.getBoundingClientRect();
+							const cardRect = card?.getBoundingClientRect();
+							const composerRect = composer?.getBoundingClientRect();
+							const expandedHeight = Math.round(cardRect?.height || 0);
+							const expandedProgressTop = Math.round(progressRect?.top || 0);
+							header?.click();
+							await wait(500);
+							const collapsedRect = card?.getBoundingClientRect();
+							const collapsedHeaderRect = header?.getBoundingClientRect();
+							const collapsedComposerRect = composer?.getBoundingClientRect();
+							const collapsedProgress = progress?.getBoundingClientRect();
+							const collapsedHeight = Math.round(collapsedRect?.height || 0);
+							const collapsedProgressTop = Math.round(collapsedProgress?.top || 0);
+							const collapsedExpanded = header?.getAttribute('aria-expanded') || null;
+							header?.click();
+							await wait(500);
+							const reexpanded = header?.getAttribute('aria-expanded') === 'true';
+							const composerRadius = composer ? Number.parseFloat(getComputedStyle(composer).borderTopLeftRadius) : 0;
+							const composerStyle = composer ? getComputedStyle(composer) : null;
+							const cardStyle = card ? getComputedStyle(card) : null;
+							const activeIconRect = card?.querySelector('[data-plan-step-icon="in_progress"]')?.getBoundingClientRect();
+							const pendingIconRect = card?.querySelector('[data-plan-step-icon="pending"]')?.getBoundingClientRect();
+							return {
+								visible: Boolean(card && cardRect && cardRect.width > 0 && cardRect.height > 0),
+								stepCount: steps.length,
+								stepStatuses: steps.map((step) => step.getAttribute('data-plan-step-status')),
+								progressAbovePlan: Boolean(progressRect && cardRect && progressRect.bottom <= cardRect.top + 1),
+								planAboveComposer: Boolean(cardRect && composerRect && cardRect.bottom <= composerRect.top + 1),
+								stackedAsUnit: Boolean(document.querySelector('[data-composer-stack]')),
+								notWrapped: Boolean(card && composer && !document.querySelector('[data-composer-plan-shell]') && !document.querySelector('[data-composer-input-nest]')),
+								overlapMatchesInputRadius: Boolean(cardRect && composerRect && composerRadius > 0
+									&& Math.abs((cardRect.bottom - composerRect.top) - composerRadius) <= 1),
+								collapsedHeaderFullyVisible: Boolean(collapsedHeaderRect && collapsedComposerRect
+									&& collapsedHeaderRect.bottom <= collapsedComposerRect.top + 1),
+								gapAboveComposer: cardRect && composerRect ? Math.round(composerRect.top - cardRect.bottom) : null,
+								widthMatchesComposer: Boolean(cardRect && composerRect && Math.abs(cardRect.width - composerRect.width) < 3),
+								planKeepsOwnFrame: Boolean(cardStyle
+									&& Number.parseFloat(cardStyle.borderTopWidth) > 0
+									&& Number.parseFloat(cardStyle.borderBottomWidth) > 0
+									&& Number.parseFloat(cardStyle.borderTopLeftRadius) >= 10),
+								activeIconSize: activeIconRect ? [Math.round(activeIconRect.width), Math.round(activeIconRect.height)] : null,
+								pendingIconSize: pendingIconRect ? [Math.round(pendingIconRect.width), Math.round(pendingIconRect.height)] : null,
+								composerKeepsOwnRadius: composerRadius >= 14,
+								composerKeepsTopFrame: Boolean(composerStyle
+									&& Number.parseFloat(composerStyle.borderTopWidth) > 0
+									&& Number.parseFloat(composerStyle.borderTopLeftRadius) >= 14
+									&& Number.parseFloat(composerStyle.borderTopRightRadius) >= 14),
+								bodyConnected: Boolean(body?.isConnected),
+								planSlotConnected: Boolean(planSlot?.isConnected),
+								expandedHeight,
+								collapsedHeight,
+								collapsedExpanded,
+								collapsedShorter: collapsedHeight > 0 && collapsedHeight < expandedHeight - 8,
+								progressMovedDownOnCollapse: collapsedProgressTop > expandedProgressTop + 4,
+								reexpanded,
+								ariaExpandedInitial: 'true',
+							};
+						})()`).catch((error) => ({
+							captureError: error?.message || String(error),
+						}));
+						console.error(`[capture:workflow-plan] ${JSON.stringify(workflowPlanMetrics)}`);
 					}
 					if (process.env.METIS_DESKTOP_CAPTURE_THINKING) {
 						const thinkingMetrics = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -1510,9 +1891,19 @@ function createWindow() {
 						console.error(`[capture:progress] ${JSON.stringify(progressMetrics)}`);
 					}
 					if (process.env.METIS_DESKTOP_CAPTURE_TOOLS) {
+						const workHoverPoint = await mainWindow.webContents.executeJavaScript(`(() => {
+							const rect = document.querySelector('[data-assistant-work] > .cot-header-bar')?.getBoundingClientRect();
+							return rect ? { x: Math.round(rect.left + 20), y: Math.round(rect.top + rect.height / 2) } : null;
+						})()`);
+						if (workHoverPoint) {
+							mainWindow.webContents.sendInputEvent({ type: 'mouseMove', ...workHoverPoint });
+							await new Promise((resolve) => setTimeout(resolve, 80));
+						}
 						const toolMetrics = await mainWindow.webContents.executeJavaScript(`(async () => {
 							const work = document.querySelector('[data-assistant-work]');
 							const workToggle = work?.querySelector(':scope > .cot-header-bar');
+							const workTitle = work?.querySelector('.cot-title');
+							const hoverTitleColor = workTitle ? getComputedStyle(workTitle).color : null;
 							if (workToggle?.getAttribute('aria-expanded') !== 'true') {
 								workToggle?.click();
 								await new Promise((resolve) => setTimeout(resolve, 420));
@@ -1520,8 +1911,10 @@ function createWindow() {
 							const group = document.querySelector('[data-tool-group]');
 							const toggle = group?.querySelector('.tool-group-header');
 							const initialExpanded = toggle?.getAttribute('aria-expanded') || null;
-							toggle?.click();
-							await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+							if (initialExpanded !== 'true') {
+								toggle?.click();
+								await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+							}
 							const list = group?.querySelector('[data-tool-group-scroll]');
 							const groupBody = group?.querySelector('.tool-group-body');
 							const rows = [...(group?.querySelectorAll('.tool-group-row') || [])];
@@ -1531,20 +1924,7 @@ function createWindow() {
 							const lastRowRect = rows.at(-1)?.getBoundingClientRect();
 							const listStyle = list ? getComputedStyle(list) : null;
 							const fadeStyle = groupBody ? getComputedStyle(groupBody, '::after') : null;
-							const topFadeStyle = groupBody ? getComputedStyle(groupBody, '::before') : null;
 							const autoScrolledToBottom = list ? Math.abs(list.scrollHeight - list.clientHeight - list.scrollTop) <= 1 : null;
-							const topFadeHeight = topFadeStyle?.height || null;
-							const topFadeBackgroundImage = topFadeStyle?.backgroundImage || null;
-							if (list) {
-								list.scrollTop = 0;
-								await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-							}
-							const topFadeHiddenAtTop = !group?.classList.contains('scrolled-from-top');
-							if (list) {
-								list.scrollTop = list.scrollHeight;
-								await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-							}
-							const topFadeRestoredAfterScroll = group?.classList.contains('scrolled-from-top') || false;
 							return {
 								hasToolGroup: Boolean(group),
 								summary: group?.querySelector('.tool-group-summary')?.textContent?.trim() || null,
@@ -1554,24 +1934,15 @@ function createWindow() {
 								expanded: toggle?.getAttribute('aria-expanded') || null,
 								maxHeight: listStyle?.maxHeight || null,
 								overflowY: listStyle?.overflowY || null,
-								clientHeight: list?.clientHeight || null,
-								scrollHeight: list?.scrollHeight || null,
 								hasInternalOverflow: list ? list.scrollHeight > list.clientHeight : null,
-								hasOverflowClass: group?.classList.contains('has-overflow') || false,
-								scrolledFromTop: group?.classList.contains('scrolled-from-top') || false,
-								fadeHeight: fadeStyle?.height || null,
-								fadeBackgroundImage: fadeStyle?.backgroundImage || null,
-								fadeBackdropFilter: fadeStyle?.backdropFilter || null,
-								topFadeHeight,
-								topFadeBackgroundImage,
-								topFadeHiddenAtTop,
-								topFadeRestoredAfterScroll,
 								autoScrolledToBottom,
 								rowHeight: firstRowRect ? Math.round(firstRowRect.height) : null,
 								rowStep: firstRowRect && secondRowRect ? Math.round(secondRowRect.top - firstRowRect.top) : null,
 								rowGap: firstRowRect && secondRowRect ? Math.round(secondRowRect.top - firstRowRect.bottom) : null,
 								lastRowVisible: Boolean(listRect && lastRowRect && lastRowRect.bottom <= listRect.bottom + 1),
-								individualCardCount: document.querySelectorAll('.tool-card').length,
+								fadeBackdropFilter: fadeStyle?.backdropFilter || null,
+								hoverTitleColor,
+								workedTitleAvoidsBlue: hoverTitleColor !== 'rgb(37, 99, 235)' && hoverTitleColor !== 'rgb(96, 165, 250)',
 							};
 						})()`);
 						console.error(`[capture:tools] ${JSON.stringify(toolMetrics)}`);
@@ -1792,6 +2163,19 @@ function registerIpc() {
 	});
 	ipcMain.handle("workspace:tree", () => readWorkspaceTree());
 	ipcMain.handle("workspace:diff", (_event, relativePath) => readGitDiff(relativePath));
+	ipcMain.handle("workspace:git-info", () => workspaceGit.readGitInfo(workspaceRoot, nativeText));
+	ipcMain.handle("workspace:git-status", (_event, mode = "git") =>
+		workspaceGit.readGitStatus(workspaceRoot, mode === "branch" ? "branch" : "git", nativeText),
+	);
+	ipcMain.handle("workspace:git-diff", (_event, relativePath, mode = "git") =>
+		workspaceGit.readFileDiff(
+			workspaceRoot,
+			relativePath,
+			mode === "branch" ? "branch" : "git",
+			nativeText,
+		),
+	);
+	ipcMain.handle("workspace:git-init", () => workspaceGit.initGitRepo(workspaceRoot, nativeText));
 	ipcMain.handle("workspace:reveal", async (_event, relativePath) => {
 		const absolutePath = resolveWorkspacePath(relativePath);
 		shell.showItemInFolder(absolutePath);
@@ -1892,10 +2276,12 @@ async function deleteCustomProvider(providerId) {
 }
 
 function workspaceSummary() {
+	const isGitRepo = workspaceGit.isGitRepoSync(workspaceRoot);
 	return {
 		name: path.basename(workspaceRoot),
 		path: workspaceRoot,
 		isProjectRepo: isDefaultWorkspaceProjectRepo,
+		isGitRepo,
 	};
 }
 
@@ -1990,14 +2376,13 @@ async function readGitDiff(relativePath) {
 		diff = error.stdout || "";
 	}
 	if (!diff) {
+		if (!isUntracked) {
+			return { path: normalized, diff: "", truncated: false };
+		}
 		const source = await fsp.readFile(absolutePath, "utf8");
 		const sourceLines = source.split(/\r?\n/).slice(0, 500);
-		const body = sourceLines
-			.map((line) => `${isUntracked ? "+" : " "}${line}`)
-			.join("\n");
-		diff = isUntracked
-			? `diff --git a/${normalized} b/${normalized}\nnew file mode 100644\n--- /dev/null\n+++ b/${normalized}\n@@ -0,0 +1,${sourceLines.length} @@\n${body}`
-			: body;
+		const body = sourceLines.map((line) => `+${line}`).join("\n");
+		diff = `diff --git a/${normalized} b/${normalized}\nnew file mode 100644\n--- /dev/null\n+++ b/${normalized}\n@@ -0,0 +1,${sourceLines.length} @@\n${body}`;
 	}
 	return { path: normalized, diff: diff.slice(0, MAX_DIFF_BYTES), truncated: diff.length > MAX_DIFF_BYTES };
 }

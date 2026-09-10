@@ -94,11 +94,12 @@ describe("desktop edit menus", () => {
 describe("desktop attachment wiring", () => {
 	it("accepts every file type from the active React plus picker", () => {
 		const composer = readFileSync(new URL("../desktop/src/components/chat/Composer.tsx", import.meta.url), "utf8");
+		const promptBar = readFileSync(new URL("../desktop/src/components/primitives/PromptBar.tsx", import.meta.url), "utf8");
 		expect(composer).toContain('type="file"');
 		expect(composer).toContain("multiple");
 		expect(composer).not.toMatch(/type="file"[\s\S]{0,80}accept=/);
-		expect(composer).toContain("onClick={() => fileInputRef.current?.click()}");
-		expect(composer).toContain("data-composer-attachments");
+		expect(composer).toContain("onSelectFiles={() => fileInputRef.current?.click()}");
+		expect(promptBar).toContain("data-composer-attachments");
 	});
 
 	it("wires picker, paste, drop, IPC fallback, and Server images", () => {
@@ -106,7 +107,7 @@ describe("desktop attachment wiring", () => {
 		const hook = readFileSync(new URL("../desktop/src/hooks/useMetisServer.ts", import.meta.url), "utf8");
 		const preload = readFileSync(new URL("../desktop/preload.cjs", import.meta.url), "utf8");
 		const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
-		expect(composer).toContain("onPaste={(event)");
+		expect(composer).toContain("onPaste: (event)");
 		expect(composer).toContain("onDragEnter={(event)");
 		expect(composer).toContain("onDrop={(event)");
 		expect(composer).toContain("filesFromTransfer(event.dataTransfer)");
@@ -116,4 +117,3 @@ describe("desktop attachment wiring", () => {
 		expect(main).toContain('ipcMain.handle("attachment:save"');
 	});
 });
-

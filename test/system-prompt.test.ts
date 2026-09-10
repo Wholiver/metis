@@ -1,5 +1,11 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { buildInstructionStack, buildSystemPrompt, compileInstructionStack, instructionStackHash } from "../src/core/system-prompt.ts";
+import { BUILTIN_COORDINATOR } from "../src/core/agent-definition.ts";
+import { SPAWN_AGENT_GUIDANCE } from "../src/core/tools/spawn_agent.ts";
+import { PerformanceRuntime } from "../src/core/performance-runtime.ts";
 
 describe("instruction stack", () => {
 	test("renders trusted base and developer instructions in deterministic order", () => {
@@ -102,6 +108,31 @@ describe("instruction stack", () => {
 		expect(prompt).toContain("Conversational / General Query / Greeting");
 		expect(prompt).toContain("First apply Phase 0 Admission Check");
 		expect(prompt).toContain("respond directly in text without mutating tools, creating ROADMAP/GATELOG files, or spawning subagents");
+	});
+
+	test("enforces T0/T1 simple task fast-path without spawning subagents across all instruction layers", () => {
+		const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "build" });
+		expect(prompt).toContain("Tier T0 (Mechanical Apply): For fully specified edits/commands with zero design decisions, execute tools directly. Strictly forbid calling spawn_agent or creating ROADMAP/GATELOG files.");
+		expect(prompt).toContain("Tier T1 (Bounded TDD / Localized Fix or Feature): For single-boundary features/fixes, perform TDD and verification directly via enabled tools. Strictly forbid calling spawn_agent, dispatching subagents, or creating governance files.");
+		expect(prompt).toContain("Autonomously evaluate task difficulty: for simple or standard engineering tasks (T0/T1: mechanical edits, single-boundary fixes/features, script runs, queries), execute enabled tools directly (read, edit, write, bash) — strictly forbid calling spawn_agent and skip all governance ceremony");
+
+		// BUILTIN_COORDINATOR role contract
+		expect(BUILTIN_COORDINATOR.systemPrompt).toContain("T0 (Mechanical Apply):** For obvious changes without design decisions -> execute tools directly. Strictly forbid calling spawn_agent");
+		expect(BUILTIN_COORDINATOR.systemPrompt).toContain("T1 (Bounded TDD):** For single bounded features or fixes -> execute tools directly with targeted tests and verification. Strictly forbid calling spawn_agent");
+
+		// spawn_agent tool guidance negative constraint
+		expect(SPAWN_AGENT_GUIDANCE).toContain("Do NOT use spawn_agent for simple, mechanical, localized, or low-difficulty tasks (T0/T1)");
+
+		// performance runtime L0 coordinator instructions
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-prompt-test-"));
+		try {
+			const runtime = new PerformanceRuntime(tempDir);
+			runtime.start({ kind: "start", mission: "Simple task test" });
+			const protocolBlock = runtime.contextBlocks().find((b) => b.id === "performance-protocol");
+			expect(protocolBlock?.content).toContain("First evaluate task difficulty autonomously: for simple, localized, or standard tasks (T0/T1: mechanical edits, single-boundary fixes/features, script execution, queries), execute tools directly (read, edit, write, bash) — strictly forbid calling spawn_agent");
+		} finally {
+			rmSync(tempDir, { recursive: true, force: true });
+		}
 	});
 });
 

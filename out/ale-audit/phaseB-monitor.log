@@ -1,0 +1,45 @@
+local_watcher_start 2026-09-07 18:32:27
+==== local poll=1 2026-09-07 18:32:28 ====
+==== 2026-09-07 18:32:29 ====
+active
+run.json finished: 17
+eval_result: 17
+last done lines:
+2026-09-07 17:23:17,287  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/computing_math/cfr_game_theory_equilibrium/v0] done: status=completed score=0.33 duration=1558.7s (attempt 1/3)
+2026-09-07 17:38:57,354  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/computing_math/clustered_cyclic_code_circuit_level_simulation/v0] done: status=completed score=0.0 duration=940.3s (attempt 1/3)
+2026-09-07 17:51:54,297  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/computing_math/cost_optimization_1/v0] done: status=completed score=0.692105 duration=775.8s (attempt 1/3)
+2026-09-07 18:06:28,888  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/computing_math/cp_test_gen_1/v0] done: status=completed score=0.5 duration=762.6s (attempt 1/3)
+2026-09-07 18:15:21,243  INFO     ale_run.orchestration.runner  [adapters.ale_official.deployer.MetisDeployer/computing_math/data_pipeline_etl_instance_1/v0] done: status=completed score=0.6666666666666666 duration=501.5s (attempt 1/3)
+tail log (no otel):
+2026-09-07 18:16:26,073  INFO     ale_run.environments.providers.gcloud  CUA server ready at http://localhost:32883
+2026-09-07 18:16:26,093  INFO     computer  Logger set to INFO level
+2026-09-07 18:16:26,093  INFO     computer  Initializing Computer...
+2026-09-07 18:16:26,093  INFO     computer  Logger set to INFO level
+2026-09-07 18:16:26,094  INFO     computer.vm  Logger set to INFO level
+2026-09-07 18:16:26,094  INFO     computer.interface  Logger set to INFO level
+2026-09-07 18:16:26,094  INFO     core.telemetry  Recording event: computer_initialized with properties: {'version': '0.1.8', 'os': 'linux', 'os_version': '6.8.0-138-generic', 'python_version': '3.12.3', 'provider_type': 'lume'}
+2026-09-07 18:16:26,095  INFO     core.telemetry  Sent event to PostHog: computer_initialized
+2026-09-07 18:16:27,414  INFO     cua.interface  Logger set to INFO level
+2026-09-07 18:16:27,415  INFO     computer.interface.linux  Logger set to INFO level
+2026-09-07 18:16:28,265  INFO     ale_run.environments.task_data.local_host  local: staged ['input', 'software'] for dit_pipeline_cfg_alignment_fid_256_001 from task-data/computing_math/dit_pipeline_cfg_alignment_fid_256_001/base
+2026-09-07 18:16:28,296  INFO     ale_run.tasks.loader  Loaded task config via load() function
+2026-09-07 18:16:28,297  INFO     ale_run.tasks.driver  Running task setup (attempt 1/4)...
+2026-09-07 18:16:28,297  INFO     ale_run.tasks.driver  Task setup completed
+2026-09-07 18:18:09,010  INFO     ale_run.executors.sandbox  sandbox: spawned pid=1446 (deployer=MetisDeployer, work_dir=/home/user/.ale/metis/adapters_ale_official_deployer_metisdeployer__gpt-5-6-luna__computing_math__dit_pipeline_cfg_alignment_fid_256_001__v0__20260907_045518)
+cats {'pending_or_running': 81, 'completed_score>0': 13, 'completed_score=0': 4}
+---
+parsed finished=12 active=active
+2026-09-07 17:42:44 poll=2
+parsed finished=14 active=active
+2026-09-07 18:27:48 poll=3
+parsed finished=17 active=active
+---
+active
+               total        used        free      shared  buff/cache   available
+Mem:           3.8Gi       2.4Gi       538Mi       280Ki       1.1Gi       1.4Gi
+ale-computing-math-dit-pipeline-cfg-alignmen-a2e79851 mem=1.421GiB / 2GiB cpu=8.09%
+parsed finished=17 active=active cats {'pending_or_running': 81, 'completed_score>0': 13, 'completed_score=0': 4}
+==== checkpoint 2026-09-07 19:16:08 finished=20/98 current=k3_abelian active cats gt0=14 eq0=6 pending~78 ====
+==== checkpoint 2026-09-07 20:01:50 finished=21/98 current=k8s_payment gt0=15 eq0=6 ====
+==== checkpoint 2026-09-07 20:41:22 finished=21/98 current=k8s_payment gt0=15 eq0=6 ====
+==== checkpoint 2026-09-07 20:42:34 finished=21/98 current=k8s_payment gt0=15 eq0=6 ====

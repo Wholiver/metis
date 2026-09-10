@@ -12,8 +12,11 @@ import {
   extractThinking,
   extractThinkingDurationMs,
   extractAssistantParts,
+  formatSessionTime,
   getSubagentProgress,
+  isSessionOwnedByProject,
   mergeAssistantParts,
+  pathsEqual,
   reconcileSessionAgents,
   sessionSubtitle,
   sessionTitle,
@@ -81,26 +84,53 @@ describe('desktop React session sidebar', () => {
     expect(CONVERSATION_ICON_OPTICAL_Y.filter(Boolean)).toHaveLength(1);
   });
 
-  it('renders the supplied SVG shapes inside every conversation row', () => {
+  it('renders text-only conversation rows without colorful conversation icons', () => {
     const itemSource = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/AgentItem.tsx'), 'utf8');
-    const iconSource = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/ConversationIcon.tsx'), 'utf8');
-    const sprite = readFileSync(resolve(process.cwd(), 'desktop/public/assets/conversation-icons.svg'), 'utf8');
+    const sidebarSource = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/Sidebar.tsx'), 'utf8');
+    const mainSource = readFileSync(resolve(process.cwd(), 'desktop/main.cjs'), 'utf8');
 
-    expect(itemSource).toContain('<ConversationIcon seed={agent.id} />');
+    expect(itemSource).not.toContain('ConversationIcon');
     expect(itemSource).toContain('data-conversation-row={agent.id}');
     expect(itemSource).toContain('data-conversation-content');
-    expect(itemSource).toContain('min-h-[56px]');
-    expect(iconSource).toContain('data-conversation-icon');
-    expect(iconSource).toContain('data-conversation-icon-slot');
-    expect(iconSource).toContain('size = 48');
-    expect(iconSource).toContain('w-[38px]');
-    expect(iconSource).toContain('transform={`translate(0 ${opticalOffsetY})`}');
-    expect(iconSource).toContain('conversation-icons.svg#conversation-shape-');
-    expect(iconSource).toContain('x="-125"');
-    expect(iconSource).toContain('y="-125"');
-    expect(sprite.match(/<symbol id="conversation-shape-/g)).toHaveLength(8);
-    expect(sprite).toContain('fill="currentColor"');
-    expect(sprite).toContain('fill="#fff"');
+    expect(itemSource).toContain('h-8');
+    expect(itemSource).toContain('rounded-[8px]');
+    expect(sidebarSource).not.toContain('ConversationIcon');
+    expect(sidebarSource).toContain('data-new-conversation-action');
+    expect(sidebarSource).toContain('data-sidebar-projects');
+    expect(sidebarSource).toContain('data-project-row');
+    expect(sidebarSource).toContain('data-add-project-button');
+    expect(sidebarSource).toContain('data-sidebar-footer');
+    expect(sidebarSource).toContain('pl-[30px]');
+    expect(sidebarSource).toContain('indented: true');
+    expect(sidebarSource).toContain('bg-hover-2');
+    expect(sidebarSource).toContain('data-conversation-indicator');
+    expect(mainSource).toContain('activeIndicator: boxMetrics(activeIndicator)');
+    expect(mainSource).toContain('settingsButton: boxMetrics(settingsButton)');
+    expect(sidebarSource).toContain('data-project-conversations');
+    expect(sidebarSource).toContain('data-show-more-conversations');
+    expect(sidebarSource).toContain('min-w-[224px]');
+    expect(sidebarSource).toContain('rounded-[7px] bg-hover-2');
+    expect(sidebarSource).not.toContain('ProjectDots');
+    expect(itemSource).toContain("indented ? 'pl-[30px] pr-2' : 'px-2'");
+    expect(itemSource).toContain('PixelOrbitLoader');
+    expect(itemSource).toContain('data-conversation-working');
+    expect(itemSource).toContain('absolute right-full');
+    expect(sidebarSource).toContain('workingAgentId');
+    expect(sidebarSource).toContain('isWorking={Boolean(workingAgentId) && agent.id === workingAgentId}');
+  });
+
+  it('ships the orbiting pixel loader used for working conversations', () => {
+    const loader = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/PixelOrbitLoader.tsx'), 'utf8');
+    const css = readFileSync(resolve(process.cwd(), 'desktop/src/styles/beautifului/foundation.css'), 'utf8');
+    const app = readFileSync(resolve(process.cwd(), 'desktop/src/App.tsx'), 'utf8');
+
+    expect(loader).toContain('text-ink-3');
+    expect(loader).toContain('ORBIT_ORDER');
+    expect(loader).toContain('pixel-on');
+    expect(css).toContain('@keyframes pixel-on');
+    expect(loader).toContain('opacity: delay === null ? 0.12 : 0.28');
+    expect(app).toContain('workingAgentId=');
+    expect(app).toContain('isStreaming || isCompacting');
   });
 
   it('wires list, switch, create, messages, and prompt actions through the Server bridge', () => {
@@ -116,6 +146,14 @@ describe('desktop React session sidebar', () => {
     expect(source).toContain("type === 'session_info_changed'");
     expect(source).toContain("type === 'session_name_generation' && event.status === 'completed'");
     expect(source).toContain("agent.id === activeSessionIdRef.current ? { ...agent, name: generatedName } : agent");
+  });
+
+  it('formats session timestamps as compact relative labels', () => {
+    const now = Date.parse('2026-09-08T12:00:00.000Z');
+    expect(formatSessionTime('2026-09-08T11:56:00.000Z', now)).toBe('4m');
+    expect(formatSessionTime('2026-09-08T11:00:00.000Z', now)).toBe('1h');
+    expect(formatSessionTime('2026-09-06T12:00:00.000Z', now)).toBe('2d');
+    expect(formatSessionTime('not-a-date', now)).toBe('');
   });
 
   it('maps server sessions to selectable sidebar conversations', () => {
@@ -164,6 +202,55 @@ describe('desktop React session sidebar', () => {
     expect(agents.map((agent) => agent.id)).toEqual(['session-1', 'session-2']);
     expect(agents[0].name).toBe('Generated title');
   });
+
+  it('does not inject an active session from another project into the project agent list', () => {
+    const foreignState = {
+      sessionId: 'foreign-session',
+      sessionName: 'Foreign conversation',
+      sessionFile: '/Users/test/.metis/agent/sessions/--Users-test-other-project--/foreign-session.jsonl',
+      cwd: '/Users/test/other-project',
+    };
+    const localSessions = [session];
+    const agents = reconcileSessionAgents(localSessions, foreignState, '/tmp/project');
+
+    expect(agents.map((agent) => agent.id)).toEqual(['session-1']);
+    expect(agents.some((agent) => agent.id === 'foreign-session')).toBe(false);
+  });
+
+  it('rejects foreign sessions based on sessionFile when cwd is missing', () => {
+    const foreignState = {
+      sessionId: 'foreign-session-2',
+      sessionName: 'Another foreign conversation',
+      sessionFile: '/Users/test/.metis/agent/sessions/--Users-test-other--/s2.jsonl',
+    };
+    const agents = reconcileSessionAgents([], foreignState, '/tmp/project');
+    expect(agents).toEqual([]);
+  });
+
+  it('keeps new conversation when cwd matches projectPath with trailing slashes', () => {
+    const agents = reconcileSessionAgents([], {
+      sessionId: 'new-session-cwd',
+      sessionName: 'New chat',
+      cwd: '/tmp/project/',
+    }, '/tmp/project');
+
+    expect(agents).toEqual([
+      expect.objectContaining({
+        id: 'new-session-cwd',
+        name: 'New chat',
+        projectPath: '/tmp/project',
+      }),
+    ]);
+  });
+
+  it('correctly compares paths across platforms and slashes with pathsEqual', () => {
+    expect(pathsEqual('/tmp/project', '/tmp/project/')).toBe(true);
+    expect(pathsEqual('/tmp/project//', '/tmp/project')).toBe(true);
+    expect(pathsEqual('C:\\Users\\test\\proj', 'c:/users/test/proj/')).toBe(true);
+    expect(pathsEqual('/tmp/projA', '/tmp/projB')).toBe(false);
+    expect(pathsEqual(undefined, '/tmp/proj')).toBe(false);
+  });
+
 
   it('extracts visible text blocks and ignores tool-only blocks', () => {
     expect(extractText([
@@ -452,7 +539,7 @@ describe('desktop React session sidebar', () => {
     expect(appSource).toContain('onNewChat={newConversation}');
   });
 
-  it('renders redesigned borderless rectangular project switcher matching Settings button size (w-full h-9 rounded-[8px])', () => {
+  it('renders redesigned borderless rectangular project switcher matching Settings button size', () => {
     const projects = [
       { id: 'proj-1', name: 'Metis Core', path: '/path/to/metis' },
       { id: 'proj-2', name: 'Desktop App', path: '/path/to/desktop' },
@@ -464,12 +551,12 @@ describe('desktop React session sidebar', () => {
       onAddProject: () => undefined,
     }));
 
-    // Outer container: borderless, rectangular matching Settings button (w-full h-9 rounded-[8px])
+    // Outer container: borderless rectangular switcher (kept as standalone component)
     expect(markup).toContain('data-project-switcher=""');
     expect(markup).toContain('w-full');
-    expect(markup).toContain('h-9');
-    expect(markup).toContain('rounded-[8px]');
-    expect(markup).toContain('bg-black/[0.04]');
+    expect(markup).toContain('h-8');
+    expect(markup).toContain('rounded-control');
+    expect(markup).toContain('bg-hover-2');
     expect(markup).not.toContain('border-');
 
     // Project tabs
@@ -479,11 +566,157 @@ describe('desktop React session sidebar', () => {
     expect(markup).toContain('Desktop App');
 
     // Active project tab has white card background and shadow
-    expect(markup).toContain('bg-white text-slate-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] font-semibold');
-    expect(markup).toContain('rounded-[6px]');
+    expect(markup).toContain('bg-surface text-ink shadow-btn font-medium');
+    expect(markup).toContain('rounded-chip');
 
     // Plus button immediately following tabs
     expect(markup).toContain('data-add-project-button=""');
     expect(markup).toContain('aria-label="Add project"');
+  });
+
+  it('renders Codex-style project tree in Sidebar with Settings pinned to the footer', () => {
+    const projects = [
+      { id: 'proj-1', name: 'Metis Core', path: '/path/to/metis' },
+      { id: 'proj-2', name: 'Desktop App', path: '/path/to/desktop' },
+    ];
+    const markup = renderToStaticMarkup(React.createElement(Sidebar, {
+      agents: [sessionToAgent({
+        ...session,
+        cwd: '/path/to/metis',
+        path: '/path/to/metis/session-1.jsonl',
+      })],
+      agentsByProject: {
+        '/path/to/metis': [sessionToAgent({
+          ...session,
+          cwd: '/path/to/metis',
+          path: '/path/to/metis/session-1.jsonl',
+        })],
+        '/path/to/desktop': [sessionToAgent({
+          ...session,
+          id: 'session-other',
+          path: '/path/to/desktop/session.jsonl',
+          cwd: '/path/to/desktop',
+          title: 'Other project chat',
+        })],
+      },
+      activeAgentId: session.id,
+      projects,
+      activeProjectId: 'proj-1',
+      width: 248,
+      onSelectAgent: () => undefined,
+      onSelectProject: () => undefined,
+      onAddProject: () => undefined,
+      onNewChat: () => undefined,
+      onOpenSettings: () => undefined,
+    }));
+
+    expect(markup).toContain('data-sidebar-actions=""');
+    expect(markup).toContain('data-new-conversation-action=""');
+    expect(markup).toContain('data-sidebar-projects=""');
+    expect(markup).toContain('data-sidebar=""');
+    const sidebarSource = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/Sidebar.tsx'), 'utf8');
+    expect(sidebarSource).toContain('data-sidebar=""');
+    expect(sidebarSource).not.toContain('bg-[#f7f7f7]');
+    expect(sidebarSource).not.toContain('dark:bg-[#121316]');
+    const cssSource = readFileSync(resolve(process.cwd(), 'desktop/src/index.css'), 'utf8');
+    expect(cssSource).toContain('body {\n  background-color: var(--page);');
+    const sidebarRule = cssSource.match(/\[data-sidebar\]\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+    expect(sidebarRule).toContain('background-color: var(--canvas);');
+    expect(sidebarRule).not.toContain('border-right:');
+    expect(sidebarRule).not.toContain('backdrop-filter:');
+    expect(sidebarRule).not.toContain('-webkit-backdrop-filter:');
+    expect(cssSource).not.toContain('--surface-sidebar');
+    expect(cssSource).not.toContain('rgba(255, 255, 255, 0.55)');
+    expect(cssSource).not.toContain('rgba(232, 235, 240');
+    expect(cssSource).not.toContain('#e8ebf0');
+    const mainSource = readFileSync(resolve(process.cwd(), 'desktop/main.cjs'), 'utf8');
+    expect(mainSource).toContain('backgroundsMatch: Boolean(sidebarStyle && mainChatStyle');
+    expect(mainSource).toContain('sidebarDiffersFromMainChat');
+    expect(mainSource).toContain('sidebarMatchesReferenceGray');
+    expect(mainSource).toContain('mainChatMatchesInspector');
+    expect(mainSource).toContain('dividersAreSinglePixelAndNotWhite');
+    expect(mainSource).toContain('lightSurfaces');
+    expect(mainSource).toContain('darkSurfaces');
+    expect(markup).toContain('data-project-row="proj-1"');
+    expect(markup).toContain('data-project-row="proj-2"');
+    expect(markup).toContain('data-project-expanded="true"');
+    expect(markup).toContain('data-project-expanded="false"');
+    // Active project starts expanded; others stay collapsed until opened
+    expect(markup.match(/data-project-expanded="true"/g)?.length).toBe(1);
+    expect(markup).toContain('data-conversation-row="session-1"');
+    expect(markup).not.toContain('data-conversation-icon');
+    expect(markup).toContain('data-project-conversations="proj-1"');
+    expect(markup).toContain('pl-[30px]');
+    expect(markup).toContain('data-conversation-indicator');
+    expect(markup).toContain('bg-hover-2');
+    expect(markup).toContain('data-add-project-button=""');
+    expect(markup).toContain('data-sidebar-footer=""');
+    expect(markup).toContain('id="sidebarSettingsButton"');
+    expect(markup.indexOf('data-sidebar-projects=""')).toBeLessThan(markup.indexOf('data-sidebar-footer=""'));
+    expect(markup.indexOf('data-sidebar-footer=""')).toBeLessThan(markup.indexOf('id="sidebarSettingsButton"'));
+  });
+
+  it('allows multiple project folders to stay expanded independently', () => {
+    const sidebarSource = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/Sidebar.tsx'), 'utf8');
+    expect(sidebarSource).toContain('expandedProjectIds');
+    expect(sidebarSource).toContain('handleProjectRowClick');
+    expect(sidebarSource).toContain('data-project-expanded');
+    expect(sidebarSource).toContain('next.add(projectId)');
+    expect(sidebarSource).toContain('agentsByProject');
+    expect(sidebarSource).toContain('onPrefetchProjectSessions');
+    expect(sidebarSource).not.toContain('activeFolderCollapsed');
+
+    const hookSource = readFileSync(resolve(process.cwd(), 'desktop/src/hooks/useMetisServer.ts'), 'utf8');
+    expect(hookSource).toContain('projectAgentsByPath');
+    expect(hookSource).toContain('prefetchProjectSessions');
+    expect(hookSource).toContain('rememberProjectAgents');
+
+    const appSource = readFileSync(resolve(process.cwd(), 'desktop/src/App.tsx'), 'utf8');
+    expect(appSource).toContain('agentsByProject={captureConversationIcons ? undefined : projectAgentsByPath}');
+    expect(appSource).toContain('onPrefetchProjectSessions={captureConversationIcons ? undefined : prefetchProjectSessions}');
+  });
+
+  it('renders a blue update button next to Settings when an update is available', () => {
+    const sidebarSource = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/Sidebar.tsx'), 'utf8');
+    const appSource = readFileSync(resolve(process.cwd(), 'desktop/src/App.tsx'), 'utf8');
+
+    // Source wiring assertions
+    expect(appSource).toContain('updateCheck={updateCheck}');
+    expect(sidebarSource).toContain('RELEASES_URL');
+    expect(sidebarSource).toContain('id="sidebarUpdateButton"');
+    expect(sidebarSource).toContain('openExternal(RELEASES_URL)');
+    expect(sidebarSource).toContain("window.open(RELEASES_URL, '_blank')");
+
+    // When updateCheck is undefined or status is not 'available', update button should NOT render
+    const noUpdateMarkup = renderToStaticMarkup(React.createElement(Sidebar, {
+      agents: [sessionToAgent(session)],
+      activeAgentId: session.id,
+      width: 260,
+      onSelectAgent: () => undefined,
+      updateCheck: { status: 'current' },
+    }));
+    expect(noUpdateMarkup).toContain('id="sidebarSettingsButton"');
+    expect(noUpdateMarkup).not.toContain('id="sidebarUpdateButton"');
+
+    // When updateCheck.status === 'available', blue update button renders alongside Settings
+    const updateAvailableMarkup = renderToStaticMarkup(React.createElement(Sidebar, {
+      agents: [sessionToAgent(session)],
+      activeAgentId: session.id,
+      width: 260,
+      onSelectAgent: () => undefined,
+      updateCheck: {
+        status: 'available',
+        currentVersion: '1.1.15',
+        latestVersion: '1.1.16',
+      },
+    }));
+
+    expect(updateAvailableMarkup).toContain('id="sidebarSettingsButton"');
+    expect(updateAvailableMarkup).toContain('id="sidebarUpdateButton"');
+    expect(updateAvailableMarkup).toContain('bg-accent');
+    expect(updateAvailableMarkup).toContain('text-white');
+    expect(updateAvailableMarkup).toContain('h-8 px-2.5 rounded-control');
+    expect(updateAvailableMarkup).toContain('Update');
+    expect(updateAvailableMarkup).toContain('v1.1.16');
   });
 });

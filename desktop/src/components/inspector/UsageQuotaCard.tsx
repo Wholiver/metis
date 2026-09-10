@@ -89,23 +89,23 @@ const HollowRingProgress: React.FC<HollowRingProps> = ({
     >
       {/* Tooltip on hover */}
       <div
-        className={`absolute bottom-[calc(100%+6px)] left-1/2 -translate-x-1/2 z-30 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md text-slate-800 dark:text-slate-100 rounded-[8px] px-2.5 py-1.5 border border-slate-200/90 dark:border-slate-700/90 shadow-lg shadow-slate-900/10 dark:shadow-black/30 whitespace-nowrap flex flex-col text-[11px] gap-0.5 pointer-events-none transition-all duration-100 ease-out ${
+        className={`absolute bottom-[calc(100%+6px)] left-1/2 -translate-x-1/2 z-30 bg-surface/95 dark:bg-surface/95 backdrop-blur-md text-ink rounded-control px-2.5 py-1.5 border border-line dark:border-line shadow-overlay whitespace-nowrap flex flex-col text-[11px] gap-0.5 pointer-events-none transition-all duration-100 ease-out ${
           isHovered
             ? 'opacity-100 scale-100 translate-y-0 visible'
             : 'opacity-0 scale-[0.98] translate-y-0.5 invisible'
         }`}
         role="tooltip"
       >
-        <span className="font-semibold text-slate-700 dark:text-slate-200">
+        <span className="font-semibold text-ink-2">
           {windowLabel}
         </span>
-        <span className="text-slate-500 dark:text-slate-400 tabular-nums">
+        <span className="text-ink-3 tabular-nums">
           {clampedPercent === 0
             ? t('unconsumed') || '未消耗'
             : `${clampedPercent.toFixed(0)}% (${t('resetsInHours', { time: resetsIn || '2h 30m' }) || `预计 ${resetsIn || '2h 30m'} 后重置`})`}
         </span>
         {Number.isFinite(used) && Number.isFinite(limit) && (
-          <span className="text-[10px] text-slate-400 tabular-nums">
+          <span className="text-[10px] text-ink-3 tabular-nums">
             {formatTokenCount(used!)} / {formatTokenCount(limit!)}
           </span>
         )}
@@ -122,7 +122,7 @@ const HollowRingProgress: React.FC<HollowRingProps> = ({
             fill="none"
             stroke="currentColor"
             strokeWidth={strokeWidth}
-            className="text-slate-100 dark:text-slate-700/60"
+            className="text-ink-2/60"
           />
           {/* Animated Progress Ring */}
           <circle
@@ -137,10 +137,10 @@ const HollowRingProgress: React.FC<HollowRingProps> = ({
             strokeLinecap="round"
             className={`transition-[stroke-dashoffset] duration-500 ease-out origin-center -rotate-90 ${
               isCritical
-                ? 'text-rose-600 dark:text-rose-500'
+                ? 'text-red'
                 : clampedPercent >= 80
-                ? 'text-amber-500 dark:text-amber-400'
-                : 'text-blue-600 dark:text-blue-400'
+                ? 'text-orange'
+                : 'text-accent'
             }`}
           />
         </svg>
@@ -150,8 +150,8 @@ const HollowRingProgress: React.FC<HollowRingProps> = ({
           <span
             className={`text-[11px] font-bold font-mono tracking-tight tabular-nums ${
               isCritical
-                ? 'text-rose-600 dark:text-rose-400'
-                : 'text-slate-800 dark:text-slate-100'
+                ? 'text-red'
+                : 'text-ink'
             }`}
           >
             {Math.round(clampedPercent)}%
@@ -161,10 +161,10 @@ const HollowRingProgress: React.FC<HollowRingProps> = ({
 
       {/* Label and Subtitle to the right of Ring */}
       <div className="flex flex-col justify-center min-w-0">
-        <span className="text-[11.5px] font-medium text-slate-600 dark:text-slate-300 leading-tight truncate">
+        <span className="text-[11.5px] font-medium text-ink-2 leading-tight truncate">
           {windowLabel}
         </span>
-        <span className="text-[10.5px] font-mono text-slate-400 dark:text-slate-500 tabular-nums leading-tight mt-0.5 truncate">
+        <span className="text-[10.5px] font-mono text-ink-3 tabular-nums leading-tight mt-0.5 truncate">
           {clampedPercent === 0 ? (t('unconsumed') || '未消耗') : (resetsIn ? `~${resetsIn}` : `${Math.round(clampedPercent)}%`)}
         </span>
       </div>
@@ -183,7 +183,7 @@ const OAuthUsageCard: React.FC<{
 
   const baseCardStyle = className
     ? className
-    : 'bg-[#ffffff] dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 rounded-[12px] shadow-[0_1px_2px_rgba(0,0,0,0.02)]';
+    : 'bg-surface border border-line dark:border-line rounded-window shadow-hairline';
 
   return (
     <div
@@ -200,7 +200,7 @@ const OAuthUsageCard: React.FC<{
         used={default5h.used}
         limit={default5h.limit}
       />
-      <div className="w-[1px] h-6 bg-slate-200/60 dark:bg-slate-700/50 shrink-0" />
+      <div className="w-[1px] h-6 bg-line shrink-0" />
       <HollowRingProgress
         ringKey="7d"
         windowLabel={t('quota7d') || '7天限额'}
@@ -348,7 +348,7 @@ const ApiKeyUsageCard: React.FC<{
 
   const baseCardStyle = className
     ? className
-    : 'bg-[#ffffff] dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 rounded-[12px] shadow-[0_1px_2px_rgba(0,0,0,0.02)]';
+    : 'bg-surface border border-line dark:border-line rounded-window shadow-hairline';
 
   return (
     <div
@@ -366,44 +366,44 @@ const ApiKeyUsageCard: React.FC<{
       >
         {/* Tooltip on hover */}
         <div
-          className={`absolute bottom-[calc(100%+6px)] left-0 z-30 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md text-slate-800 dark:text-slate-100 rounded-[8px] px-2.5 py-1.5 border border-slate-200/90 dark:border-slate-700/90 shadow-lg shadow-slate-900/10 dark:shadow-black/30 whitespace-nowrap flex flex-col text-[11px] gap-0.5 pointer-events-none transition-all duration-100 ease-out ${
+          className={`absolute bottom-[calc(100%+6px)] left-0 z-30 bg-surface/95 dark:bg-surface/95 backdrop-blur-md text-ink rounded-control px-2.5 py-1.5 border border-line dark:border-line shadow-overlay whitespace-nowrap flex flex-col text-[11px] gap-0.5 pointer-events-none transition-all duration-100 ease-out ${
             isLeftHovered
               ? 'opacity-100 scale-100 translate-y-0 visible'
               : 'opacity-0 scale-[0.98] translate-y-0.5 invisible'
           }`}
           role="tooltip"
         >
-          <span className="font-semibold text-slate-700 dark:text-slate-200">
+          <span className="font-semibold text-ink-2">
             {t('cumulativeCost') || '累计花费'}
           </span>
-          <span className="text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+          <span className="text-ink-3 font-mono tabular-nums">
             ${formattedCost} · {formatExactNumber(totalTokens)} {t('tokensUnit') || 'Tokens'}
           </span>
           {(inputRatio > 0 || cacheRatio > 0 || outputRatio > 0) && (
-            <span className="text-[10px] text-slate-400 tabular-nums">
+            <span className="text-[10px] text-ink-3 tabular-nums">
               {t('tokenInput') || '输入'}: {inputRatio}% · {t('tokenCache') || '缓存'}: {cacheRatio}% · {t('tokenOutput') || '输出'}: {outputRatio}%
             </span>
           )}
         </div>
 
         <div className="flex flex-col">
-          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
+          <span className="text-[11px] font-medium text-ink-3 truncate">
             {t('cumulativeCost') || '累计花费'}
           </span>
           <div className="flex items-baseline gap-0.5 mt-0.5">
-            <span className="text-[12px] font-medium text-slate-400 dark:text-slate-500 font-mono mr-0.5">$</span>
-            <span className="font-mono text-[16px] font-semibold text-slate-800 dark:text-slate-100 tabular-nums leading-none tracking-tight">
+            <span className="text-[12px] font-medium text-ink-3 font-mono mr-0.5">$</span>
+            <span className="font-mono text-[16px] font-semibold text-ink tabular-nums leading-none tracking-tight">
               {formattedCost}
             </span>
           </div>
         </div>
-        <span className="text-[10.5px] font-mono text-slate-400 dark:text-slate-500 tabular-nums truncate">
+        <span className="text-[10.5px] font-mono text-ink-3 tabular-nums truncate">
           {formatTokenCount(totalTokens)} {t('tokensUnit') || 'Tokens'}
         </span>
       </div>
 
       {/* Center Divider Line */}
-      <div className="w-[1px] h-6 bg-slate-200/60 dark:bg-slate-700/50 shrink-0 mx-1.5" />
+      <div className="w-[1px] h-6 bg-line shrink-0 mx-1.5" />
 
       {/* Right Column: 7-Day Usage Trend Sparkline (折线图) */}
       <div
@@ -412,10 +412,10 @@ const ApiKeyUsageCard: React.FC<{
       >
         {/* Header with Title and Peak */}
         <div className="flex items-center justify-between w-full text-[11px] font-medium leading-tight mb-0.5">
-          <span className="text-slate-500 dark:text-slate-400 truncate">
+          <span className="text-ink-3 truncate">
             {t('usageTrend') || '7天用量走势'}
           </span>
-          <span className="text-slate-400 dark:text-slate-500 font-mono text-[10.5px] tabular-nums shrink-0">
+          <span className="text-ink-3 font-mono text-[10.5px] tabular-nums shrink-0">
             {maxTokens > 0 ? formatTokenCount(maxTokens) : (t('unconsumed') || '未消耗')}
           </span>
         </div>
@@ -425,20 +425,20 @@ const ApiKeyUsageCard: React.FC<{
           {/* Tooltip for Hovered Point */}
           {hoveredPointIndex !== null && chartPoints[hoveredPointIndex] && (
             <div
-              className="absolute bottom-[calc(100%+4px)] z-30 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md text-slate-800 dark:text-slate-100 rounded-[8px] px-2.5 py-1.5 border border-slate-200/90 dark:border-slate-700/90 shadow-lg shadow-slate-900/10 dark:shadow-black/30 whitespace-nowrap flex flex-col text-[11px] gap-0.5 pointer-events-none transition-all duration-100 ease-out -translate-x-1/2"
+              className="absolute bottom-[calc(100%+4px)] z-30 bg-surface/95 dark:bg-surface/95 backdrop-blur-md text-ink rounded-control px-2.5 py-1.5 border border-line dark:border-line shadow-overlay whitespace-nowrap flex flex-col text-[11px] gap-0.5 pointer-events-none transition-all duration-100 ease-out -translate-x-1/2"
               style={{
                 left: `${Math.min(Math.max((chartPoints[hoveredPointIndex].x / 160) * 100, 15), 85)}%`,
               }}
               role="tooltip"
             >
-              <span className="font-semibold text-slate-700 dark:text-slate-200">
+              <span className="font-semibold text-ink-2">
                 {chartPoints[hoveredPointIndex].label}
               </span>
-              <span className="text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+              <span className="text-ink-3 font-mono tabular-nums">
                 {formatExactNumber(chartPoints[hoveredPointIndex].tokens)} {t('tokensUnit') || 'Tokens'}
               </span>
               {chartPoints[hoveredPointIndex].cost > 0 && (
-                <span className="text-emerald-600 dark:text-emerald-400 font-mono text-[10px]">
+                <span className="text-green font-mono text-[10px]">
                   ${chartPoints[hoveredPointIndex].cost.toFixed(3)}
                 </span>
               )}
@@ -452,8 +452,8 @@ const ApiKeyUsageCard: React.FC<{
           >
             <defs>
               <linearGradient id="apiKeySparklineGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#2563eb" stopOpacity="0.14" />
-                <stop offset="100%" stopColor="#2563eb" stopOpacity="0.0" />
+                <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.14" />
+                <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
               </linearGradient>
             </defs>
 
@@ -475,7 +475,7 @@ const ApiKeyUsageCard: React.FC<{
               stroke="currentColor"
               strokeWidth="1"
               strokeDasharray="2 2"
-              className="text-slate-200/60 dark:text-slate-700/40"
+              className="text-ink/60 dark:text-ink-2/40"
             />
 
             {/* Smooth Curve Line */}
@@ -487,7 +487,7 @@ const ApiKeyUsageCard: React.FC<{
                 strokeWidth="1.75"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className="text-blue-600 dark:text-blue-400 transition-all duration-300 ease-out"
+                className="text-accent transition-all duration-300 ease-out"
               />
             )}
 
@@ -518,8 +518,8 @@ const ApiKeyUsageCard: React.FC<{
                       r={isHovered ? 3.5 : 2}
                       className={`pointer-events-none transition-all duration-150 ${
                         isHovered
-                          ? 'fill-white dark:fill-slate-900 stroke-blue-600 dark:stroke-blue-400 stroke-[2]'
-                          : 'fill-blue-600 dark:fill-blue-400'
+                          ? 'fill-surface dark:fill-page stroke-accent stroke-[2]'
+                          : 'fill-accent'
                       }`}
                     />
                   )}

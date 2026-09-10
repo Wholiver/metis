@@ -98,6 +98,7 @@ export interface SpawnAgentToolOptions {
 
 export const SPAWN_AGENT_GUIDANCE = [
 	"Delegate a specific task to a specialized named agent (e.g. planner, implementer, reviewer, verifier, or coordinator).",
+	"Do NOT use spawn_agent for simple, mechanical, localized, or low-difficulty tasks (T0/T1); execute enabled tools (read, edit, write, bash) directly instead. Reserve spawn_agent exclusively for genuinely complex multi-lane architectural tasks (T2/T3) or explicit user requests for multi-agent delegation.",
 	"By default, execution is synchronous ('sync') and blocks until the agent completes, returning structured results directly.",
 	"For parallel background execution across multiple agents, set mode to 'async'.",
 	"An isolated worktree starts from a snapshot of the parent workspace, including uncommitted and untracked files.",

@@ -51,6 +51,8 @@ const legitimateCognates = new Set([
 	"customBaseUrlPlaceholder",
 	"tokenPlanGroup",
 	"codingPlanGroup",
+	"agentSecondsShort",
+	"agentMilliseconds",
 ]);
 
 describe("Desktop translation catalogs", () => {
@@ -237,4 +239,3 @@ describe("Desktop native menu localization", () => {
 		}
 	});
 });
-

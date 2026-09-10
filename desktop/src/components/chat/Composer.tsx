@@ -1,11 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Plus, ArrowUp, Square, File as FileIcon, FileText, FileUp, ListTree, LoaderCircle, Maximize2, Minimize2, Video, X } from 'lucide-react';
-import { Agent, CollaborationMode, MessageAttachment, ModelOption, SendMessageOptions, ThinkingOption } from '../../types';
-import {
-  COMPOSER_MULTILINE_MIN_TEXTAREA_HEIGHT,
-  composerTextareaHeight,
-  hasComposerLineBreak,
-} from '../../lib/composer';
+import { FileUp, ListTree, X } from 'lucide-react';
+import { Agent, CollaborationMode, ContextUsage, MessageAttachment, ModelOption, SendMessageOptions, ThinkingOption, TokenBreakdown, WorkflowPlanState } from '../../types';
 import {
   classifyAttachment,
   composeAttachmentPayload,
@@ -19,10 +14,14 @@ import {
 } from '../../lib/attachments';
 import { ModelSwitcher } from './ModelSwitcher';
 import { ModeSwitcher } from './ModeSwitcher';
-import { filterSkills, SkillCommand, SkillPicker } from './SkillPicker';
+import { SkillCommand } from './SkillPicker';
 import { WorkProgressIndicator } from './WorkProgressIndicator';
+import { WorkflowPlanCard } from './WorkflowPlanCard';
 import { WorkProgressState } from '../../lib/work-progress';
 import { useI18n } from '../../i18n';
+import { RateLimitWindow } from '../inspector/UsageQuotaCard';
+import { ComposerUsageFooter } from './ComposerUsageFooter';
+import PromptBar from '../primitives/PromptBar';
 
 interface ComposerProps {
   agent: Agent;
@@ -46,6 +45,15 @@ interface ComposerProps {
   isStreaming?: boolean;
   workProgress?: WorkProgressState;
   isWorkIdle?: boolean;
+  workflowPlan?: WorkflowPlanState;
+  workflowPlanInterrupted?: boolean;
+  contextUsage?: ContextUsage;
+  tokenBreakdown?: TokenBreakdown;
+  isOAuth?: boolean;
+  totalCost?: number;
+  totalTokens?: number;
+  quota5h?: RateLimitWindow;
+  quota7d?: RateLimitWindow;
 }
 
 function readFile(file: File, method: 'readAsDataURL' | 'readAsText'): Promise<string> {
@@ -130,30 +138,29 @@ export const Composer = React.memo<ComposerProps>(({
   isStreaming = false,
   workProgress,
   isWorkIdle = false,
+  workflowPlan,
+  workflowPlanInterrupted = false,
+  contextUsage,
+  tokenBreakdown,
+  isOAuth = false,
+  totalCost,
+  totalTokens,
+  quota5h,
+  quota7d,
 }) => {
   const { t } = useI18n();
   const [text, setText] = useState('');
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [textareaHeight, setTextareaHeight] = useState(24);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [isAttaching, setIsAttaching] = useState(false);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [attachmentError, setAttachmentError] = useState('');
-  const [skillMenuOpen, setSkillMenuOpen] = useState(false);
-  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
-  const [activeSkillIndex, setActiveSkillIndex] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
-  const isMultiline = true;
-  const skillQuery = text.startsWith('/') ? text.slice(1) : '';
-  const matchingSkills = filterSkills(skills, skillQuery);
+  void agent;
 
   const chooseSkill = (skill: SkillCommand) => {
     setText(`/${skill.name} `);
-    setSkillMenuOpen(false);
-    setPlusMenuOpen(false);
-    setActiveSkillIndex(0);
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
@@ -162,23 +169,6 @@ export const Composer = React.memo<ComposerProps>(({
     const frame = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [disabled]);
-
-  useLayoutEffect(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    if (!isExpanded && !hasComposerLineBreak(text) && text.length < 35 && textareaHeight === COMPOSER_MULTILINE_MIN_TEXTAREA_HEIGHT) {
-      if (input.style.height !== `${COMPOSER_MULTILINE_MIN_TEXTAREA_HEIGHT}px`) {
-        input.style.height = `${COMPOSER_MULTILINE_MIN_TEXTAREA_HEIGHT}px`;
-      }
-      return;
-    }
-    input.style.height = 'auto';
-    const nextHeight = composerTextareaHeight(input.scrollHeight, isExpanded);
-    input.style.height = `${nextHeight}px`;
-    if (nextHeight !== textareaHeight) {
-      setTextareaHeight(nextHeight);
-    }
-  }, [isExpanded, text, textareaHeight]);
 
   useLayoutEffect(() => {
     const shell = shellRef.current;
@@ -259,9 +249,6 @@ export const Composer = React.memo<ComposerProps>(({
     };
   }, [disabled, isAttaching]);
 
-  const attachmentsHeight = attachments.length > 0 ? 56 : 0;
-  const composerHeight = Math.max(isExpanded ? 276 : (108 + attachmentsHeight), textareaHeight + 54 + attachmentsHeight);
-
   const isAttachingRef = useRef(false);
 
   const addAttachments = async (files: File[]) => {
@@ -274,7 +261,6 @@ export const Composer = React.memo<ComposerProps>(({
       const errors: string[] = [];
       let bufferedBytes = attachments.reduce((total, attachment) => total + bufferedAttachmentBytes(attachment), 0);
 
-      // Filter out files that already exist in current attachments or incoming batch
       const seenNames = new Set(attachments.map((a) => `${a.name}-${a.sizeText}`));
       const uniqueFiles = files.filter((f) => {
         const key = `${f.name}-${formatFileSize(f.size)}`;
@@ -306,8 +292,7 @@ export const Composer = React.memo<ComposerProps>(({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     if ((!text.trim() && attachments.length === 0) || disabled || isAttaching) return;
     const draftText = text;
     const draftAttachments = attachments;
@@ -315,7 +300,6 @@ export const Composer = React.memo<ComposerProps>(({
     setText('');
     setAttachments([]);
     setAttachmentError('');
-    setIsExpanded(false);
     const sent = await onSendMessage(payload.message, {
       ...(payload.images ? { images: payload.images } : {}),
       displayText: draftText.trim(),
@@ -327,39 +311,118 @@ export const Composer = React.memo<ComposerProps>(({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (skillMenuOpen) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (matchingSkills.length > 0) setActiveSkillIndex((current) => (current + (e.key === 'ArrowDown' ? 1 : -1) + matchingSkills.length) % matchingSkills.length);
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setSkillMenuOpen(false);
-        return;
-      }
-      if (e.key === 'Enter' && !e.shiftKey && matchingSkills.length > 0) {
-        e.preventDefault();
-        chooseSkill(matchingSkills[Math.min(activeSkillIndex, matchingSkills.length - 1)]);
-        return;
-      }
-    }
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void handleSubmit(e);
-    }
-  };
+  const showPlanStack = collaborationMode === 'build' && Boolean(workflowPlan);
+
+  const promptBar = (
+    <PromptBar
+      variant="Rounded"
+      value={text}
+      onChange={setText}
+      onSubmit={handleSubmit}
+      onStop={onAbort}
+      isStreaming={isStreaming}
+      canSubmit={Boolean(text.trim() || attachments.length > 0)}
+      disabled={disabled}
+      busy={isAttaching}
+      placeholder={t('writeMessagePlaceholder')}
+      inputRef={inputRef}
+      isDraggingFiles={isDraggingFiles}
+      stopLabel={t('stopGeneration') || 'Stop'}
+      onDragEnter={(event) => {
+        if (!transferHasFiles(event.dataTransfer)) return;
+        event.preventDefault();
+        setIsDraggingFiles(true);
+      }}
+      onDragOver={(event) => {
+        if (!transferHasFiles(event.dataTransfer)) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      }}
+      onDrop={(event) => {
+        if (!transferHasFiles(event.dataTransfer)) return;
+        event.preventDefault();
+        setIsDraggingFiles(false);
+        const files = filesFromTransfer(event.dataTransfer);
+        if (files.length > 0) void addAttachments(files);
+      }}
+      models={models}
+      activeModel={activeModel}
+      onSelectModel={onSelectModel}
+      skills={skills}
+      onSelectSkill={chooseSkill}
+      collaborationMode={collaborationMode}
+      onSelectCollaborationMode={onSelectCollaborationMode}
+      isChangingCollaborationMode={isChangingCollaborationMode}
+      attachments={attachments}
+      onRemoveAttachment={(id) => setAttachments((current) => current.filter((item) => item.id !== id))}
+      onSelectFiles={() => fileInputRef.current?.click()}
+      trailingSlot={(
+        <>
+          {collaborationMode === 'plan' && (
+            <span
+              className="inline-flex h-7 items-center gap-2 rounded-full bg-[color-mix(in_srgb,var(--orange)_14%,transparent)] pl-3 pr-2 text-[13px] font-medium leading-7 text-[color-mix(in_srgb,var(--orange)_85%,var(--ink))] select-none"
+              data-plan-badge=""
+            >
+              <ListTree className="h-4 w-4 stroke-[2]" />
+              <span>Plan</span>
+              <button
+                type="button"
+                aria-label={t('reactUiExitPlanMode')}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void onSelectCollaborationMode('build');
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }}
+                className="grid h-4 w-4 place-items-center rounded-full transition-colors hover:bg-hover"
+              >
+                <X className="h-3 w-3 stroke-[2.5]" />
+              </button>
+            </span>
+          )}
+          <ModelSwitcher
+            models={models}
+            activeModel={activeModel}
+            onSelectModel={onSelectModel}
+            disabled={disabled}
+            loading={isChangingModel}
+            thinkingLevel={thinkingLevel}
+            thinkingLevels={thinkingLevels}
+            thinkingOptions={thinkingOptions}
+            supportsThinking={supportsThinking}
+            onSelectThinkingLevel={onSelectThinkingLevel}
+            thinkingLoading={isChangingThinking}
+          />
+        </>
+      )}
+      dropOverlay={isDraggingFiles ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[14px] bg-ink/[0.02] backdrop-blur-[1px] border border-dashed border-line-strong text-ink font-medium text-[13px] gap-2"
+          data-composer-drop-overlay=""
+        >
+          <FileUp className="w-4 h-4 stroke-[2] text-ink-2" />
+          <span>Drop files here to attach</span>
+        </div>
+      ) : undefined}
+      inputProps={{
+        onPaste: (event) => {
+          if (!transferHasFiles(event.clipboardData)) return;
+          event.preventDefault();
+          void addAttachments(filesFromTransfer(event.clipboardData));
+        },
+        'aria-label': t('promptAria'),
+      }}
+    />
+  );
 
   return (
     <div
       ref={shellRef}
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-4 pt-1 flex flex-col items-center justify-center w-full bg-transparent"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pt-1 pb-3 flex flex-col items-center justify-center w-full bg-transparent"
       data-composer-shell=""
     >
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 -top-7 -z-10 bg-gradient-to-t from-white from-75% via-white/95 to-transparent dark:from-[#16171a] dark:via-[#16171a]/95 dark:to-transparent"
+        className="pointer-events-none absolute inset-x-0 bottom-0 -top-7 -z-10 bg-gradient-to-t from-[var(--page)] from-75% via-[color-mix(in_srgb,var(--page)_95%,transparent)] to-transparent"
         data-composer-fade-mask=""
       />
       <input
@@ -373,15 +436,15 @@ export const Composer = React.memo<ComposerProps>(({
       />
 
       {attachmentError && (
-        <p className="pointer-events-auto mb-2 w-full max-w-[620px] px-3 text-[11px] text-red-600" role="alert" data-attachment-error="">
+        <p className="pointer-events-auto mb-2 w-full max-w-[620px] px-3 text-[11px] text-red" role="alert" data-attachment-error="">
           {attachmentError}
         </p>
       )}
 
       <div className="w-full max-w-[620px] flex flex-col items-start">
-        {workProgress && (
+        {workProgress && !isWorkIdle && (
           <div className="pointer-events-auto mb-2 flex items-center px-1" data-composer-progress-slot="">
-            <WorkProgressIndicator progress={workProgress} idle={isWorkIdle} />
+            <WorkProgressIndicator progress={workProgress} idle={false} />
           </div>
         )}
         <div className="mb-2 hidden w-full max-w-[620px] justify-start" data-mode-switcher-row="">
@@ -393,248 +456,27 @@ export const Composer = React.memo<ComposerProps>(({
           />
         </div>
 
-        <div className="relative w-full max-w-[620px]">
-          {(plusMenuOpen || skillMenuOpen) && (
-            <div className="absolute bottom-full mb-2.5 inset-x-0 z-30 pointer-events-auto">
-              <SkillPicker
-                skills={skills}
-                query={skillQuery}
-                activeIndex={activeSkillIndex}
-                collaborationMode={collaborationMode}
-                onSelectMode={(mode) => void onSelectCollaborationMode(mode)}
-                onSelectSkill={chooseSkill}
-                onSelect={chooseSkill}
-                onSelectFiles={() => fileInputRef.current?.click()}
-                onClick={() => fileInputRef.current?.click()}
-                onClose={() => {
-                  setPlusMenuOpen(false);
-                  setSkillMenuOpen(false);
-                  requestAnimationFrame(() => inputRef.current?.focus());
-                }}
-                isChangingMode={isChangingCollaborationMode}
-              />
+        <div
+          className="pointer-events-auto relative w-full max-w-[620px] flex flex-col"
+          data-composer-stack={showPlanStack ? '' : undefined}
+        >
+          {showPlanStack && workflowPlan ? (
+            <div className="w-full" data-composer-plan-slot="">
+              <WorkflowPlanCard plan={workflowPlan} interrupted={workflowPlanInterrupted} />
             </div>
-          )}
-
-          <form
-        onSubmit={handleSubmit}
-        onDragEnter={(event) => {
-          if (!transferHasFiles(event.dataTransfer)) return;
-          event.preventDefault();
-          setIsDraggingFiles(true);
-        }}
-        onDrop={(event) => {
-          if (!transferHasFiles(event.dataTransfer)) return;
-          event.preventDefault();
-          setIsDraggingFiles(false);
-          const files = filesFromTransfer(event.dataTransfer);
-          if (files.length > 0) void addAttachments(files);
-        }}
-        data-composer=""
-        data-composer-multiline="true"
-        style={{ height: composerHeight }}
-        aria-busy={isAttaching}
-        className={`pointer-events-auto relative w-full max-w-[620px] overflow-hidden bg-white border dark:bg-[#1a1d24] grid grid-cols-[30px_minmax(0,1fr)_auto_30px] grid-rows-[minmax(44px,auto)_30px] gap-y-1.5 gap-x-2 items-center rounded-[22px] px-3 pt-2.5 pb-2.5 transition-[height,border-radius,border-color] duration-200 ease-out motion-reduce:transition-none focus-within:border-slate-300 dark:focus-within:border-slate-500 ${
-          isDraggingFiles ? 'border-slate-500' : 'border-slate-200/90'
-        } dark:border-[#272b36]`}
-      >
-        {isDraggingFiles && (
-          <div
-            className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[22px] bg-slate-900/[0.03] dark:bg-white/[0.05] backdrop-blur-[2px] border-2 border-dashed border-slate-400 dark:border-slate-500 text-slate-700 dark:text-slate-200 font-medium text-[13px] gap-2 animate-in fade-in duration-150"
-            data-composer-drop-overlay=""
-          >
-            <FileUp className="w-4 h-4 stroke-[2] text-slate-600 dark:text-slate-300" />
-            <span>Drop files here to attach</span>
+          ) : null}
+          <div className={`relative w-full ${showPlanStack ? 'z-10 -mt-[14px]' : ''}`} data-composer-input-layer={showPlanStack ? '' : undefined}>
+            {promptBar}
           </div>
-        )}
-        <button
-          type="button"
-          aria-label="Add attachment, mode, or skill"
-          aria-expanded={plusMenuOpen}
-          disabled={disabled || isAttaching}
-          onClick={() => {
-            setPlusMenuOpen((current) => !current);
-          }}
-          className={`col-start-1 row-start-2 self-end w-[30px] h-[30px] rounded-full flex items-center justify-center active:scale-[0.96] transition-[color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 ${
-            plusMenuOpen
-              ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white'
-              : 'bg-slate-100/90 dark:bg-white/10 hover:bg-slate-200/80 dark:hover:bg-white/15 text-[#64748b] dark:text-[#94a3b8] hover:text-[#0f172a] dark:hover:text-white'
-          }`}
-          title="Add attachment, mode, or skill"
-        >
-          {isAttaching ? (
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin stroke-2" />
-          ) : (
-            <Plus className="w-3.5 h-3.5 stroke-[2]" />
-          )}
-        </button>
-
-        <div className="col-span-4 row-start-1 flex flex-col gap-1.5 min-w-0">
-          {attachments.length > 0 && (
-            <div
-              className="flex flex-wrap items-center gap-2 pt-0.5 pb-0.5 overflow-x-auto"
-              data-composer-attachments=""
-              aria-label="Attachments"
-            >
-              {attachments.map((attachment) => (
-                <div
-                  key={attachment.id}
-                  className="group relative flex-none"
-                  data-attachment-preview={attachment.kind}
-                >
-                  {attachment.kind === 'image' && attachment.previewUrl ? (
-                    <div className="relative h-[46px] w-[46px] rounded-[14px] overflow-hidden border border-slate-200/90 dark:border-[#272b36] shadow-[0_1px_3px_rgba(0,0,0,0.04)] bg-slate-100 dark:bg-[#14161c]">
-                      <img
-                        src={attachment.previewUrl}
-                        alt={attachment.name}
-                        className="h-full w-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        aria-label={`Remove ${attachment.name}`}
-                        onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-                        className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-black/60 hover:bg-black text-white transition-[background-color] opacity-0 group-hover:opacity-100 focus:opacity-100"
-                      >
-                        <X className="h-2.5 w-2.5 stroke-[2.5]" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex h-[46px] max-w-[240px] items-center gap-2.5 rounded-[14px] border border-slate-200/90 dark:border-[#272b36] bg-white dark:bg-[#14161c] px-2.5 py-1.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-                      <span className="grid h-8 w-8 flex-none place-items-center rounded-[8px] bg-slate-100/90 dark:bg-[#20242d] text-slate-500 dark:text-slate-400">
-                        {attachment.kind === 'video' ? (
-                          <Video className="h-4 w-4 stroke-[1.7]" />
-                        ) : attachment.kind === 'text' ? (
-                          <FileText className="h-4 w-4 stroke-[1.7]" />
-                        ) : (
-                          <FileIcon className="h-4 w-4 stroke-[1.7]" />
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1 pr-0.5">
-                        <span className="block truncate text-[12.5px] font-medium text-slate-800 dark:text-slate-200 leading-snug">{attachment.name}</span>
-                        <span className="block text-[11px] text-slate-400 dark:text-slate-500 tabular-nums leading-none mt-0.5">{attachment.sizeText}</span>
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${attachment.name}`}
-                        onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-                        className="grid h-5 w-5 flex-none place-items-center rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-700 dark:hover:text-slate-200 active:scale-95 transition-colors"
-                      >
-                        <X className="h-3.5 w-3.5 stroke-[2]" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={text}
-            onChange={(e) => {
-              const nextText = e.target.value;
-              setText(nextText);
-              const opensSkillMenu = nextText.startsWith('/') && skills.length > 0;
-              setSkillMenuOpen(opensSkillMenu);
-              if (opensSkillMenu) setActiveSkillIndex(0);
-            }}
-            onKeyDown={handleKeyDown}
-            onPaste={(event) => {
-              if (!transferHasFiles(event.clipboardData)) return;
-              event.preventDefault();
-              void addAttachments(filesFromTransfer(event.clipboardData));
-            }}
-            placeholder="Type / to open commands..."
-            disabled={disabled}
-            aria-label="Type / to open commands..."
-            data-composer-input=""
-            className="mt-0.5 overflow-y-auto pl-1 pr-9 py-0 min-w-0 w-full resize-none bg-transparent text-[14px] leading-5 text-[#1e293b] dark:text-[#f1f5f9] placeholder-[#9ca3af] dark:placeholder-[#64748b] outline-none disabled:cursor-not-allowed"
+          <ComposerUsageFooter
+            isOAuth={isOAuth}
+            totalCost={totalCost}
+            totalTokens={totalTokens}
+            quota5h={quota5h}
+            quota7d={quota7d}
+            contextUsage={contextUsage}
+            tokenBreakdown={tokenBreakdown}
           />
-        </div>
-
-        {collaborationMode === 'plan' && (
-          <span
-            className="col-start-2 row-start-2 self-end inline-flex h-[30px] items-center gap-2 rounded-full bg-[#f8ede2] dark:bg-amber-950/40 pl-3 pr-2 text-[13px] font-medium text-[#925712] dark:text-amber-300 select-none transition-colors justify-self-start"
-            data-plan-badge=""
-          >
-            <ListTree className="h-4 w-4 stroke-[2] text-[#b8782a] dark:text-amber-400" />
-            <span>Plan</span>
-            <button
-              type="button"
-              aria-label="Exit Plan mode"
-              onClick={(e) => {
-                e.stopPropagation();
-                void onSelectCollaborationMode('build');
-                requestAnimationFrame(() => inputRef.current?.focus());
-              }}
-              className="grid h-4 w-4 place-items-center rounded-full text-[#925712]/70 dark:text-amber-300/70 hover:bg-[#925712]/15 dark:hover:bg-amber-300/15 hover:text-[#925712] dark:hover:text-amber-200 active:scale-95 transition-[color,background-color,transform] focus:outline-none"
-            >
-              <X className="h-3 w-3 stroke-[2.5]" />
-            </button>
-          </span>
-        )}
-
-        <button
-          type="button"
-          aria-label={isExpanded ? 'Collapse composer' : 'Expand composer'}
-          aria-expanded={isExpanded}
-          onClick={() => {
-            setIsExpanded((current) => !current);
-            requestAnimationFrame(() => inputRef.current?.focus());
-          }}
-          className="absolute right-2.5 top-2.5 w-[30px] h-[30px] rounded-full grid place-items-center text-[#94a3b8] hover:text-[#475569] dark:hover:text-[#f1f5f9] hover:bg-black/[0.035] dark:hover:bg-white/10 active:scale-[0.96] transition-[color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
-          title={isExpanded ? 'Collapse composer' : 'Expand composer'}
-        >
-          {isExpanded ? (
-            <Minimize2 className="w-3.5 h-3.5 stroke-[1.8]" />
-          ) : (
-            <Maximize2 className="w-3.5 h-3.5 stroke-[1.8]" />
-          )}
-        </button>
-
-        <ModelSwitcher
-          models={models}
-          activeModel={activeModel}
-          onSelectModel={onSelectModel}
-          disabled={disabled}
-          loading={isChangingModel}
-          thinkingLevel={thinkingLevel}
-          thinkingLevels={thinkingLevels}
-          thinkingOptions={thinkingOptions}
-          supportsThinking={supportsThinking}
-          onSelectThinkingLevel={onSelectThinkingLevel}
-          thinkingLoading={isChangingThinking}
-          className="col-start-3 row-start-2 self-end justify-self-end"
-        />
-
-        {isStreaming ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              void onAbort?.();
-            }}
-            aria-label={t('stopGeneration') || 'Stop'}
-            className="col-start-4 row-start-2 self-end w-[30px] h-[30px] rounded-full bg-[#0d0e11] dark:bg-[#252a35] text-white flex items-center justify-center hover:bg-black dark:hover:bg-[#313745] active:scale-[0.96] transition-[background-color,opacity,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 cursor-pointer"
-            title={t('stopGeneration') || 'Stop'}
-            data-stop-button=""
-          >
-            <Square className="w-3 h-3 fill-current" />
-          </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={disabled || isAttaching || (!text.trim() && attachments.length === 0)}
-            aria-label="Send message"
-            className="col-start-4 row-start-2 self-end w-[30px] h-[30px] rounded-full bg-[#0d0e11] dark:bg-[#252a35] text-white flex items-center justify-center hover:bg-black dark:hover:bg-[#313745] active:scale-[0.96] transition-[background-color,opacity,transform] disabled:opacity-35 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60"
-            title="Send"
-          >
-            <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" data-send-icon="" />
-          </button>
-        )}
-      </form>
         </div>
       </div>
     </div>

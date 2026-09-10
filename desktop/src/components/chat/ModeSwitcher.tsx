@@ -14,41 +14,29 @@ const MODES: Array<{
   label: string;
   description: string;
   icon: typeof ListTodo;
-  selectedClass: string;
-  idleClass: string;
-  color: string;
-  shadow: string;
 }> = [
   {
     id: 'plan',
     label: 'Plan',
     description: 'Plan and clarify before making changes',
     icon: ListTodo,
-    selectedClass: 'bg-[#5b7198] text-white shadow-[0_1px_3px_rgba(70,91,130,0.3)]',
-    idleClass: 'text-[#586e90] hover:bg-white/70',
-    color: '#5b7198',
-    shadow: '0 1px 3px rgba(70,91,130,0.3)',
   },
   {
     id: 'build',
     label: 'Build',
     description: 'Implement changes directly',
     icon: Hammer,
-    selectedClass: 'bg-[#567a70] text-white shadow-[0_1px_3px_rgba(61,96,86,0.3)]',
-    idleClass: 'text-[#4f7068] hover:bg-white/70',
-    color: '#567a70',
-    shadow: '0 1px 3px rgba(61,96,86,0.3)',
   },
 ];
 
 const MODE_CONFIG: Record<CollaborationMode, { color: string; shadow: string }> = {
   plan: {
-    color: '#5b7198',
-    shadow: '0 1px 3px rgba(70,91,130,0.3)',
+    color: 'var(--orange)',
+    shadow: 'var(--shadow-btn)',
   },
   build: {
-    color: '#567a70',
-    shadow: '0 1px 3px rgba(61,96,86,0.3)',
+    color: 'var(--green)',
+    shadow: 'var(--shadow-btn)',
   },
 };
 
@@ -173,7 +161,7 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
   return (
     <div
       ref={containerRef}
-      className="pointer-events-auto inline-flex relative h-8 items-center gap-0 rounded-xl bg-[#eef2f6] p-0.5 dark:bg-[#1a1d24] select-none shadow-[0_0_0_1px_rgba(215,222,232,0.9),0_1px_2px_rgba(15,23,42,0.08)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.3)]"
+      className="pointer-events-auto relative inline-flex h-8 select-none items-center gap-0 rounded-control bg-field p-0.5 shadow-inset-field"
       role="radiogroup"
       aria-label="Agent mode"
       aria-busy={loading}
@@ -185,7 +173,7 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
       <div
         ref={indicatorRef}
         aria-hidden="true"
-        className="absolute left-0 top-0 rounded-[12px] shadow-[0_1px_3px_rgba(70,91,130,0.3)] pointer-events-none z-0 will-change-transform transition-[transform,width,height,background-color,box-shadow,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        className="absolute left-0 top-0 z-0 pointer-events-none rounded-control shadow-btn will-change-transform transition-[transform,width,height,background-color,box-shadow,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ opacity: 0 }}
       />
       {MODES.map((option) => {
@@ -201,12 +189,10 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
             data-mode-option={option.id}
             disabled={disabled || loading}
             onClick={() => handleSelect(option.id)}
-            className={`relative z-[1] flex h-7 min-w-[64px] items-center justify-center gap-1.5 rounded-[12px] px-2.5 text-[11.5px] font-semibold before:absolute before:left-0 before:top-1/2 before:h-10 before:w-full before:-translate-y-1/2 before:content-[''] active:scale-[0.96] transition-[color,transform,opacity] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/60 disabled:cursor-not-allowed disabled:opacity-55 ${
+            className={`relative z-[1] flex h-7 min-w-[64px] items-center justify-center gap-1.5 rounded-control px-2.5 text-[12px] font-medium before:absolute before:left-0 before:top-1/2 before:h-10 before:w-full before:-translate-y-1/2 before:content-[''] active:scale-[0.96] transition-[color,transform,opacity] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] disabled:cursor-not-allowed disabled:opacity-55 ${
               selected
                 ? 'text-white'
-                : option.id === 'plan'
-                ? 'text-[#586e90] dark:text-[#8ba4c9] hover:text-white'
-                : 'text-[#4f7068] dark:text-[#88b5a9] hover:text-white'
+                : 'text-ink-2 hover:text-white'
             }`}
             title={option.description}
           >
@@ -219,4 +205,3 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
     </div>
   );
 };
-

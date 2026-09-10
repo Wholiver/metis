@@ -19,6 +19,7 @@ export interface Agent {
   unread?: boolean;
   sessionPath?: string;
   projectPath?: string;
+  previewUrl?: string;
 }
 
 export interface AttachmentFile {
@@ -124,6 +125,7 @@ export interface Message {
   thinkingDurationMs?: number;
   parts?: AssistantContentPart[];
   stopReason?: string;
+  errorMessage?: string;
   time?: string;
   serverTimestamp?: string | number;
   completedAt?: number;

@@ -1,23 +1,22 @@
-import React, { useEffect, useState } from 'react';
-import { AssistantContentPart, Message, PendingUserInput, WorkflowProposalState } from '../../types';
+import React from 'react';
+import { AssistantContentPart, CollaborationMode, Message, ModelOption, PendingUserInput, WorkflowProposalState } from '../../types';
 import { estimateThinkingDurationMs } from '../../lib/thinking';
-import { collectTurnFileChanges } from '../../lib/turn-files';
-import { resolveOutputTailProgress } from '../../lib/work-progress';
 import { AgentBubble } from './AgentBubble';
 import { AssistantWork } from './AssistantWork';
-import { TurnFilesSummary } from './TurnFilesSummary';
+import { AssistantErrorCard } from './AssistantErrorCard';
+import { AssistantTurnFooter } from './AssistantTurnFooter';
 
 interface AssistantTurnProps {
   messages: Message[];
   startedAt?: string | number;
-  workspacePath?: string;
   streaming?: boolean;
   showProgress?: boolean;
   workflowProposal?: WorkflowProposalState;
-  planActionsEnabled?: boolean;
-  onProcessProposal?: () => void;
-  onRefineProposal?: (request: string) => void;
+  onOpenPlan?: (markdown: string) => void;
   pendingUserInput?: PendingUserInput;
+  onRetry?: () => void;
+  collaborationMode?: CollaborationMode;
+  model?: ModelOption;
 }
 
 export function isSubagentLaunchNotice(text: string): boolean {
@@ -25,6 +24,34 @@ export function isSubagentLaunchNotice(text: string): boolean {
   if (!normalized || normalized.length > 240 || (!/subagent/i.test(normalized) && !/spawn_agent/i.test(normalized) && !/agent/i.test(normalized))) return false;
   return /(已启动|启动了|started|launched|spawning|spawned)/i.test(normalized)
     && /(等待|等它|waiting|wait for|background)/i.test(normalized);
+}
+
+/** Final assistant text only — never thinking, tools, or intermediate narration. */
+export function resolveAssistantFinalCopyText(
+  messages: Message[],
+  options: { streaming?: boolean; failureMessage?: Message } = {},
+): string {
+  if (options.streaming) return '';
+  const failureMessage = options.failureMessage;
+  const entries = messages.flatMap((message) => (message.parts || fallbackParts(message)).map((part) => ({ message, part })));
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const part = entries[index].part;
+    if (
+      part.type === 'text'
+      && part.text.trim()
+      && !isSubagentLaunchNotice(part.text)
+      && (!failureMessage || part.text !== failureMessage.errorMessage)
+    ) {
+      return part.text.trim();
+    }
+  }
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (failureMessage && message === failureMessage) continue;
+    const text = message.content?.trim();
+    if (text && text !== failureMessage?.errorMessage) return text;
+  }
+  return '';
 }
 
 function fallbackParts(message: Message): AssistantContentPart[] {
@@ -82,12 +109,12 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
   if (prev.streaming !== next.streaming) return false;
   if (prev.showProgress !== next.showProgress) return false;
   if (prev.startedAt !== next.startedAt) return false;
-  if (prev.workspacePath !== next.workspacePath) return false;
-  if (prev.planActionsEnabled !== next.planActionsEnabled) return false;
   if (prev.workflowProposal !== next.workflowProposal) return false;
   if (prev.pendingUserInput !== next.pendingUserInput) return false;
-  if (prev.onProcessProposal !== next.onProcessProposal) return false;
-  if (prev.onRefineProposal !== next.onRefineProposal) return false;
+  if (prev.onOpenPlan !== next.onOpenPlan) return false;
+  if (prev.onRetry !== next.onRetry) return false;
+  if (prev.collaborationMode !== next.collaborationMode) return false;
+  if (prev.model !== next.model) return false;
 
   const prevMsgs = prev.messages;
   const nextMsgs = next.messages;
@@ -102,48 +129,56 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
 const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   messages,
   startedAt,
-  workspacePath,
   streaming = false,
   showProgress = false,
   workflowProposal,
-  planActionsEnabled = false,
-  onProcessProposal,
-  onRefineProposal,
+  onOpenPlan,
   pendingUserInput,
+  onRetry,
+  collaborationMode,
+  model,
 }) => {
   const isWaitingUserInput = Boolean(pendingUserInput);
-  const [workExpanded, setWorkExpanded] = useState(streaming);
-  useEffect(() => setWorkExpanded(streaming), [streaming]);
+  const failureMessage = !streaming ? messages.find((m) => (
+    m.stopReason === 'error' ||
+    m.stopReason === 'aborted' ||
+    Boolean(m.errorMessage)
+  )) : undefined;
+  const errorText = failureMessage ? (failureMessage.errorMessage || failureMessage.content) : undefined;
   const entries = messages.flatMap((message) => (message.parts || fallbackParts(message)).map((part) => ({ message, part })));
-  const progress = isWaitingUserInput
-    ? { phase: 'waiting' as const, label: 'Waiting for your input…', status: 'waiting' as const }
-    : resolveOutputTailProgress(entries.map(({ part }) => part), streaming);
+  const copyText = resolveAssistantFinalCopyText(messages, { streaming, failureMessage });
+  const footer = !streaming && (copyText || collaborationMode || model) ? (
+    <AssistantTurnFooter
+      copyText={copyText}
+      collaborationMode={collaborationMode}
+      model={model}
+    />
+  ) : null;
   const hasWork = streaming || isWaitingUserInput || entries.some(({ part }) => part.type === 'thinking' || part.type === 'toolCall');
   if (!hasWork) {
-    if (!showProgress) {
-      return <>{messages.map((message) => (
-        <AgentBubble
-          key={message.id}
-          message={message}
-          workflowProposal={workflowProposal}
-          planActionsEnabled={planActionsEnabled}
-          onProcessProposal={onProcessProposal}
-          onRefineProposal={onRefineProposal}
-        />
-      ))}</>;
-    }
-    return (
-      <div className="assistant-turn-segment w-full min-w-0 max-w-full" data-assistant-turn>
-        {messages.map((message) => (
+    const nonFailureMessages = failureMessage
+      ? messages.filter((m) => m !== failureMessage && m.content && m.content !== failureMessage.errorMessage)
+      : messages;
+    const content = (
+      <>
+        {nonFailureMessages.map((message) => (
           <AgentBubble
             key={message.id}
             message={message}
             workflowProposal={workflowProposal}
-            planActionsEnabled={planActionsEnabled}
-            onProcessProposal={onProcessProposal}
-            onRefineProposal={onRefineProposal}
+            onOpenPlan={onOpenPlan}
           />
         ))}
+        {failureMessage && <AssistantErrorCard error={errorText} onRetry={onRetry} />}
+        {footer}
+      </>
+    );
+    if (!showProgress && !footer) {
+      return content;
+    }
+    return (
+      <div className="assistant-turn-segment w-full min-w-0 max-w-full" data-assistant-turn>
+        {content}
       </div>
     );
   }
@@ -152,7 +187,12 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   if (!streaming) {
     for (let index = entries.length - 1; index >= 0; index -= 1) {
       const part = entries[index].part;
-      if (part.type === 'text' && part.text.trim() && !isSubagentLaunchNotice(part.text)) {
+      if (
+        part.type === 'text'
+        && part.text.trim()
+        && !isSubagentLaunchNotice(part.text)
+        && (!failureMessage || part.text !== failureMessage.errorMessage)
+      ) {
         finalEntryIndex = index;
         break;
       }
@@ -170,10 +210,10 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   const workItems = entries.flatMap(({ part }, index) => {
     if (index === finalEntryIndex) return [];
     if (part.type === 'text' && isSubagentLaunchNotice(part.text)) return [];
+    if (part.type === 'text' && failureMessage && part.text === failureMessage.errorMessage) return [];
     return [part];
   });
   const workDuration = resolveCompletedWorkDurationMs(messages, workItems, startedAt, streaming);
-  const fileChanges = streaming ? [] : collectTurnFileChanges(entries.map(({ part }) => part), { workspacePath });
   const finalEntry = finalEntryIndex >= 0 ? entries[finalEntryIndex] : undefined;
   const finalMessage = finalEntry && finalEntry.part.type === 'text'
     ? {
@@ -191,24 +231,26 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
         items={workItems}
         streaming={streaming}
         durationMs={workDuration}
-        onExpandedChange={setWorkExpanded}
       />
       {finalMessage && (
-        <div className={`turn-final-response ${!streaming && workExpanded ? 'after-expanded-work' : ''} w-full min-w-0 max-w-full`}>
+        <div className="turn-final-response after-expanded-work w-full min-w-0 max-w-full">
           <AgentBubble
             message={finalMessage}
             workflowProposal={workflowProposal}
-            planActionsEnabled={planActionsEnabled}
-            onProcessProposal={onProcessProposal}
-            onRefineProposal={onRefineProposal}
+            onOpenPlan={onOpenPlan}
           />
         </div>
       )}
-      <TurnFilesSummary files={fileChanges} />
+      {failureMessage && (
+        <AssistantErrorCard
+          error={errorText}
+          onRetry={onRetry}
+        />
+      )}
+      {footer}
     </div>
   );
 };
 
 export const AssistantTurn = React.memo<AssistantTurnProps>(AssistantTurnComponent, areAssistantTurnPropsEqual);
 AssistantTurn.displayName = 'AssistantTurn';
-

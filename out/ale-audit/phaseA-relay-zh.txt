@@ -1,0 +1,19 @@
+【ALE-99 r2 Phase A 审计摘要 @ 18:31】
+
+服务 active，进度 17/98；当前任务 dit_pipeline_cfg_alignment_fid_256_001（容器内存约 1.62/2Gi）。
+
+失败分类（最新有效结果）：
+- score>0 完成：13
+- score=0（模型错，非基建）：4 —— basel / ff5 / legal_ma / clustered_cyclic
+- timeout：0
+- OOM/资源：0
+- docker/sandbox：0
+- Metis/auth/crash：0
+- 评测缺依赖：0
+- 其它环境：0
+
+结论：目前没有环境/依赖导致的失败或超时。日志里 OpenTelemetry “No module named opentelemetry.exporter” 只是 host 遥测 WARNING，可忽略。
+约 80 个任务目录只是编排预建 placeholder（run_started+provision_wait），不是失败。
+早波 0252* 的 4 个是 resume 跳过的有效历史完成（american/basel/ab_test/audience_seg）。
+
+Phase B：远端 45min daemon 与本地 watcher 继续监视；仅处理 infra。

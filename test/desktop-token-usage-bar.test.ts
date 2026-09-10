@@ -50,19 +50,24 @@ describe('desktop token usage bar and formatting', () => {
     });
   });
 
-  it('wires TokenUsageBar into Inspector and desktop component tree', () => {
+  it('keeps TokenUsageBar helpers available and wires context into composer usage footer', () => {
     const inspector = readFileSync(resolve(process.cwd(), 'desktop/src/components/inspector/Inspector.tsx'), 'utf8');
+    const chatHeader = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/ChatHeader.tsx'), 'utf8');
+    const composer = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/Composer.tsx'), 'utf8');
+    const footer = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/ComposerUsageFooter.tsx'), 'utf8');
     const tokenBar = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/TokenUsageBar.tsx'), 'utf8');
 
-    expect(inspector).toContain('<TokenUsageBar');
-    expect(inspector).toContain('contextUsage={contextUsage}');
-    expect(inspector).toContain('tokenBreakdown={tokenBreakdown}');
+    expect(inspector).not.toContain('TokenUsageBar');
+    expect(chatHeader).not.toContain('TokenUsageBar');
+    expect(composer).toContain('<ComposerUsageFooter');
+    expect(footer).toContain("from './TokenUsageBar'");
+    expect(footer).toContain('formatTokenCount');
 
     expect(tokenBar).toContain('formatTokenCount');
     expect(tokenBar).toContain('isHighLoad');
-    expect(tokenBar).toContain('bg-blue-500');
-    expect(tokenBar).toContain('bg-emerald-500');
-    expect(tokenBar).toContain('bg-orange-400');
+    expect(tokenBar).toContain('bg-accent');
+    expect(tokenBar).toContain('bg-green');
+    expect(tokenBar).toContain('bg-orange');
   });
 
   it('triggers breakdown panel display on mouse hover rather than click', () => {
@@ -77,4 +82,3 @@ describe('desktop token usage bar and formatting', () => {
     expect(tokenBar).not.toMatch(/<button[^>]*onClick=\{\(\)\s*=>\s*setIsOpen/);
   });
 });
-

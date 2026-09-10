@@ -56,3 +56,19 @@ export function splitPlanTitle(markdown: string): { title: string; body: string 
   return { title, body: lines.join('\n').trim() };
 }
 
+export function summarizePlanPreview(markdown: string): string {
+  const lines = String(markdown || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^#{1,6}\s+/.test(line));
+  const first = lines[0] || '';
+  return first
+    .replace(/^[-*+]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[`*_~]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}

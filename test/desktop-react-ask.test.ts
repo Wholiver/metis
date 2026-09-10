@@ -13,21 +13,13 @@ describe('desktop React Ask interface', () => {
 
     expect(chatArea).toContain('pendingUserInput ? (');
     expect(chatArea).toContain('<UserInputCard request={pendingUserInput}');
-    expect(card).toContain('data-user-input-request-id={request.requestId}');
-    expect(card).toContain('data-question-id={question.id}');
-    expect(card).toContain('request.questions[questionIndex]');
+    expect(card).toContain('requestId={request.requestId}');
+    expect(card).toContain('id: question.id');
+    expect(card).toContain('request.questions.map');
     expect(card).toContain('max-w-[620px]');
-    expect(card).toContain('rounded-[24px]');
-    expect(card).toContain('bg-white');
-    expect(card).toContain('shadow-none');
-    expect(card).toContain('rounded-[12px] px-3 py-2.5');
-    expect(card).toContain('rounded-[12px] bg-[#172033]');
-    expect(card).toContain('border-[0.5px]');
-    expect(card).toContain('aria-labelledby');
-    expect(card).toContain('<fieldset');
+    expect(card).toContain('<ApprovalCard');
+    expect(card).toContain('questions={questions}');
     expect(card).not.toContain('<hr');
-    expect(card).not.toContain('border-t');
-    expect(card).not.toContain('border-b');
     expect(card).not.toContain('transition-all');
   });
 
@@ -70,4 +62,3 @@ describe('desktop React Ask interface', () => {
     expect(hook).toContain('loadMessages(targetSessionId, true)');
   });
 });
-

@@ -614,7 +614,7 @@ ${line(state, "FRONTIER G2")}
 			return;
 		}
 		if (report.verdict === "blocked") {
-			if (report.role === "primary" || report.role === "root" || report.gate === "G2") {
+			if (report.role === "primary" || report.role === "root") {
 				return this.transition("blocked", "blocked");
 			}
 			this.log(`WORKER_BLOCKED gate=${report.gate} actor=${report.actor} role=${report.role}`);
@@ -710,14 +710,14 @@ ${line(state, "FRONTIER G2")}
 		const framework = getPerformanceFramework(activeItem?.framework ?? "plan-scope");
 		const role = process.env.METIS_AGENT_NAME ?? "root";
 		const roleInstruction = role === "root"
-			? "Act as L0 Primary Coordinator. In Wave 1, dispatch scope-coordinator to generate and freeze ROADMAP.md. In Wave 2, dispatch feature-coordinator to execute feature waves (or dispatch implementer/planner directly for focused tasks). In Wave 3, dispatch sweep-coordinator or goal-checker for final convergence and verification. If subagent dispatch is unavailable or encounters an unrecoverable error, execute tools directly to accomplish the user's intent."
+			? "Act as L0 Primary Coordinator. First evaluate task difficulty autonomously: for simple, localized, or standard tasks (T0/T1: mechanical edits, single-boundary fixes/features, script execution, queries), execute tools directly (read, edit, write, bash) — strictly forbid calling spawn_agent, and skip all governance ceremony (no ROADMAP.md/GATELOG.md, no receipts, no performance_gate). Only for genuinely complex tasks (T2/T3: cross-cutting multi-file architectural missions) or when explicitly requested by user: coordinate subagents across waves (Wave 1: scope-coordinator to generate and freeze ROADMAP.md, Wave 2: feature-coordinator to execute feature waves, Wave 3: sweep-coordinator or goal-checker for final convergence and verification). If subagent dispatch is unavailable or encounters an unrecoverable error, execute tools directly to accomplish the user's intent."
 			: `You are the ${role} worker. Stay inside this role's legal hierarchy and task boundary.`;
 		const protocol = [
 			"Performance run is active for the current user task.",
 			roleInstruction,
-			"G2 closing order is mandatory: (1) scoper or scope-coordinator calls performance_gate with gate=G2 after ROADMAP.md is executable, (2) only then reviewer calls gate=G2-review, (3) fresh-verifier calls gate=G2-verify. Writing a JSON receipt alone does not advance the frontier. Every Item must have stable id, category, tag, tier, framework, owned boundary, dependency IDs, launch group, integration lane, implementation, acceptance, unhappy paths, tests-first, verification, and requiresDetailedPlan.",
+			"For complex T2/T3 tasks with subagent coordination, G2 closing order is mandatory: (1) scoper or scope-coordinator calls performance_gate with gate=G2 after ROADMAP.md is executable, (2) only then reviewer calls gate=G2-review, (3) fresh-verifier calls gate=G2-verify. Writing a JSON receipt alone does not advance the frontier. Every Item must have stable id, category, tag, tier, framework, owned boundary, dependency IDs, launch group, integration lane, implementation, acceptance, unhappy paths, tests-first, verification, and requiresDetailedPlan.",
 			framework ? `\n# Native execution protocol: ${framework.id}\n${framework.content.trim()}` : "",
-			"Before finishing any gate role, write a non-empty receipt under <governance root>/artifacts/ then call performance_gate with verdict pass|fail|blocked and evidence set to that relative path (for example artifacts/g2-receipt.md). Do not exit after only writing the receipt. Goal-check is independent and runs only after every roadmap item is complete. Governance artifacts are outside the target workspace and must not be added to its diff.",
+			"Before finishing any gate role in a coordinated wave, write a non-empty receipt under <governance root>/artifacts/ then call performance_gate with verdict pass|fail|blocked and evidence set to that relative path (for example artifacts/g2-receipt.md). Do not exit after only writing the receipt. Goal-check is independent and runs only after every roadmap item is complete. Governance artifacts are outside the target workspace and must not be added to its diff.",
 			"A REPAIR_REQUIRED response from performance_gate is a schema/content repair request, never a runtime outage or blocker: repair the canonical governance artifact and retry the same gate. Claim that subagent dispatch is unavailable only after a structured spawn_agent error or timed_out payload, and quote its errorCode/error; never infer runtime availability from a rejected gate or worker report.",
 		].join("\n");
 		const runIdentity = [

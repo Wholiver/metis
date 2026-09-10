@@ -12,6 +12,7 @@ await cp(path.join(desktopDir, "main.cjs"), path.join(outputDir, "main.cjs"));
 await cp(path.join(desktopDir, "main-menu.cjs"), path.join(outputDir, "main-menu.cjs"));
 await cp(path.join(desktopDir, "provider-config.cjs"), path.join(outputDir, "provider-config.cjs"));
 await cp(path.join(desktopDir, "workspace-create.cjs"), path.join(outputDir, "workspace-create.cjs"));
+await cp(path.join(desktopDir, "workspace-git.cjs"), path.join(outputDir, "workspace-git.cjs"));
 await cp(path.join(desktopDir, "runtime-integrity.cjs"), path.join(outputDir, "runtime-integrity.cjs"));
 await cp(path.join(desktopDir, "session-token-totals.cjs"), path.join(outputDir, "session-token-totals.cjs"));
 await cp(path.join(desktopDir, "server-connection.cjs"), path.join(outputDir, "server-connection.cjs"));

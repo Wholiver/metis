@@ -26,10 +26,11 @@ it('keeps the Electron chat at the bottom without interrupting history reading',
       define: { 'process.env.NODE_ENV': '"development"' },
     });
     const postcss = requireDesktop('postcss');
-    const tailwind = requireDesktop('tailwindcss');
-    const { css } = await postcss([tailwind({
-      content: [join(desktop, 'src/**/*.{js,ts,jsx,tsx}')],
-    })]).process(await readFile(join(desktop, 'src/index.css'), 'utf8'), { from: undefined });
+    const tailwind = requireDesktop('@tailwindcss/postcss');
+    const { css } = await postcss([tailwind()]).process(
+      await readFile(join(desktop, 'src/index.css'), 'utf8'),
+      { from: join(desktop, 'src/index.css') },
+    );
     await writeFile(join(directory, 'fixture.css'), css);
     await writeFile(join(directory, 'index.html'), `<!doctype html><html><head>
       <link rel="stylesheet" href="fixture.css">
