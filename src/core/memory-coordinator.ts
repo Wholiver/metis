@@ -672,11 +672,36 @@ export class MemoryCoordinator {
 		if (!firstWord || !["SELECT", "WITH", "PRAGMA", "EXPLAIN"].includes(firstWord)) {
 			throw new Error(`Only read-only queries (SELECT, WITH, PRAGMA, EXPLAIN) are permitted. Received: ${firstWord || "unknown"}`);
 		}
+
 		if (/;\s*(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|VACUUM|ATTACH|DETACH)\b/i.test(normalized)) {
 			throw new Error("Multiple statements with mutating operations are strictly forbidden.");
 		}
 
 		const normalizedParams = params.map((p) => p ?? null);
+
+		// Prevent mutating operations (e.g. WITH ... DELETE or EXPLAIN INSERT)
+		if (firstWord !== "PRAGMA") {
+			try {
+				const explainQuery = firstWord === "EXPLAIN" ? normalized : `EXPLAIN ${normalized}`;
+				const explainRows = this.db.prepare(explainQuery).all(...normalizedParams) as Array<{ opcode: string }>;
+				const mutatingOpcodes = new Set([
+					"Insert", "Update", "Delete", "Clear", "OpenWrite",
+					"DropTable", "DropIndex", "DropTrigger", "CreateTable", "CreateIndex", "Destroy"
+				]);
+				for (const row of explainRows) {
+					if (mutatingOpcodes.has(row.opcode)) {
+						throw new Error(`Mutating operations are strictly forbidden. Found mutating opcode: ${row.opcode}`);
+					}
+				}
+			} catch (e: unknown) {
+				if (e instanceof Error && e.message.includes("Mutating operations")) {
+					throw e;
+				}
+				// If EXPLAIN fails for another reason, we reject the query to be safe
+				throw new Error(`Failed to verify query safety: ${e instanceof Error ? e.message : String(e)}`);
+			}
+		}
+
 		const rows = this.db.prepare(normalized).all(...normalizedParams) as Array<Record<string, unknown>>;
 		return rows.slice(0, 100);
 	}
