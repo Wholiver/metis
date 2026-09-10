@@ -1,0 +1,4 @@
+## 2024-09-10 - [SQL Injection Defense in Depth with EXPLAIN]
+**Vulnerability:** The `queryMemoryDb` tool in `memory-coordinator.ts` used string regex matching on the first word (`SELECT`, `WITH`, `PRAGMA`, `EXPLAIN`) and an explicit block list after `;` to enforce read-only execution. This allowed injection of mutating queries like `WITH cte AS (SELECT 1) DELETE FROM users` which evaded the regex constraints.
+**Learning:** SQLite's `EXPLAIN` query provides a robust, native way to inspect bytecode opcodes prior to execution. By validating opcodes (e.g., blocking `Insert`, `Update`, `Delete`, `Clear`, `OpenWrite`, etc.), we eliminate all mutating operations including tricky CTE injections.
+**Prevention:** Always use structural validation or database-native query inspection (`EXPLAIN`) rather than regex-based text matching when enforcing security properties on raw SQL input.
