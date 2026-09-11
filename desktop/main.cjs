@@ -1773,121 +1773,54 @@ function createWindow() {
 							taskReceivedSequence.push({ step: 'complete', ...(await sampleTaskReceivedVisual()) });
 							console.error(`[capture:task-received-progress] ${JSON.stringify(taskReceivedSequence)}`);
 						}
-						let idleCaptureAdvanced = null;
-						if (process.env.METIS_DESKTOP_CAPTURE_PROGRESS_COMPLETED) {
-							const idleRect = await mainWindow.webContents.executeJavaScript(`(() => {
-								const rect = document.querySelector('[data-progress-idle-gif]')?.getBoundingClientRect();
-								return rect ? { x: Math.floor(rect.x), y: Math.floor(rect.y), width: Math.ceil(rect.width), height: Math.ceil(rect.height) } : null;
-							})()`);
-							if (idleRect) {
-								const firstIdleFrame = await mainWindow.webContents.capturePage(idleRect);
-								await new Promise((resolve) => setTimeout(resolve, 2500));
-								const secondIdleFrame = await mainWindow.webContents.capturePage(idleRect);
-								idleCaptureAdvanced = !firstIdleFrame.toPNG().equals(secondIdleFrame.toPNG());
-							}
-						}
-						const progressSampleDelayMs = 650;
-						const progressMetrics = await mainWindow.webContents.executeJavaScript(`(async () => {
+						const progressMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
 							const indicator = document.querySelector('[data-work-progress]');
+							const progressSlot = document.querySelector('[data-composer-progress-slot]');
+							const thinkingBlocks = [...document.querySelectorAll('[data-thinking-block]')];
+							const latestUser = [...document.querySelectorAll('[data-message-role="user"]')].at(-1);
+							const thinkingAfterLatestUser = thinkingBlocks.filter((block) => (
+								latestUser && Boolean(latestUser.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING)
+							)).length;
+							const thinkingBeforeLatestUser = thinkingBlocks.filter((block) => (
+								latestUser && Boolean(latestUser.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_PRECEDING)
+							)).length;
+							const emptyActiveTurn = document.querySelector('[data-assistant-turn]:last-of-type');
 							const turn = indicator?.closest('[data-assistant-turn]');
 							const finalResponse = turn?.querySelector('.turn-final-response');
-							const lastUserMessage = [...document.querySelectorAll('[data-message-role="user"]')].at(-1);
-							const video = indicator?.querySelector('[data-progress-video]');
-							const defaultSvg = indicator?.querySelector('[data-progress-default-svg]');
-							const taskReceivedGif = indicator?.querySelector('[data-progress-task-received-gif]');
-							const idleGif = indicator?.querySelector('[data-progress-idle-gif]');
+							const lastUserMessage = latestUser;
+							const marker = indicator?.querySelector('[data-progress-marker-visual]');
 							const indicatorRect = indicator?.getBoundingClientRect();
 							const indicatorStyle = indicator ? getComputedStyle(indicator) : null;
 							const progressLabel = indicator?.querySelector('[data-work-progress-label]');
 							const labelStyle = progressLabel ? getComputedStyle(progressLabel) : null;
-							const labelRect = progressLabel?.getBoundingClientRect();
-							const turnRect = turn?.getBoundingClientRect();
-							const visualRect = indicator?.querySelector('.work-progress-visual')?.getBoundingClientRect();
-							const activeVisualRect = indicator?.querySelector('[data-progress-idle-gif], [data-progress-task-received-gif], [data-progress-thinking-gif], [data-progress-default-svg]')?.getBoundingClientRect();
-							const activeVisual = indicator?.querySelector('[data-progress-idle-gif], [data-progress-task-received-gif], [data-progress-thinking-gif], [data-progress-default-svg]');
-							const sendRect = document.querySelector('[aria-label="Send message"]')?.getBoundingClientRect();
-							const sampleImage = (image) => {
-								if (!image?.complete || !image?.naturalWidth) return null;
-								const canvas = document.createElement('canvas');
-								canvas.width = 30;
-								canvas.height = 30;
-								const context = canvas.getContext('2d');
-								context?.drawImage(image, 0, 0, 30, 30);
-								return context ? [...context.getImageData(0, 0, 30, 30).data] : null;
-							};
-							const visibleImageBounds = (image) => {
-								if (!image?.complete || !image?.naturalWidth || !image?.naturalHeight) return null;
-								const canvas = document.createElement('canvas');
-								canvas.width = image.naturalWidth;
-								canvas.height = image.naturalHeight;
-								const context = canvas.getContext('2d', { willReadFrequently: true });
-								context?.drawImage(image, 0, 0);
-								if (!context) return null;
-								const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-								let left = canvas.width;
-								let right = -1;
-								for (let index = 0; index < pixels.length; index += 4) {
-									if (pixels[index + 3] <= 16) continue;
-									const x = (index / 4) % canvas.width;
-									left = Math.min(left, x);
-									right = Math.max(right, x);
-								}
-								return right >= left ? { left, right, width: canvas.width } : null;
-							};
-							const activeVisualContentBounds = visibleImageBounds(activeVisual);
-							const initialTime = Number(video?.currentTime || 0);
-							const initialDefaultPixels = sampleImage(defaultSvg);
-							const inlineEyeMotion = defaultSvg?.querySelector('.work-progress-eye-motion-left');
-							const initialInlineEyeTransform = inlineEyeMotion ? getComputedStyle(inlineEyeMotion).transform : null;
-							await new Promise((resolve) => setTimeout(resolve, ${progressSampleDelayMs}));
-							const finalDefaultPixels = sampleImage(defaultSvg);
-							const finalInlineEyeTransform = inlineEyeMotion ? getComputedStyle(inlineEyeMotion).transform : null;
+							const markerRect = marker?.getBoundingClientRect();
+							const markerStyle = marker ? getComputedStyle(marker) : null;
 							return {
 								hasProgress: Boolean(indicator),
+								hasComposerProgressSlot: Boolean(progressSlot),
+								thinkingBlockCount: thinkingBlocks.length,
+								thinkingAfterLatestUser,
+								thinkingBeforeLatestUser,
+								emptyActiveTurnHasThinking: Boolean(emptyActiveTurn?.querySelector('[data-thinking-block]')),
 								isTail: turn?.lastElementChild === indicator,
 								afterFinalResponse: !indicator || !finalResponse || Boolean(finalResponse.compareDocumentPosition(indicator) & Node.DOCUMENT_POSITION_FOLLOWING),
 								afterUserMessage: !indicator || !lastUserMessage || Boolean(lastUserMessage.compareDocumentPosition(indicator) & Node.DOCUMENT_POSITION_FOLLOWING),
 								phase: indicator?.getAttribute('data-progress-phase') || null,
 								status: indicator?.getAttribute('data-progress-status') || null,
 								idle: indicator?.getAttribute('data-progress-idle') || null,
-								visualMode: indicator?.getAttribute('data-progress-visual-mode') || null,
-								expression: indicator?.getAttribute('data-progress-expression') || null,
-								expressionMinDisplayMs: Number(indicator?.getAttribute('data-progress-expression-min-display-ms') || 0) || null,
-								expressionSettleMs: Number(indicator?.getAttribute('data-progress-expression-settle-ms') || 0) || null,
-								expressionMorphMs: Number(indicator?.getAttribute('data-progress-expression-morph-ms') || 0) || null,
-								expressionMorphing: defaultSvg?.getAttribute('data-progress-expression-morphing') || null,
+								marker: indicator?.getAttribute('data-progress-marker') || null,
 								actor: indicator?.getAttribute('data-progress-actor') || null,
-								label: indicator?.querySelector('[data-work-progress-label]')?.textContent?.trim() || null,
-								videoSource: video?.querySelector('source')?.getAttribute('src') || null,
-								videoReadyState: video?.readyState ?? null,
-								videoAdvanced: Number(video?.currentTime || 0) > initialTime,
-								taskReceivedGifSource: taskReceivedGif?.getAttribute('src') || null,
-								taskReceivedGifLoaded: Boolean(taskReceivedGif?.complete && taskReceivedGif?.naturalWidth),
-								idleGifSource: idleGif?.getAttribute('src') || null,
-								idleGifLoaded: Boolean(idleGif?.complete && idleGif?.naturalWidth),
-								defaultSvgSource: defaultSvg instanceof SVGElement ? 'inline-svg' : defaultSvg?.getAttribute('src') || null,
-								defaultSvgLoaded: Boolean(defaultSvg instanceof SVGElement || (defaultSvg?.complete && defaultSvg?.naturalWidth)),
-								defaultSvgAdvanced: Boolean(initialDefaultPixels && finalDefaultPixels
-									&& initialDefaultPixels.some((value, index) => value !== finalDefaultPixels[index]))
-									|| Boolean(initialInlineEyeTransform && finalInlineEyeTransform && initialInlineEyeTransform !== finalInlineEyeTransform),
+								label: progressLabel?.textContent?.trim() || null,
+								hasMascot: Boolean(indicator?.querySelector('.work-progress-visual, [data-progress-default-svg], [data-progress-idle-svg], img[src*="bloub"]')),
 								indicatorSize: indicatorRect ? [Math.round(indicatorRect.width), Math.round(indicatorRect.height)] : null,
 								indicatorGap: indicatorStyle?.columnGap || null,
 								indicatorAlignItems: indicatorStyle?.alignItems || null,
 								labelFontSize: labelStyle?.fontSize || null,
 								labelFontWeight: labelStyle?.fontWeight || null,
-								labelShimmering: progressLabel?.classList.contains('shimmering') || false,
-								labelAnimationName: labelStyle?.animationName || null,
-								visualSize: visualRect ? [Math.round(visualRect.width), Math.round(visualRect.height)] : null,
-								visualLabelBottomDelta: visualRect && labelRect ? Math.round(labelRect.bottom - visualRect.bottom) : null,
-								activeVisualSize: activeVisualRect ? [Math.round(activeVisualRect.width), Math.round(activeVisualRect.height)] : null,
-								sendButtonSize: sendRect ? [Math.round(sendRect.width), Math.round(sendRect.height)] : null,
-								activeVisualOffsetFromTurn: activeVisualRect && turnRect ? Math.round(activeVisualRect.x - turnRect.x) : null,
-								activeVisualContentOffsetFromTurn: activeVisualRect && activeVisualContentBounds && turnRect
-									? Math.round(activeVisualRect.x + activeVisualContentBounds.left / activeVisualContentBounds.width * activeVisualRect.width - turnRect.x)
-									: null,
+								markerSize: markerRect ? [Math.round(markerRect.width), Math.round(markerRect.height)] : null,
+								markerAnimationName: markerStyle?.animationName || null,
 							};
 						})()`);
-						progressMetrics.idleCaptureAdvanced = idleCaptureAdvanced;
 						console.error(`[capture:progress] ${JSON.stringify(progressMetrics)}`);
 					}
 					if (process.env.METIS_DESKTOP_CAPTURE_TOOLS) {

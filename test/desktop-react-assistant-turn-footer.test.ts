@@ -32,13 +32,13 @@ describe('assistant turn footer', () => {
     expect(buildAssistantTurnMeta({})).toBe('');
   });
 
-  it('hides idle all-set mascot in composer and keeps footer free of duration copy', () => {
+  it('keeps composer free of work-progress chrome and footer free of duration copy', () => {
     const composer = readFileSync(new URL('../desktop/src/components/chat/Composer.tsx', import.meta.url), 'utf8');
     const footer = readFileSync(new URL('../desktop/src/components/chat/AssistantTurnFooter.tsx', import.meta.url), 'utf8');
     const turn = readFileSync(new URL('../desktop/src/components/chat/AssistantTurn.tsx', import.meta.url), 'utf8');
 
-    expect(composer).toContain('workProgress && !isWorkIdle');
-    expect(composer).not.toContain('idle={isWorkIdle}');
+    expect(composer).not.toContain('WorkProgressIndicator');
+    expect(composer).not.toContain('workProgress');
     expect(footer).toContain('data-assistant-turn-footer');
     expect(footer).not.toMatch(/分钟|duration|elapsed/);
     expect(turn).toContain('<AssistantTurnFooter');

@@ -12,7 +12,8 @@ describe('desktop React Ask interface', () => {
     const card = source('desktop/src/components/chat/UserInputCard.tsx');
 
     expect(chatArea).toContain('pendingUserInput ? (');
-    expect(chatArea).toContain('<UserInputCard request={pendingUserInput}');
+    expect(chatArea).toContain('<UserInputCard');
+    expect(chatArea).toContain('request={pendingUserInput}');
     expect(card).toContain('requestId={request.requestId}');
     expect(card).toContain('id: question.id');
     expect(card).toContain('request.questions.map');
@@ -39,19 +40,21 @@ describe('desktop React Ask interface', () => {
     expect(composer).toContain('}, [disabled]);');
   });
 
-  it('shows active work progress indicator above the question card while waiting for user input', () => {
+  it('keeps Ask on the empty active turn without a composer progress row', () => {
     const chatArea = source('desktop/src/components/chat/ChatArea.tsx');
     const messageList = source('desktop/src/components/chat/MessageList.tsx');
     const assistantTurn = source('desktop/src/components/chat/AssistantTurn.tsx');
     const userInputCard = source('desktop/src/components/chat/UserInputCard.tsx');
 
     expect(chatArea).toContain('pendingUserInput={pendingUserInput}');
-    expect(chatArea).toContain('progress={currentProgress}');
+    expect(chatArea).not.toContain('progress={currentProgress}');
+    expect(chatArea).not.toContain('workProgress=');
     expect(messageList).toContain('pendingUserInput?: PendingUserInput');
     expect(messageList).toContain('pendingUserInput={group === progressGroup ? pendingUserInput : undefined}');
+    expect(messageList).toContain('showEmptyActiveTurn');
     expect(assistantTurn).toContain('isWaitingUserInput = Boolean(pendingUserInput)');
-    expect(userInputCard).toContain('data-composer-progress-slot=""');
-    expect(userInputCard).toContain('<WorkProgressIndicator progress={progress} idle={idle}');
+    expect(userInputCard).not.toContain('data-composer-progress-slot');
+    expect(userInputCard).not.toContain('WorkProgressIndicator');
   });
 
   it('restores pending user input state when switching back to a waiting session', () => {

@@ -42,12 +42,14 @@ describe('Desktop Beautiful UI migration', () => {
     expect(source('desktop/src/components/chat/MessageList.tsx')).toContain('<LoadingState');
   });
 
-  it('preserves mascot only in work progress surfaces', () => {
+  it('keeps brand cloud on home empty and removes composer work-progress row', () => {
     const composer = source('desktop/src/components/chat/Composer.tsx');
     const ask = source('desktop/src/components/chat/UserInputCard.tsx');
-    expect(composer).toContain('workProgress && !isWorkIdle');
-    expect(composer).toContain('<WorkProgressIndicator progress={workProgress} idle={false}');
-    expect(ask).toContain('<WorkProgressIndicator');
+    expect(composer).toContain('<MetisCloudMark');
+    expect(composer).not.toContain('WorkProgressIndicator');
+    expect(composer).not.toContain('data-composer-progress-slot');
+    expect(ask).not.toContain('WorkProgressIndicator');
+    expect(ask).not.toContain('data-composer-progress-slot');
     expect(existsSync(resolve(root, 'desktop/src/components/chat/CloudAvatar.tsx'))).toBe(false);
   });
 

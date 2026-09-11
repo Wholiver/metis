@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, FolderOpen, LoaderCircle, Plus, Server } from 'lucide-react';
 import type { ModelOption } from '../../types';
 import { translateExact } from '../../i18n';
+import { MetisCloudMark } from '../chat/MetisCloudMark';
 import './Onboarding.css';
 
 const COMPLETED_KEY = 'metis.desktopOnboardingCompleted.v3';
@@ -70,25 +71,6 @@ function Switch({ label, checked, onChange, disabled }: { label: string; checked
         }`}
       />
     </button>
-  );
-}
-
-const SVG_D = "M91.76 0C93.05 2.98 94.08 6.16 94.77 9.34C95.46 12.52 95.85 15.83 95.91 19.08C95.97 22.34 95.7 25.66 95.13 28.86C94.55 32.07 93.64 35.27 92.45 38.3C91.26 41.33 89.74 44.3 87.98 47.03C86.23 49.77 84.16 52.38 81.9 54.72C79.64 57.06 77.11 59.22 74.44 61.07C71.77 62.92 68.86 64.54 65.88 65.84C62.9 67.13 59.73 68.15 56.55 68.84C53.38 69.52 49.47 68.77 46.82 69.95C44.17 71.13 42.86 74.06 40.66 75.9C38.47 77.73 36.11 79.46 33.65 80.98C31.19 82.5 28.59 83.87 25.92 85.02C23.25 86.18 20.45 87.15 17.63 87.91C14.81 88.67 11.89 89.22 8.98 89.56C6.07 89.89 3.1 90.01 0.18 89.91C-2.74 89.81 -5.69 89.5 -8.56 88.97C-11.43 88.45 -14.29 87.7 -17.04 86.77C-19.79 85.84 -22.49 84.69 -25.06 83.37C-27.62 82.06 -30.08 80.5 -32.43 78.9C-34.78 77.3 -36.41 74.63 -39.16 73.76C-41.92 72.9 -45.71 74.02 -48.96 73.7C-52.21 73.38 -55.49 72.75 -58.65 71.83C-61.8 70.92 -64.94 69.69 -67.88 68.21C-70.83 66.72 -73.7 64.93 -76.33 62.92C-78.96 60.91 -81.45 58.62 -83.67 56.15C-85.9 53.68 -87.93 50.96 -89.66 48.12C-91.39 45.28 -92.88 42.23 -94.06 39.12C-95.23 36.01 -96.13 32.73 -96.72 29.46C-97.3 26.18 -97.58 22.8 -97.55 19.48C-97.52 16.16 -97.17 12.79 -96.53 9.55C-95.9 6.3 -94.94 3.06 -93.72 0C-92.51 -3.06 -90.98 -6.05 -89.23 -8.82C-87.49 -11.6 -85.46 -14.24 -83.26 -16.63C-81.06 -19.02 -77.97 -20.97 -76.03 -23.17C-74.1 -25.36 -72.47 -27.32 -71.62 -29.8C-70.77 -32.29 -71.4 -35.36 -70.93 -38.09C-70.46 -40.82 -69.75 -43.57 -68.81 -46.19C-67.86 -48.82 -66.67 -51.41 -65.28 -53.84C-63.89 -56.27 -62.26 -58.62 -60.46 -60.77C-58.66 -62.92 -56.64 -64.95 -54.49 -66.76C-52.34 -68.56 -49.99 -70.2 -47.56 -71.6C-45.13 -73 -42.53 -74.19 -39.9 -75.14C-37.27 -76.09 -34.51 -76.81 -31.76 -77.27C-29.01 -77.74 -26.19 -77.97 -23.42 -77.95C-20.65 -77.93 -17.84 -77.66 -15.14 -77.17C-12.43 -76.67 -9.74 -75.93 -7.19 -74.99C-4.64 -74.05 -2.14 -72.86 0.18 -71.52C2.51 -70.18 4.63 -68.12 6.76 -66.94C8.89 -65.77 10.7 -64.48 12.98 -64.47C15.25 -64.46 17.88 -66.3 20.42 -66.87C22.97 -67.45 25.62 -67.81 28.25 -67.92C30.88 -68.03 33.58 -67.9 36.2 -67.53C38.82 -67.16 41.46 -66.54 43.99 -65.7C46.51 -64.85 49 -63.76 51.34 -62.46C53.67 -61.17 55.93 -59.63 57.99 -57.93C60.05 -56.23 61.99 -54.3 63.71 -52.25C65.43 -50.2 66.99 -47.95 68.3 -45.61C69.62 -43.28 70.74 -40.79 71.6 -38.26C72.47 -35.73 73.11 -33.07 73.5 -30.43C73.89 -27.8 72.77 -24.82 73.95 -22.42C75.14 -20.02 78.44 -18.34 80.61 -16.03C82.78 -13.72 85.12 -11.24 86.97 -8.57C88.83 -5.89 90.46 -2.98 91.76 0Z";
-
-function MetisBrandLogo({ className = '' }: { className?: string }) {
-  return (
-    <div
-      role="img"
-      aria-label="Metis logo"
-      className={`grid size-24 grid-cols-3 gap-1 rounded-window bg-surface p-5 shadow-raised ${className}`}
-    >
-      {Array.from({ length: 9 }, (_, index) => (
-        <span
-          key={index}
-          className={`rounded-[3px] ${index === 4 ? 'bg-accent' : index % 2 === 0 ? 'bg-ink' : 'bg-line-strong'}`}
-        />
-      ))}
-    </div>
   );
 }
 
@@ -316,8 +298,8 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
       {/* Step 0: Welcome Home Page */}
       {step === 0 && (
         <div className="flex flex-col items-center justify-center text-center max-w-lg mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-300 motion-reduce:animate-none">
-          <div className="mb-5 flex items-center justify-center p-2">
-            <MetisBrandLogo />
+          <div className="mb-5 flex items-center justify-center p-2" data-onboarding-home-cloud="">
+            <MetisCloudMark size={160} />
           </div>
 
           <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-ink sm:text-4xl">

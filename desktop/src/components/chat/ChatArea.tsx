@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Agent, CollaborationMode, ContextUsage, MemoryState, Message, ModelOption, PendingUserInput, ProjectItem, SendMessageOptions, ThinkingOption, TokenBreakdown, UserInputResponse, WorkflowPlanState, WorkflowProposalState } from '../../types';
 import { IDLE_COMPOSER_ACTIVITY, reduceComposerActivity } from '../../lib/composer';
-import { resolveConversationProgress } from '../../lib/work-progress';
 import { RateLimitWindow } from '../inspector/UsageQuotaCard';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
@@ -126,11 +125,6 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   };
 
   const showActiveProgress = composerActivity.localTaskPending || isStreaming || Boolean(pendingUserInput);
-  const { progress: currentProgress, idle: isCurrentIdle } = resolveConversationProgress(
-    messages,
-    showActiveProgress,
-    Boolean(pendingUserInput)
-  );
   const lastMessage = messages[messages.length - 1];
   const workflowPlanInterrupted = !showActiveProgress
     && lastMessage?.role === 'assistant'
@@ -165,10 +159,9 @@ export const ChatArea = React.memo<ChatAreaProps>(({
         model={activeModel}
       />
       {pendingUserInput ? (
-        <UserInputCard request={pendingUserInput}
+        <UserInputCard
+          request={pendingUserInput}
           onRespond={onRespondToUserInput}
-          progress={currentProgress}
-          idle={isCurrentIdle}
         />
       ) : (
         <Composer
@@ -195,8 +188,6 @@ export const ChatArea = React.memo<ChatAreaProps>(({
           activeProject={activeProject}
           onSelectProject={onSelectProject}
           onAbort={onAbort}
-          workProgress={currentProgress}
-          isWorkIdle={isCurrentIdle}
           workflowPlan={workflowPlan}
           workflowPlanInterrupted={workflowPlanInterrupted}
           contextUsage={contextUsage}

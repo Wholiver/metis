@@ -15,9 +15,7 @@ import {
 import { ModelSwitcher } from './ModelSwitcher';
 import { ModeSwitcher } from './ModeSwitcher';
 import { SkillCommand } from './SkillPicker';
-import { WorkProgressIndicator } from './WorkProgressIndicator';
 import { WorkflowPlanCard } from './WorkflowPlanCard';
-import { WorkProgressState } from '../../lib/work-progress';
 import { useI18n } from '../../i18n';
 import { RateLimitWindow } from '../inspector/UsageQuotaCard';
 import { ComposerUsageFooter } from './ComposerUsageFooter';
@@ -49,8 +47,6 @@ interface ComposerProps {
   projects?: ProjectItem[];
   activeProject?: ProjectItem;
   onSelectProject?: (id: string) => void | Promise<void>;
-  workProgress?: WorkProgressState;
-  isWorkIdle?: boolean;
   workflowPlan?: WorkflowPlanState;
   workflowPlanInterrupted?: boolean;
   contextUsage?: ContextUsage;
@@ -146,8 +142,6 @@ export const Composer = React.memo<ComposerProps>(({
   projects = [],
   activeProject,
   onSelectProject,
-  workProgress,
-  isWorkIdle = false,
   workflowPlan,
   workflowPlanInterrupted = false,
   contextUsage,
@@ -530,11 +524,6 @@ export const Composer = React.memo<ComposerProps>(({
           </div>
         ) : null}
 
-        {workProgress && !isWorkIdle && !isHomeEmpty && (
-          <div className="pointer-events-auto mb-2 flex items-center px-1" data-composer-progress-slot="">
-            <WorkProgressIndicator progress={workProgress} idle={false} />
-          </div>
-        )}
         {modeSwitcherRow}
 
         <div

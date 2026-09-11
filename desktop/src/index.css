@@ -289,11 +289,11 @@ input,
   -webkit-user-select: text;
 }
 
-/* ── WorkProgressIndicator / bloub mascot ────────────────── */
+/* ── WorkProgressIndicator (system status, no mascot) ───── */
 .work-progress-indicator {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   min-height: 20px;
   color: var(--ink-2);
   font-size: 12px;
@@ -302,92 +302,37 @@ input,
   text-wrap: pretty;
 }
 
-.work-progress-visual {
-  position: relative;
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
+.work-progress-marker {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
 }
 
-.work-progress-idle,
-.work-progress-expression,
-.work-progress-fallback {
-  position: absolute;
-  top: 50%;
-  left: calc(50% + 2px);
-  display: block;
-  width: 32px;
-  height: 32px;
-  max-width: none;
-  object-fit: contain;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
+.work-progress-marker-active {
+  background: var(--ink-2);
+  animation: work-progress-marker-pulse 1.4s ease-in-out infinite;
 }
 
-.work-progress-fallback {
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(0.8);
-  transform-origin: center center;
+.work-progress-marker-waiting {
+  background: var(--ink-3);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink-3) 55%, transparent);
 }
 
-.work-progress-expression {
-  transform: translate(-50%, -50%);
-  overflow: visible;
+.work-progress-marker-error {
+  background: var(--red, #ef4444);
 }
 
-.work-progress-eye-motion {
-  transform-box: view-box;
-  transform-origin: center;
-  animation: work-progress-eye-drift 3.1s ease-in-out infinite alternate;
-}
-
-.work-progress-eye-motion-right {
-  animation-delay: -1.15s;
-}
-
-@keyframes work-progress-eye-drift {
-  from {
-    transform: translateY(-0.55px);
-  }
-
-  to {
-    transform: translateY(0.55px);
-  }
-}
-
-.work-progress-visual.fallback .work-progress-fallback {
-  opacity: 1;
+.work-progress-marker-idle {
+  background: var(--ink-3);
+  opacity: 0.55;
 }
 
 .work-progress-label {
   min-width: 0;
-  transform: translateY(1px);
 }
 
-.work-progress-label.shimmering {
-  color: transparent;
-  background-image: linear-gradient(
-    100deg,
-    var(--ink-3) 0%,
-    var(--ink-2) 38%,
-    var(--ink) 50%,
-    var(--ink-2) 62%,
-    var(--ink-3) 100%
-  );
-  background-position: 100% 0;
-  background-size: 220% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  animation: work-progress-label-shimmer 2.2s linear infinite;
-}
-
-@keyframes work-progress-label-shimmer {
-  to {
-    background-position: -120% 0;
-  }
-}
-
-.dark .work-progress-visual,
 .dark [data-home-cloud] {
   filter: invert(0.92) hue-rotate(180deg);
 }
@@ -396,22 +341,20 @@ input,
   margin-top: var(--work-item-gap);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .work-progress-idle {
-    display: none;
+@keyframes work-progress-marker-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
   }
 
-  .work-progress-indicator[data-progress-idle="true"] .work-progress-fallback {
+  50% {
     opacity: 1;
   }
+}
 
-  .work-progress-eye-motion {
+@media (prefers-reduced-motion: reduce) {
+  .work-progress-marker-active {
     animation: none;
-  }
-
-  .work-progress-label.shimmering {
-    color: inherit;
-    background: none;
-    animation: none;
+    opacity: 1;
   }
 }

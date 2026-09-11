@@ -1,18 +1,14 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { PendingUserInput, UserInputAnswer, UserInputResponse } from '../../types';
-import { WorkProgressIndicator } from './WorkProgressIndicator';
-import { WorkProgressState } from '../../lib/work-progress';
 import { useI18n } from '../../i18n';
 import ApprovalCard, { type ApprovalQuestion, type ApprovalSubmittedAnswer } from '../primitives/ApprovalCard';
 
 interface UserInputCardProps {
   request: PendingUserInput;
   onRespond: (requestId: string, response: UserInputResponse) => boolean | Promise<boolean>;
-  progress?: WorkProgressState;
-  idle?: boolean;
 }
 
-export const UserInputCard: React.FC<UserInputCardProps> = ({ request, onRespond, progress, idle = false }) => {
+export const UserInputCard: React.FC<UserInputCardProps> = ({ request, onRespond }) => {
   const { t } = useI18n();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -94,11 +90,6 @@ export const UserInputCard: React.FC<UserInputCardProps> = ({ request, onRespond
         data-composer-fade-mask=""
       />
       <div className="w-full max-w-[620px] flex flex-col items-start">
-        {progress && (
-          <div className="pointer-events-auto mb-2 flex items-center px-1" data-composer-progress-slot="">
-            <WorkProgressIndicator progress={progress} idle={idle} />
-          </div>
-        )}
         <div className="pointer-events-auto w-full max-w-[620px]">
           <ApprovalCard
             requestId={request.requestId}

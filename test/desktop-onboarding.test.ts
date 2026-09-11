@@ -21,7 +21,11 @@ describe("Desktop React first-run onboarding", () => {
 		expect(onboarding).toContain("step === 1");
 		expect(onboarding).toContain("step === 2");
 		expect(onboarding).toContain("step === 3");
-		expect(onboarding).toContain('grid size-24 grid-cols-3');
+		expect(onboarding).toContain("import { MetisCloudMark }");
+		expect(onboarding).toContain('data-onboarding-home-cloud');
+		expect(onboarding).toContain("<MetisCloudMark size={160}");
+		expect(onboarding).not.toContain("MetisBrandLogo");
+		expect(onboarding).not.toContain("grid size-24 grid-cols-3");
 		expect(onboarding).toContain(">Get Started</span>");
 		expect(onboarding).toContain("detectSystemLanguage");
 		expect(onboarding).not.toContain("Your Intelligent AI Pair Programming Workspace");

@@ -132,9 +132,11 @@ export const MessageList = React.memo<MessageListProps>(({
     return groups;
   }, [messages]);
 
-  const lastAssistantGroup = [...renderGroups].reverse().find((group) => group.type === 'assistant');
   const activeAssistantGroup = renderGroups.at(-1)?.type === 'assistant' ? renderGroups.at(-1) : undefined;
-  const progressGroup = isStreaming ? (activeAssistantGroup || lastAssistantGroup) : lastAssistantGroup;
+  const showEmptyActiveTurn = (isStreaming || Boolean(pendingUserInput)) && !activeAssistantGroup;
+  // Only the live assistant group (or the empty active turn below) may carry streaming/progress.
+  // Never fall back to a previous completed assistant turn when the latest group is a user message.
+  const progressGroup = activeAssistantGroup;
 
   return (
     <div
@@ -170,7 +172,7 @@ export const MessageList = React.memo<MessageListProps>(({
                 key={group.key}
                 messages={group.messages}
                 startedAt={group.startedAt}
-                streaming={isStreaming && (group === activeAssistantGroup || (!activeAssistantGroup && group === progressGroup))}
+                streaming={Boolean(isStreaming && group === activeAssistantGroup)}
                 showProgress={group === progressGroup}
                 workflowProposal={workflowProposal}
                 onOpenPlan={onOpenPlan}
@@ -181,12 +183,12 @@ export const MessageList = React.memo<MessageListProps>(({
               />
             )
           )}
-          {(isStreaming || Boolean(pendingUserInput)) && !activeAssistantGroup && !lastAssistantGroup && (
+          {showEmptyActiveTurn && (
             <AssistantTurn
               key="active-assistant-turn"
               messages={[]}
               startedAt={latestUserTimestamp}
-              streaming
+              streaming={isStreaming}
               showProgress
               pendingUserInput={pendingUserInput}
               collaborationMode={collaborationMode}

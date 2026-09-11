@@ -42,7 +42,7 @@ describe('desktop React workflow plan card', () => {
     expect(composer).not.toContain('data-composer-input-nest');
     expect(composer).not.toContain('expandSlot=');
     expect(composer).not.toContain('plain');
-    expect(composer.indexOf('data-composer-progress-slot')).toBeLessThan(composer.indexOf('data-composer-stack'));
+    expect(composer).not.toContain('data-composer-progress-slot');
     expect(composer.indexOf('data-composer-plan-slot')).toBeLessThan(composer.indexOf('{promptBar}'));
 
     expect(chatArea).toContain('workflowPlan={workflowPlan}');
