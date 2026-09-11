@@ -183,7 +183,7 @@ export interface MemoryExtractionResult {
 
 type Listener = (event: { type: "memory_state_changed"; state: MemoryState } | { type: "memory_records_changed" }) => void;
 
-const SECRET = /(?:\b(?:sk|rk|pk)_[A-Za-z0-9_-]{16,}\b|\b(?:api[_-]?key|authorization|password|token)\s*[:=]\s*[^\s,;]+)/gi;
+const SECRET = /(?:\b(?:sk|rk|pk)_[A-Za-z0-9_-]{16,}\b|["']?(?:api[_-]?key|authorization|password|token)["']?\s*[:=]\s*(?:(?:Bearer|Token)\s+)?["']?[^\s,;"']+["']?)/gi;
 const DAY = 86_400_000;
 
 function hash(value: string): string {

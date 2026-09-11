@@ -1,0 +1,4 @@
+## 2024-05-18 - [CRITICAL] Fix incomplete secret redaction regex
+**Vulnerability:** The `SECRET` regex used in `src/core/memory-coordinator.ts` for redacting secrets before storing them in memory failed to redact JSON formatted secrets (e.g., `"apiKey": "sk_abc123"`) due to quotation marks, and it also failed to redact the actual token for HTTP Authorization headers (e.g., `authorization: Bearer mytoken`) because it captured the prefix `Bearer` instead of the token.
+**Learning:** Hardcoded regular expressions for redaction are notoriously difficult to get right, especially when handling various formats like JSON strings and HTTP headers.
+**Prevention:** In the future, when working with redaction regex, test edge cases such as token prefixes (`Bearer `, `Token `), structural wrapping (JSON quotes), and query parameters (`?api_key=secret&test=1`).
