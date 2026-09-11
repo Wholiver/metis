@@ -1,42 +1,62 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-function source(path: string): string {
-  return readFileSync(resolve(process.cwd(), path), 'utf8');
-}
+const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
-describe('desktop React new chat home cloud avatar and heading', () => {
-  it('defines CloudAvatar with the exact requested SVG structure', () => {
-    const cloudAvatar = source('desktop/src/components/chat/CloudAvatar.tsx');
-    expect(cloudAvatar).toContain('viewBox="-125 -125 250 250"');
-    expect(cloudAvatar).toContain('role="img"');
-    expect(cloudAvatar).toContain('aria-label="bloub 动画头像"');
-    expect(cloudAvatar).toContain('id="bot-mask-s77w4g"');
-    expect(cloudAvatar).toContain('fill="#f9f9f9"');
-    expect(cloudAvatar).toContain('fill="#0a0a0c"');
-    expect(cloudAvatar).toContain('mask="url(#bot-mask-s77w4g)"');
+describe('desktop React new chat home composer', () => {
+  it('centers a static Metis cloud above the home composer', () => {
+    expect(existsSync(resolve(process.cwd(), 'desktop/src/components/chat/CloudAvatar.tsx'))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), 'desktop/src/components/chat/ChatHomeEmptyState.tsx'))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), 'desktop/src/components/chat/MetisCloudMark.tsx'))).toBe(true);
+
+    const cloud = source('desktop/src/components/chat/MetisCloudMark.tsx');
+    expect(cloud).toContain('data-home-cloud');
+    expect(cloud).toContain('WORK_PROGRESS_CLOUD_BODY_PATH');
+    expect(cloud).not.toContain('work-progress-eye-motion');
+    expect(cloud).not.toContain('animation');
+    expect(cloud).not.toContain('requestAnimationFrame');
+
+    const composer = source('desktop/src/components/chat/Composer.tsx');
+    expect(composer).toContain('data-home-cloud-slot');
+    expect(composer).toContain('<MetisCloudMark');
+    expect(composer).toContain('tall={isHomeEmpty}');
+    expect(composer).toContain("data-composer-home={isHomeEmpty ? 'true' : undefined}");
+    expect(composer).toContain('data-composer-dock-stack');
+    // Cloud stays outside the FLIP dock stack so it does not travel with the input.
+    expect(composer.indexOf('data-home-cloud-slot')).toBeLessThan(composer.indexOf('data-composer-dock-stack'));
   });
 
-  it('renders ChatHomeEmptyState with scaled up cloud and project title without suggestion cards', () => {
-    const homeState = source('desktop/src/components/chat/ChatHomeEmptyState.tsx');
-    expect(homeState).toContain('data-home-empty-state=""');
-    expect(homeState).toContain('data-home-cloud=""');
-    expect(homeState).toContain('<CloudAvatar size={110}');
-    expect(homeState).toContain("t('chatHomePrefix')");
-    expect(homeState).toContain("t('chatHomeSuffix')");
-    expect(homeState).toContain('font-normal');
-    expect(homeState).not.toContain('font-semibold');
-    expect(homeState).not.toContain('data-home-suggestions');
-    expect(homeState).not.toContain('探索并理解代码');
+  it('wires home empty detection through ChatArea and hides MessageList greeting', () => {
+    const chatArea = source('desktop/src/components/chat/ChatArea.tsx');
+    expect(chatArea).toContain('const isHomeEmpty = messages.length === 0 && !isLoading && !showActiveProgress && !pendingUserInput');
+    expect(chatArea).toContain('isHomeEmpty={isHomeEmpty}');
+    expect(chatArea).toContain('projects={projects}');
+    expect(chatArea).toContain('onSelectProject={onSelectProject}');
+
+    const messages = source('desktop/src/components/chat/MessageList.tsx');
+    expect(messages).not.toContain('ChatHomeEmptyState');
+    expect(messages).toContain('isHomeEmpty');
+    expect(messages).toContain('data-composer-clearance');
+
+    const app = source('desktop/src/App.tsx');
+    expect(app).toContain('projects={projects}');
+    expect(app).toContain('activeProject={activeProject}');
+    expect(app).toContain('onSelectProject={handleSelectProject}');
   });
 
-  it('wires ChatHomeEmptyState into MessageList when conversation is empty', () => {
-    const messageList = source('desktop/src/components/chat/MessageList.tsx');
-    expect(messageList).toContain("import { ChatHomeEmptyState } from './ChatHomeEmptyState'");
-    expect(messageList).toContain('!isLoading && messages.length === 0 && !isStreaming && !pendingUserInput');
-    expect(messageList).toContain('<ChatHomeEmptyState');
-    expect(messageList).toContain('projectName={projectName');
+  it('renders a project switcher with decorative non-interactive branch', () => {
+    const switcher = source('desktop/src/components/chat/HomeProjectSwitcher.tsx');
+    expect(switcher).toContain('data-home-project-switcher');
+    expect(switcher).toContain('data-home-project-trigger');
+    expect(switcher).toContain('data-home-project-branch');
+    expect(switcher).toContain('pointer-events-none');
+    expect(switcher).toContain('gitInfo');
+    expect(switcher).toContain('GitBranch');
+    expect(switcher).toContain('onSelectProject');
+
+    const composer = source('desktop/src/components/chat/Composer.tsx');
+    expect(composer).toContain('data-home-project-slot');
+    expect(composer).toContain('<HomeProjectSwitcher');
   });
 });
-

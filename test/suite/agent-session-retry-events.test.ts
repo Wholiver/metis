@@ -244,7 +244,6 @@ describe("AgentSession retry and event characterization", () => {
 		await harness.session.prompt("hi");
 
 		expect(normalizeEventOrder(harness.events)).toEqual([
-			"entry_appended",
 			"agent_start",
 			"turn_start",
 			"message_start:user",
@@ -359,4 +358,3 @@ describe("AgentSession retry and event characterization", () => {
 		}
 	});
 });
-

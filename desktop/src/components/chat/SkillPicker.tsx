@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, Command, Hammer, ListTree, Paperclip, Sparkles, Wand2 } from 'lucide-react';
 import { CollaborationMode } from '../../types';
 
@@ -22,14 +22,14 @@ export const COLLABORATION_MODES: ModeOptionItem[] = [
     label: 'Plan',
     description: 'Generate an implementation plan',
     icon: ListTree,
-    colorClass: 'text-[#b8782a]',
+    colorClass: 'text-orange',
   },
   {
     id: 'build',
     label: 'Build',
     description: 'Implement changes directly',
     icon: Hammer,
-    colorClass: 'text-[#3e7a68]',
+    colorClass: 'text-green',
   },
 ];
 
@@ -50,6 +50,7 @@ export interface PlusMenuProps {
   activeIndex?: number;
   onSelect?: (skill: SkillCommand) => void;
   isChangingMode?: boolean;
+  isSlash?: boolean;
 }
 
 export const PlusMenu: React.FC<PlusMenuProps> = ({
@@ -63,21 +64,33 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
   activeIndex: initialActiveIndex = 0,
   onSelect,
   isChangingMode = false,
+  isSlash = false,
 }) => {
   const selectSkill = onSelectSkill || onSelect || (() => {});
   const [search, setSearch] = useState(initialQuery);
   const [activeIndex, setActiveIndex] = useState(initialActiveIndex);
+  const [engaged, setEngaged] = useState(true);
+  const [rowBox, setRowBox] = useState<{ top: number; height: number } | null>(null);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const activeItemRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     setSearch(initialQuery);
   }, [initialQuery]);
 
   useEffect(() => {
-    searchInputRef.current?.focus();
-  }, []);
+    setActiveIndex(initialActiveIndex);
+    setEngaged(true);
+  }, [initialActiveIndex]);
+
+  useEffect(() => {
+    if (!isSlash) {
+      searchInputRef.current?.focus();
+    }
+  }, [isSlash]);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -92,13 +105,15 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [onClose]);
 
-  const normalizedQuery = search.trim().toLowerCase().replace(/^\//, '');
+  const normalizedQuery = (isSlash ? initialQuery : search).trim().toLowerCase().replace(/^\//, '');
 
-  const matchingModes = COLLABORATION_MODES.filter(
-    (m) => !normalizedQuery || `${m.label} ${m.description}`.toLowerCase().includes(normalizedQuery),
-  );
+  const matchingModes = isSlash
+    ? []
+    : COLLABORATION_MODES.filter(
+        (m) => !normalizedQuery || `${m.label} ${m.description}`.toLowerCase().includes(normalizedQuery),
+      );
 
-  const showFiles = Boolean(onSelectFiles) && (!normalizedQuery || 'files attach upload'.includes(normalizedQuery));
+  const showFiles = !isSlash && Boolean(onSelectFiles) && (!normalizedQuery || 'files attach upload'.includes(normalizedQuery));
 
   const matchingSkills = filterSkills(skills, normalizedQuery);
 
@@ -107,23 +122,31 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
     | { type: 'files' }
     | { type: 'skill'; item: SkillCommand };
 
-  const allItems: MenuItem[] = [
-    ...matchingModes.map((m) => ({ type: 'mode' as const, item: m })),
-    ...(showFiles ? [{ type: 'files' as const }] : []),
-    ...matchingSkills.map((s) => ({ type: 'skill' as const, item: s })),
-  ];
+  const allItems: MenuItem[] = isSlash
+    ? matchingSkills.map((s) => ({ type: 'skill' as const, item: s }))
+    : [
+        ...matchingModes.map((m) => ({ type: 'mode' as const, item: m })),
+        ...(showFiles ? [{ type: 'files' as const }] : []),
+        ...matchingSkills.map((s) => ({ type: 'skill' as const, item: s })),
+      ];
 
   useEffect(() => {
     setActiveIndex(0);
-  }, [search]);
+    setEngaged(true);
+  }, [search, initialQuery]);
 
-  useEffect(() => {
-    activeItemRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [activeIndex]);
+  useLayoutEffect(() => {
+    const target = rowRefs.current[activeIndex];
+    if (target) {
+      setRowBox({ top: target.offsetTop, height: target.offsetHeight });
+      target.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex, allItems.length]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
+      setEngaged(true);
       if (allItems.length > 0) {
         setActiveIndex((current) => (current + (e.key === 'ArrowDown' ? 1 : -1) + allItems.length) % allItems.length);
       }
@@ -134,7 +157,7 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
       onClose?.();
       return;
     }
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
       const current = allItems[activeIndex];
       if (current) {
@@ -158,25 +181,42 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
     <div
       ref={menuRef}
       onKeyDown={handleKeyDown}
-      className="pointer-events-auto w-full max-w-[620px] overflow-hidden rounded-[12px] border border-slate-200/90 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] p-1 shadow-none"
+      onMouseLeave={() => setEngaged(false)}
+      className="pointer-events-auto relative w-full max-w-[620px] overflow-hidden rounded-window bg-surface p-1 shadow-overlay border border-line"
+      style={{ animation: 'pop-in 180ms cubic-bezier(0.23,1,0.32,1) both', transformOrigin: 'bottom center' }}
       data-skill-picker=""
       data-plus-menu=""
       role="dialog"
       aria-label="Plus menu"
     >
-      <div className="flex items-center px-2 pt-1 pb-1 mb-0.5">
-        <input
-          ref={searchInputRef}
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search skills, context, chats..."
-          className="w-full bg-transparent text-[12px] text-slate-800 dark:text-[#f1f5f9] placeholder-slate-400 dark:placeholder-slate-500 outline-none px-0.5"
-          aria-label="Search skills and modes"
-        />
-      </div>
+      {!isSlash && (
+        <div className="flex items-center px-2 pt-1 pb-1 mb-0.5">
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search skills, context, chats..."
+            className="w-full bg-transparent px-0.5 text-[12px] text-ink outline-none placeholder:text-ink-3"
+            aria-label="Search skills and modes"
+          />
+        </div>
+      )}
 
-      <div className="flex flex-col gap-0.5 max-h-[280px] overflow-y-auto" data-skill-picker-list="">
+      <div ref={listRef} className="relative flex flex-col gap-0.5 max-h-[280px] overflow-y-auto" data-skill-picker-list="">
+        {/* Gliding highlight that smoothly moves between rows */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-1 rounded-[6px] bg-hover z-0"
+          style={{
+            top: rowBox?.top ?? 0,
+            height: rowBox?.height ?? 0,
+            opacity: rowBox && engaged && allItems.length > 0 ? 1 : 0,
+            transition:
+              'top 220ms cubic-bezier(0.23,1,0.32,1), height 220ms cubic-bezier(0.23,1,0.32,1), opacity 150ms ease',
+          }}
+        />
+
         {matchingModes.length > 0 && (
           <div className="flex flex-col gap-0.5" role="radiogroup" aria-label="Agent mode" data-mode-switcher="">
             {matchingModes.map((modeOption) => {
@@ -187,26 +227,27 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
               return (
                 <button
                   key={modeOption.id}
-                  ref={active ? activeItemRef : undefined}
+                  ref={(el) => { rowRefs.current[index] = el; }}
                   type="button"
                   role="radio"
                   aria-checked={selected}
                   data-mode-option={modeOption.id}
-                  onMouseEnter={() => setActiveIndex(index)}
+                  onMouseEnter={() => {
+                    setActiveIndex(index);
+                    setEngaged(true);
+                  }}
                   onClick={() => {
                     onSelectMode?.(modeOption.id);
                     onClose?.();
                   }}
-                  className={`group flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left transition-[background-color,color] focus-visible:outline-none ${
-                    active ? 'bg-[#f4f4f5] dark:bg-[#252a35] text-slate-900 dark:text-[#f1f5f9]' : 'text-slate-700 dark:text-slate-300 hover:bg-[#f4f4f5]/70 dark:hover:bg-[#252a35]/70'
-                  }`}
+                  className="group relative z-10 flex h-8.5 w-full items-center gap-2.5 rounded-[6px] px-2 text-left transition-colors focus-visible:outline-none"
                 >
                   <Icon className={`h-3.5 w-3.5 flex-none stroke-[2] ${modeOption.colorClass}`} />
                   <span className="flex items-center min-w-0 flex-1 gap-2">
-                    <span className="text-[12px] font-medium text-slate-800 dark:text-slate-200 shrink-0">{modeOption.label}</span>
-                    <span className="text-[11px] text-slate-400 dark:text-slate-500 font-normal truncate">{modeOption.description}</span>
+                    <span className="text-[12.5px] font-medium text-ink shrink-0">{modeOption.label}</span>
+                    <span className="text-[11px] text-ink-3 font-normal truncate">{modeOption.description}</span>
                   </span>
-                  {selected && <Check className="h-3.5 w-3.5 flex-none text-slate-700 dark:text-slate-200 ml-auto" />}
+                  {selected && <Check className="h-3.5 w-3.5 flex-none text-ink ml-auto" />}
                 </button>
               );
             })}
@@ -219,21 +260,22 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
           return (
             <button
               key="files"
-              ref={active ? activeItemRef : undefined}
+              ref={(el) => { rowRefs.current[index] = el; }}
               type="button"
-              onMouseEnter={() => setActiveIndex(index)}
+              onMouseEnter={() => {
+                setActiveIndex(index);
+                setEngaged(true);
+              }}
               onClick={() => {
                 onSelectFiles?.();
                 onClose?.();
               }}
-              className={`group flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left transition-[background-color,color] focus-visible:outline-none ${
-                active ? 'bg-[#f4f4f5] dark:bg-[#252a35] text-slate-900 dark:text-[#f1f5f9]' : 'text-slate-700 dark:text-slate-300 hover:bg-[#f4f4f5]/70 dark:hover:bg-[#252a35]/70'
-              }`}
+              className="group relative z-10 flex h-8.5 w-full items-center gap-2.5 rounded-[6px] px-2 text-left transition-colors focus-visible:outline-none"
             >
-              <Paperclip className="h-3.5 w-3.5 flex-none stroke-[1.8] text-slate-400" />
+              <Paperclip className="h-3.5 w-3.5 flex-none stroke-[1.8] text-ink-3" />
               <span className="flex items-center min-w-0 flex-1 gap-2">
-                <span className="text-[12px] font-medium text-slate-800 dark:text-slate-200 shrink-0">Files</span>
-                <span className="text-[11px] text-slate-400 dark:text-slate-500 font-normal truncate">Attach files or images</span>
+                <span className="text-[12.5px] font-medium text-ink shrink-0">Files</span>
+                <span className="text-[11px] text-ink-3 font-normal truncate">Attach files or images</span>
               </span>
             </button>
           );
@@ -245,39 +287,46 @@ export const PlusMenu: React.FC<PlusMenuProps> = ({
           return (
             <button
               key={skill.name}
-              ref={active ? activeItemRef : undefined}
+              ref={(el) => { rowRefs.current[index] = el; }}
               type="button"
               role="option"
               aria-selected={active}
               data-skill-option={skill.name}
-              onMouseEnter={() => setActiveIndex(index)}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => {
+                setActiveIndex(index);
+                setEngaged(true);
+              }}
               onClick={() => {
                 selectSkill(skill);
                 onClose?.();
               }}
-              className={`group flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left transition-[background-color,color] focus-visible:outline-none ${
-                active ? 'bg-[#f4f4f5] dark:bg-[#252a35] text-slate-900 dark:text-[#f1f5f9]' : 'text-slate-700 dark:text-slate-300 hover:bg-[#f4f4f5]/70 dark:hover:bg-[#252a35]/70'
-              }`}
+              className="group relative z-10 flex h-9 w-full items-center gap-2.5 rounded-[6px] px-2.5 text-left transition-colors focus-visible:outline-none"
             >
-              <Wand2 className="h-3.5 w-3.5 flex-none stroke-[1.8] text-[#7c6bb2]" />
-              <span className="flex items-center min-w-0 flex-1 gap-2">
-                <span className="text-[12px] font-medium text-slate-800 dark:text-slate-200 shrink-0">/{skill.name}</span>
-                <span className="text-[11px] text-slate-400 dark:text-slate-500 font-normal truncate">{skill.description}</span>
+              <Sparkles className="h-3.5 w-3.5 flex-none stroke-[1.8] text-ink-3" />
+              <span className="shrink-0 text-[12.5px] font-medium text-ink">
+                /{skill.name}
               </span>
-              <Command className="h-3 w-3 flex-none text-slate-400 ml-auto" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
+                {skill.description}
+              </span>
+              <Command className="h-3 w-3 flex-none text-ink-3 ml-auto opacity-40 group-hover:opacity-100 transition-opacity" aria-hidden="true" />
             </button>
           );
         })}
 
         {allItems.length === 0 && (
-          <div className="px-2.5 py-2.5 text-[11px] text-slate-400 dark:text-slate-500 text-center">
+          <div className="flex h-9 items-center justify-center px-2.5 text-[11px] text-ink-3">
             No matching modes or skills
           </div>
         )}
+      </div>
+
+      <div className="mt-1 border-t border-line px-2.5 pt-1.5 pb-1 text-[11px] text-ink-3">
+        Type / to open commands...
       </div>
     </div>
   );
 };
 
 export const SkillPicker = PlusMenu;
-

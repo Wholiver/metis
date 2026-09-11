@@ -4,19 +4,22 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 12px;
-  background: #0f172a;
+  border-radius: var(--radius-card);
+  background: var(--ink);
   padding: 0 16px;
-  color: #fff;
+  color: var(--surface);
   font-size: 12px;
   font-weight: 600;
-  transition: background-color .16s ease, transform .16s ease;
+  transition: background-color .16s ease, transform .16s ease, opacity .16s ease;
 }
 
-.onboarding-primary:hover { background: #1e293b; }
+.onboarding-primary:hover { opacity: 0.9; }
 .onboarding-primary:active { transform: scale(.98); }
 .onboarding-primary:focus-visible,
-.onboarding-secondary:focus-visible { outline: 2px solid rgb(100 116 139 / .6); outline-offset: 2px; }
+.onboarding-secondary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
 .onboarding-primary:disabled,
 .onboarding-secondary:disabled { cursor: not-allowed; opacity: .45; }
 
@@ -26,37 +29,37 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
   padding: 0 14px;
-  color: #334155;
+  color: var(--ink-2);
   font-size: 12px;
   font-weight: 600;
   transition: background-color .16s ease, color .16s ease, transform .16s ease;
 }
 
-.onboarding-secondary:hover { background: #f8fafc; }
+.onboarding-secondary:hover { background: var(--hover); color: var(--ink); }
 .onboarding-secondary:active { transform: scale(.98); }
 
 html.dark .onboarding-primary {
-  background: #2563eb;
-  color: #fff;
+  background: var(--accent);
+  color: white;
 }
 html.dark .onboarding-primary:hover {
-  background: #1d4ed8;
+  background: var(--accent-ink);
+  opacity: 1;
 }
 html.dark .onboarding-secondary {
-  background: #1c2027;
-  border-color: #2b303c;
-  color: #e2e8f0;
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
 }
 html.dark .onboarding-secondary:hover {
-  background: #252a34;
+  background: var(--hover);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .onboarding-primary,
   .onboarding-secondary { transition: none; }
 }
-

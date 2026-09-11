@@ -338,7 +338,7 @@ export class WorkflowRuntime {
 		execution.reminders += 1;
 		return execution.phase === "reading_proposal"
 			? "Process is not ready. Call read_plan now. Do not finish or call another tool first."
-			: "Process is not ready. Call update_plan now with a concise implementation and verification checklist. Do not finish or call another tool first.";
+			: "Process is not ready. Call performance_admit first when admission is pending, then call update_plan with a concise implementation and verification checklist. Do not finish early.";
 	}
 
 	private assertProposalExecutionOrder(name: string): void {
@@ -347,8 +347,8 @@ export class WorkflowRuntime {
 		if (execution.phase === "reading_proposal" && name !== "read_plan") {
 			throw new WorkflowToolError("recoverable", "Process requires read_plan before any other tool. Call read_plan, then retry.");
 		}
-		if (execution.phase === "creating_checklist" && name !== "read_plan" && name !== "update_plan") {
-			throw new WorkflowToolError("recoverable", "Process requires update_plan before implementation tools. Create the checklist, then retry.");
+		if (execution.phase === "creating_checklist" && name !== "read_plan" && name !== "performance_admit" && name !== "update_plan") {
+			throw new WorkflowToolError("recoverable", "Process requires performance_admit when pending and update_plan before implementation tools. Complete setup, then retry.");
 		}
 	}
 
@@ -489,4 +489,3 @@ export class WorkflowRuntime {
 		};
 	}
 }
-

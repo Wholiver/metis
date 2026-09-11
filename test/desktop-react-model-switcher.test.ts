@@ -40,6 +40,7 @@ describe('desktop React model switcher', () => {
   it('renders an accessible upward menu immediately left of send', () => {
     const switcher = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/ModelSwitcher.tsx'), 'utf8');
     const composer = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/Composer.tsx'), 'utf8');
+    const promptBar = readFileSync(resolve(process.cwd(), 'desktop/src/components/primitives/PromptBar.tsx'), 'utf8');
     const chatArea = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/ChatArea.tsx'), 'utf8');
     const main = readFileSync(resolve(process.cwd(), 'desktop/main.cjs'), 'utf8');
 
@@ -60,8 +61,11 @@ describe('desktop React model switcher', () => {
     expect(switcher).toContain('reasoningMenuRef.current?.contains(target)');
     expect(switcher).toContain('if (!sameModel(reasoningMenu.model, activeModel)) await onSelectModel(reasoningMenu.model);');
     expect(switcher).toContain('min-h-8');
-    expect(composer).toContain('col-start-3 row-start-2 self-end justify-self-end');
-    expect(composer).toContain('col-start-4 row-start-2 self-end');
+    expect(switcher).toContain('ProviderIcon');
+    expect(switcher).toContain('providerId={model.provider}');
+    expect(composer).toContain('trailingSlot');
+    expect(promptBar).toContain('col-start-3 row-start-2');
+    expect(promptBar).toContain('col-start-4 row-start-2');
     expect(chatArea).toContain('onSelectModel={onSelectModel}');
     expect(main).toContain('METIS_DESKTOP_CAPTURE_MODEL_SWITCHER');
     expect(main).toContain('[capture:model-switcher]');
@@ -76,15 +80,15 @@ describe('desktop React model switcher', () => {
     const sidebar = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/Sidebar.tsx'), 'utf8');
     const inspector = readFileSync(resolve(process.cwd(), 'desktop/src/components/inspector/Inspector.tsx'), 'utf8');
 
-    expect(app).toContain('const MIN_SIDEBAR_WIDTH = 240');
+    expect(app).toContain('const MIN_SIDEBAR_WIDTH = 224');
     expect(app).toContain('const MIN_INSPECTOR_WIDTH = 360');
     expect(chatArea).toContain('min-w-[360px]');
     expect(chatArea).not.toContain('flex flex-col min-w-0 overflow-hidden relative');
-    expect(sidebar).toContain('min-w-[240px] shrink');
+    expect(sidebar).toContain('min-w-[224px] shrink');
     expect(sidebar).not.toContain('select-none flex-shrink-0 relative');
     expect(inspector).toContain('min-w-[360px] shrink');
     expect(inspector).not.toContain('select-none flex-shrink-0 relative');
-    expect(240 + 360 + 360).toBeLessThan(1040);
+    expect(224 + 360 + 360).toBeLessThan(1040);
   });
 
   it('preserves the model indicator on the hovered model while its reasoning submenu is open', () => {
@@ -95,4 +99,3 @@ describe('desktop React model switcher', () => {
     expect(switcher).toContain('title={showReasoning ? undefined : `${model.provider} · ${model.id}`}');
   });
 });
-

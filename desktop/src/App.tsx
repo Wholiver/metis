@@ -1,9 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useReducer } from 'react';
 import { Sparkles, X } from 'lucide-react';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { ChatArea } from './components/chat/ChatArea';
 import { Inspector } from './components/inspector/Inspector';
-import { collectTurnFileChanges } from './lib/turn-files';
+import {
+  createInspectorTabsState,
+  inspectorTabsReducer,
+  type InspectorTab,
+  type InspectorTabKind,
+} from './lib/inspector-tabs';
 import { ExtensionUiRequest } from './lib/extension-ui';
 import {
   collectSubagentItems,
@@ -24,7 +29,7 @@ import { Agent, AssistantContentPart, Message, ModelOption, PendingUserInput, Pr
 const PROJECTS_STORAGE_KEY = 'metis.desktop.projects.v1';
 const ACTIVE_PROJECT_STORAGE_KEY = 'metis.desktop.activeProject.v1';
 
-const MIN_SIDEBAR_WIDTH = 240;
+const MIN_SIDEBAR_WIDTH = 224;
 const MAX_SIDEBAR_WIDTH = 500;
 
 const MIN_INSPECTOR_WIDTH = 360;
@@ -127,6 +132,7 @@ const TOOL_GROUP_CAPTURE_MESSAGES: Message[] = [{
   thinkingDurationMs: 4200,
   parts: [
     { type: 'thinking', id: 'capture-tools-thinking', thinking: 'Inspecting and updating the Desktop tool presentation.', durationMs: 4200 },
+    { type: 'text', id: 'capture-tools-status', text: 'Keeping the existing reasoning narrative between tool activity.' },
     { type: 'toolCall', id: 'capture-tool-memory', name: 'query_memory_db', arguments: { query: 'desktop tool rendering' }, result: { content: 'Found relevant session memory.' } },
     { type: 'toolCall', id: 'capture-tool-read-1', name: 'read', arguments: { path: 'desktop/src/components/chat/AssistantWork.tsx' }, result: { content: 'Loaded file.' } },
     { type: 'toolCall', id: 'capture-tool-read-2', name: 'read', arguments: { path: 'desktop/src/components/chat/ToolCard.tsx' }, result: { content: 'Loaded file.' } },
@@ -194,6 +200,7 @@ const PLAN_POINTS_CAPTURE: WorkflowPlanState = {
     { step: 'Trace the active Desktop state and rendering path', status: 'completed' },
     { step: 'Connect plan points to the Server workflow state', status: 'in_progress' },
     { step: 'Verify populated and empty sidebar states', status: 'pending' },
+    { step: 'Confirm scrolling when more than three plan rows are present', status: 'pending' },
   ],
   updatedAt: '2026-08-21T00:00:00.000Z',
 };
@@ -249,6 +256,7 @@ export function App() {
   useSystemTheme();
   const captureParams = new URLSearchParams(window.location.search);
   const capturePlanPreview = captureParams.has('capture-plan-preview');
+  const captureWorkflowPlan = captureParams.has('capture-workflow-plan');
   const captureStreamingWork = captureParams.has('capture-streaming-work');
   const captureConversationIcons = captureParams.has('capture-conversation-icons');
   const captureModelSwitcher = captureParams.has('capture-model-switcher');
@@ -262,6 +270,7 @@ export function App() {
   const captureThinkingOverflow = captureParams.has('capture-thinking-overflow');
   const capturePlanPoints = captureParams.has('capture-plan-points');
   const capturePlanPointsEmpty = captureParams.has('capture-plan-points-empty');
+  const captureInspectorTabs = captureParams.has('capture-inspector-tabs');
   const captureAsk = captureParams.has('capture-ask');
   const captureSkills = captureParams.has('capture-skills');
   const captureExtensionUi = captureParams.has('capture-extension-ui');
@@ -272,6 +281,8 @@ export function App() {
   const activeProject = projects.find((project) => project.id === activeProjectId);
   const {
     agents,
+    projectAgentsByPath,
+    prefetchProjectSessions,
     activeAgent,
     activeAgentId,
     messagesSessionId,
@@ -322,13 +333,35 @@ export function App() {
 
   const { updateCheck, checkForUpdates } = useUpdateCheck(isConnected);
 
-  const [sidebarWidth, setSidebarWidth] = useState<number>(260);
-  const [inspectorWidth, setInspectorWidth] = useState<number>(360);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(224);
+  const [inspectorWidth, setInspectorWidth] = useState<number>(300);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
+  const [inspectorTabsState, dispatchInspectorTabs] = useReducer(
+    inspectorTabsReducer,
+    undefined,
+    () => {
+      let state = createInspectorTabsState();
+      if (captureInspectorTabs) {
+        const kinds: InspectorTabKind[] = ['files', 'plan', 'subagents'];
+        for (let index = 0; index < 20; index += 1) {
+          state = inspectorTabsReducer(state, { type: 'open', kind: kinds[index % kinds.length] });
+        }
+      } else if (capturePlanPreview) {
+        state = inspectorTabsReducer(state, {
+          type: 'openOrActivate',
+          kind: 'plan',
+          viewedProposalMarkdown: PLAN_CAPTURE_MARKDOWN,
+        });
+      } else if (capturePlanPoints || capturePlanPointsEmpty) {
+        state = inspectorTabsReducer(state, { type: 'openOrActivate', kind: 'plan' });
+      }
+      return state;
+    },
+  );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => (
-    captureSettledSend || captureExtensionUi ? false : shouldShowOnboarding()
+    captureSettledSend || captureExtensionUi || captureInspectorTabs || capturePlanPreview || captureWorkflowPlan || capturePlanPoints || capturePlanPointsEmpty || captureTools || captureThinkingOverflow ? false : shouldShowOnboarding()
   ));
   const [settingsTab, setSettingsTab] = useState<'general' | 'shortcuts' | 'server' | 'model' | 'agent' | 'security' | 'session' | 'about'>('general');
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
@@ -388,7 +421,7 @@ export function App() {
     content: 'Continuing with the task.',
     parts: [{ type: 'text', id: 'capture-working-text', text: 'Continuing with the task.' }],
   }];
-  const displayedMessages = capturePlanPoints ? PLAN_POINTS_CAPTURE_MESSAGES : captureWorkDuration ? WORK_DURATION_CAPTURE_MESSAGES : captureThinkingOverflow ? THINKING_OVERFLOW_CAPTURE_MESSAGES : captureTools ? TOOL_GROUP_CAPTURE_MESSAGES : captureMessageWidth ? MESSAGE_WIDTH_CAPTURE_MESSAGES : captureThinkingProgress ? thinkingCaptureMessages : captureLocalSend ? [{
+  const displayedMessages = capturePlanPoints || captureInspectorTabs ? PLAN_POINTS_CAPTURE_MESSAGES : captureWorkDuration ? WORK_DURATION_CAPTURE_MESSAGES : captureThinkingOverflow ? THINKING_OVERFLOW_CAPTURE_MESSAGES : captureTools ? TOOL_GROUP_CAPTURE_MESSAGES : captureMessageWidth ? MESSAGE_WIDTH_CAPTURE_MESSAGES : captureThinkingProgress ? thinkingCaptureMessages : captureLocalSend ? [{
     id: 'capture-local-user',
     role: 'user' as const,
     content: 'Run this task immediately.',
@@ -443,13 +476,13 @@ export function App() {
   const displayedThinkingOptions = captureModelSwitcher ? MODEL_SWITCHER_CAPTURE_THINKING_OPTIONS : thinkingOptions;
   const displayedThinkingLevel = captureModelSwitcher ? 'medium' : thinkingLevel;
   const displayedSupportsThinking = captureModelSwitcher || supportsThinking;
-  const displayedWorkflowPlan = capturePlanPoints
+  const displayedWorkflowPlan = capturePlanPoints || captureInspectorTabs || captureWorkflowPlan
     ? PLAN_POINTS_CAPTURE
     : capturePlanPointsEmpty
       ? undefined
       : workflowPlan;
-  const displayedWorkspacePath = capturePlanPoints ? PLAN_POINTS_CAPTURE_WORKSPACE : activeProject?.path;
-  const displayedFileChanges = useMemo(() => {
+  const displayedWorkspacePath = capturePlanPoints || captureInspectorTabs ? PLAN_POINTS_CAPTURE_WORKSPACE : activeProject?.path;
+  const displayedToolParts = useMemo(() => {
     const toolParts: AssistantContentPart[] = [];
     for (const msg of displayedMessages) {
       if (msg.role !== 'assistant' || !msg.parts) continue;
@@ -457,8 +490,8 @@ export function App() {
         if (part.type === 'toolCall') toolParts.push(part);
       }
     }
-    return collectTurnFileChanges(toolParts, { workspacePath: displayedWorkspacePath });
-  }, [displayedMessages, displayedWorkspacePath]);
+    return toolParts;
+  }, [displayedMessages]);
   const isMessagesInSync = Boolean(activeAgentId && messagesSessionId === activeAgentId);
   const currentSubagents = useMemo(
     () => (isMessagesInSync ? collectSubagentItems(messages, activeAgentId) : []),
@@ -582,7 +615,7 @@ export function App() {
         input += msg.usage.input || 0;
         output += msg.usage.output || 0;
         cache += (msg.usage.cacheRead || 0) + (msg.usage.cacheWrite || 0);
-        total += msg.usage.totalTokens || (input + output + cache);
+        total += msg.usage.totalTokens || ((msg.usage.input || 0) + (msg.usage.output || 0) + (msg.usage.cacheRead || 0) + (msg.usage.cacheWrite || 0));
       }
     }
     return { cost, input, output, cache, total };
@@ -590,9 +623,6 @@ export function App() {
 
   const aggregateCost = Math.max(sessionCostStats.costTotal, liveUsage.cost);
   const aggregateTotalTokens = Math.max(sessionCostStats.tokenTotal, liveUsage.total);
-  const aggregateInputTokens = Math.max(sessionCostStats.inputTokens, liveUsage.input);
-  const aggregateOutputTokens = Math.max(sessionCostStats.outputTokens, liveUsage.output);
-  const aggregateCacheTokens = Math.max(sessionCostStats.cacheTokens, liveUsage.cache);
 
   const isOAuthModel = useMemo(() => {
     if (!displayedActiveModel?.provider) return false;
@@ -677,6 +707,34 @@ export function App() {
       }
     }
   };
+
+  const handleSelectAgent = useCallback(async (agentId: string) => {
+    let ownerPath: string | undefined;
+    for (const [path, list] of Object.entries(projectAgentsByPath)) {
+      if (list.some((agent) => agent.id === agentId)) {
+        ownerPath = path;
+        break;
+      }
+    }
+    if (!ownerPath) {
+      ownerPath = agents.find((agent) => agent.id === agentId)?.projectPath;
+    }
+    if (ownerPath && ownerPath !== activeProject?.path) {
+      const ownerProject = projects.find((project) => project.path === ownerPath);
+      if (ownerProject) {
+        setActiveProjectId(ownerProject.id);
+        const desktop = (window as any).metisDesktop;
+        if (desktop?.workspace?.set) {
+          try {
+            await desktop.workspace.set(ownerProject.path);
+          } catch (err) {
+            console.warn('[desktop] Failed to set workspace:', err);
+          }
+        }
+      }
+    }
+    await selectConversation(agentId);
+  }, [activeProject?.path, agents, projectAgentsByPath, projects, selectConversation]);
 
   const handleAddProject = async () => {
     const desktop = (window as any).metisDesktop;
@@ -816,9 +874,47 @@ export function App() {
     };
   }, []);
 
+  const handleOpenInspectorTab = useCallback((kind: InspectorTabKind) => {
+    dispatchInspectorTabs({ type: 'open', kind });
+  }, []);
+
+  const openInspectorPlan = useCallback((markdown?: string) => {
+    setIsInspectorOpen(true);
+    dispatchInspectorTabs({
+      type: 'openOrActivate',
+      kind: 'plan',
+      viewedProposalMarkdown: markdown ?? null,
+      viewedProposalSessionId: activeAgentId || messagesSessionId || null,
+    });
+  }, [activeAgentId, messagesSessionId]);
+
+  useEffect(() => {
+    if (capturePlanPreview || capturePlanPoints || capturePlanPointsEmpty || captureInspectorTabs || captureWorkflowPlan) return;
+    dispatchInspectorTabs({ type: 'clearPlanViews' });
+  }, [activeAgentId, captureInspectorTabs, capturePlanPoints, capturePlanPointsEmpty, capturePlanPreview, captureWorkflowPlan]);
+
+  const handleActivateInspectorTab = useCallback((tabId: string) => {
+    dispatchInspectorTabs({ type: 'activate', tabId });
+  }, []);
+
+  const handleCloseInspectorTab = useCallback((tabId: string) => {
+    dispatchInspectorTabs({ type: 'close', tabId });
+  }, []);
+
+  const handleMoveInspectorTab = useCallback((tabId: string, toIndex: number) => {
+    dispatchInspectorTabs({ type: 'move', tabId, toIndex });
+  }, []);
+
+  const handleUpdateInspectorTab = useCallback((
+    tabId: string,
+    patch: Partial<Pick<InspectorTab, 'selectedSubagentId' | 'scrollTop' | 'viewedProposalMarkdown' | 'viewedProposalSessionId'>>,
+  ) => {
+    dispatchInspectorTabs({ type: 'update', tabId, patch });
+  }, []);
+
   return (
     <div
-      className={`flex h-screen w-screen bg-white dark:bg-[#16171a] text-slate-900 dark:text-slate-100 select-none overflow-hidden ${
+      className={`flex h-screen w-screen bg-transparent text-ink select-none overflow-hidden ${
         activeResizer ? 'cursor-col-resize select-none' : ''
       }`}
     >
@@ -829,24 +925,33 @@ export function App() {
             ref={sidebarRef}
             width={sidebarWidth}
             agents={displayedSidebarAgents}
+            agentsByProject={captureConversationIcons ? undefined : projectAgentsByPath}
             activeAgentId={displayedSidebarActiveAgentId}
             projects={projects}
             activeProjectId={activeProjectId}
             isLoading={captureConversationIcons ? false : isLoadingSessions}
             error={captureConversationIcons ? undefined : sessionError}
-            onSelectAgent={selectConversation}
+            updateCheck={updateCheck}
+            onSelectAgent={handleSelectAgent}
             onSelectProject={handleSelectProject}
+            onPrefetchProjectSessions={captureConversationIcons ? undefined : prefetchProjectSessions}
             onAddProject={handleAddProject}
             onNewChat={newConversation}
             onOpenSettings={() => setIsSettingsOpen(true)}
             onToggleSidebar={() => setIsSidebarOpen(false)}
+            workingAgentId={
+              captureConversationIcons
+                ? null
+                : (isStreaming || isCompacting ? displayedSidebarActiveAgentId : null)
+            }
           />
 
           {/* Resizer Handle for Sidebar */}
           <div
             onMouseDown={handleSidebarResizeStart}
-            className="w-[4px] -ml-[2px] h-full cursor-col-resize z-30 hover:bg-blue-500/40 active:bg-blue-500 transition-colors flex-shrink-0"
+            className="relative w-px h-full cursor-col-resize z-30 bg-line-strong hover:bg-accent/40 active:bg-accent transition-colors flex-shrink-0 before:absolute before:inset-y-0 before:left-1/2 before:w-[8px] before:-translate-x-1/2 before:content-['']"
             title="Drag to resize sidebar"
+            data-sidebar-resizer=""
           />
         </>
       )}
@@ -857,6 +962,9 @@ export function App() {
         messages={displayedMessages}
         workspacePath={displayedWorkspacePath}
         projectName={activeProject?.name}
+        projects={projects}
+        activeProject={activeProject}
+        onSelectProject={handleSelectProject}
         isSidebarOpen={isSidebarOpen}
         isInspectorOpen={isInspectorOpen}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
@@ -877,24 +985,33 @@ export function App() {
         supportsThinking={displayedSupportsThinking}
         onSelectThinkingLevel={selectThinkingLevel}
         isChangingThinking={isChangingThinking}
-        collaborationMode={collaborationMode}
+        collaborationMode={captureWorkflowPlan ? 'build' : collaborationMode}
         onSelectCollaborationMode={selectCollaborationMode}
         isChangingCollaborationMode={isChangingCollaborationMode}
         skills={captureSkills ? SKILL_PICKER_CAPTURE_SKILLS : skillCommands}
         isCompacting={isCompacting}
-        onToggleInspector={() => setIsInspectorOpen((prev) => !prev)}
-        isStreaming={captureThinkingProgress || captureStreamingWork ? true : capturePlanPreview ? false : isStreaming}
-        isLoading={captureMessageWidth || captureThinkingProgress || capturePlanPreview || captureLocalSend || captureSettledSend ? false : isLoadingSessions}
+        onToggleInspector={() => {
+          setIsInspectorOpen((prev) => {
+            if (!prev) dispatchInspectorTabs({ type: 'open', kind: 'files' });
+            return !prev;
+          });
+        }}
+        isStreaming={captureWorkflowPlan || captureTools || captureThinkingProgress || captureStreamingWork ? true : capturePlanPreview ? false : isStreaming}
+        isLoading={captureMessageWidth || captureThinkingProgress || capturePlanPreview || captureWorkflowPlan || captureLocalSend || captureSettledSend ? false : isLoadingSessions}
         workflowProposal={displayedProposal}
-        planActionsEnabled={capturePlanPreview || (isConnected && collaborationMode === 'plan' && !isStreaming && !isCompacting)}
-        onProcessProposal={capturePlanPreview || collaborationMode === 'plan' ? processProposal : undefined}
-        onRefineProposal={capturePlanPreview || collaborationMode === 'plan' ? refineProposal : undefined}
+        workflowPlan={displayedWorkflowPlan}
+        onOpenPlan={openInspectorPlan}
         pendingUserInput={captureAsk ? ASK_CAPTURE : pendingUserInput}
         onRespondToUserInput={captureAsk ? async () => true : respondToUserInput}
         memoryState={memoryState}
         onOpenMemorySettings={handleOpenMemorySettings}
         contextUsage={contextUsage}
         tokenBreakdown={tokenBreakdown}
+        isOAuth={isOAuthModel}
+        totalCost={aggregateCost}
+        totalTokens={aggregateTotalTokens}
+        quota5h={quota5h}
+        quota7d={quota7d}
       />
 
       {/* 3. Right Inspector Panel */}
@@ -903,30 +1020,32 @@ export function App() {
           {/* Resizer Handle for Inspector */}
           <div
             onMouseDown={handleInspectorResizeStart}
-            className="w-[4px] -mr-[2px] h-full cursor-col-resize z-30 hover:bg-blue-500/40 active:bg-blue-500 transition-colors flex-shrink-0"
+            className="relative w-px h-full cursor-col-resize z-30 bg-line-strong hover:bg-accent/40 active:bg-accent transition-colors flex-shrink-0 before:absolute before:inset-y-0 before:left-1/2 before:w-[8px] before:-translate-x-1/2 before:content-['']"
             title="Drag to resize inspector"
+            data-inspector-resizer=""
           />
 
           <Inspector
             ref={inspectorRef}
             width={inspectorWidth}
+            tabs={inspectorTabsState.tabs}
+            activeTabId={inspectorTabsState.activeTabId}
             workflowPlan={displayedWorkflowPlan}
-            fileChanges={displayedFileChanges}
+            workflowProposal={displayedProposal}
+            planActionsEnabled={capturePlanPreview || (isConnected && collaborationMode === 'plan' && !isStreaming && !isCompacting)}
+            onProcessProposal={capturePlanPreview || collaborationMode === 'plan' ? processProposal : undefined}
+            onRefineProposal={capturePlanPreview || collaborationMode === 'plan' ? refineProposal : undefined}
+            toolParts={displayedToolParts}
+            workspacePath={displayedWorkspacePath}
             subagents={displayedSubagents}
+            onOpenTab={handleOpenInspectorTab}
+            onActivateTab={handleActivateInspectorTab}
+            onCloseTab={handleCloseInspectorTab}
+            onMoveTab={handleMoveInspectorTab}
+            onUpdateTab={handleUpdateInspectorTab}
             onClose={() => setIsInspectorOpen(false)}
             onCollapse={() => setIsInspectorOpen(false)}
-            contextUsage={contextUsage}
-            tokenBreakdown={tokenBreakdown}
-            isOAuth={isOAuthModel}
-            totalCost={aggregateCost}
-            totalTokens={aggregateTotalTokens}
-            inputTokens={aggregateInputTokens}
-            outputTokens={aggregateOutputTokens}
-            cacheTokens={aggregateCacheTokens}
-            quota5h={quota5h}
-            quota7d={quota7d}
-            dailyTokens={sessionCostStats.dailyTokens}
-            dailyCost={sessionCostStats.dailyCost}
+            activeSessionId={activeAgentId || messagesSessionId || null}
           />
         </>
       )}
@@ -977,21 +1096,21 @@ export function App() {
       {toast && (
         <div
           role="status"
-          className={`fixed bottom-6 right-6 z-[200] max-w-md rounded-2xl border px-4 py-3 text-[12.5px] font-medium shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 ${
+          className={`fixed bottom-6 right-6 z-[200] max-w-md rounded-window border px-4 py-3 text-[12.5px] font-medium shadow-overlay backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 ${
             toast.tone === 'success'
-              ? 'border-emerald-200/90 bg-emerald-50/95 text-emerald-800'
+              ? 'border-green/30 bg-green-tint text-green'
               : toast.tone === 'error'
-                ? 'border-rose-200/90 bg-rose-50/95 text-rose-800'
-                : 'border-slate-200/90 bg-white/95 text-slate-800'
+                ? 'border-red/30 bg-red-tint text-red'
+                : 'border-line bg-surface/95 text-ink'
           }`}
         >
           <div className="flex items-center gap-2.5">
-            <Sparkles className="h-4 w-4 shrink-0 text-emerald-600" />
+            <Sparkles className="h-4 w-4 shrink-0 text-green" />
             <span className="flex-1">{toast.message}</span>
             <button
               type="button"
               onClick={() => setToast(null)}
-              className="rounded-lg p-1 text-slate-400 hover:bg-black/5 hover:text-slate-700"
+              className="rounded-chip p-1 text-ink-3 hover:bg-hover hover:text-ink"
             >
               <X className="h-3.5 w-3.5" />
             </button>

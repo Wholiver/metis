@@ -1,8 +1,10 @@
-import React, { useRef, useLayoutEffect, useCallback, useMemo, useEffect } from 'react';
-import { Message, PendingUserInput, SendMessageOptions, WorkflowProposalState } from '../../types';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { CollaborationMode, Message, ModelOption, PendingUserInput, SendMessageOptions, WorkflowProposalState } from '../../types';
 import { UserBubble } from './UserBubble';
 import { AssistantTurn } from './AssistantTurn';
-import { ChatHomeEmptyState } from './ChatHomeEmptyState';
+import LoadingState from '../primitives/LoadingState';
+import { useI18n } from '../../i18n';
+import { useAutoScroll } from '../../hooks/useAutoScroll';
 
 interface MessageListProps {
   messages: Message[];
@@ -11,12 +13,13 @@ interface MessageListProps {
   timeDivider?: string;
   isLoading?: boolean;
   isStreaming?: boolean;
+  isHomeEmpty?: boolean;
   workflowProposal?: WorkflowProposalState;
-  planActionsEnabled?: boolean;
-  onProcessProposal?: () => void;
-  onRefineProposal?: (request: string) => void;
+  onOpenPlan?: (markdown: string) => void;
   pendingUserInput?: PendingUserInput;
   onSendMessage?: (text: string, options?: SendMessageOptions) => boolean | void | Promise<boolean | void>;
+  collaborationMode?: CollaborationMode;
+  model?: ModelOption;
 }
 
 export const MessageList = React.memo<MessageListProps>(({
@@ -26,94 +29,104 @@ export const MessageList = React.memo<MessageListProps>(({
   timeDivider,
   isLoading = false,
   isStreaming = false,
+  isHomeEmpty = false,
   workflowProposal,
-  planActionsEnabled = false,
-  onProcessProposal,
-  onRefineProposal,
+  onOpenPlan,
   pendingUserInput,
   onSendMessage,
+  collaborationMode,
+  model,
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const laneRef = useRef<HTMLDivElement>(null);
-  const isNearBottomRef = useRef(true);
-  const lastScrollTopRef = useRef(0);
-  const scrollRafRef = useRef<number | null>(null);
+  const { t } = useI18n();
+  void workspacePath;
+  void projectName;
+  const working = isStreaming || Boolean(pendingUserInput);
+  const {
+    setScrollElement,
+    setContentElement,
+    handleScroll,
+    handleInteraction,
+    resume,
+    scrollToBottom,
+  } = useAutoScroll({
+    working,
+    overflowAnchor: 'none',
+    bottomThreshold: 10,
+  });
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const laneRef = useRef<HTMLDivElement | null>(null);
   const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user');
   const latestUserId = latestUserMessage?.id;
   const latestUserTimestamp = latestUserMessage?.serverTimestamp;
   const previousUserIdRef = useRef(latestUserId);
 
-  const followBottom = useCallback(() => {
-    const el = containerRef.current;
-    if (!el || !isNearBottomRef.current) return;
-    if (scrollRafRef.current !== null) return;
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = null;
-      if (el && isNearBottomRef.current) {
-        el.scrollTop = el.scrollHeight;
-        lastScrollTopRef.current = el.scrollTop;
-      }
-    });
-  }, []);
+  const bindScroll = useCallback((el: HTMLDivElement | null) => {
+    containerRef.current = el;
+    setScrollElement(el);
+  }, [setScrollElement]);
 
-  useEffect(() => {
-    return () => {
-      if (scrollRafRef.current !== null) {
-        cancelAnimationFrame(scrollRafRef.current);
-      }
-    };
-  }, []);
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceToBottom <= 48) {
-      isNearBottomRef.current = true;
-    } else if (el.scrollTop < lastScrollTopRef.current) {
-      // Content growth and browser anchoring are not user scroll-away intent.
-      isNearBottomRef.current = false;
-    }
-    lastScrollTopRef.current = el.scrollTop;
-  };
+  const bindLane = useCallback((el: HTMLDivElement | null) => {
+    laneRef.current = el;
+    setContentElement(el);
+  }, [setContentElement]);
 
   useLayoutEffect(() => {
     if (latestUserId !== previousUserIdRef.current) {
-      isNearBottomRef.current = true;
+      previousUserIdRef.current = latestUserId;
+      resume();
+      return;
     }
-    previousUserIdRef.current = latestUserId;
-    followBottom();
-  }, [followBottom, latestUserId, isLoading, isStreaming, messages]);
+    // Content growth follows only while the user has not scrolled away.
+    scrollToBottom();
+  }, [latestUserId, isLoading, isStreaming, messages, resume, scrollToBottom]);
 
-  useLayoutEffect(() => {
-    const container = containerRef.current;
+  useEffect(() => {
     const lane = laneRef.current;
-    if (!container || !lane) return;
-    // Also follow layout changes without a new message: images, work sections,
-    // composer height, and viewport resizing. Keep one owner of chat scrolling.
-    const observer = new ResizeObserver(followBottom);
-    observer.observe(container);
-    observer.observe(lane);
-    return () => observer.disconnect();
-  }, [followBottom]);
+    const container = containerRef.current;
+    if (!lane && !container) return;
+    const onLayout = () => scrollToBottom();
+    const observer = new ResizeObserver(onLayout);
+    if (lane) observer.observe(lane);
+    if (container) observer.observe(container);
+    const clearance = lane?.querySelector('[data-composer-clearance]');
+    if (clearance) observer.observe(clearance);
+    lane?.addEventListener('load', onLayout, true);
+    return () => {
+      observer.disconnect();
+      lane?.removeEventListener('load', onLayout, true);
+    };
+  }, [scrollToBottom, messages.length, working]);
 
   const visibleTimeDivider = timeDivider || messages.find((message) => message.time)?.time;
   const renderGroups = useMemo(() => {
     const groups: Array<
       | { type: 'user'; key: string; message: Message }
-      | { type: 'assistant'; key: string; messages: Message[]; startedAt?: string | number }
+      | { type: 'assistant'; key: string; messages: Message[]; startedAt?: string | number; promptText?: string }
     > = [];
-    let latestUserTimestamp: string | number | undefined;
+    let latestUserTs: string | number | undefined;
+    let latestUserPrompt: string | undefined;
     for (const message of messages) {
       if (message.role === 'user') {
         groups.push({ type: 'user', key: message.id, message });
-        latestUserTimestamp = message.serverTimestamp;
+        latestUserTs = message.serverTimestamp;
+        latestUserPrompt = typeof message.content === 'string' ? message.content : undefined;
         continue;
       }
       const previous = groups.at(-1);
       if (previous?.type === 'assistant') {
         previous.messages.push(message);
+        if (!previous.promptText && latestUserPrompt) {
+          previous.promptText = latestUserPrompt;
+        }
       } else {
-        groups.push({ type: 'assistant', key: `turn-${message.id}`, messages: [message], startedAt: latestUserTimestamp });
+        groups.push({
+          type: 'assistant',
+          key: `turn-${message.id}`,
+          messages: [message],
+          startedAt: latestUserTs,
+          promptText: latestUserPrompt,
+        });
       }
     }
     return groups;
@@ -125,35 +138,29 @@ export const MessageList = React.memo<MessageListProps>(({
 
   return (
     <div
-      ref={containerRef}
+      ref={bindScroll}
       onScroll={handleScroll}
+      onMouseDown={handleInteraction}
       className="min-h-0 flex-1 overflow-y-auto px-4 py-4 flex flex-col items-center"
-      style={{ scrollbarGutter: 'stable both-edges' }}
+      style={{ scrollbarGutter: 'stable both-edges', overflowAnchor: 'none' }}
       data-message-scroll=""
     >
-      {/* Centered message lane with exact same max-w-[620px] as composer */}
-      <div ref={laneRef} className={`flex w-full min-w-0 max-w-[620px] flex-col ${messages.length === 0 ? 'flex-1' : 'min-h-full'}`} data-message-lane="">
-        {messages.length > 0 && <div className="flex-1 min-h-0" aria-hidden="true" />}
-        {/* Centered time chip */}
+      <div
+        ref={bindLane}
+        className={`flex w-full min-w-0 max-w-[620px] flex-col ${messages.length === 0 ? 'flex-1' : ''}`}
+        data-message-lane=""
+      >
         {visibleTimeDivider && (
           <div className="flex justify-center my-2 mb-4">
-            <span className="text-[11.5px] font-medium text-[#94a3b8] tabular-nums">
+            <span className="text-[11.5px] font-medium text-ink-3 tabular-nums">
               {visibleTimeDivider}
             </span>
           </div>
         )}
 
-        {/* Message items */}
-        <div className={`flex w-full min-w-0 max-w-full flex-col ${messages.length === 0 ? 'flex-1 justify-center items-center' : ''}`}>
+        <div className={`flex w-full min-w-0 max-w-full flex-col ${messages.length === 0 ? 'flex-1' : ''}`}>
           {isLoading && messages.length === 0 && (
-            <p className="py-12 text-center text-[13px] text-[#94a3b8]" role="status">
-              Loading conversation…
-            </p>
-          )}
-          {!isLoading && messages.length === 0 && !isStreaming && !pendingUserInput && (
-            <ChatHomeEmptyState
-              projectName={projectName || workspacePath?.split('/').filter(Boolean).pop()}
-            />
+            <LoadingState className="mx-auto py-12" label={t('reactUiLoadingConversation') || 'Loading conversation…'} />
           )}
           {renderGroups.map((group) =>
             group.type === 'user' ? (
@@ -163,14 +170,14 @@ export const MessageList = React.memo<MessageListProps>(({
                 key={group.key}
                 messages={group.messages}
                 startedAt={group.startedAt}
-                workspacePath={workspacePath}
                 streaming={isStreaming && (group === activeAssistantGroup || (!activeAssistantGroup && group === progressGroup))}
                 showProgress={group === progressGroup}
                 workflowProposal={workflowProposal}
-                planActionsEnabled={planActionsEnabled}
-                onProcessProposal={onProcessProposal}
-                onRefineProposal={onRefineProposal}
+                onOpenPlan={onOpenPlan}
                 pendingUserInput={group === progressGroup ? pendingUserInput : undefined}
+                onRetry={group.promptText && onSendMessage ? () => onSendMessage(group.promptText!) : undefined}
+                collaborationMode={collaborationMode}
+                model={model}
               />
             )
           )}
@@ -179,18 +186,21 @@ export const MessageList = React.memo<MessageListProps>(({
               key="active-assistant-turn"
               messages={[]}
               startedAt={latestUserTimestamp}
-              workspacePath={workspacePath}
               streaming
               showProgress
               pendingUserInput={pendingUserInput}
+              collaborationMode={collaborationMode}
+              model={model}
             />
           )}
-          <div
-            aria-hidden="true"
-            className="w-full flex-none"
-            style={{ height: 'calc(var(--composer-overlay-height, 100px) + 16px)' }}
-            data-composer-clearance=""
-          />
+          {!isHomeEmpty ? (
+            <div
+              aria-hidden="true"
+              className="w-full flex-none"
+              style={{ height: 'calc(var(--composer-overlay-height, 100px) + 16px)' }}
+              data-composer-clearance=""
+            />
+          ) : null}
         </div>
       </div>
     </div>

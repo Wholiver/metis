@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.2.0] - 2026-09-11
+
+### Desktop Beautiful UI Redesign, Workspace Review & Performance Admission
+
+- 全新桌面端设计重构（Beautiful UI）：引入完整 Design Tokens、原子组件体系（shadcn/ui）、平滑排版与 Inter Variable 字体。
+- 新增工作区代码变更审查中心（Workspace Review Panel）：支持侧边栏文件树过滤、精准 Diff 对比高亮与一键 Git 提交变更。
+- 引入 Performance Admission 机制与全新 `performance_admit` 工具，加固自主规划决策与执行准入。
+- 优化消息流式渐进呈现（PacedMarkdown）、智能自动滚屏（useAutoScroll）与全新交互动效。
+
 ## [1.1.15] - 2026-09-06
 
 ### Compaction Optimization & Desktop Interaction Refinement

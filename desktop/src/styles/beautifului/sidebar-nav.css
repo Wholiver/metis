@@ -1,0 +1,81 @@
+/* ══════════════════════════════════════════════════════════
+ * COMPONENT-SPECIFIC — SidebarNav
+ * The 52↔224px collapsible sidebar tree.
+ * Copy this block only alongside SidebarNav; it is not part of the
+ * generic foundation above.
+ * ══════════════════════════════════════════════════════════ */
+.sidebar-row {
+  width: 208px;
+  transition-duration: var(--sidebar-copy-duration);
+  transition-timing-function: var(--sidebar-easing);
+}
+
+.sidebar-copy {
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity var(--sidebar-copy-duration) ease-out,
+    transform var(--sidebar-copy-duration) var(--sidebar-easing);
+}
+
+.sidebar-logo,
+.sidebar-collapse-control,
+.sidebar-expand-control {
+  transition-duration: var(--sidebar-copy-duration);
+  transition-timing-function: ease-out;
+}
+
+.sidebar-expand-control {
+  pointer-events: none;
+  opacity: 0;
+}
+
+.sidebar-glide-highlight {
+  right: 8px;
+  left: 8px;
+}
+
+[data-sidebar-collapsed="true"] .sidebar-row {
+  width: 36px;
+}
+
+[data-sidebar-collapsed="true"] .sidebar-copy {
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(calc(var(--sidebar-copy-offset) * -1));
+}
+
+[data-sidebar-collapsed="true"] .sidebar-workspace-control {
+  pointer-events: none;
+}
+
+[data-sidebar-collapsed="true"] .sidebar-logo,
+[data-sidebar-collapsed="true"] .sidebar-collapse-control {
+  pointer-events: none;
+  opacity: 0;
+}
+
+[data-sidebar-collapsed="true"] .sidebar-expand-control {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+[data-sidebar-collapsed="true"] .sidebar-glide-highlight {
+  right: auto;
+  width: 36px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
+/* ── records table ────────────────────────────────────────
+ * The grid is deliberately more architectural than card-like:
+ * one quiet surface, precise rules, and color reserved for
+ * meaning. The first column remains an anchor while both axes
+ * can move independently inside the table viewport.
+ */

@@ -232,6 +232,44 @@ describe("Desktop custom Provider configuration", () => {
 		expect(JSON.parse(fs.readFileSync(modelsPath, "utf8")).providers["custom-proxy"].models[0]).toMatchObject(settings);
 	});
 
+	it("creates a custom provider with an explicit custom-* id and model names", async () => {
+		const fetchImpl = vi.fn().mockResolvedValue({ ok: false });
+		const saved = await providerConfig.saveCustomProviderConfig(agentDir, {
+			providerId: "my-gateway",
+			name: "Gateway",
+			baseUrl: "https://gateway.example/v1",
+			modelIds: ["fast-1"],
+			models: [{ id: "fast-1", name: "Fast One" }],
+			discoveredModels: [{ id: "fast-1" }],
+		}, { fetchImpl });
+
+		expect(saved.provider).toBe("custom-my-gateway");
+		const models = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
+		expect(models.providers["custom-my-gateway"].models[0]).toMatchObject({
+			id: "fast-1",
+			name: "Fast One",
+		});
+	});
+
+	it("rejects an explicit custom provider id that is already taken", async () => {
+		const fetchImpl = vi.fn().mockResolvedValue({ ok: false });
+		await providerConfig.saveCustomProviderConfig(agentDir, {
+			providerId: "custom-taken",
+			name: "Taken",
+			baseUrl: "https://taken.example/v1",
+			modelIds: ["m1"],
+			discoveredModels: [{ id: "m1" }],
+		}, { fetchImpl });
+
+		await expect(providerConfig.saveCustomProviderConfig(agentDir, {
+			providerId: "taken",
+			name: "Taken Again",
+			baseUrl: "https://taken-again.example/v1",
+			modelIds: ["m2"],
+			discoveredModels: [{ id: "m2" }],
+		}, { fetchImpl })).rejects.toThrow("customProviderIdTaken");
+	});
+
 	it.each([
 		[{ supported_reasoning_efforts: [], reasoning: { efforts: ["high"] } }, "high", "high"],
 		[{ thinking_options: [{ id: "high", value: "enabled", label: "On" }] }, "high", "enabled"],

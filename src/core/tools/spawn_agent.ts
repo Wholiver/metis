@@ -34,6 +34,16 @@ export const spawnAgentSchema = Type.Object({
 			description: "Optional contextual background, data payload, or findings to provide to the agent",
 		}),
 	),
+	laneId: Type.Optional(
+		Type.String({ description: "Typed Performance admission lane identifier" }),
+	),
+	gate: Type.Optional(
+		Type.Union([
+			Type.Literal("G0"), Type.Literal("G1"), Type.Literal("G2"), Type.Literal("G3.5"),
+			Type.Literal("G4"), Type.Literal("G5"), Type.Literal("G6"), Type.Literal("G7"),
+			Type.Literal("sweep"), Type.Literal("goal-check"),
+		], { description: "Performance gate this child must submit before its task can pass" }),
+	),
 	mode: Type.Optional(
 		Type.Union([Type.Literal("sync"), Type.Literal("async")], {
 			description: "Execution mode: 'sync' (default, foreground blocking wait) or 'async' (background execution)",
@@ -88,6 +98,8 @@ export interface SpawnAgentToolOptions {
 	getGuard?: () => SpawnGuard;
 	runtimeContext?: SpawnAgentRuntimeContext;
 	getRuntimeContext?: () => SpawnAgentRuntimeContext;
+	/** Canonicalize a governed dispatch before policy checks and workspace creation. */
+	prepareDispatch?: (input: SpawnAgentToolInput, runtime: SpawnAgentRuntimeContext | undefined) => Promise<SpawnAgentToolInput> | SpawnAgentToolInput;
 	/** Optional runtime policy layered before generic depth/concurrency guard checks. */
 	validateSpawn?: (input: SpawnAgentToolInput, runtime: SpawnAgentRuntimeContext | undefined, childAgentId: string) => string | undefined;
 	/** Releases a successful policy reservation after a child exits or launch fails. */
@@ -98,6 +110,7 @@ export interface SpawnAgentToolOptions {
 
 export const SPAWN_AGENT_GUIDANCE = [
 	"Delegate a specific task to a specialized named agent (e.g. planner, implementer, reviewer, verifier, or coordinator).",
+	"T0 forbids spawn_agent. T1 keeps implementation on root and permits only fresh reviewer/verifier assurance after G4. T2/T3 may delegate only roles and lanes admitted by Performance runtime.",
 	"By default, execution is synchronous ('sync') and blocks until the agent completes, returning structured results directly.",
 	"For parallel background execution across multiple agents, set mode to 'async'.",
 	"An isolated worktree starts from a snapshot of the parent workspace, including uncommitted and untracked files.",
@@ -134,6 +147,10 @@ function getMetisInvocation(): { command: string; args: string[] } {
 
 export interface ChildAgentResultPayload {
 	status: "success" | "error" | "started" | "timed_out";
+	outcome?: "pass" | "fail" | "blocked" | "invalid_brief" | "no_verdict";
+	gate?: SpawnAgentToolInput["gate"];
+	itemId?: string;
+	evidence?: string;
 	errorCode?: SpawnErrorCode;
 	agent: string;
 	agentId: string;
@@ -149,6 +166,54 @@ export interface ChildAgentResultPayload {
 	exitCode?: number | null;
 	worktree?: string;
 	worktreeRetained?: boolean;
+}
+
+interface GateOutcome {
+	outcome: NonNullable<ChildAgentResultPayload["outcome"]>;
+	gate?: SpawnAgentToolInput["gate"];
+	itemId?: string;
+	evidence?: string;
+}
+
+function extractGateOutcome(value: unknown, expectedGate?: SpawnAgentToolInput["gate"]): GateOutcome | undefined {
+	if (typeof value === "string") {
+		try { return extractGateOutcome(JSON.parse(value), expectedGate); } catch { return undefined; }
+	}
+	if (!value || typeof value !== "object") return undefined;
+	const record = value as Record<string, unknown>;
+	if (record.outcome === "invalid_brief" || record.code === "INVALID_BRIEF") {
+		return { outcome: "invalid_brief", gate: expectedGate };
+	}
+	if (Array.isArray(record.reports)) {
+		const reports = record.reports.filter((report): report is Record<string, unknown> => Boolean(report) && typeof report === "object");
+		const report = [...reports].reverse().find((candidate) => !expectedGate || candidate.gate === expectedGate);
+		if (report && ["pass", "fail", "blocked"].includes(String(report.verdict))) {
+			return {
+				outcome: report.verdict as GateOutcome["outcome"],
+				gate: report.gate as GateOutcome["gate"],
+				itemId: typeof report.itemId === "string" ? report.itemId : undefined,
+				evidence: typeof report.evidence === "string" ? report.evidence : undefined,
+			};
+		}
+	}
+	for (const key of ["details", "result", "content", "data"]) {
+		const nested = extractGateOutcome(record[key], expectedGate);
+		if (nested) return nested;
+	}
+	return undefined;
+}
+
+function extractGateOutcomeFromJsonLines(content: string, expectedGate?: SpawnAgentToolInput["gate"]): GateOutcome | undefined {
+	let latest: GateOutcome | undefined;
+	for (const line of content.split(/\r?\n/)) {
+		try {
+			const event = JSON.parse(line);
+			if (event?.type === "tool_execution_end" && event.toolName === "performance_gate") {
+				latest = extractGateOutcome(event.result, expectedGate) ?? latest;
+			}
+		} catch {}
+	}
+	return latest;
 }
 
 function attributeChildError(stderr: string, stdout: string, exitCode: number | null): { error: string; hint?: string } {
@@ -187,10 +252,11 @@ export function createSpawnAgentToolDefinition(
 		promptSnippet: "Delegate tasks to named subagents",
 		parameters: spawnAgentSchema,
 		executionMode: "sequential",
-		async execute(toolCallId, { agent, task, context, mode = "sync", worktree, force, rationale, timeoutSeconds }, signal, _onUpdate, _ctx) {
+		async execute(toolCallId, rawInput, signal, _onUpdate, _ctx) {
 			const invocation = getMetisInvocation();
 			const rt = options?.getRuntimeContext?.() ?? options?.runtimeContext;
 			const guard = options?.getGuard?.() ?? options?.guard ?? getGlobalSpawnGuard();
+			const agent = rawInput.agent;
 
 			const currentDepth = rt?.currentDepth ?? (process.env.METIS_AGENT_DEPTH ? parseInt(process.env.METIS_AGENT_DEPTH, 10) : 0);
 			const childDepth = currentDepth + 1;
@@ -198,6 +264,18 @@ export function createSpawnAgentToolDefinition(
 			const parentId = rt?.currentAgentId ?? process.env.METIS_AGENT_ID ?? (currentDepth === 0 ? "root" : `agent-${currentDepth}`);
 			const childSuffix = randomBytes(3).toString("hex");
 			const childAgentId = `${agent}-${childSuffix}`;
+			let preparedInput: SpawnAgentToolInput;
+			try {
+				preparedInput = await options?.prepareDispatch?.(rawInput, rt) ?? rawInput;
+			} catch (error) {
+				const payload: ChildAgentResultPayload = {
+					status: "error", agent, agentId: childAgentId, parentId, rootRunId, depth: childDepth,
+					outcome: "invalid_brief",
+					error: error instanceof Error ? error.message : String(error),
+				};
+				return { content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }], details: undefined };
+			}
+			const { task, context, laneId, gate, mode = "sync", worktree, force, rationale, timeoutSeconds } = preparedInput;
 			if (signal?.aborted) {
 				const payload: ChildAgentResultPayload = {
 					status: "error", agent, agentId: childAgentId, parentId, rootRunId, depth: childDepth,
@@ -205,7 +283,7 @@ export function createSpawnAgentToolDefinition(
 				};
 				return { content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }], details: undefined };
 			}
-			const policyError = options?.validateSpawn?.({ agent, task, context, mode, worktree, force, rationale, timeoutSeconds }, rt, childAgentId);
+			const policyError = options?.validateSpawn?.(preparedInput, rt, childAgentId);
 			if (policyError) {
 				const payload: ChildAgentResultPayload = {
 					status: "error", agent, agentId: childAgentId, parentId, rootRunId, depth: childDepth,
@@ -329,6 +407,12 @@ export function createSpawnAgentToolDefinition(
 				"--root-run-id", rootRunId,
 				"--agent-chain", childChain.join(","),
 			];
+			const guardConfig = guard.getConfig();
+			args.push(
+				"--max-spawn-depth", String(guardConfig.maxSpawnDepth),
+				"--max-children", String(guardConfig.maxChildrenPerAgent),
+				"--max-concurrent", String(guardConfig.maxConcurrentAgents),
+			);
 
 			if (context) {
 				args.push("--agent-context", context);
@@ -374,6 +458,8 @@ export function createSpawnAgentToolDefinition(
 				METIS_AGENT_DEPTH: String(childDepth),
 				METIS_AGENT_CHAIN: childChain.join(","),
 				METIS_AGENT_NAME: agent,
+				...(laneId ? { METIS_PERFORMANCE_LANE_ID: laneId } : {}),
+				...(gate ? { METIS_PERFORMANCE_GATE: gate } : {}),
 				ELECTRON_RUN_AS_NODE: "1",
 				...(rt?.env ?? {}),
 			});
@@ -420,6 +506,7 @@ export function createSpawnAgentToolDefinition(
 						[key: string]: any;
 					}> = [];
 					let liveFinalText = "";
+					let gateOutcome: GateOutcome | undefined;
 
 					const emitProgress = (text: string) => {
 						if (!_onUpdate) return;
@@ -505,6 +592,7 @@ export function createSpawnAgentToolDefinition(
 									});
 								}
 							} else if (evt.type === "tool_execution_end") {
+								if (evt.toolName === "performance_gate") gateOutcome = extractGateOutcome(evt.result, gate) ?? gateOutcome;
 								const toolId = evt.toolCallId;
 								const existing = liveParts.find((p) => p.type === "toolCall" && p.id === toolId);
 								const resultContent = typeof evt.result === "string" ? evt.result : JSON.stringify(evt.result ?? "");
@@ -592,7 +680,7 @@ export function createSpawnAgentToolDefinition(
 
 					guard.updateChildStatus(childAgentId, {
 						process: child,
-						pid: child.pid,
+						pid: child?.pid,
 					});
 
 					emitProgress(JSON.stringify({
@@ -656,6 +744,13 @@ export function createSpawnAgentToolDefinition(
 					};
 					signal?.addEventListener("abort", cancel, { once: true });
 					if (signal?.aborted) cancel();
+					if (timeoutSeconds !== undefined && effectiveTimeoutSeconds > 0) {
+						timer = setTimeout(() => {
+							if (settled) return;
+							timedOut = true;
+							guard.killChild(childAgentId, "SIGKILL");
+						}, effectiveTimeoutSeconds * 1000);
+					}
 
 					child.on("error", async (error) => {
 						await finish(false, async () => {
@@ -755,6 +850,10 @@ export function createSpawnAgentToolDefinition(
 									exitCode,
 									worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
 									worktreeRetained: isSuccess && workspace.workspacePath !== cwd,
+									outcome: isSuccess ? (gateOutcome?.outcome ?? (gate ? "no_verdict" : undefined)) : "fail",
+									gate: gateOutcome?.gate ?? gate,
+									itemId: gateOutcome?.itemId ?? laneId,
+									evidence: gateOutcome?.evidence,
 									parts: liveParts.length > 0 ? liveParts : undefined,
 								result: liveFinalText || (stdoutData || stderrData).trim() || (isSuccess ? "(No output returned)" : undefined),
 								error: errorAttribution.error,
@@ -839,6 +938,7 @@ export function createSpawnAgentToolDefinition(
 				const errorAttribution = cancelled
 					? { error: "Agent execution cancelled.", hint: undefined }
 					: isSuccess ? { error: undefined, hint: undefined } : attributeChildError(resultContent, "", exitCode);
+				const gateOutcome = extractGateOutcomeFromJsonLines(resultContent, gate);
 				const payload: ChildAgentResultPayload = {
 					status: isSuccess ? "success" : "error",
 					agent,
@@ -852,6 +952,10 @@ export function createSpawnAgentToolDefinition(
 					exitCode,
 					worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
 					worktreeRetained: isSuccess && workspace.workspacePath !== cwd,
+					outcome: isSuccess ? (gateOutcome?.outcome ?? (gate ? "no_verdict" : undefined)) : "fail",
+					gate: gateOutcome?.gate ?? gate,
+					itemId: gateOutcome?.itemId ?? laneId,
+					evidence: gateOutcome?.evidence,
 					result: resultContent.trim() || "(No output returned)",
 					error: errorAttribution.error,
 					hint: errorAttribution.hint,
@@ -911,6 +1015,8 @@ export function createSpawnAgentToolDefinition(
 				parentId,
 				rootRunId,
 				depth: childDepth,
+				gate,
+				itemId: laneId,
 				worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
 				result: `Agent ${agent} (${childAgentId}) launched in background (mode: async). Depth: ${childDepth}.`,
 			};
@@ -936,8 +1042,10 @@ export function createSpawnAgentToolDefinition(
 				const firstText = result.content?.find((c) => c.type === "text")?.text;
 				if (firstText) {
 					const parsed = JSON.parse(firstText) as ChildAgentResultPayload;
-					const statusColor = parsed.status === "success" ? "success" : parsed.status === "error" ? "error" : "accent";
-					const statusBadge = theme.fg(statusColor, theme.bold(`[${parsed.status.toUpperCase()}]`));
+					const semanticFailure = parsed.outcome !== undefined && parsed.outcome !== "pass";
+					const statusColor = semanticFailure || parsed.status === "error" || parsed.status === "timed_out" ? "error" : parsed.status === "success" ? "success" : "accent";
+					const statusLabel = parsed.outcome ? `${parsed.status}/${parsed.outcome}` : parsed.status;
+					const statusBadge = theme.fg(statusColor, theme.bold(`[${statusLabel.toUpperCase()}]`));
 					const agentInfo = theme.fg("accent", `${parsed.agent} (${parsed.agentId})`);
 					const worktreeInfo = parsed.worktree ? theme.fg("muted", ` (worktree: ${path.basename(parsed.worktree)})`) : "";
 					let summary = "";
@@ -965,4 +1073,3 @@ export function createSpawnAgentTool(
 ): AgentTool<typeof spawnAgentSchema> {
 	return wrapToolDefinition(createSpawnAgentToolDefinition(cwd, options));
 }
-

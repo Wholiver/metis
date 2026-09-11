@@ -7,6 +7,13 @@ export {
 export { createAskUserTool, createAskUserToolDefinition, askUserSchema, type AskUserToolInput, type AskUserToolOptions } from "./ask-user.ts";
 export { createReadPlanTool, createReadPlanToolDefinition } from "./read-plan.ts";
 export {
+	createPerformanceAdmitTool,
+	createPerformanceAdmitToolDefinition,
+	performanceAdmitSchema,
+	type PerformanceAdmitToolInput,
+	type PerformanceAdmitToolOptions,
+} from "./performance-admit.ts";
+export {
 	createPerformanceGateTool,
 	createPerformanceGateToolDefinition,
 	type PerformanceGateToolInput,
@@ -186,6 +193,7 @@ import { createWebFetchTool, createWebFetchToolDefinition, type WebFetchToolOpti
 import { createUpdatePlanTool, createUpdatePlanToolDefinition, type UpdatePlanToolOptions } from "./update-plan.ts";
 import { createAskUserTool, createAskUserToolDefinition, type AskUserToolOptions } from "./ask-user.ts";
 import { createReadPlanTool, createReadPlanToolDefinition } from "./read-plan.ts";
+import { createPerformanceAdmitTool, createPerformanceAdmitToolDefinition, type PerformanceAdmitToolOptions } from "./performance-admit.ts";
 import { createPerformanceGateTool, createPerformanceGateToolDefinition, type PerformanceGateToolOptions } from "./performance-gate.ts";
 import { createQueryMemoryDbTool, createQueryMemoryDbToolDefinition, type QueryMemoryDbToolOptions } from "./query-memory-db.ts";
 
@@ -213,6 +221,7 @@ export type ToolName =
 	| "update_plan"
 	| "ask_user"
 	| "read_plan"
+	| "performance_admit"
 	| "performance_gate"
 	| "query_memory_db";
 export const allToolNames: Set<ToolName> = new Set([
@@ -237,6 +246,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"update_plan",
 	"ask_user",
 	"read_plan",
+	"performance_admit",
 	"performance_gate",
 	"query_memory_db",
 ]);
@@ -258,6 +268,7 @@ export interface ToolsOptions {
 	updatePlan?: UpdatePlanToolOptions;
 	askUser?: AskUserToolOptions;
 	queryMemoryDb?: QueryMemoryDbToolOptions;
+	performanceAdmit?: PerformanceAdmitToolOptions;
 	performanceGate?: PerformanceGateToolOptions;
 }
 
@@ -305,6 +316,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createAskUserToolDefinition(options?.askUser);
 		case "read_plan":
 			return createReadPlanToolDefinition(options?.performanceGate);
+		case "performance_admit":
+			return createPerformanceAdmitToolDefinition(options?.performanceAdmit);
 		case "performance_gate":
 			return createPerformanceGateToolDefinition(options?.performanceGate ?? {});
 		case "query_memory_db":
@@ -358,6 +371,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createAskUserTool(options?.askUser);
 		case "read_plan":
 			return createReadPlanTool(options?.performanceGate);
+		case "performance_admit":
+			return createPerformanceAdmitTool(options?.performanceAdmit);
 		case "performance_gate":
 			return createPerformanceGateTool(options?.performanceGate ?? {});
 		case "query_memory_db":
@@ -378,6 +393,7 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createUserIntentToolDefinition(cwd),
 		createAskUserToolDefinition(options?.askUser),
 		createReadPlanToolDefinition(options?.performanceGate),
+		createPerformanceAdmitToolDefinition(options?.performanceAdmit),
 		createQueryMemoryDbToolDefinition(options?.queryMemoryDb),
 		createSpawnAgentToolDefinition(cwd, options?.spawnAgent),
 		createListAgentsToolDefinition(options?.agentManagement),
@@ -399,6 +415,7 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 		createVideoToolDefinition(cwd, options?.video),
 		createAskUserToolDefinition(options?.askUser),
 		createReadPlanToolDefinition(options?.performanceGate),
+		createPerformanceAdmitToolDefinition(options?.performanceAdmit),
 		createPerformanceGateToolDefinition(options?.performanceGate ?? {}),
 		createQueryMemoryDbToolDefinition(options?.queryMemoryDb),
 	];
@@ -427,6 +444,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		update_plan: createUpdatePlanToolDefinition(options?.updatePlan),
 		ask_user: createAskUserToolDefinition(options?.askUser),
 		read_plan: createReadPlanToolDefinition(options?.performanceGate),
+		performance_admit: createPerformanceAdmitToolDefinition(options?.performanceAdmit),
 		performance_gate: createPerformanceGateToolDefinition(options?.performanceGate ?? {}),
 		query_memory_db: createQueryMemoryDbToolDefinition(options?.queryMemoryDb),
 	};
@@ -443,6 +461,7 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createUserIntentTool(cwd),
 		createAskUserTool(options?.askUser),
 		createReadPlanTool(options?.performanceGate),
+		createPerformanceAdmitTool(options?.performanceAdmit),
 		createQueryMemoryDbTool(options?.queryMemoryDb),
 		createSpawnAgentTool(cwd, options?.spawnAgent),
 		createListAgentsTool(options?.agentManagement),
@@ -464,6 +483,7 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 		createVideoTool(cwd, options?.video),
 		createAskUserTool(options?.askUser),
 		createReadPlanTool(options?.performanceGate),
+		createPerformanceAdmitTool(options?.performanceAdmit),
 		createPerformanceGateTool(options?.performanceGate ?? {}),
 		createQueryMemoryDbTool(options?.queryMemoryDb),
 	];
@@ -492,8 +512,8 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		update_plan: createUpdatePlanTool(options?.updatePlan),
 		ask_user: createAskUserTool(options?.askUser),
 		read_plan: createReadPlanTool(options?.performanceGate),
+		performance_admit: createPerformanceAdmitTool(options?.performanceAdmit),
 		performance_gate: createPerformanceGateTool(options?.performanceGate ?? {}),
 		query_memory_db: createQueryMemoryDbTool(options?.queryMemoryDb),
 	};
 }
-

@@ -73,7 +73,7 @@ export function ExtensionUiDialog({ request, busy = false, onRespond }: Extensio
   };
 
   return (
-    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-slate-950/30 dark:bg-black/60 p-5 backdrop-blur-[3px]">
+    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-ink/30 p-5 backdrop-blur-[3px]">
       <section
         ref={dialogRef}
         role="dialog"
@@ -81,23 +81,23 @@ export function ExtensionUiDialog({ request, busy = false, onRespond }: Extensio
         aria-labelledby={titleId}
         aria-describedby={`${description ? `${descriptionId} ` : ''}${hintId}`}
         onKeyDown={handleKeyDown}
-        className="w-full max-w-md overflow-hidden rounded-2xl bg-white dark:bg-[#1a1d24] p-5 shadow-[0_24px_70px_rgb(15_23_42_/_0.22),0_0_0_1px_rgb(15_23_42_/_0.08)] dark:shadow-[0_24px_70px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.08)]"
+        className="w-full max-w-md overflow-hidden rounded-2xl bg-surface p-5 shadow-overlay"
       >
         <form onSubmit={submit}>
           <header className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-hover-2 text-ink-2">
               <ExternalLink aria-hidden="true" className="h-4.5 w-4.5" strokeWidth={2} />
             </span>
             <div className="min-w-0 pt-0.5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{t('providerAuthorization')}</p>
-              <h2 id={titleId} className="text-balance text-[16px] font-semibold leading-6 text-slate-900 dark:text-slate-100">{title}</h2>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-3">{t('providerAuthorization')}</p>
+              <h2 id={titleId} className="text-balance text-[16px] font-semibold leading-6 text-ink">{title}</h2>
             </div>
           </header>
 
-          {description && <p id={descriptionId} className="mt-4 text-pretty text-[13px] leading-5 text-slate-600 dark:text-slate-300">{description}</p>}
+          {description && <p id={descriptionId} className="mt-4 text-pretty text-[14px] leading-5 text-ink-2">{description}</p>}
 
           {!isConfirm && (
-            <label className="mt-4 block text-[12px] font-medium text-slate-700 dark:text-slate-300">
+            <label className="mt-4 block text-[12px] font-medium text-ink-2">
               <span className="mb-1.5 block">{fieldLabel}</span>
               {isSelect ? (
                 <select
@@ -105,7 +105,7 @@ export function ExtensionUiDialog({ request, busy = false, onRespond }: Extensio
                   value={value}
                   disabled={busy || request.options.length === 0}
                   onChange={(event) => setValue(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-900 dark:text-slate-100 outline-none transition-[border-color,box-shadow] focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:focus:ring-slate-700 disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800/50 disabled:text-slate-400 dark:disabled:text-slate-500"
+                  className="h-10 w-full rounded-xl border border-line bg-surface px-3 text-[14px] text-ink outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] disabled:cursor-not-allowed disabled:bg-inset dark:disabled:bg-inset disabled:text-ink-3"
                 >
                   {request.options.map((option, index) => <option key={`${index}:${option}`} value={option}>{option}</option>)}
                 </select>
@@ -117,7 +117,7 @@ export function ExtensionUiDialog({ request, busy = false, onRespond }: Extensio
                   disabled={busy}
                   rows={6}
                   onChange={(event) => setValue(event.target.value)}
-                  className="w-full resize-y rounded-xl border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 py-2.5 text-[13px] leading-5 text-slate-900 dark:text-slate-100 outline-none transition-[border-color,box-shadow] placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:focus:ring-slate-700 disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800/50"
+                  className="w-full resize-y rounded-xl border border-line bg-surface px-3 py-2.5 text-[14px] leading-5 text-ink outline-none transition-[border-color,box-shadow] placeholder:text-ink-3 focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] disabled:cursor-not-allowed disabled:bg-inset dark:disabled:bg-inset"
                 />
               ) : (
                 <input
@@ -127,20 +127,20 @@ export function ExtensionUiDialog({ request, busy = false, onRespond }: Extensio
                   disabled={busy}
                   autoComplete="off"
                   onChange={(event) => setValue(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 dark:border-[#2b303c] bg-white dark:bg-[#1c2027] px-3 text-[13px] text-slate-900 dark:text-slate-100 outline-none transition-[border-color,box-shadow] placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-slate-400 dark:focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:focus:ring-slate-700 disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800/50"
+                  className="h-10 w-full rounded-xl border border-line bg-surface px-3 text-[14px] text-ink outline-none transition-[border-color,box-shadow] placeholder:text-ink-3 focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] disabled:cursor-not-allowed disabled:bg-inset dark:disabled:bg-inset"
                 />
               )}
             </label>
           )}
 
-          <p id={hintId} className="mt-3 text-pretty text-[11.5px] leading-4 text-slate-500 dark:text-slate-400">{t('completeToContinue')}</p>
+          <p id={hintId} className="mt-3 text-pretty text-[11.5px] leading-4 text-ink-3">{t('completeToContinue')}</p>
 
           <div className="mt-5 flex justify-end gap-2">
             <button
               type="button"
               disabled={busy}
               onClick={() => void onRespond(cancelExtensionUiRequest(request))}
-              className="h-10 rounded-xl px-4 text-[12.5px] font-semibold text-slate-600 dark:text-slate-300 transition-[background-color,color,transform] hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-slate-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-10 rounded-xl px-4 text-[12.5px] font-semibold text-ink-2 transition-[background-color,color,transform] hover:bg-hover-2 dark:hover:bg-hover hover:text-ink active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t('cancel')}
             </button>
@@ -148,7 +148,7 @@ export function ExtensionUiDialog({ request, busy = false, onRespond }: Extensio
               ref={submitButtonRef}
               type="submit"
               disabled={submitDisabled}
-              className="h-10 rounded-xl bg-slate-900 dark:bg-blue-600 px-4 text-[12.5px] font-semibold text-white shadow-sm transition-[background-color,transform] hover:bg-slate-800 dark:hover:bg-blue-500 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-10 rounded-control bg-accent px-4 text-[12.5px] font-semibold text-white shadow-btn transition-[background-color,transform] hover:bg-accent-ink active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t('confirm')}
             </button>

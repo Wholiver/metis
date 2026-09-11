@@ -55,6 +55,7 @@ describe("regression #5109: exclude tools", () => {
 			"bash",
 			"dynamic_tool",
 			"edit",
+			"performance_admit",
 			"performance_gate",
 			"query_memory_db",
 			"read_plan",
@@ -92,4 +93,3 @@ describe("regression #5109: exclude tools", () => {
 		}
 	});
 });
-

@@ -90,6 +90,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 			"log",
 			"ls",
 			"message_agent",
+			"performance_admit",
 			"performance_gate",
 			"query_memory_db",
 			"read",
@@ -142,4 +143,3 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 		session.dispose();
 	});
 });
-

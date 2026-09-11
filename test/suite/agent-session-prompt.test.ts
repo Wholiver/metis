@@ -15,6 +15,30 @@ function visibleSessionMessages(harness: Harness) {
 	return harness.session.messages.filter((message) => !(message.role === "custom" && message.customType === "workflow_context"));
 }
 
+function admissionCall(overrides: Record<string, unknown> = {}) {
+	return fauxToolCall("performance_admit", {
+		tier: "T1",
+		taskShape: "bounded",
+		deliverables: ["Parser behavior repaired"],
+		acceptanceCriteria: ["Regression passes"],
+		verificationCommands: ["npm test -- parser"],
+		sharedMutableState: false,
+		lanes: [{
+			id: "parser-fix", objective: "Repair parser", framework: "backend-fix",
+			ownedPaths: ["src/parser.ts", "test/parser.test.ts"], deliverables: ["Fix and regression"],
+			acceptanceCriteria: ["Regression passes"], verificationCommands: ["npm test -- parser"], dependsOn: [],
+		}],
+		...overrides,
+	});
+}
+
+function admittedResponses(overrides: Record<string, unknown> = {}) {
+	return [
+		fauxAssistantMessage(admissionCall(overrides), { stopReason: "toolUse" }),
+		fauxAssistantMessage("admitted"),
+	];
+}
+
 describe("AgentSession prompt characterization", () => {
 	const harnesses: Harness[] = [];
 	const tempDirs: string[] = [];
@@ -42,16 +66,31 @@ describe("AgentSession prompt characterization", () => {
 		expect(visibleSessionMessages(harness).map((message) => message.role)).toEqual(["user", "assistant"]);
 		expect(getMessageText(visibleSessionMessages(harness)[0]!)).toBe("hi");
 		expect(harness.getPendingResponseCount()).toBe(0);
+		expect(harness.session.performanceRun).toBeUndefined();
 	});
 
-	it("starts native Performance orchestration for every direct task", async () => {
+	it("blocks mutating tools until performance_admit succeeds", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("delegated")]);
+		const target = join(harness.tempDir, "blocked-before-admission.txt");
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("write", { path: target, content: "must not exist" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("blocked"),
+		]);
+		await harness.session.prompt("Create a file");
+		expect(existsSync(target)).toBe(false);
+		expect(harness.session.performanceRun).toBeUndefined();
+		expect(harness.session.messages.some((message) => getMessageText(message).includes("requires a successful performance_admit"))).toBe(true);
+	});
+
+	it("starts native Performance orchestration only after structured admission", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses(admittedResponses());
 
 		await harness.session.prompt("Repair the parser");
 
-		expect(harness.session.performanceRun).toMatchObject({ mission: "Repair the parser", frontier: "G2", status: "active" });
+		expect(harness.session.performanceRun).toMatchObject({ mission: "Repair the parser", frontier: "G0", status: "active", schemaVersion: 2 });
 		expect(getMessageText(visibleSessionMessages(harness)[0]!)).toBe("Repair the parser");
 		expect(harness.session.performanceRun?.governanceRoot).toContain("performance-runs");
 		const roadmap = join(harness.session.performanceRun!.governanceRoot, "ROADMAP.md");
@@ -63,7 +102,7 @@ describe("AgentSession prompt characterization", () => {
 	it("honors and strips native direct invocation controls", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("delegated")]);
+		harness.setResponses(admittedResponses());
 
 		await harness.session.prompt("mode=custom max_subs=3 agents=auto Repair the parser");
 
@@ -82,16 +121,25 @@ describe("AgentSession prompt characterization", () => {
 		expect(harness.getPendingResponseCount()).toBe(0);
 	});
 
-	it("appends a later direct task as steering for an active Performance run", async () => {
+	it("re-admits a later direct task at a legal G1 fallback", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("second")]);
+		harness.setResponses([
+			...admittedResponses({ tier: "T2", taskShape: "sequential-complex", lanes: [{
+				id: "parser-plan", objective: "Design parser", framework: "plan-design", ownedPaths: ["src/parser.ts"],
+				deliverables: ["Design"], acceptanceCriteria: ["Design accepted"], verificationCommands: ["npm test -- parser"], dependsOn: [],
+			}] }),
+			...admittedResponses({ tier: "T2", taskShape: "sequential-complex", lanes: [{
+				id: "parser-plan", objective: "Design parser tests", framework: "plan-design", ownedPaths: ["src/parser.ts"],
+				deliverables: ["Updated design"], acceptanceCriteria: ["Tests covered"], verificationCommands: ["npm test -- parser"], dependsOn: [],
+			}] }),
+		]);
 
 		await harness.session.prompt("Repair the parser");
 		const firstRun = harness.session.performanceRun;
 		await harness.session.prompt("Add parser tests");
 
-		expect(harness.session.performanceRun).toMatchObject({ runId: firstRun?.runId, frontier: "G2" });
+		expect(harness.session.performanceRun).toMatchObject({ runId: firstRun?.runId, frontier: "G1" });
 		expect(readFileSync(join(firstRun!.governanceRoot, "PROMPTS.txt"), "utf8")).toContain("Add parser tests");
 	});
 
@@ -112,12 +160,12 @@ describe("AgentSession prompt characterization", () => {
 			},
 		});
 		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("delegated")]);
+		harness.setResponses(admittedResponses());
 
 		await harness.session.prompt("Repair the parser");
 
 		expect(requests).toEqual([["performance_concurrency", "performance_agent_selection", "performance_custom_cap"]]);
-		expect(harness.session.performanceRun).toMatchObject({ attendance: "attended", concurrency: "wide", maxConcurrent: 200, agentSelection: "auto" });
+		expect(harness.session.performanceRun).toMatchObject({ attendance: "attended", concurrency: "wide", maxConcurrent: 4, agentSelection: "auto" });
 		expect(readFileSync(join(harness.session.performanceRun!.governanceRoot, "GATELOG.md"), "utf8")).toContain("OPERATOR attendance=attended concurrency=wide");
 	});
 
@@ -134,11 +182,11 @@ describe("AgentSession prompt characterization", () => {
 			}),
 		});
 		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("delegated")]);
+		harness.setResponses(admittedResponses());
 
 		await harness.session.prompt("Repair the parser");
 
-		expect(harness.session.performanceRun).toMatchObject({ attendance: "attended", concurrency: "custom", maxConcurrent: 24, agentSelection: "off" });
+		expect(harness.session.performanceRun).toMatchObject({ attendance: "attended", concurrency: "custom", maxConcurrent: 4, agentSelection: "off" });
 	});
 
 	it("keeps Plan mode read-only and defers Performance orchestration to Build", async () => {
@@ -173,6 +221,7 @@ describe("AgentSession prompt characterization", () => {
 		harness.session.setCollaborationMode("build");
 		harness.setResponses([
 			fauxAssistantMessage(fauxToolCall("read_plan", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage(admissionCall(), { stopReason: "toolUse" }),
 			fauxAssistantMessage(fauxToolCall("update_plan", {
 				plan: [{ step: "Repair parser", status: "in_progress" }],
 			}), { stopReason: "toolUse" }),
@@ -195,8 +244,9 @@ describe("AgentSession prompt characterization", () => {
 		harness.setResponses([fauxAssistantMessage("<proposed_plan>\n# Approved proposal\n\nRepair parser.\n</proposed_plan>")]);
 		await harness.session.prompt("Repair the parser");
 		harness.session.setCollaborationMode("build");
+		harness.setResponses([fauxAssistantMessage(admissionCall(), { stopReason: "toolUse" }), fauxAssistantMessage("cancelled")]);
 
-		await expect(harness.session.prompt("Process approved proposal", { workflowAction: "process_proposal" })).rejects.toThrow("setup cancelled");
+		await expect(harness.session.prompt("Process approved proposal", { workflowAction: "process_proposal" })).rejects.toThrow("Process stopped");
 
 		expect(harness.session.performanceRun).toBeUndefined();
 		expect(harness.getPendingResponseCount()).toBe(0);
@@ -612,4 +662,3 @@ describe("AgentSession prompt characterization", () => {
 		);
 	});
 });
-

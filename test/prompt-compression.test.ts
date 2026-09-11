@@ -34,7 +34,7 @@ describe("static prompt compression contracts", () => {
 		});
 
 		expect(prompt.length).toBeLessThan(6_000);
-		expect(prompt).toContain("active workflow provides a checklist");
+		expect(prompt).toContain("Keep concise progress visible");
 		expect(prompt).not.toContain("after 8 non-log tool calls");
 		expect(prompt).not.toContain("remember_user_intent exactly once");
 	});
@@ -96,4 +96,3 @@ describe("static prompt compression contracts", () => {
 		expect(prompt).toContain(project);
 	});
 });
-

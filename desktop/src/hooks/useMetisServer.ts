@@ -19,6 +19,7 @@ import {
   ToolCallResult,
   MemoryState,
   ContextUsage,
+  MessageUsage,
   TokenBreakdown,
 } from '../types';
 import { extractImageAttachments, parseAttachmentPayloadText } from '../lib/attachments';
@@ -98,6 +99,8 @@ type MetisEvent = {
   request?: PendingUserInput;
   entry?: { type?: string; customType?: string };
   state?: MemoryState;
+  toolCallId?: string;
+  partialResult?: unknown;
 };
 
 const EMPTY_AGENT: Agent = {
@@ -109,13 +112,18 @@ const EMPTY_AGENT: Agent = {
   time: '',
 };
 
-function formatSessionTime(value: string | number): string {
+/** Compact relative labels like Codex/Cursor: 4m, 1h, 2d, 11d */
+export function formatSessionTime(value: string | number, now = Date.now()): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  const today = new Date();
-  if (date.toDateString() === today.toDateString()) {
-    return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date);
-  }
+  const diffMs = Math.max(0, now - date.getTime());
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diffMs < minute) return '1m';
+  if (diffMs < hour) return `${Math.floor(diffMs / minute)}m`;
+  if (diffMs < day) return `${Math.floor(diffMs / hour)}h`;
+  if (diffMs < 30 * day) return `${Math.floor(diffMs / day)}d`;
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
 }
 
@@ -143,12 +151,51 @@ export function sessionToAgent(session: ServerSessionItem): Agent {
   };
 }
 
+export function normalizePath(value: string): string {
+  return value.replace(/\\/g, '/').replace(/^file:\/\//i, '').replace(/\/+$/, '');
+}
+
+export function pathsEqual(a?: string, b?: string): boolean {
+  if (!a || !b) return false;
+  const normA = normalizePath(a);
+  const normB = normalizePath(b);
+  const isWindows = /^[a-z]:\//i.test(normA) || /^[a-z]:\//i.test(normB);
+  return isWindows ? normA.toLowerCase() === normB.toLowerCase() : normA === normB;
+}
+
+export function isSessionOwnedByProject(
+  state: { cwd?: string; sessionFile?: string },
+  projectPath: string,
+): boolean {
+  if (!projectPath) return false;
+  if (state.cwd) {
+    return pathsEqual(state.cwd, projectPath);
+  }
+  if (state.sessionFile) {
+    const normFile = normalizePath(state.sessionFile);
+    const normWorkspace = normalizePath(projectPath);
+    const isWindows = /^[a-z]:\//i.test(normFile) || /^[a-z]:\//i.test(normWorkspace);
+    const file = isWindows ? normFile.toLowerCase() : normFile;
+    const workspace = isWindows ? normWorkspace.toLowerCase() : normWorkspace;
+    if (file === workspace || file.startsWith(`${workspace}/`)) {
+      return true;
+    }
+    const safePath = `--${workspace.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`;
+    if (file.includes(safePath)) {
+      return true;
+    }
+    return false;
+  }
+  return false;
+}
+
 export function reconcileSessionAgents(
   sessions: ServerSessionItem[],
-  state: Pick<SessionState, 'sessionId' | 'sessionFile' | 'sessionName'>,
+  state: Pick<SessionState, 'sessionId' | 'sessionFile' | 'sessionName'> & { cwd?: string },
   projectPath: string,
 ): Agent[] {
   let nextAgents = sessions.map(sessionToAgent);
+  const belongsToProject = isSessionOwnedByProject(state, projectPath);
   const activeIndex = nextAgents.findIndex((agent) => (
     agent.id === state.sessionId || (state.sessionFile && agent.sessionPath === state.sessionFile)
   ));
@@ -157,7 +204,7 @@ export function reconcileSessionAgents(
       index === activeIndex ? { ...agent, name: state.sessionName!.trim() } : agent
     ));
   }
-  if (state.sessionId && !nextAgents.some((agent) => agent.id === state.sessionId)) {
+  if (belongsToProject && state.sessionId && !nextAgents.some((agent) => agent.id === state.sessionId)) {
     nextAgents = [{
       ...EMPTY_AGENT,
       id: state.sessionId,
@@ -168,6 +215,7 @@ export function reconcileSessionAgents(
   }
   return nextAgents;
 }
+
 
 export function extractText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -326,12 +374,17 @@ export function toMessage(
   const errorMessage = typeof source.errorMessage === 'string'
     ? source.errorMessage.trim()
     : typeof raw.errorMessage === 'string' ? raw.errorMessage.trim() : '';
+  const isFailure = role === 'assistant' && (
+    stopReason === 'error' ||
+    stopReason === 'aborted' ||
+    Boolean(errorMessage)
+  );
   const rawText = isCompaction
     ? `**[Context Compacted]** (Tokens before: ${source.tokensBefore ?? raw.tokensBefore ?? 'unknown'})\n\n${source.summary || raw.summary || extractText(source.content) || ''}`
     : (extractText(source.content)
         || (typeof source.text === 'string' ? source.text : '')
         || extractText(raw.content)
-        || (role === 'assistant' && stopReason === 'error' ? errorMessage : ''));
+        || (role === 'assistant' && (stopReason === 'error' || stopReason === 'aborted') ? errorMessage : ''));
   const parsedPayload = parseAttachmentPayloadText(rawText);
   const content = parsedPayload.text;
   const imageAttachments = extractImageAttachments(source.content || raw.content);
@@ -351,7 +404,7 @@ export function toMessage(
   const thinking = role === 'assistant' ? extractThinking(source.content || raw.content) : '';
   const thinkingDurationMs = thinking ? extractThinkingDurationMs(source.content || raw.content) : undefined;
   const parts = role === 'assistant' ? extractAssistantParts(source.content || raw.content, toolResults, messageId) : undefined;
-  if (!content && !thinking && attachments.length === 0 && (!parts || parts.length === 0)) return undefined;
+  if (!content && !thinking && attachments.length === 0 && (!parts || parts.length === 0) && !isFailure) return undefined;
   const message: Message = {
     id: messageId,
     role: role as 'user' | 'assistant',
@@ -363,6 +416,7 @@ export function toMessage(
   if (parts && parts.length > 0) message.parts = parts;
   if (attachments.length > 0) message.attachments = attachments;
   if (stopReason) message.stopReason = stopReason;
+  if (errorMessage) message.errorMessage = errorMessage;
   if (timestamp !== undefined) {
     message.time = formatSessionTime(timestamp);
     message.serverTimestamp = timestamp;
@@ -571,6 +625,8 @@ function responseError(response: MetisResponse<unknown>, fallback: string): Erro
 
 export function useMetisServer(activeProject?: ProjectItem) {
   const [agents, setAgents] = useState<Agent[]>([]);
+  // Per-project session lists so multiple sidebar folders can stay expanded independently.
+  const [projectAgentsByPath, setProjectAgentsByPath] = useState<Record<string, Agent[]>>({});
   const [activeAgentId, setActiveAgentId] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [messagesSessionId, setMessagesSessionId] = useState('');
@@ -600,6 +656,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const prevMemoryPhaseRef = useRef<string>();
   const activeProjectRef = useRef(activeProject);
   const agentsRef = useRef<Agent[]>([]);
+  const projectAgentsByPathRef = useRef<Record<string, Agent[]>>({});
   const loadVersionRef = useRef(0);
   const messageLoadVersionRef = useRef(0);
   const refreshTimerRef = useRef<number>();
@@ -617,6 +674,34 @@ export function useMetisServer(activeProject?: ProjectItem) {
   useEffect(() => {
     agentsRef.current = agents;
   }, [agents]);
+
+  useEffect(() => {
+    projectAgentsByPathRef.current = projectAgentsByPath;
+  }, [projectAgentsByPath]);
+
+  const rememberProjectAgents = useCallback((projectPath: string, nextAgents: Agent[]) => {
+    setProjectAgentsByPath((current) => {
+      const previous = current[projectPath];
+      if (
+        previous
+        && previous.length === nextAgents.length
+        && previous.every((agent, index) => agent === nextAgents[index])
+      ) {
+        return current;
+      }
+      return { ...current, [projectPath]: nextAgents };
+    });
+  }, []);
+
+  const findCachedAgent = useCallback((agentId: string) => {
+    const fromActive = agentsRef.current.find((agent) => agent.id === agentId);
+    if (fromActive) return fromActive;
+    for (const list of Object.values(projectAgentsByPathRef.current)) {
+      const found = list.find((agent) => agent.id === agentId);
+      if (found) return found;
+    }
+    return undefined;
+  }, []);
 
   const request = useCallback(async <T,>(path: string, method = 'GET', body?: unknown, timeoutMs?: number): Promise<T> => {
     const desktop = (window as any).metisDesktop;
@@ -749,7 +834,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
 
       let state = await request<SessionState>('/session');
       const current = result.sessions.find((session) => session.path === state.sessionFile);
-      if (switchWhenNeeded && (state.cwd !== project.path || !current)) {
+      if (switchWhenNeeded && (!pathsEqual(state.cwd, project.path) || !current)) {
         const destination = result.sessions[0]?.path;
         if (destination) {
           await request('/session/switch', 'POST', { sessionPath: destination });
@@ -762,16 +847,39 @@ export function useMetisServer(activeProject?: ProjectItem) {
       if (version !== loadVersionRef.current) return;
       const nextAgents = reconcileSessionAgents(result.sessions, state, project.path);
       setAgents(nextAgents);
-      activeSessionIdRef.current = state.sessionId || '';
-      setActiveAgentId(state.sessionId || nextAgents[0]?.id || '');
-      await loadMessages(state.sessionId || undefined);
+      rememberProjectAgents(project.path, nextAgents);
+
+      const isCurrentProjectSession = Boolean(state.sessionId && nextAgents.some((agent) => agent.id === state.sessionId));
+      if (isCurrentProjectSession) {
+        activeSessionIdRef.current = state.sessionId || '';
+        setActiveAgentId(state.sessionId || nextAgents[0]?.id || '');
+        await loadMessages(state.sessionId || undefined);
+      } else {
+        const preservedId = nextAgents.some((agent) => agent.id === activeSessionIdRef.current)
+          ? activeSessionIdRef.current
+          : (nextAgents[0]?.id || '');
+        activeSessionIdRef.current = preservedId;
+        setActiveAgentId(preservedId);
+        await loadMessages(preservedId || undefined);
+      }
     } catch (error) {
       if (version !== loadVersionRef.current) return;
       setSessionError(error instanceof Error ? error.message : String(error));
     } finally {
       if (version === loadVersionRef.current) setIsLoadingSessions(false);
     }
-  }, [loadMessages, request]);
+  }, [loadMessages, rememberProjectAgents, request]);
+
+  const prefetchProjectSessions = useCallback(async (project: ProjectItem) => {
+    if (!project?.path) return;
+    try {
+      const result = await request<SessionListResponse>(`/sessions?cwd=${encodeURIComponent(project.path)}`, 'GET', undefined, 60_000);
+      if (!Array.isArray(result.sessions)) return;
+      rememberProjectAgents(project.path, result.sessions.map(sessionToAgent));
+    } catch {
+      // Prefetch is best-effort; expanding still works with an empty/loading list.
+    }
+  }, [rememberProjectAgents, request]);
 
   const connectServer = useCallback(async (options?: { baseUrl?: string; username?: string; password?: string }) => {
     const desktop = (window as any).metisDesktop;
@@ -785,7 +893,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
       if (response?.ok === false) throw responseError(response, 'Unable to connect to the Metis Server');
       setIsConnected(true);
       const project = activeProjectRef.current;
-      if (project) await loadProject(project, false);
+      if (project) await loadProject(project, true);
       else await loadMessages(activeSessionIdRef.current || undefined);
       return true;
     } catch (error) {
@@ -973,6 +1081,19 @@ export function useMetisServer(activeProject?: ProjectItem) {
           setAgents((current) => current.map((agent) => (
             agent.id === activeSessionIdRef.current ? { ...agent, name: generatedName } : agent
           )));
+          const projectPath = activeProjectRef.current?.path;
+          if (projectPath) {
+            setProjectAgentsByPath((current) => {
+              const list = current[projectPath];
+              if (!list) return current;
+              return {
+                ...current,
+                [projectPath]: list.map((agent) => (
+                  agent.id === activeSessionIdRef.current ? { ...agent, name: generatedName } : agent
+                )),
+              };
+            });
+          }
         }
         const project = activeProjectRef.current;
         if (project) void loadProject(project, false);
@@ -1068,7 +1189,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   }, [isConnected, refreshModels]);
 
   const selectConversation = useCallback(async (agentId: string) => {
-    const agent = agentsRef.current.find((item) => item.id === agentId);
+    const agent = findCachedAgent(agentId);
     if (!agent?.sessionPath) return;
     if (agentId === activeSessionIdRef.current || agentId === pendingSwitchAgentIdRef.current) return;
     const previousAgentId = activeSessionIdRef.current;
@@ -1120,7 +1241,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
         setIsLoadingSessions(false);
       }
     }
-  }, [loadMessages, request]);
+  }, [findCachedAgent, loadMessages, request]);
 
   const newConversation = useCallback(async () => {
     const project = activeProjectRef.current;
@@ -1321,6 +1442,8 @@ export function useMetisServer(activeProject?: ProjectItem) {
 
   return {
     agents,
+    projectAgentsByPath,
+    prefetchProjectSessions,
     activeAgent,
     activeAgentId,
     messagesSessionId,

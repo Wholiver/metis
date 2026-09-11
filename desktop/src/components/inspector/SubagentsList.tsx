@@ -32,7 +32,7 @@ const SubagentDuration: React.FC<{ subagent: SubagentItem }> = ({ subagent }) =>
   );
   const duration = formatSubagentDuration(durationMs);
   return duration ? (
-    <span className="ml-auto text-[11.5px] text-slate-400 tabular-nums shrink-0">
+    <span className="ml-auto text-[11.5px] text-ink-3 tabular-nums shrink-0">
       {duration}
     </span>
   ) : null;
@@ -75,9 +75,9 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
         className="flex min-h-[220px] flex-1 flex-col items-center justify-center px-6 text-center"
         data-subagents-empty=""
       >
-        <Bot className="mb-2.5 h-6 w-6 stroke-[1.5] text-[#94a3b8] dark:text-slate-500" aria-hidden="true" />
-        <p className="text-[13px] font-semibold text-[#334155] dark:text-slate-300 text-balance">No subagents yet</p>
-        <p className="mt-1 max-w-[220px] text-[12px] leading-[1.55] text-[#94a3b8] dark:text-slate-500 text-pretty">
+        <Bot className="mb-2.5 h-6 w-6 stroke-[1.5] text-ink-3" aria-hidden="true" />
+        <p className="text-[13px] font-semibold text-ink-2 text-balance">No subagents yet</p>
+        <p className="mt-1 max-w-[220px] text-[12px] leading-[1.55] text-ink-3 text-pretty">
           Subagents spawned by spawn_agent will appear here.
         </p>
       </div>
@@ -96,7 +96,7 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
       <div
         ref={indicatorRef}
         aria-hidden="true"
-        className="absolute left-0 right-0 top-0 rounded-[10px] bg-slate-100/80 dark:bg-white/[0.06] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+        className="absolute left-0 right-0 top-0 rounded-[10px] bg-hover-2/80 dark:bg-white/[0.06] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ opacity: 0 }}
       />
       {subagents.map((subagent) => {
@@ -105,7 +105,7 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
             key={subagent.id}
             type="button"
             onClick={() => onSelect(subagent)}
-            className="group relative z-[1] flex min-h-9 w-full items-start gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left transition-[transform,color] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
+            className="group relative z-[1] flex min-h-9 w-full items-start gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left transition-[transform,color] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)]"
             data-subagent-item=""
             data-subagent-id={subagent.id}
             data-subagent-status={subagent.status}
@@ -113,10 +113,10 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
             <span
               className={`mt-px flex h-5 w-5 flex-shrink-0 items-center justify-center ${
                 subagent.status === 'completed'
-                  ? 'text-emerald-500 dark:text-emerald-400'
+                  ? 'text-green'
                   : subagent.status === 'running'
-                    ? 'text-blue-600 dark:text-blue-400'
-                    : 'text-rose-500 dark:text-rose-400'
+                    ? 'text-accent'
+                    : 'text-red'
               }`}
             >
               <StatusIcon status={subagent.status} />
@@ -124,18 +124,18 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <span className="font-medium text-[13px] text-[#1e293b] dark:text-slate-200 capitalize truncate">
+                <span className="font-medium text-[13px] text-ink capitalize truncate">
                   {subagent.role}
                 </span>
                 {subagent.mode === 'async' && (
-                  <span className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.2 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                  <span className="rounded bg-hover-2 px-1 py-0.2 text-[10px] font-medium text-ink-3">
                     Async
                   </span>
                 )}
                 <SubagentDuration subagent={subagent} />
               </div>
               <p
-                className="text-[12px] leading-5 text-slate-500 dark:text-slate-400 truncate mt-0.5"
+                className="text-[12px] leading-5 text-ink-3 truncate mt-0.5"
                 title={subagent.task}
               >
                 {subagent.task || 'No task description'}
@@ -146,7 +146,7 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
             <ChevronRight
               size={16}
               strokeWidth={1.8}
-              className="mt-1 text-slate-400 dark:text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
+              className="mt-1 text-ink-3 opacity-60 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
               aria-hidden="true"
             />
           </button>
@@ -155,4 +155,3 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
     </div>
   );
 };
-

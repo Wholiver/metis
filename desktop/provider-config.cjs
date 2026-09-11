@@ -133,6 +133,18 @@ function allocateProviderId(name, providers) {
 	return providerId;
 }
 
+function normalizeRequestedCustomProviderId(raw, translate = (key) => key) {
+	let providerId = String(raw || "").trim().toLowerCase();
+	if (!providerId) throw new Error(translate("invalidCustomProviderId"));
+	if (!providerId.startsWith(CUSTOM_PROVIDER_ID_PREFIX)) {
+		providerId = `${CUSTOM_PROVIDER_ID_PREFIX}${providerId}`;
+	}
+	if (!/^custom-[a-z0-9][a-z0-9_-]*$/.test(providerId)) {
+		throw new Error(translate("invalidCustomProviderId"));
+	}
+	return providerId;
+}
+
 function normalizeBaseUrl(baseUrl, translate) {
 	const normalized = String(baseUrl || "").trim().replace(/\/+$/, "");
 	let parsedUrl;
@@ -239,10 +251,17 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 
 	const modelsPath = path.join(agentDir, "models.json");
 	const modelsConfig = await readModelsConfig(modelsPath, translate);
-	let providerId = String(config.providerId || "").trim();
+	let providerId = String(config.providerId || config.id || "").trim();
 	if (providerId) {
-		if (!isCustomProviderId(providerId) || !modelsConfig.providers[providerId]) {
+		if (modelsConfig.providers[providerId] && isCustomProviderId(providerId)) {
+			// Edit an existing custom provider.
+		} else if (modelsConfig.providers[providerId]) {
 			throw new Error(translate("customProviderNotFound"));
+		} else {
+			providerId = normalizeRequestedCustomProviderId(providerId, translate);
+			if (modelsConfig.providers[providerId]) {
+				throw new Error(translate("customProviderIdTaken"));
+			}
 		}
 	} else {
 		providerId = allocateProviderId(name, modelsConfig.providers);
@@ -252,7 +271,17 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 		? modelsConfig.providers[providerId]
 		: {};
 	const existingModels = Array.isArray(existing.models) ? existing.models : [];
-	let modelIds = normalizeModelIds(config.modelIds);
+	const namedModels = Array.isArray(config.models)
+		? config.models
+			.filter((model) => model && typeof model === "object")
+			.map((model) => ({
+				id: String(model.id || "").trim(),
+				name: typeof model.name === "string" ? model.name.trim() : "",
+			}))
+			.filter((model) => model.id)
+		: [];
+	const modelNamesById = new Map(namedModels.filter((model) => model.name).map((model) => [model.id, model.name]));
+	let modelIds = normalizeModelIds(namedModels.length > 0 ? namedModels.map((model) => model.id) : config.modelIds);
 	let discoveredModels = Array.isArray(config.discoveredModels) && config.discoveredModels.length > 0
 		? config.discoveredModels
 		: undefined;
@@ -272,7 +301,14 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 			if (details) discovered = { ...discovered, ...details };
 		}
 		const contextWindow = discovered?.contextWindow ?? existingModel.contextWindow ?? DEFAULT_CUSTOM_CONTEXT_WINDOW;
-		const model = { ...existingModel, id, input: existingModel.input || ["text", "image"], contextWindow };
+		const displayName = modelNamesById.get(id) || (typeof existingModel.name === "string" ? existingModel.name : "") || (typeof discovered?.name === "string" ? discovered.name : "");
+		const model = {
+			...existingModel,
+			id,
+			input: existingModel.input || ["text", "image"],
+			contextWindow,
+			...(displayName ? { name: displayName } : {}),
+		};
 		if (existingModel.reasoning === false && !(Array.isArray(existingModel.thinkingOptions)
 			&& existingModel.thinkingOptions.length === 0 && existingModel.thinkingLevelMap === undefined)) return model;
 		const thinkingOptions = discovered?.thinkingOptions?.length ? discovered.thinkingOptions : existingModel.thinkingOptions;

@@ -16,15 +16,18 @@ describe('desktop React settings', () => {
     expect(app).toContain('onOpenSettings={() => setIsSettingsOpen(true)}');
   });
 
-  it('keeps settings surfaces concentric with the conversation surface', () => {
+  it('keeps settings surfaces aligned with Beautiful UI window and card tokens', () => {
     const sidebar = source('desktop/src/components/sidebar/AgentItem.tsx');
     const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
 
-    expect(sidebar).toContain('rounded-[10px]');
-    expect(settings).toMatch(/<section role="dialog"[\s\S]*?rounded-\[10px\]/);
-    expect(settings).toMatch(/function Card[\s\S]*?rounded-\[10px\][\s\S]*?p-1/);
-    expect(settings).toMatch(/function Row[\s\S]*?rounded-\[6px\]/);
-    expect(settings).not.toContain('rounded-[8px]');
+    expect(sidebar).toContain('rounded-[8px]');
+    expect(settings).toMatch(/<section role="dialog"[\s\S]*?rounded-window/);
+    expect(settings).toContain('shadow-overlay');
+    expect(settings).toMatch(/function Card[\s\S]*?rounded-card[\s\S]*?shadow-card/);
+    expect(settings).toMatch(/function Row[\s\S]*?rounded-control/);
+    expect(settings).toContain('<Button');
+    expect(settings).toContain('<GlideMenu');
+    expect(settings).toContain('<ValuePill');
   });
 
   it('retains every former settings category and wires stateful options to the Server bridge', () => {
@@ -112,8 +115,13 @@ describe('desktop React settings', () => {
     expect(modal).not.toContain('腾讯云 Token Plan');
     expect(modal).toContain('providers: ProviderCatalogEntry[]');
     expect(modal).toContain("authMethods.includes('oauth')");
+    expect(modal).toContain("type WizardStep = 'pick' | 'connect' | 'custom-basics' | 'custom-models'");
+    expect(modal).toContain('Connect providers');
+    expect(modal).toContain('POPULAR_PROVIDER_IDS');
     expect(settings).toContain('providers={props.providerCatalog}');
     expect(settings).toContain('onOAuthLogin={handleOAuthLogin}');
+    expect(settings).toContain('providerId?: string');
+    expect(settings).toContain('models?: Array<{ id: string; name?: string }>');
     expect(hook).toContain('setProviderCatalog(Array.isArray(result.providers) ? result.providers : [])');
     expect(app).toContain('providerCatalog={providerCatalog}');
     expect(settings).toContain("desktop.openExternal(result.url)");
@@ -198,7 +206,7 @@ describe('desktop React settings', () => {
     expect(settings).toContain('ref={mainScrollRef}');
     expect(settings).toContain('onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 0)}');
     expect(settings).toContain('isScrolled');
-    expect(settings).toContain('border-b border-slate-200/80');
+    expect(settings).toContain('border-b border-line');
     expect(settings).not.toMatch(/<main[^>]*>[\s\S]*?<button[^>]*onClick=\{props\.onClose\}/);
   });
 });

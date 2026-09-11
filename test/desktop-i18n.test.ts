@@ -51,6 +51,8 @@ const legitimateCognates = new Set([
 	"customBaseUrlPlaceholder",
 	"tokenPlanGroup",
 	"codingPlanGroup",
+	"agentSecondsShort",
+	"agentMilliseconds",
 ]);
 
 describe("Desktop translation catalogs", () => {
@@ -214,7 +216,7 @@ describe("Desktop translation coverage", () => {
 		const intentionallyStable = new Set([
 			"简体中文", "https://api.example.com/v1", "⌘ N", "Enter", "Shift Enter", "Esc", "HTML", "JSONL",
 			"Metis Desktop", "Metis", "·", "%", "+", "—", "PDF", "ID #", "calendar.google.com", "M",
-			"bloub 动画头像", "my-awesome-project",
+			"bloub 动画头像", "my-awesome-project", "model-id", "myprovider",
 		]);
 		const english = new Set(Object.values(i18n.catalogs.en));
 		const missing = [...values].filter((value) => !intentionallyStable.has(value) && /[A-Za-z]/.test(value) && !english.has(value)).sort();
@@ -237,4 +239,3 @@ describe("Desktop native menu localization", () => {
 		}
 	});
 });
-

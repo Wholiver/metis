@@ -207,7 +207,7 @@ describe("Performance Mode Engine & Fidelity", () => {
 		expect(sessionAgents.some((a) => a.name === "arbiter")).toBe(true);
 	});
 
-	test("subagent reporting blocked verdict records report but preserves run active status and allows parent spawn", () => {
+	test("subagent blocked verdict prevents completion until parent starts a repair dispatch", () => {
 		const tempDir = fs.mkdtempSync(path.join(tmpdir(), "metis-perf-test-"));
 		try {
 			const runtime = new PerformanceRuntime(tempDir);
@@ -231,13 +231,13 @@ describe("Performance Mode Engine & Fidelity", () => {
 			});
 
 			const summary = runtime.state;
-			// Run status must remain "active" so coordinator/primary is not deadlocked
-			expect(summary?.status).toBe("active");
-			expect(summary?.frontier).toBe("G2");
+			expect(summary?.status).toBe("blocked");
+			expect(summary?.frontier).toBe("blocked");
 
 			// Parent coordinator can spawn another agent
 			const spawnDecision = runtime.reserveSpawn("scope-coordinator", "scoper", "scoper-456");
 			expect(spawnDecision.valid).toBe(true);
+			expect(runtime.state?.status).toBe("active");
 		} finally {
 			fs.rmSync(tempDir, { recursive: true, force: true });
 		}
@@ -274,10 +274,9 @@ describe("Performance Mode Engine & Fidelity", () => {
 			const coordinatorSpawn = runtime.reserveSpawn("coordinator", "feature-coordinator", "fc-1");
 			expect(coordinatorSpawn.valid).toBe(true);
 			expect(runtime.state?.status).toBe("active");
+			expect(runtime.state?.frontier).toBe("G2");
 		} finally {
 			fs.rmSync(tempDir, { recursive: true, force: true });
 		}
 	});
 });
-
-

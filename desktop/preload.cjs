@@ -30,6 +30,10 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		selectMany: () => ipcRenderer.invoke("workspace:select-many"),
 		tree: () => ipcRenderer.invoke("workspace:tree"),
 		diff: (relativePath) => ipcRenderer.invoke("workspace:diff", relativePath),
+		gitInfo: () => ipcRenderer.invoke("workspace:git-info"),
+		gitStatus: (mode) => ipcRenderer.invoke("workspace:git-status", mode),
+		gitDiff: (relativePath, mode) => ipcRenderer.invoke("workspace:git-diff", relativePath, mode),
+		gitInit: () => ipcRenderer.invoke("workspace:git-init"),
 		reveal: (relativePath) => ipcRenderer.invoke("workspace:reveal", relativePath),
 	},
 	providerConfig: {

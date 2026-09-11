@@ -3,17 +3,18 @@ export const CONVERSATION_ICON_SHAPE_COUNT = 8;
 // SVG user-space offsets for optical, rather than geometric, centering.
 export const CONVERSATION_ICON_OPTICAL_Y = [0, 0, 0, 0, 20, 0, 0, 0] as const;
 
+/* Neutral monochrome palette — shape variety without saturated "AI sticker" colors */
 export const CONVERSATION_ICON_COLORS = [
-  '#8b5cf6',
-  '#2f9cf4',
-  '#16c784',
-  '#20bfa9',
-  '#a66a3f',
-  '#ff6b0b',
-  '#ff405d',
-  '#f04f9b',
-  '#5b5ce6',
-  '#16a3d8',
+  '#6b6b6b',
+  '#5a5a5a',
+  '#787878',
+  '#4f4f4f',
+  '#6e6e6e',
+  '#595959',
+  '#737373',
+  '#555555',
+  '#686868',
+  '#606060',
 ] as const;
 
 export interface ConversationIconAssignment {

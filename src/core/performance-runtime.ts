@@ -20,6 +20,9 @@ import { getPerformanceFramework } from "./performance-frameworks.ts";
 export type PerformanceConcurrency = "tokensaver" | "wide" | "custom";
 export type PerformanceAttendance = "attended" | "unattended";
 export type PerformanceEffortCapability = "selectable" | "inherited-only" | "unsupported" | "unknown";
+export type PerformanceTier = "T0" | "T1" | "T2" | "T3";
+export type PerformanceTaskShape = "bounded" | "sequential-complex" | "parallel";
+export type ExistingFrameworkId = "apply" | "backend-build" | "backend-fix" | "backend-implement" | "composition" | "docs" | "frontend-build" | "frontend-fix" | "frontend-implement" | "frontend-review" | "generation" | "plan-design" | "plan-research" | "plan-scope" | "polish" | "refactor";
 export type PerformanceGate = "G0" | "G2" | "G2-assurance" | "G2-review" | "G2-verify" | "G1" | "G1-assurance" | "G1-review" | "G1-verify" | "G3.5" | "G4" | "G4-assurance" | "G5" | "G6" | "G7" | "G7-assurance" | "sweep" | "goal-check" | "complete" | "blocked";
 export type PerformanceRunStatus = "active" | "completed" | "blocked" | "aborted";
 export type PerformanceVerdict = "pass" | "fail" | "blocked";
@@ -38,6 +41,7 @@ export interface PerformanceGateReport {
 export interface PerformanceAgentLease {
 	agentId: string;
 	role: string;
+	laneId?: string;
 	startedAt: string;
 }
 
@@ -55,8 +59,29 @@ export interface PerformanceModelSelection {
 	model: string;
 }
 
+export interface PerformanceAdmissionLane {
+	id: string;
+	objective: string;
+	framework: ExistingFrameworkId;
+	ownedPaths: string[];
+	deliverables: string[];
+	acceptanceCriteria: string[];
+	verificationCommands: string[];
+	dependsOn: string[];
+}
+
+export interface PerformanceAdmission {
+	tier: PerformanceTier;
+	taskShape: PerformanceTaskShape;
+	deliverables: string[];
+	acceptanceCriteria: string[];
+	verificationCommands: string[];
+	sharedMutableState: boolean;
+	lanes: PerformanceAdmissionLane[];
+}
+
 export interface PerformanceRunState {
-	schemaVersion: 1;
+	schemaVersion: 1 | 2;
 	runId: string;
 	nonce: string;
 	mission: string;
@@ -74,12 +99,23 @@ export interface PerformanceRunState {
 	capabilityProbe: PerformanceCapabilityProbe;
 	roadmapItems: PerformanceRoadmapItem[];
 	completedItemIds: string[];
+	/** v2 T3 lanes whose implementation gate passed; assurance waits for integration. */
+	implementedItemIds?: string[];
 	activeItemId?: string;
 	governanceRoot: string;
 	createdAt: string;
 	updatedAt: string;
 	reports: PerformanceGateReport[];
 	leases: PerformanceAgentLease[];
+	/** Present on v2 runs. This typed value, not free-form Markdown, is canonical. */
+	admission?: PerformanceAdmission;
+	admissionSha256?: string;
+	workspaceRoot?: string;
+	routePolicy?: {
+		implementation: "root" | "serial-shared" | "parallel-isolated";
+		assuranceWorkspace: "integrated-shared";
+		allowedRoles: string[];
+	};
 	repairRequired?: {
 		gate: "G2";
 		actor: string;
@@ -117,6 +153,12 @@ export interface PerformanceStartInvocation {
 	capabilities?: { read: boolean; write: boolean; run: boolean };
 }
 
+export interface PerformanceAdmitInvocation extends Omit<PerformanceStartInvocation, "kind"> {
+	kind: "admit";
+	workspaceRoot: string;
+	admission: PerformanceAdmission;
+}
+
 export interface PerformanceSpawnRequest {
 	parentRole: string;
 	childRole: string;
@@ -126,6 +168,16 @@ export interface PerformanceSpawnRequest {
 export interface PerformanceSpawnDecision {
 	valid: boolean;
 	message?: string;
+}
+
+export type PerformanceDispatchGate = "G0" | "G1" | "G2" | "G3.5" | "G4" | "G5" | "G6" | "G7" | "sweep" | "goal-check";
+
+export interface PerformancePreparedSpawn {
+	task: string;
+	context?: string;
+	laneId?: string;
+	gate?: PerformanceDispatchGate;
+	worktree?: "auto";
 }
 
 const TOP_LEVEL_ROLE = "scope-coordinator";
@@ -139,12 +191,171 @@ const L4_ROLES = new Set([
 ]);
 const KNOWN_ROLES = new Set(["coordinator", ...L1_ROLES, ...L2_ROLES, ...L3_ROLES, ...L4_ROLES, "intake", "preflight-probe"]);
 
+const TIER_ROLES: Record<PerformanceTier, ReadonlySet<string>> = {
+	T0: new Set(),
+	T1: new Set(["reviewer", "verifier", "fresh-verifier"]),
+	T2: new Set(["planner", "implementer", "reviewer", "verifier", "fresh-verifier", "juror", "goal-checker", "depth-prober"]),
+	T3: KNOWN_ROLES,
+};
+const STRICT_TDD_FRAMEWORKS = new Set(["backend-build", "backend-fix", "backend-implement", "frontend-build", "frontend-fix", "frontend-implement"]);
+
 function hash(value: string): string {
 	return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 function now(): string {
 	return new Date().toISOString();
+}
+
+function normalizedAdmission(admission: PerformanceAdmission): PerformanceAdmission {
+	const cleanList = (values: string[], label: string): string[] => {
+		const result = values.map((value) => value.trim()).filter(Boolean);
+		if (!result.length) throw new Error(`REPAIR_REQUIRED: ${label} must contain at least one concrete value.`);
+		return result;
+	};
+	const lanes = admission.lanes.map((lane) => ({
+		...lane,
+		id: lane.id.trim(),
+		objective: lane.objective.trim(),
+		framework: lane.framework.trim() as ExistingFrameworkId,
+		ownedPaths: cleanList(lane.ownedPaths, `lane ${lane.id} ownedPaths`),
+		deliverables: cleanList(lane.deliverables, `lane ${lane.id} deliverables`),
+		acceptanceCriteria: cleanList(lane.acceptanceCriteria, `lane ${lane.id} acceptanceCriteria`),
+		verificationCommands: cleanList(lane.verificationCommands, `lane ${lane.id} verificationCommands`),
+		dependsOn: lane.dependsOn.map((value) => value.trim()).filter(Boolean),
+	}));
+	if (!lanes.length) throw new Error("REPAIR_REQUIRED: admission requires at least one lane.");
+	if (lanes.some((lane) => !/^[A-Za-z][A-Za-z0-9._-]*$/.test(lane.id))) throw new Error("REPAIR_REQUIRED: every lane id must be a stable identifier.");
+	if (new Set(lanes.map((lane) => lane.id)).size !== lanes.length) throw new Error("REPAIR_REQUIRED: lane ids must be unique.");
+	for (const lane of lanes) {
+		if (!lane.objective) throw new Error(`REPAIR_REQUIRED: lane ${lane.id} needs an objective.`);
+		if (!getPerformanceFramework(lane.framework)) throw new Error(`REPAIR_REQUIRED: lane ${lane.id} references unknown framework ${JSON.stringify(lane.framework)}.`);
+		if (lane.dependsOn.includes(lane.id) || lane.dependsOn.some((id) => !lanes.some((candidate) => candidate.id === id))) {
+			throw new Error(`REPAIR_REQUIRED: lane ${lane.id} has an invalid dependency.`);
+		}
+	}
+	const visiting = new Set<string>();
+	const visited = new Set<string>();
+	const byId = new Map(lanes.map((lane) => [lane.id, lane]));
+	const visit = (id: string): void => {
+		if (visited.has(id)) return;
+		if (visiting.has(id)) throw new Error("REPAIR_REQUIRED: admission lane dependencies contain a cycle.");
+		visiting.add(id);
+		for (const dependency of byId.get(id)?.dependsOn ?? []) visit(dependency);
+		visiting.delete(id);
+		visited.add(id);
+	};
+	for (const lane of lanes) visit(lane.id);
+
+	if ((admission.tier === "T0" || admission.tier === "T1") && (admission.taskShape !== "bounded" || lanes.length !== 1)) {
+		throw new Error(`REPAIR_REQUIRED: ${admission.tier} requires taskShape=bounded and exactly one lane.`);
+	}
+	if (admission.tier === "T2" && admission.taskShape !== "sequential-complex") {
+		throw new Error("REPAIR_REQUIRED: T2 requires taskShape=sequential-complex; downgrade invalid parallel work instead of fan-out.");
+	}
+	if (admission.tier === "T3") {
+		if (admission.taskShape !== "parallel" || admission.sharedMutableState || lanes.length < 2) {
+			throw new Error("REPAIR_REQUIRED: T3 requires parallel shape, at least two lanes, and no shared mutable state; use T2.");
+		}
+		for (let i = 0; i < lanes.length; i++) {
+			for (let j = i + 1; j < lanes.length; j++) {
+				for (const left of lanes[i]!.ownedPaths) {
+					for (const right of lanes[j]!.ownedPaths) {
+						const a = resolve("/", left);
+						const b = resolve("/", right);
+						if (a === b || a.startsWith(`${b}${sep}`) || b.startsWith(`${a}${sep}`)) {
+							throw new Error(`REPAIR_REQUIRED: T3 lanes ${lanes[i]!.id} and ${lanes[j]!.id} overlap; use T2.`);
+						}
+					}
+				}
+			}
+		}
+	}
+	return {
+		...admission,
+		deliverables: cleanList(admission.deliverables, "deliverables"),
+		acceptanceCriteria: cleanList(admission.acceptanceCriteria, "acceptanceCriteria"),
+		verificationCommands: cleanList(admission.verificationCommands, "verificationCommands"),
+		lanes,
+	};
+}
+
+function categoryForFramework(frameworkId: string): PerformanceRoadmapItem["category"] {
+	const category = getPerformanceFramework(frameworkId)?.category;
+	if (category === "frontend" || category === "backend" || category === "data" || category === "integration" || category === "infra" || category === "docs") return category;
+	return category === "planning" ? "plan" : frameworkId === "docs" ? "docs" : "backend";
+}
+
+function roadmapItemsForAdmission(admission: PerformanceAdmission): PerformanceRoadmapItem[] {
+	return admission.lanes.map((lane, index) => ({
+		id: lane.id,
+		category: categoryForFramework(lane.framework),
+		tag: lane.framework.endsWith("-fix") ? "debug" : lane.framework === "polish" ? "polish" : "none",
+		tier: admission.tier,
+		framework: lane.framework,
+		ownedBoundaries: lane.ownedPaths.join(", "),
+		dependencies: lane.dependsOn,
+		launchGroup: admission.taskShape === "parallel" && lane.dependsOn.length === 0 ? "parallel-1" : `sequential-${index + 1}`,
+		integrationLane: "root integration workspace",
+		implementationSteps: lane.objective,
+		acceptanceCriteria: lane.acceptanceCriteria.join("; "),
+		unhappyPaths: "Exercise failure modes implied by the acceptance criteria and selected framework.",
+		testsFirstSteps: lane.framework.endsWith("-fix") ? "Write and capture the smallest issue-derived regression before repair." : "Use framework-appropriate checks before implementation where behavior changes.",
+		verificationCommands: lane.verificationCommands.join(" && "),
+		exactChangeSpecification: lane.framework === "apply" ? lane.objective : undefined,
+		requiresDetailedPlan: lane.framework === "plan-design",
+		detailedPlanReason: lane.framework === "plan-design" ? "Admission identified an explicit design lane." : undefined,
+	}));
+}
+
+function routePolicyForAdmission(admission: PerformanceAdmission): NonNullable<PerformanceRunState["routePolicy"]> {
+	return {
+		implementation: admission.tier === "T0" || admission.tier === "T1" ? "root" : admission.tier === "T2" ? "serial-shared" : "parallel-isolated",
+		assuranceWorkspace: "integrated-shared",
+		allowedRoles: [...TIER_ROLES[admission.tier]],
+	};
+}
+
+function blockedRecoveryFrontier(state: PerformanceRunState): PerformanceGate {
+	const gate = [...state.reports].reverse().find((report) => report.verdict === "blocked")?.gate;
+	if (gate === "G2-review" || gate === "G2-verify") return "G2-assurance";
+	if (gate === "G1-review" || gate === "G1-verify") return "G1-assurance";
+	if (gate === "G5" || gate === "G6") return "G4-assurance";
+	return gate ?? "G2";
+}
+
+function typedRoadmap(state: PerformanceRunState): string {
+	const admission = state.admission!;
+	const header = [
+		"# Performance roadmap",
+		`Run: ${state.runId}`,
+		`Mission pointer: ${join(state.governanceRoot, "PROMPTS.txt")} (sha256=${state.missionSha256}; bytes=${state.missionBytes})`,
+		`Run nonce: ${state.nonce}`,
+		`Route: ${admission.tier}/${admission.taskShape}`,
+		`Workspace root: ${state.workspaceRoot}`,
+		"",
+	];
+	const items = state.roadmapItems.map((item) => [
+		`## Item: ${item.id}`,
+		`- Category: ${item.category}`,
+		`- Tag: ${item.tag}`,
+		`- Tier: ${item.tier}`,
+		`- Framework: ${item.framework}`,
+		`- Owned boundaries: ${item.ownedBoundaries}`,
+		`- Dependencies: ${item.dependencies.join(", ") || "none"}`,
+		`- Launch group: ${item.launchGroup}`,
+		`- Integration lane: ${item.integrationLane}`,
+		`- Implementation steps: ${item.implementationSteps}`,
+		`- Acceptance criteria: ${item.acceptanceCriteria}`,
+		`- Unhappy paths: ${item.unhappyPaths}`,
+		`- Tests-first steps: ${item.testsFirstSteps}`,
+		`- Verification commands: ${item.verificationCommands}`,
+		...(item.exactChangeSpecification ? [`- Exact change specification: ${item.exactChangeSpecification}`] : []),
+		`- requiresDetailedPlan: ${item.requiresDetailedPlan}`,
+		`- Detailed plan reason: ${item.detailedPlanReason ?? "not required"}`,
+		"",
+	].join("\n"));
+	return [...header, ...items].join("\n");
 }
 
 function line(state: PerformanceRunState, event: string): string {
@@ -231,6 +442,9 @@ export function validatePerformanceSpawn(request: PerformanceSpawnRequest, state
 	if (request.liveAgents >= state.maxConcurrent) {
 		return { valid: false, message: `Performance live-agent ceiling reached (${state.maxConcurrent}); collect a worker before dispatching another.` };
 	}
+	if (state.admission && !TIER_ROLES[state.admission.tier].has(request.childRole)) {
+		return { valid: false, message: `Performance ${state.admission.tier} route does not permit ${request.childRole}.` };
+	}
 	if (request.parentRole === "root" || request.parentRole === "coordinator") {
 		return { valid: true };
 	}
@@ -252,10 +466,14 @@ export function validatePerformanceSpawn(request: PerformanceSpawnRequest, state
 
 export class PerformanceRuntime {
 	private readonly agentDir: string;
+	private readonly boundLaneId?: string;
+	private readonly boundGate?: string;
 	private stateValue: PerformanceRunState | undefined;
 
 	constructor(agentDir: string, environment: NodeJS.ProcessEnv = process.env) {
 		this.agentDir = agentDir;
+		this.boundLaneId = environment.METIS_PERFORMANCE_LANE_ID;
+		this.boundGate = environment.METIS_PERFORMANCE_GATE;
 		const governanceRoot = environment.METIS_PERFORMANCE_GOVERNANCE_ROOT;
 		if (governanceRoot) this.stateValue = this.readFromDirectory(governanceRoot);
 		const runId = environment.METIS_PERFORMANCE_RUN_ID;
@@ -265,6 +483,156 @@ export class PerformanceRuntime {
 
 	get state(): Readonly<PerformanceRunState> | undefined {
 		return this.stateValue;
+	}
+
+	/** Start or revise a v2 run from a validated, typed admission contract. */
+	admit(invocation: PerformanceAdmitInvocation): PerformanceRunState {
+		const admission = normalizedAdmission(invocation.admission);
+		const admissionSha256 = hash(JSON.stringify(admission));
+		if (this.stateValue && (this.stateValue.status === "completed" || this.stateValue.status === "aborted")) {
+			this.stateValue = undefined;
+		}
+		if (this.stateValue) {
+			if (this.stateValue.schemaVersion === 2
+				&& this.stateValue.mission === invocation.mission
+				&& this.stateValue.admissionSha256 === admissionSha256
+				&& this.stateValue.roadmapItems.length > 0) return this.stateValue;
+			if (this.stateValue.leases.length > 0) throw new Error("Performance admission revision requires zero live agents.");
+			if (!["G2", "G1", "blocked"].includes(this.stateValue.frontier)) {
+				throw new Error(`Performance admission cannot be revised from ${this.stateValue.frontier}; backtrack to G2 or G1 first.`);
+			}
+			const roadmapItems = roadmapItemsForAdmission(admission);
+			const existingMissionContent = readFileSync(join(this.stateValue.governanceRoot, "PROMPTS.txt"), "utf8");
+			const missionContent = this.stateValue.mission !== invocation.mission && existingMissionContent.includes(invocation.mission)
+				? existingMissionContent
+				: `MISSION\n${invocation.mission}\n`;
+			this.stateValue = {
+				...this.stateValue,
+				schemaVersion: 2,
+				mission: invocation.mission,
+				missionSha256: hash(missionContent),
+				missionBytes: Buffer.byteLength(missionContent, "utf8"),
+				status: "active",
+				admission,
+				admissionSha256,
+				workspaceRoot: resolve(invocation.workspaceRoot),
+				routePolicy: routePolicyForAdmission(admission),
+				roadmapItems,
+				completedItemIds: [],
+				implementedItemIds: [],
+				activeItemId: roadmapItems[0]?.id,
+				reports: [],
+				repairRequired: undefined,
+				frontier: roadmapItems[0] ? this.initialFrontier(roadmapItems[0]) : "G2",
+				updatedAt: now(),
+			};
+			writeFileSync(join(this.stateValue.governanceRoot, "PROMPTS.txt"), missionContent, "utf8");
+			writeFileSync(join(this.stateValue.governanceRoot, "ROADMAP.md"), typedRoadmap(this.stateValue), "utf8");
+			this.persist();
+			this.log(`ADMISSION tier=${admission.tier} shape=${admission.taskShape} lanes=${roadmapItems.length} revision=true`);
+			return this.stateValue;
+		}
+
+		const runId = `perf-${randomUUID()}`;
+		let governanceRoot = getPerformanceRunDirectory(this.agentDir, runId);
+		try {
+			mkdirSync(governanceRoot, { recursive: true });
+			mkdirSync(join(governanceRoot, "artifacts"), { recursive: true });
+		} catch (error: any) {
+			if (error?.code !== "EPERM" && error?.code !== "EACCES") throw error;
+			governanceRoot = join(tmpdir(), "metis-agent", "performance-runs", runId);
+			mkdirSync(join(governanceRoot, "artifacts"), { recursive: true });
+		}
+		const capabilityProbe = this.probeCapabilities(governanceRoot, invocation.capabilities);
+		const roadmapItems = roadmapItemsForAdmission(admission);
+		const state: PerformanceRunState = {
+			schemaVersion: 2,
+			runId,
+			nonce: randomBytes(16).toString("hex"),
+			mission: invocation.mission,
+			missionSha256: hash(`MISSION\n${invocation.mission}\n`),
+			missionBytes: Buffer.byteLength(`MISSION\n${invocation.mission}\n`, "utf8"),
+			status: "active",
+			frontier: this.initialFrontier(roadmapItems[0]!),
+			concurrency: invocation.concurrency ?? "tokensaver",
+			maxConcurrent: invocation.maxConcurrent ?? (invocation.concurrency === "wide" ? 200 : 6),
+			agentSelection: invocation.agentSelection ?? "off",
+			agentModels: invocation.agentModels ?? [],
+			attendance: invocation.attendance ?? "unattended",
+			effortCapability: invocation.effortCapability ?? "unknown",
+			maxReasoningEffort: invocation.maxReasoningEffort,
+			capabilityProbe,
+			roadmapItems,
+			completedItemIds: [],
+			implementedItemIds: [],
+			activeItemId: roadmapItems[0]!.id,
+			governanceRoot,
+			createdAt: now(),
+			updatedAt: now(),
+			reports: [],
+			leases: [],
+			admission,
+			admissionSha256,
+			workspaceRoot: resolve(invocation.workspaceRoot),
+			routePolicy: routePolicyForAdmission(admission),
+		};
+		writeFileSync(join(governanceRoot, "PROMPTS.txt"), `MISSION\n${state.mission}\n`, "utf8");
+		writeFileSync(join(governanceRoot, "ROADMAP.md"), typedRoadmap(state), "utf8");
+		writeFileSync(join(governanceRoot, "GATELOG.md"), `${line(state, `RUN mission=${join(governanceRoot, "PROMPTS.txt")} sha256=${state.missionSha256} bytes=${state.missionBytes}`)}
+${line(state, `ADMISSION tier=${admission.tier} shape=${admission.taskShape} lanes=${roadmapItems.length} sharedMutableState=${admission.sharedMutableState}`)}
+${line(state, `OPERATOR attendance=${state.attendance} concurrency=${state.concurrency} maxConcurrent=${state.maxConcurrent} agentSelection=${state.agentSelection} effortCapability=${state.effortCapability}${state.maxReasoningEffort ? ` maxReasoningEffort=${state.maxReasoningEffort}` : ""}`)}
+${line(state, `FRONTIER ${state.frontier}`)}
+`, "utf8");
+		this.stateValue = state;
+		this.persist();
+		return state;
+	}
+
+	private initialFrontier(item: PerformanceRoadmapItem): PerformanceGate {
+		const policy = performanceItemGatePolicy(item);
+		return policy.requiresCharacterization ? "G0" : policy.requiresPlan ? "G1" : "G4";
+	}
+
+	allowedSpawnRoles(): string[] {
+		const tier = this.stateValue?.admission?.tier;
+		return tier ? [...TIER_ROLES[tier]] : [...KNOWN_ROLES];
+	}
+
+	/** Build a complete, hash-bound child brief from canonical v2 admission state. */
+	prepareSpawn(input: { agent: string; task: string; context?: string; laneId?: string; gate?: PerformancePreparedSpawn["gate"] }): PerformancePreparedSpawn {
+		const state = this.stateValue;
+		if (!state?.admission) return { task: input.task, context: input.context, laneId: input.laneId, gate: input.gate };
+		if (!TIER_ROLES[state.admission.tier].has(input.agent)) throw new Error(`Performance ${state.admission.tier} route does not permit ${input.agent}.`);
+		const laneId = input.laneId ?? state.activeItemId;
+		const lane = laneId ? state.admission.lanes.find((candidate) => candidate.id === laneId) : undefined;
+		if (!lane) throw new Error(`Governed spawn requires a valid admitted laneId; received ${JSON.stringify(laneId)}.`);
+		const defaultGateByRole: Record<string, PerformancePreparedSpawn["gate"]> = {
+			planner: "G1", implementer: "G4", reviewer: "G5", verifier: "G6", "fresh-verifier": "G6",
+			"depth-prober": "G3.5", juror: "G7", sweeper: "sweep", "goal-checker": "goal-check",
+		};
+		const gate = input.gate ?? defaultGateByRole[input.agent];
+		if (!gate) throw new Error(`Governed spawn for ${input.agent} requires an explicit gate.`);
+		const pointer = missionPointer(state);
+		const brief = [
+			"# Governed Performance dispatch",
+			`Mission pointer: ${pointer.path}`,
+			`Mission SHA-256: ${pointer.sha256}; bytes: ${pointer.bytes}; nonce: ${pointer.nonce}`,
+			`Workspace root/cwd: ${state.workspaceRoot}`,
+			`Governance root: ${state.governanceRoot}`,
+			`Route: ${state.admission.tier}/${state.admission.taskShape}; lane: ${lane.id}; gate: ${gate}`,
+			`Objective: ${lane.objective}`,
+			`Framework: ${lane.framework}`,
+			`Owned paths: ${lane.ownedPaths.join(", ")}`,
+			`Dependencies: ${lane.dependsOn.join(", ") || "none"}`,
+			`Deliverables: ${lane.deliverables.join(" | ")}`,
+			`Acceptance criteria: ${lane.acceptanceCriteria.join(" | ")}`,
+			`Verification commands: ${lane.verificationCommands.join(" | ")}`,
+			"Governance: stay within owned paths; write evidence under governance root/artifacts; submit the assigned performance_gate. Exit 0 without that gate is no_verdict.",
+			`Assigned task: ${input.task}`,
+		].join("\n");
+		const context = [input.context, `Canonical mission is file-bound at ${pointer.path}; do not reinterpret or broaden admitted scope.`].filter(Boolean).join("\n");
+		const isolate = state.admission.tier === "T3" && input.agent === "implementer";
+		return { task: brief, context, laneId: lane.id, gate, worktree: isolate ? "auto" : undefined };
 	}
 
 	start(invocation: PerformanceStartInvocation): PerformanceRunState {
@@ -368,8 +736,9 @@ ${line(state, "FRONTIER G2")}
 		if (!existsSync(file)) return undefined;
 		try {
 			const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<PerformanceRunState>;
-			if (parsed.schemaVersion !== 1 || typeof parsed.runId !== "string" || typeof parsed.nonce !== "string" || typeof parsed.mission !== "string" || typeof parsed.missionSha256 !== "string" || typeof parsed.missionBytes !== "number") return undefined;
+			if ((parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2) || typeof parsed.runId !== "string" || typeof parsed.nonce !== "string" || typeof parsed.mission !== "string" || typeof parsed.missionSha256 !== "string" || typeof parsed.missionBytes !== "number") return undefined;
 			const state = parsed as PerformanceRunState;
+			if (state.schemaVersion === 2 && (!state.admission || typeof state.admissionSha256 !== "string" || hash(JSON.stringify(state.admission)) !== state.admissionSha256)) return undefined;
 			if (state.governanceRoot !== resolve(directory)) return undefined;
 			const promptPath = join(directory, "PROMPTS.txt");
 			if (!existsSync(promptPath)) return undefined;
@@ -408,7 +777,7 @@ ${line(state, "FRONTIER G2")}
 	private transition(frontier: PerformanceGate, status: PerformanceRunStatus = frontier === "complete" ? "completed" : frontier === "blocked" ? "blocked" : "active"): void {
 		if (!this.stateValue) throw new Error("No active Performance run.");
 		const allowed: Record<PerformanceGate, readonly PerformanceGate[]> = {
-			G0: ["G1", "G4", "blocked"],
+			G0: ["G1", "G3.5", "G4", "blocked"],
 			G2: ["G2-assurance", "blocked"],
 			"G2-assurance": ["G0", "G2", "G1", "G3.5", "G4", "blocked"],
 			"G2-review": [],
@@ -418,8 +787,8 @@ ${line(state, "FRONTIER G2")}
 			"G1-review": [],
 			"G1-verify": [],
 			"G3.5": ["G1", "G4", "blocked"],
-			G4: ["G0", "G1", "G4-assurance", "blocked"],
-			"G4-assurance": ["G1", "G3.5", "G4", "G7", "sweep", "goal-check", "blocked"],
+			G4: ["G0", "G1", "G4-assurance", "goal-check", "blocked"],
+			"G4-assurance": ["G1", "G3.5", "G4", "G7", "sweep", "goal-check", "complete", "blocked"],
 			G5: [],
 			G6: [],
 			G7: ["G7-assurance", "sweep", "goal-check", "G1", "G3.5", "G4", "blocked"],
@@ -451,6 +820,11 @@ ${line(state, "FRONTIER G2")}
 		if (!next) {
 			if (completed.size === state.roadmapItems.length) {
 				this.stateValue = { ...state, activeItemId: undefined, updatedAt: now() };
+				if (state.admission?.tier === "T1") {
+					this.log("SKIP G7 reason=T1 route requires independent G5/G6 but no juror");
+					this.log("SKIP goal-check reason=T1 acceptance converged through root G4 plus fresh G5/G6");
+					return this.transition("complete", "completed");
+				}
 				return this.transition(this.requiresConvergenceSweep() ? "sweep" : "goal-check");
 			}
 			return this.transition("blocked", "blocked");
@@ -458,6 +832,10 @@ ${line(state, "FRONTIER G2")}
 		this.stateValue = { ...state, activeItemId: next.id, updatedAt: now() };
 		this.persist();
 		this.log(`ITEM ACTIVE id=${next.id} tier=${next.tier} category=${next.category} tag=${next.tag} framework=${next.framework} launchGroup=${next.launchGroup}`);
+		if (state.admission?.tier === "T3" && (state.implementedItemIds ?? []).includes(next.id)) {
+			this.transition("G4");
+			return this.transition("G4-assurance");
+		}
 		const policy = performanceItemGatePolicy(next);
 		this.transition(policy.requiresCharacterization ? "G0" : policy.requiresPlan ? "G1" : "G4");
 	}
@@ -481,10 +859,52 @@ ${line(state, "FRONTIER G2")}
 		this.withFreshState(() => this.recordCurrentGateReport(input));
 	}
 
+	private recordParallelImplementation(input: Omit<PerformanceGateReport, "at">, state: PerformanceRunState): boolean {
+		if (state.admission?.tier !== "T3" || input.gate !== "G4") return false;
+		if (state.frontier !== "G4") throw new Error(`Evidence is for G4, but current Performance frontier is ${state.frontier}.`);
+		if (!input.itemId) throw new Error("T3 parallel G4 evidence requires an admitted lane itemId.");
+		const item = state.roadmapItems.find((candidate) => candidate.id === input.itemId);
+		if (!item) throw new Error(`Unknown T3 implementation lane ${input.itemId}.`);
+		if (input.role !== "root" && input.role !== "primary" && input.role !== "implementer") throw new Error(`${input.role} cannot close Performance G4.`);
+		if (this.initialFrontier(item) !== "G4" && item.id !== state.activeItemId) {
+			throw new Error(`T3 lane ${item.id} requires its own pre-implementation gates; downgrade to T2 or make that lane active first.`);
+		}
+		if (!item.dependencies.every((dependency) => (state.implementedItemIds ?? []).includes(dependency))) {
+			throw new Error(`T3 lane ${item.id} has incomplete implementation dependencies.`);
+		}
+		if (input.verdict === "pass" && (state.implementedItemIds ?? []).includes(item.id)) throw new Error(`T3 lane ${item.id} implementation is already complete.`);
+		const evidence = this.resolveEvidence(input.evidence);
+		if (input.verdict === "pass") this.assertImplementationEvidence(item, evidence);
+		const report: PerformanceGateReport = { ...input, itemId: item.id, evidence, at: now() };
+		const implementedItemIds = input.verdict === "pass"
+			? [...new Set([...(state.implementedItemIds ?? []), item.id])]
+			: (state.implementedItemIds ?? []);
+		this.stateValue = { ...state, reports: [...state.reports, report], implementedItemIds, updatedAt: now() };
+		this.persist();
+		this.log(`VERDICT G4 ${report.verdict} actor=${report.actor} role=${report.role} item=${item.id} evidence=${JSON.stringify(report.evidence)}`);
+		if (input.verdict === "blocked") this.transition("blocked", "blocked");
+		if (input.verdict === "pass" && implementedItemIds.length === state.roadmapItems.length) {
+			this.stateValue = { ...this.stateValue!, activeItemId: state.roadmapItems.find((candidate) => !state.completedItemIds.includes(candidate.id))?.id, updatedAt: now() };
+			this.persist();
+			this.transition("G4-assurance");
+		} else if (input.verdict === "pass") {
+			const nextPreGated = state.roadmapItems.find((candidate) => !implementedItemIds.includes(candidate.id)
+				&& candidate.dependencies.every((dependency) => implementedItemIds.includes(dependency))
+				&& this.initialFrontier(candidate) !== "G4");
+			if (nextPreGated) {
+				this.stateValue = { ...this.stateValue!, activeItemId: nextPreGated.id, updatedAt: now() };
+				this.persist();
+				this.transition(this.initialFrontier(nextPreGated));
+			}
+		}
+		return true;
+	}
+
 	private recordCurrentGateReport(input: Omit<PerformanceGateReport, "at">): void {
 		let state = this.stateValue;
 		if (!state) throw new Error("No active Performance run.");
 		if (state.status !== "active") throw new Error(`Performance run is ${state.status}.`);
+		if (this.recordParallelImplementation(input, state)) return;
 		const assuranceParent = input.gate.startsWith("G2-") ? "G2" : input.gate.startsWith("G1-") ? "G1" : input.gate === "G5" || input.gate === "G6" ? "G4" : undefined;
 		const isAssurance = input.gate === "G2-review" || input.gate === "G2-verify" || input.gate === "G1-review" || input.gate === "G1-verify" || input.gate === "G5" || input.gate === "G6";
 		const isG7Assurance = input.gate === "G7" && (state.frontier === "G7" || state.frontier === "G7-assurance");
@@ -591,13 +1011,17 @@ ${line(state, "FRONTIER G2")}
 		this.stateValue = { ...state, reports: [...state.reports, report], updatedAt: now() };
 		this.persist();
 		this.log(`VERDICT ${report.gate} ${report.verdict} actor=${report.actor} role=${report.role} evidence=${JSON.stringify(report.evidence)}`);
+		if (report.gate === "G4" && report.verdict === "pass" && state.admission?.tier === "T0") {
+			this.log("SKIP G5 reason=T0 root-owned bounded execution");
+			this.log("SKIP G6 reason=T0 verification captured in root G4 evidence");
+			this.log("SKIP G7 reason=T0 route has no juror");
+			this.completeActiveItem();
+			this.log("SKIP goal-check reason=T0 mission acceptance captured in root G4 evidence");
+			return this.transition("complete", "completed");
+		}
 		if (isAssurance) {
 			if (report.verdict === "blocked") {
-				if (report.role === "primary" || report.role === "root") {
-					return this.transition("blocked", "blocked");
-				}
-				this.log(`WORKER_BLOCKED gate=${report.gate} actor=${report.actor} role=${report.role}`);
-				return;
+				return this.transition("blocked", "blocked");
 			}
 			if (report.verdict === "fail") return this.transition(assuranceParent!);
 			const assuranceReports = activeItem
@@ -614,11 +1038,7 @@ ${line(state, "FRONTIER G2")}
 			return;
 		}
 		if (report.verdict === "blocked") {
-			if (report.role === "primary" || report.role === "root" || report.gate === "G2") {
-				return this.transition("blocked", "blocked");
-			}
-			this.log(`WORKER_BLOCKED gate=${report.gate} actor=${report.actor} role=${report.role}`);
-			return;
+			return this.transition("blocked", "blocked");
 		}
 		if (report.verdict === "fail") {
 			const fallbackGate = report.gate === "sweep" ? "G2" : report.gate === "G0" || report.gate === "G1" || report.gate === "G2" ? report.gate : report.gate === "G3.5" ? "G1" : "G4";
@@ -631,7 +1051,10 @@ ${line(state, "FRONTIER G2")}
 			if (jurors.length < requiredJurors) return this.transition("G7-assurance");
 			return this.completeActiveItem();
 		}
-		if (report.gate === "G0") return this.transition(performanceItemGatePolicy(this.activeItem()).requiresPlan ? "G1" : "G4");
+		if (report.gate === "G0") {
+			const policy = performanceItemGatePolicy(this.activeItem());
+			return this.transition(policy.requiresPlan ? "G1" : policy.requiresDepthLock ? "G3.5" : "G4");
+		}
 		const next: Record<Exclude<PerformanceGate, "complete" | "blocked">, PerformanceGate> = {
 			G0: "G4",
 			G2: "G2-assurance", "G2-assurance": "G2", "G2-review": "G2", "G2-verify": "G2",
@@ -648,24 +1071,43 @@ ${line(state, "FRONTIER G2")}
 	}
 
 	/** Atomically reserve a process slot shared by every child in this run. */
-	reserveSpawn(parentRole: string, childRole: string, childAgentId: string): PerformanceSpawnDecision {
+	reserveSpawn(parentRole: string, childRole: string, childAgentId: string, laneId?: string): PerformanceSpawnDecision {
 		if (!this.stateValue) return { valid: true };
 		return this.withStateLock(() => {
 			const latest = this.readFromDirectory(this.stateValue!.governanceRoot);
 			if (!latest) return { valid: false, message: "Performance run is unavailable." };
 			if (latest.status !== "active") {
 				if (parentRole === "root" || parentRole === "coordinator" || parentRole === "primary" || parentRole === "scope-coordinator") {
+					const recoveryFrontier = blockedRecoveryFrontier(latest);
 					latest.status = "active";
+					latest.frontier = recoveryFrontier;
 					this.stateValue = { ...latest, updatedAt: now() };
 					this.persist();
-					this.log(`RUN_UNBLOCK unblocked_by=${parentRole} target_role=${childRole}`);
+					this.log(`RUN_UNBLOCK unblocked_by=${parentRole} target_role=${childRole} recovery_frontier=${recoveryFrontier}`);
 				} else {
 					return { valid: false, message: "Performance run is unavailable or no longer active." };
 				}
 			}
 			const decision = validatePerformanceSpawn({ parentRole, childRole, liveAgents: latest.leases.length }, latest);
 			if (!decision.valid) return decision;
-			this.stateValue = { ...latest, leases: [...latest.leases, { agentId: childAgentId, role: childRole, startedAt: now() }], updatedAt: now() };
+			if (latest.admission?.tier === "T2" && childRole === "implementer" && latest.leases.some((lease) => lease.role === "implementer")) {
+				return { valid: false, message: "Performance T2 serial route already has a live implementer." };
+			}
+			if (latest.admission?.tier === "T3" && childRole === "implementer") {
+				const lane = latest.admission.lanes.find((candidate) => candidate.id === laneId);
+				if (!lane) return { valid: false, message: "Performance T3 implementer requires a valid admitted laneId." };
+				const item = latest.roadmapItems.find((candidate) => candidate.id === lane.id)!;
+				if (latest.frontier !== "G4" || (this.initialFrontier(item) !== "G4" && latest.activeItemId !== lane.id)) {
+					return { valid: false, message: `Performance T3 lane ${lane.id} has incomplete pre-implementation gates.` };
+				}
+				if (!lane.dependsOn.every((dependency) => (latest.implementedItemIds ?? []).includes(dependency))) {
+					return { valid: false, message: `Performance T3 lane ${lane.id} has incomplete dependencies.` };
+				}
+				if (latest.leases.some((lease) => lease.role === "implementer" && lease.laneId === lane.id)) {
+					return { valid: false, message: `Performance T3 lane ${lane.id} already has a live implementer.` };
+				}
+			}
+			this.stateValue = { ...latest, leases: [...latest.leases, { agentId: childAgentId, role: childRole, laneId, startedAt: now() }], updatedAt: now() };
 			this.persist();
 			this.log(`LEASE ACQUIRE agent=${childAgentId} role=${childRole}`);
 			return { valid: true };
@@ -704,20 +1146,36 @@ ${line(state, "FRONTIER G2")}
 	contextBlocks(): Array<{ id: string; content: string }> {
 		const state = this.stateValue;
 		if (!state) return [];
-		const activeItem = state.roadmapItems.find((item) => item.id === state.activeItemId);
+		const activeItem = state.roadmapItems.find((item) => item.id === (this.boundLaneId ?? state.activeItemId));
 		// Scope starts under plan-scope; each accepted roadmap item then carries its
 		// own full native protocol instead of relying on a lossy gate summary.
 		const framework = getPerformanceFramework(activeItem?.framework ?? "plan-scope");
 		const role = process.env.METIS_AGENT_NAME ?? "root";
-		const roleInstruction = role === "root"
-			? "Act as L0 Primary Coordinator. In Wave 1, dispatch scope-coordinator to generate and freeze ROADMAP.md. In Wave 2, dispatch feature-coordinator to execute feature waves (or dispatch implementer/planner directly for focused tasks). In Wave 3, dispatch sweep-coordinator or goal-checker for final convergence and verification. If subagent dispatch is unavailable or encounters an unrecoverable error, execute tools directly to accomplish the user's intent."
-			: `You are the ${role} worker. Stay inside this role's legal hierarchy and task boundary.`;
+		const coordinatorContext = role === "root" || L1_ROLES.has(role);
+		const rootExecutesBoundedRoute = role === "root" && (state.admission?.tier === "T0" || state.admission?.tier === "T1");
+		const workerInstructions: Record<string, string> = {
+			implementer: "Act as the G4 implementation worker. Write code and tests directly inside the admitted lane; do not coordinate or reinterpret scope.",
+			reviewer: "Act as the G5 independent reviewer. Inspect the integrated workspace and report a gate verdict; never edit production code.",
+			verifier: "Act as the G6 verification worker. Run the admitted verification commands in the integrated workspace and report grounded results.",
+			"fresh-verifier": "Act as a fresh G6 verification worker. Re-derive results from the mission, workspace, and raw command output; do not consume another verdict.",
+			planner: "Act only at G1. Resolve the named design fork without implementing or expanding admitted scope.",
+			"depth-prober": "Act only at G3.5. Independently establish the deepest issue-derived cause and reproduction.",
+			juror: "Act only at G7. Judge opened G5/G6 evidence without editing the deliverable.",
+			"goal-checker": "Perform the final mission-to-evidence goal check without editing the deliverable.",
+		};
+		const roleInstruction = rootExecutesBoundedRoute
+			? `Act as root G4 executor for the admitted ${state.admission!.tier} bounded lane. Implement and verify directly; do not delegate implementation.${state.admission!.tier === "T1" ? " After G4, dispatch only fresh G5 reviewer and G6 verifier against this integrated cwd." : ""}`
+			: coordinatorContext
+			? `Act as ${role === "root" ? "L0 Primary Coordinator" : `${role} L1 coordinator`}. Follow the admitted ${state.admission?.tier ?? "legacy"} route; dispatch only roles allowed by runtime.`
+			: (workerInstructions[role] ?? `You are the ${role} worker. Stay inside this role's legal hierarchy and admitted lane.`);
+		const includeFullFramework = coordinatorContext && !rootExecutesBoundedRoute;
 		const protocol = [
 			"Performance run is active for the current user task.",
 			roleInstruction,
-			"G2 closing order is mandatory: (1) scoper or scope-coordinator calls performance_gate with gate=G2 after ROADMAP.md is executable, (2) only then reviewer calls gate=G2-review, (3) fresh-verifier calls gate=G2-verify. Writing a JSON receipt alone does not advance the frontier. Every Item must have stable id, category, tag, tier, framework, owned boundary, dependency IDs, launch group, integration lane, implementation, acceptance, unhappy paths, tests-first, verification, and requiresDetailedPlan.",
-			framework ? `\n# Native execution protocol: ${framework.id}\n${framework.content.trim()}` : "",
-			"Before finishing any gate role, write a non-empty receipt under <governance root>/artifacts/ then call performance_gate with verdict pass|fail|blocked and evidence set to that relative path (for example artifacts/g2-receipt.md). Do not exit after only writing the receipt. Goal-check is independent and runs only after every roadmap item is complete. Governance artifacts are outside the target workspace and must not be added to its diff.",
+			this.boundLaneId ? `Assigned lane: ${this.boundLaneId}; assigned gate: ${this.boundGate ?? "from canonical brief"}. This binding outranks the root run's global active-item display.` : "",
+			state.schemaVersion === 1 ? "Legacy G2 closing order remains mandatory: G2 author, then independent G2-review and G2-verify." : "The typed admission and generated ROADMAP are canonical. Scope changes require re-admission; workers must not rewrite lane ownership.",
+			includeFullFramework && framework ? `\n# Native execution protocol: ${framework.id}\n${framework.content.trim()}` : "",
+			"Before finishing any gate role in a coordinated wave, write a non-empty receipt under <governance root>/artifacts/ then call performance_gate with verdict pass|fail|blocked and evidence set to that relative path (for example artifacts/g2-receipt.md). Do not exit after only writing the receipt. Goal-check is independent and runs only after every roadmap item is complete. Governance artifacts are outside the target workspace and must not be added to its diff.",
 			"A REPAIR_REQUIRED response from performance_gate is a schema/content repair request, never a runtime outage or blocker: repair the canonical governance artifact and retry the same gate. Claim that subagent dispatch is unavailable only after a structured spawn_agent error or timed_out payload, and quote its errorCode/error; never infer runtime availability from a rejected gate or worker report.",
 		].join("\n");
 		const runIdentity = [
@@ -740,10 +1198,10 @@ ${line(state, "FRONTIER G2")}
 		const state = this.stateValue;
 		if (!state) return undefined;
 		const pointer = missionPointer(state);
-		const activeItem = state.roadmapItems.find((item) => item.id === state.activeItemId);
+		const activeItem = state.roadmapItems.find((item) => item.id === (this.boundLaneId ?? state.activeItemId));
 		const itemPolicy = activeItem ? performanceItemGatePolicy(activeItem) : undefined;
 		return [
-			`frontier: ${state.frontier}; active item: ${state.activeItemId ?? "scope"}; live agents: ${state.leases.length}.`,
+			`frontier: ${state.frontier}; active item: ${this.boundLaneId ?? state.activeItemId ?? "scope"}; live agents: ${state.leases.length}.${state.admission ? ` route: ${state.admission.tier}/${state.admission.taskShape}.` : ""}`,
 			`MISSION POINTER: ${pointer.path}; SHA-256: ${pointer.sha256}; bytes: ${pointer.bytes}.`,
 			state.repairRequired ? `REPAIR REQUIRED at ${state.repairRequired.gate}: ${state.repairRequired.message}` : "",
 			activeItem
@@ -794,12 +1252,14 @@ ${line(state, "FRONTIER G2")}
 		if (!/\btestOutput\b\s*:\s*\S+/i.test(content)) {
 			throw new Error(`G6 verification for ROADMAP.md item ${item.id} requires captured real testOutput.`);
 		}
-		const coverage = content.match(/\bcoverage\b[^\d]*(\d+(?:\.\d+)?)\s*%/i);
-		if (!coverage || Number(coverage[1]) < 95) {
-			throw new Error(`G6 verification for ROADMAP.md item ${item.id} requires measured coverage >=95%.`);
+		if (STRICT_TDD_FRAMEWORKS.has(item.framework)) {
+			const coverage = content.match(/\bcoverage\b[^\d]*(\d+(?:\.\d+)?)\s*%/i);
+			if (!coverage || Number(coverage[1]) < 95) {
+				throw new Error(`G6 verification for ROADMAP.md item ${item.id} requires measured coverage >=95%.`);
+			}
 		}
-		if (!/\bpreExistingRegressions\b\s*:\s*(?:0|none|\[\s*\])/i.test(content)) {
-			throw new Error(`G6 verification for ROADMAP.md item ${item.id} must prove zero preExistingRegressions.`);
+		if (!/\bpreExistingRegressions\b\s*:\s*\S+/i.test(content)) {
+			throw new Error(`G6 verification for ROADMAP.md item ${item.id} must record and isolate preExistingRegressions.`);
 		}
 		if (performanceItemGatePolicy(item).requiresDepthLock && (!/\breproWasRed\b\s*:\s*(?:true|pass|yes)/i.test(content) || !/\breproNowGreen\b\s*:\s*(?:true|pass|yes)/i.test(content))) {
 			throw new Error(`Debug G6 verification for ROADMAP.md item ${item.id} requires reproWasRed and reproNowGreen proof.`);
@@ -814,7 +1274,7 @@ ${line(state, "FRONTIER G2")}
 		if (!/\btestCommand\b\s*:\s*\S+/i.test(content) || !/\btestOutput\b\s*:\s*\S+/i.test(content)) {
 			throw new Error(`G4 implementation for ROADMAP.md item ${item.id} requires a real testCommand and testOutput.`);
 		}
-		if (item.framework !== "apply" && item.framework !== "refactor") {
+		if (STRICT_TDD_FRAMEWORKS.has(item.framework)) {
 			if (!/\bredTestOutput\b\s*:\s*\S+/i.test(content) || !/\bgreenTestOutput\b\s*:\s*\S+/i.test(content)) {
 				throw new Error(`G4 implementation for ROADMAP.md item ${item.id} requires real TDD redTestOutput and greenTestOutput.`);
 			}

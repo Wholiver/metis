@@ -4,21 +4,19 @@ import { extractProposedPlan } from '../../lib/plan-preview';
 import { FileCard } from './FileCard';
 import { MarkdownContent } from './MarkdownContent';
 import { PlanPreview } from './PlanPreview';
+import { PacedMarkdown } from './PacedMarkdown';
+import StreamingText from '../primitives/StreamingText';
 
 interface AgentBubbleProps {
   message: Message;
   workflowProposal?: WorkflowProposalState;
-  planActionsEnabled?: boolean;
-  onProcessProposal?: () => void;
-  onRefineProposal?: (request: string) => void;
+  onOpenPlan?: (markdown: string) => void;
 }
 
 export const AgentBubble = React.memo<AgentBubbleProps>(({
   message,
   workflowProposal,
-  planActionsEnabled = false,
-  onProcessProposal,
-  onRefineProposal,
+  onOpenPlan,
 }) => {
   const proposedPlan = extractProposedPlan(message.content, Boolean(message.streaming));
   const current = Boolean(
@@ -27,36 +25,41 @@ export const AgentBubble = React.memo<AgentBubbleProps>(({
     && workflowProposal
     && workflowProposal.markdown.trim() === proposedPlan.plan.trim()
   );
+  const streaming = Boolean(message.streaming);
 
   return (
     <div
       className="my-2 flex w-full min-w-0 max-w-full flex-col items-start"
       data-message-id={message.id}
       data-message-role="assistant"
-      data-streaming={message.streaming ? 'true' : undefined}
+      data-component="text-part"
+      data-streaming={streaming ? 'true' : undefined}
     >
       {message.content && (
-        <div className="w-full min-w-0 max-w-full py-0.5 text-[14.5px] font-normal leading-relaxed text-[#1e293b] dark:text-[#f1f5f9]">
-          {proposedPlan ? (
-            <>
-              {proposedPlan.before && <MarkdownContent markdown={proposedPlan.before} className="mb-2" />}
-              <PlanPreview
-                markdown={proposedPlan.plan}
-                partial={proposedPlan.partial}
-                current={current}
-                revision={current ? workflowProposal?.revision : undefined}
-                actionsEnabled={current && planActionsEnabled}
-                onProcess={current ? onProcessProposal : undefined}
-                onRefine={current ? onRefineProposal : undefined}
-              />
-              {proposedPlan.after && <MarkdownContent markdown={proposedPlan.after} className="mt-2" />}
-            </>
-          ) : (
-            <MarkdownContent markdown={message.content} />
-          )}
-          {message.streaming && (
-            <span className="inline-block w-1.5 h-1.5 ml-1.5 rounded-full bg-slate-400 align-middle" aria-label="Receiving message" />
-          )}
+        <div
+          className="w-full min-w-0 max-w-full py-0.5 text-[14px] font-normal leading-[1.6] text-ink"
+          data-slot="text-part-body"
+        >
+          <StreamingText streaming={streaming} fill>
+            {proposedPlan ? (
+              <>
+                {proposedPlan.before && (
+                  <PacedMarkdown text={proposedPlan.before} streaming={streaming} className="mb-2" />
+                )}
+                <PlanPreview
+                  markdown={proposedPlan.plan}
+                  partial={proposedPlan.partial}
+                  current={current}
+                  onOpenPlan={onOpenPlan}
+                />
+                {proposedPlan.after && (
+                  <MarkdownContent markdown={proposedPlan.after} className="mt-2" />
+                )}
+              </>
+            ) : (
+              <PacedMarkdown text={message.content} streaming={streaming} />
+            )}
+          </StreamingText>
         </div>
       )}
 
@@ -70,4 +73,3 @@ export const AgentBubble = React.memo<AgentBubbleProps>(({
 });
 
 AgentBubble.displayName = 'AgentBubble';
-

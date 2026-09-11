@@ -12,7 +12,7 @@ interface ConversationIconProps {
 
 export const ConversationIcon: React.FC<ConversationIconProps> = ({
   seed,
-  size = 48,
+  size = 18,
   className = '',
 }) => {
   const { shapeIndex, color } = conversationIconAssignment(seed);
@@ -21,7 +21,7 @@ export const ConversationIcon: React.FC<ConversationIconProps> = ({
   return (
     <span
       aria-hidden="true"
-      className="flex h-[50px] w-[38px] flex-none items-center justify-center overflow-visible"
+      className="flex h-[18px] w-[18px] flex-none items-center justify-center overflow-visible opacity-70"
       data-conversation-icon-slot=""
     >
       <svg
@@ -45,4 +45,3 @@ export const ConversationIcon: React.FC<ConversationIconProps> = ({
     </span>
   );
 };
-

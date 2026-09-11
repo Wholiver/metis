@@ -1,10 +1,11 @@
-import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
-import { MarkdownContent } from './MarkdownContent';
+import React from 'react';
+import { useI18n } from '../../i18n';
+import { TextShimmer } from './TextShimmer';
 
 interface ThinkingBlockProps {
-  thinking: string;
+  thinking?: string;
   streaming?: boolean;
+  active?: boolean;
 }
 
 export function thinkingSummary(thinking: string): string {
@@ -32,90 +33,32 @@ export function thinkingBody(thinking: string): string {
   return trimmed;
 }
 
-export const ThinkingBlock = React.memo<ThinkingBlockProps>(({ thinking, streaming = false }) => {
-  const contentId = useId();
-  const [expanded, setExpanded] = useState(streaming);
-  const [hasOverflow, setHasOverflow] = useState(false);
-  const [scrolledFromTop, setScrolledFromTop] = useState(false);
-  const [scrolledToBottom, setScrolledToBottom] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const wasStreaming = useRef(streaming);
-  const userOverrideRef = useRef(false);
-  const summary = useMemo(() => thinkingSummary(thinking), [thinking]);
-  const body = useMemo(() => thinkingBody(thinking), [thinking]);
+export function thinkingSubtitle(thinking: string): string {
+  const firstLine = thinking.trim().split(/\r?\n/)[0] ?? '';
+  return firstLine.slice(0, 80);
+}
 
-  useEffect(() => {
-    if (!userOverrideRef.current) {
-      if (streaming) setExpanded(true);
-      else if (wasStreaming.current) setExpanded(false);
-    }
-    wasStreaming.current = streaming;
-  }, [streaming]);
+/** OpenCode TimelineThinkingRow: shimmer only — no reasoning body or title. */
+export const ThinkingBlock = React.memo<ThinkingBlockProps>(({
+  streaming = false,
+  active,
+}) => {
+  const isActive = active ?? streaming;
+  const { t } = useI18n();
 
-  useLayoutEffect(() => {
-    if (!expanded || !scrollRef.current) return;
-    const scroll = scrollRef.current;
-    scroll.scrollTop = scroll.scrollHeight;
-    setHasOverflow(scroll.scrollHeight > scroll.clientHeight + 1);
-    setScrolledFromTop(scroll.scrollTop > 1);
-    setScrolledToBottom(Math.ceil(scroll.scrollTop + scroll.clientHeight) >= scroll.scrollHeight - 2);
-
-    const frame = requestAnimationFrame(() => {
-      const el = scrollRef.current;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
-        setHasOverflow(el.scrollHeight > el.clientHeight + 1);
-        setScrolledFromTop(el.scrollTop > 1);
-        setScrolledToBottom(Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 2);
-      }
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [body, expanded]);
+  if (!isActive) return null;
 
   return (
-    <section
-      className={`cot-thinking ${expanded ? '' : 'collapsed'} ${hasOverflow ? 'has-overflow' : ''} ${scrolledFromTop ? 'scrolled-from-top' : ''} ${scrolledToBottom ? 'scrolled-to-bottom' : ''}`}
+    <div
+      data-slot="session-turn-thinking"
       data-thinking-block=""
-      data-thinking-content=""
       data-direct-thinking="true"
       data-part-type="thinking"
-      data-thinking-overflow={hasOverflow ? 'true' : 'false'}
-      data-thinking-scrolled-from-top={scrolledFromTop ? 'true' : 'false'}
-      data-thinking-scrolled-to-bottom={scrolledToBottom ? 'true' : 'false'}
+      role="status"
     >
-      <button
-        type="button"
-        className="tool-group-header thinking-header"
-        aria-expanded={expanded}
-        aria-controls={contentId}
-        onClick={() => {
-          userOverrideRef.current = true;
-          setExpanded((value) => !value);
-        }}
-      >
-        <span className="tool-group-summary thinking-summary">{summary}</span>
-        <ChevronRight aria-hidden="true" className="tool-group-chevron thinking-chevron" strokeWidth={1.7} />
-      </button>
-      <div className="tool-group-body thinking-body" aria-hidden={!expanded}>
-        <div className="thinking-collapse-wrapper">
-          <div
-            ref={scrollRef}
-            id={contentId}
-            className="tool-group-list thinking-scroll min-h-0"
-            data-thinking-scroll=""
-            onScroll={(event) => {
-              const el = event.currentTarget;
-              setScrolledFromTop(el.scrollTop > 1);
-              setScrolledToBottom(Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 2);
-            }}
-          >
-            <MarkdownContent markdown={body} className="cot-thinking-markdown" />
-          </div>
-        </div>
-      </div>
-    </section>
+      <TextShimmer text={t('sessionThinking')} active />
+    </div>
   );
 });
 
 ThinkingBlock.displayName = 'ThinkingBlock';
-

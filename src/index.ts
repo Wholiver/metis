@@ -54,8 +54,13 @@ export {
 	missionPointer,
 	summarizePerformanceRun,
 	validatePerformanceSpawn,
+	type ExistingFrameworkId,
 	type PerformanceConcurrency,
+	type PerformanceDispatchGate,
 	type PerformanceAttendance,
+	type PerformanceAdmission,
+	type PerformanceAdmissionLane,
+	type PerformanceAdmitInvocation,
 	type PerformanceEffortCapability,
 	type PerformanceAgentLease,
 	type PerformanceGate,
@@ -64,8 +69,11 @@ export {
 	type PerformanceRunSummary,
 	type PerformanceRunStatus,
 	type PerformanceSpawnDecision,
+	type PerformancePreparedSpawn,
 	type PerformanceSpawnRequest,
 	type PerformanceStartInvocation,
+	type PerformanceTaskShape,
+	type PerformanceTier,
 } from "./core/performance-runtime.ts";
 export {
 	parsePerformanceRoadmapItems,
@@ -480,6 +488,11 @@ export {
 	type LsToolOptions,
 	type QueryMemoryDbToolInput,
 	type QueryMemoryDbToolOptions,
+	createPerformanceAdmitTool,
+	createPerformanceAdmitToolDefinition,
+	performanceAdmitSchema,
+	type PerformanceAdmitToolInput,
+	type PerformanceAdmitToolOptions,
 	type ReadOperations,
 	type ReadToolDetails,
 	type ReadToolInput,
@@ -588,4 +601,3 @@ export { convertToPng } from "./utils/image-convert.ts";
 export { formatDimensionNote, type ResizedImage, resizeImage } from "./utils/image-resize.ts";
 // Shell utilities
 export { getShellConfig } from "./utils/shell.ts";
-

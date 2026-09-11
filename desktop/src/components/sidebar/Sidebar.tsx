@@ -1,53 +1,177 @@
-import React, { useState, useMemo, forwardRef, memo, useRef, useLayoutEffect, useEffect, useCallback } from 'react';
-import { Search, Plus, Settings, PanelLeftClose } from 'lucide-react';
+import React, { useState, useMemo, forwardRef, memo, useRef, useLayoutEffect, useEffect, useCallback, type CSSProperties } from 'react';
+import { Search, Plus, Settings, PanelLeftClose, ArrowUp, SquarePen, Folder, X } from 'lucide-react';
 import { Agent, ProjectItem } from '../../types';
 import { AgentItem } from './AgentItem';
-import { ProjectDots } from './ProjectDots';
+import { useI18n } from '../../i18n';
+import { RELEASES_URL, type UpdateCheckState } from '../../hooks/useUpdateCheck';
+import { pathsEqual } from '../../hooks/useMetisServer';
+import GlideMenu from '../primitives/GlideMenu';
+
+const VISIBLE_CONVERSATIONS = 8;
+
+const SIDEBAR_MOTION = {
+  expandedWidth: 224,
+  collapsedWidth: 52,
+  duration: 280,
+  copyDuration: 180,
+  copyOffset: 8,
+  easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+};
+
+/* ─────────────────────────────────────────────────────────
+ * CHAT SEARCH STORYBOARD
+ *
+ *   0ms   search is triggered; Chats label begins fading
+ *   0ms   field grows right → left from the search control
+ * 180ms   field fills the row; cursor is focused and ready
+ * ───────────────────────────────────────────────────────── */
+const CHAT_SEARCH_MOTION = {
+  duration: 180,
+  closedWidth: 28,
+  easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+};
 
 interface SidebarProps {
   agents: Agent[];
+  /** Cached sessions keyed by project path — enables multiple expanded folders. */
+  agentsByProject?: Record<string, Agent[]>;
   activeAgentId: string;
   projects?: ProjectItem[];
   activeProjectId?: string;
   width: number;
   isLoading?: boolean;
   error?: string;
+  updateCheck?: UpdateCheckState;
   onSelectAgent: (agentId: string) => void;
   onSelectProject?: (projectId: string) => void;
+  onPrefetchProjectSessions?: (project: ProjectItem) => void;
   onAddProject?: () => void;
   onNewChat?: () => void;
   onOpenSettings?: () => void;
   onToggleSidebar?: () => void;
+  /** Session currently streaming / compacting — show orbit loader on that row. */
+  workingAgentId?: string | null;
+}
+
+function filterAgents(agents: Agent[], searchQuery: string): Agent[] {
+  const query = searchQuery.toLowerCase();
+  if (!query) return agents;
+  return agents.filter(
+    (a) =>
+      a.name.toLowerCase().includes(query) ||
+      a.subtitle.toLowerCase().includes(query)
+  );
 }
 
 export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
   agents,
+  agentsByProject = {},
   activeAgentId,
   projects = [],
   activeProjectId = '',
   width,
   isLoading = false,
   error = '',
+  updateCheck,
   onSelectAgent,
   onSelectProject,
+  onPrefetchProjectSessions,
   onAddProject,
   onNewChat,
   onOpenSettings,
   onToggleSidebar,
+  workingAgentId = null,
 }, ref) => {
+  const { t } = useI18n();
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const isSearchOpen = searchOpen || searchQuery.length > 0;
   const [optimisticActiveId, setOptimisticActiveId] = useState<string | null>(null);
+
+  const handleCloseSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery('');
+  }, []);
+  // Independent multi-expand: clicking one project must not collapse others.
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(() => (
+    new Set(activeProjectId ? [activeProjectId] : [])
+  ));
+  const [moreByProjectId, setMoreByProjectId] = useState<Record<string, boolean>>({});
   const currentActiveId = optimisticActiveId ?? activeAgentId;
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const handleOpenUpdate = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    const desktop = (window as any).metisDesktop;
+    if (desktop?.openExternal) {
+      void desktop.openExternal(RELEASES_URL);
+    } else {
+      window.open(RELEASES_URL, '_blank');
+    }
+  }, []);
 
   useEffect(() => {
     setOptimisticActiveId(null);
   }, [activeAgentId]);
 
-  const filteredAgents = useMemo(() => agents.filter(
-    (a) =>
-      a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.subtitle.toLowerCase().includes(searchQuery.toLowerCase())
-  ), [agents, searchQuery]);
+  useEffect(() => {
+    if (searchOpen) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchOpen]);
+
+  // Keep the active project expanded, without collapsing any already-open folders.
+  useEffect(() => {
+    if (!activeProjectId) return;
+    setExpandedProjectIds((current) => {
+      if (current.has(activeProjectId)) return current;
+      const next = new Set(current);
+      next.add(activeProjectId);
+      return next;
+    });
+  }, [activeProjectId]);
+
+  // Prefetch sessions for every expanded folder so non-active projects still show chats.
+  useEffect(() => {
+    if (!onPrefetchProjectSessions) return;
+    for (const project of projects) {
+      if (expandedProjectIds.has(project.id)) {
+        onPrefetchProjectSessions(project);
+      }
+    }
+  }, [expandedProjectIds, onPrefetchProjectSessions, projects]);
+
+  const handleProjectRowClick = useCallback((projectId: string) => {
+    const wasExpanded = expandedProjectIds.has(projectId);
+    setExpandedProjectIds((current) => {
+      const next = new Set(current);
+      if (wasExpanded) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+    // Expanding a different project selects it; collapsing never forces a switch.
+    if (!wasExpanded && projectId !== activeProjectId) {
+      onSelectProject?.(projectId);
+    }
+  }, [activeProjectId, expandedProjectIds, onSelectProject]);
+
+  const agentsForProject = useCallback((project: ProjectItem) => {
+    let cached = agentsByProject[project.path];
+    if (!cached) {
+      for (const [key, val] of Object.entries(agentsByProject)) {
+        if (pathsEqual(key, project.path)) {
+          cached = val;
+          break;
+        }
+      }
+    }
+    if (cached && cached.length > 0) return cached;
+    if (project.id === activeProjectId) {
+      return agents.filter((agent) => !agent.projectPath || pathsEqual(agent.projectPath, project.path));
+    }
+    return cached || [];
+  }, [activeProjectId, agents, agentsByProject]);
+
 
   const itemsContainerRef = useRef<HTMLDivElement>(null);
   const indicatorRef = useRef<HTMLDivElement>(null);
@@ -87,8 +211,6 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const row = (e.target as HTMLElement).closest<HTMLElement>('[data-conversation-row]');
-    // When passing through the 2px gap between rows or list padding:
-    // Do NOT jump back to active conversation! Maintain current position.
     if (!row || !itemsContainerRef.current?.contains(row)) {
       return;
     }
@@ -119,6 +241,12 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
     }
   }, [activeProjectId, currentActiveId, positionIndicatorOnAgent]);
 
+  const activeProjectAgents = useMemo(() => {
+    const project = projects.find((item) => item.id === activeProjectId);
+    if (!project) return filterAgents(agents, searchQuery);
+    return filterAgents(agentsForProject(project), searchQuery);
+  }, [agents, agentsForProject, activeProjectId, projects, searchQuery]);
+
   useLayoutEffect(() => {
     const searchChanged = prevSearchQueryRef.current !== searchQuery;
     prevSearchQueryRef.current = searchQuery;
@@ -130,7 +258,6 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
       return;
     }
 
-    // If currently hovering over a valid row in the container, maintain position on that row!
     if (hoveredRowRef.current && itemsContainerRef.current?.contains(hoveredRowRef.current)) {
       const rowId = hoveredRowRef.current.getAttribute('data-conversation-row');
       if (rowId) {
@@ -140,7 +267,7 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
     }
 
     positionIndicatorOnAgent(currentActiveId, true);
-  }, [currentActiveId, filteredAgents, searchQuery, positionIndicatorOnAgent]);
+  }, [currentActiveId, activeProjectAgents, searchQuery, positionIndicatorOnAgent]);
 
   useEffect(() => {
     const container = itemsContainerRef.current;
@@ -155,7 +282,7 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
 
     resizeObserver.observe(container);
     return () => resizeObserver.disconnect();
-  }, [currentActiveId, positionIndicatorOnAgent]);
+  }, [currentActiveId, positionIndicatorOnAgent, activeProjectAgents]);
 
   const handleSelectAgent = useCallback((agentId: string) => {
     if (agentId === currentActiveId) return;
@@ -168,117 +295,292 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
     onSelectAgent(agentId);
   }, [currentActiveId, onSelectAgent]);
 
+  const renderConversationList = (
+    projectAgents: Agent[],
+    options: { attachIndicator: boolean; showActiveLoading: boolean; projectKey: string; indented?: boolean },
+  ) => {
+    const filtered = filterAgents(projectAgents, searchQuery);
+    const showMore = Boolean(moreByProjectId[options.projectKey]);
+    const visible = showMore ? filtered : filtered.slice(0, VISIBLE_CONVERSATIONS);
+    const hasMore = filtered.length > VISIBLE_CONVERSATIONS && !showMore;
+    const loading = options.showActiveLoading && isLoading && projectAgents.length === 0;
+    const rowPad = options.indented ? 'pl-[30px] pr-2' : 'px-2';
+
+    return (
+      <>
+        {loading && (
+          <p className={`${rowPad} py-2 text-[12px] text-ink-3`} role="status">
+            Loading conversations…
+          </p>
+        )}
+        {options.showActiveLoading && !isLoading && error && (
+          <p className={`${rowPad} py-2 text-[12px] leading-relaxed text-red`} role="alert">
+            {error}
+          </p>
+        )}
+        {!loading && !(options.showActiveLoading && error) && filtered.length === 0 && (
+          <p className={`${rowPad} py-2 text-[12px] text-ink-3`}>
+            {searchQuery ? 'No matching conversations' : 'No conversations yet'}
+          </p>
+        )}
+        <div
+          ref={options.attachIndicator ? itemsContainerRef : undefined}
+          className="relative flex flex-col gap-px"
+          onMouseMove={options.attachIndicator ? handleMouseMove : undefined}
+          data-conversation-list=""
+        >
+          {options.attachIndicator && (
+            <div
+              ref={indicatorRef}
+              aria-hidden="true"
+              data-conversation-indicator=""
+              className="absolute left-0 right-0 top-0 rounded-[7px] bg-hover-2 pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+              style={{ opacity: 0 }}
+            />
+          )}
+          {visible.map((agent) => (
+            <AgentItem
+              key={agent.id}
+              agent={agent}
+              isActive={agent.id === currentActiveId}
+              isWorking={Boolean(workingAgentId) && agent.id === workingAgentId}
+              onClick={() => handleSelectAgent(agent.id)}
+              indented={options.indented}
+            />
+          ))}
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setMoreByProjectId((current) => ({ ...current, [options.projectKey]: true }))}
+              data-show-more-conversations=""
+              className={`h-8 ${rowPad} rounded-[8px] text-left text-[14px] text-ink-3 hover:text-ink hover:bg-hover transition-colors`}
+            >
+              {t('sidebarShowMore')}
+            </button>
+          )}
+        </div>
+      </>
+    );
+  };
+
   return (
     <aside
       ref={ref}
-      style={{ width: `${width}px` }}
-      className="h-full min-w-[240px] shrink bg-[#f6f7f9] dark:bg-[#121316] border-r border-slate-200/80 dark:border-[#232730] flex flex-col overflow-hidden select-none relative"
+      style={{
+        width: `${width}px`,
+        '--sidebar-copy-duration': `${SIDEBAR_MOTION.copyDuration}ms`,
+        '--sidebar-copy-offset': `${SIDEBAR_MOTION.copyOffset}px`,
+        '--sidebar-easing': SIDEBAR_MOTION.easing,
+      } as CSSProperties}
+      className="h-full min-w-[224px] shrink flex flex-col overflow-hidden select-none relative bg-canvas"
+      data-sidebar=""
     >
-      {/* 50px Top Header: Native traffic lights spacer + Collapse button on left, New chat (+) on right */}
-      <div className="h-[50px] px-3.5 flex items-center justify-between flex-shrink-0 titlebar-drag">
-        {/* Left container: Traffic lights spacer + Toggle sidebar button */}
+      <div className="h-[50px] px-3 flex items-center flex-shrink-0 titlebar-drag">
         <div className="flex items-center gap-1.5 no-drag">
           <div className="w-[66px] h-[16px]" />
           <button
             onClick={onToggleSidebar}
-            className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[#8e95a2] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[#1e293b] dark:hover:text-[#f1f5f9] transition-colors"
+            className="w-7 h-7 rounded-chip flex items-center justify-center text-ink-3 hover:bg-hover hover:text-ink transition-colors"
             title="Toggle Sidebar"
           >
             <PanelLeftClose className="w-4 h-4 stroke-[1.8]" />
           </button>
         </div>
+      </div>
 
-        {/* Right action: New chat (+) */}
-        <button
-          onClick={onNewChat}
-          className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[#8e95a2] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[#1e293b] dark:hover:text-[#f1f5f9] transition-colors no-drag"
-          title="New Chat"
+      {/* Top actions: quiet New Chat — Beautiful UI rail pattern */}
+      <div className="px-2 pb-1 flex-shrink-0 no-drag" data-sidebar-actions="">
+        <GlideMenu
+          rowSelector="[data-sidebar-action-row]"
+          highlightClassName="inset-x-0 rounded-[7px] bg-hover-2"
+          className="flex flex-col gap-px"
         >
-          <Plus className="w-4 h-4 stroke-[2]" />
-        </button>
+          <button
+            type="button"
+            onClick={onNewChat}
+            data-sidebar-action-row=""
+            className="relative z-10 w-full h-8 px-2 rounded-[8px] flex items-center gap-2 text-[14px] font-medium text-ink transition-[background-color,color,transform] duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)]"
+            data-new-conversation-action=""
+          >
+            <SquarePen className="w-3.5 h-3.5 stroke-[1.7] text-ink-2 shrink-0" />
+            <span className="truncate flex-1 text-left">{t('newConversation')}</span>
+          </button>
+        </GlideMenu>
       </div>
 
-      {/* Search Bar: small rounded-[8px] matching macOS spotlight style */}
-      <div className="px-3 pb-2 flex-shrink-0 no-drag">
-        <div className="relative flex items-center w-full bg-[#eef0f3] dark:bg-[#1a1d24] rounded-[8px] h-[34px] px-2.5 transition-all focus-within:bg-white dark:focus-within:bg-[#20242d] focus-within:ring-2 focus-within:ring-slate-300/60 dark:focus-within:ring-slate-600/60 focus-within:shadow-sm">
-          <Search className="w-4 h-4 text-[#9ca3af] dark:text-[#64748b] mr-2 flex-shrink-0" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search conversations"
-            aria-label="Search conversations"
-            className="w-full bg-transparent text-[13.5px] text-[#1e293b] dark:text-[#e2e8f0] outline-none placeholder-[#9ca3af] dark:placeholder-[#64748b]"
-          />
-        </div>
-      </div>
-
-      {/* Session conversation list for the active project */}
       <div
-        className="flex-1 overflow-y-auto px-3 no-drag scrollbar-none"
+        className="flex-1 overflow-y-auto px-2 pt-2 pb-1 no-drag scrollbar-none"
         onMouseLeave={handleMouseLeave}
+        data-sidebar-projects=""
       >
-        {isLoading && agents.length === 0 && (
-          <p className="px-3 py-4 text-[12px] text-[#94a3b8]" role="status">
-            Loading conversations…
-          </p>
-        )}
-        {!isLoading && error && (
-          <p className="px-3 py-4 text-[12px] leading-relaxed text-red-600" role="alert">
-            {error}
-          </p>
-        )}
-        {!isLoading && !error && filteredAgents.length === 0 && (
-          <p className="px-3 py-4 text-[12px] text-[#94a3b8]">
-            {searchQuery ? 'No matching conversations' : 'No conversations yet'}
-          </p>
-        )}
-        <div
-          ref={itemsContainerRef}
-          className="relative flex flex-col gap-0.5"
-          onMouseMove={handleMouseMove}
-        >
-          {/* Floating unified indicator (direct 120Hz GPU-accelerated motion tracking) */}
+        {/* Projects header with integrated Chat Search Storyboard */}
+        <div className="sidebar-copy relative mx-0 mb-1.5 h-8">
           <div
-            ref={indicatorRef}
-            aria-hidden="true"
-            className="absolute left-0 right-0 top-0 rounded-[10px] bg-[#e0e3e8] dark:bg-[#1e222b] shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.2)] pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
-            style={{ opacity: 0 }}
-          />
-          {filteredAgents.map((agent) => (
-            <AgentItem
-              key={agent.id}
-              agent={agent}
-              isActive={agent.id === currentActiveId}
-              onClick={() => handleSelectAgent(agent.id)}
+            aria-hidden={isSearchOpen}
+            className={`absolute inset-0 flex items-center justify-between px-2 text-[12px] font-medium text-ink-3 transition-[opacity,transform] ${
+              isSearchOpen ? 'pointer-events-none -translate-x-1 opacity-0' : 'translate-x-0 opacity-100'
+            }`}
+            style={{
+              transitionDuration: `${CHAT_SEARCH_MOTION.duration}ms`,
+              transitionTimingFunction: CHAT_SEARCH_MOTION.easing,
+            }}
+          >
+            <span className="text-[11px] font-medium text-ink-3">
+              {t('projects')}
+            </span>
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                aria-label={t('searchConversations')}
+                aria-expanded={isSearchOpen}
+                onClick={() => setSearchOpen(true)}
+                className="w-6 h-6 rounded-chip flex items-center justify-center text-ink-3 hover:bg-hover-2 hover:text-ink transition-[background-color,color,transform] duration-150 active:scale-[0.96]"
+                title={t('searchConversations')}
+              >
+                <Search className="w-3.5 h-3.5 stroke-[1.8]" />
+              </button>
+              {onAddProject && (
+                <button
+                  type="button"
+                  onClick={onAddProject}
+                  aria-label={t('addProject')}
+                  title={t('addProject')}
+                  data-add-project-button=""
+                  className="w-6 h-6 rounded-chip flex items-center justify-center text-ink-3 hover:bg-hover-2 hover:text-ink transition-[background-color,color,transform] duration-150 active:scale-[0.96]"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[1.8]" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div
+            className={`absolute right-0 top-0 z-20 flex h-8 items-center overflow-hidden rounded-[8px] bg-field text-ink-3 shadow-hairline transition-[width,opacity] focus-within:text-ink-2 ${
+              isSearchOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+            }`}
+            style={{
+              width: isSearchOpen ? '100%' : `${CHAT_SEARCH_MOTION.closedWidth}px`,
+              transitionDuration: `${CHAT_SEARCH_MOTION.duration}ms`,
+              transitionTimingFunction: CHAT_SEARCH_MOTION.easing,
+            }}
+          >
+            <span className="ml-2 flex shrink-0 items-center justify-center">
+              <Search className="w-3.5 h-3.5 stroke-[1.8] text-ink-2" />
+            </span>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  handleCloseSearch();
+                }
+              }}
+              placeholder={t('searchConversations')}
+              aria-label={t('searchConversations')}
+              data-sidebar-search=""
+              className="ml-1.5 min-w-0 flex-1 bg-transparent text-[14px] font-normal text-ink outline-none placeholder:text-ink-3"
             />
-          ))}
+            <button
+              type="button"
+              aria-label={t('close')}
+              onClick={handleCloseSearch}
+              className="w-7 h-7 mr-0.5 shrink-0 flex items-center justify-center rounded-chip text-ink-3 hover:bg-hover-2 hover:text-ink transition-[background-color,color,transform] duration-150 active:scale-[0.96]"
+            >
+              <X className="w-3.5 h-3.5 stroke-[1.8]" />
+            </button>
+          </div>
         </div>
+
+        {projects.length === 0 && (
+          <p className="px-2 py-2 text-[12px] text-ink-3">{t('noProjects')}</p>
+        )}
+
+        <GlideMenu
+          rowSelector="[data-project-row]"
+          highlightClassName="inset-x-0 rounded-[7px] bg-hover"
+          className="flex flex-col gap-2"
+        >
+          {projects.map((project) => {
+            const isActiveProject = project.id === activeProjectId;
+            const isExpanded = expandedProjectIds.has(project.id);
+            return (
+              <div key={project.id} data-project-group={project.id} className="flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  role="treeitem"
+                  aria-selected={isActiveProject}
+                  aria-expanded={isExpanded}
+                  onClick={() => handleProjectRowClick(project.id)}
+                  className={`relative z-10 w-full h-8 px-2 rounded-[8px] flex items-center gap-2 text-[14px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] ${
+                    isExpanded
+                      ? 'text-ink'
+                      : 'text-ink-2 hover:text-ink'
+                  }`}
+                  title={project.path ? `${project.name} (${project.path})` : project.name}
+                  data-project-row={project.id}
+                  data-project-expanded={isExpanded ? 'true' : 'false'}
+                >
+                  <Folder className="w-3.5 h-3.5 stroke-[1.7] text-ink-2 shrink-0" />
+                  <span className="truncate text-left">{project.name}</span>
+                </button>
+
+                {isExpanded && (
+                  <div data-project-conversations={project.id}>
+                    {renderConversationList(agentsForProject(project), {
+                      attachIndicator: isActiveProject,
+                      showActiveLoading: isActiveProject,
+                      projectKey: project.id,
+                      indented: true,
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </GlideMenu>
+
+        {projects.length === 0 && (
+          <div className="mt-1" data-project-conversations="">
+            {renderConversationList(agents, {
+              attachIndicator: true,
+              showActiveLoading: true,
+              projectKey: '__none__',
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Bottom Footer: Project Switcher (. . . +) above Settings */}
-      <div className="p-2.5 flex flex-col gap-1 flex-shrink-0 no-drag">
-        {onSelectProject && onAddProject && (
-          <ProjectDots
-            projects={projects}
-            activeProjectId={activeProjectId}
-            onSelectProject={onSelectProject}
-            onAddProject={onAddProject}
-          />
-        )}
-
-        <button
-          id="sidebarSettingsButton"
-          onClick={onOpenSettings}
-          className="w-full h-9 px-2.5 rounded-[8px] flex items-center gap-2.5 text-[13px] font-medium text-[#4b5563] dark:text-[#94a3b8] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[#0f172a] dark:hover:text-[#f1f5f9] transition-colors"
-        >
-          <Settings className="w-4 h-4 text-[#64748b] dark:text-[#94a3b8]" />
-          <span>Settings</span>
-        </button>
+      <div className="p-2 flex flex-col gap-1 flex-shrink-0 no-drag border-t border-line" data-sidebar-footer="">
+        <div className="flex items-center gap-1.5 w-full">
+          <button
+            id="sidebarSettingsButton"
+            type="button"
+            onClick={onOpenSettings}
+            className="flex-1 min-w-0 h-8 px-2 rounded-control flex items-center gap-2 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors overflow-hidden"
+          >
+            <Settings className="w-3.5 h-3.5 text-ink-3 shrink-0" />
+            <span className="truncate">{t('settings')}</span>
+          </button>
+          {updateCheck?.status === 'available' && (
+            <button
+              id="sidebarUpdateButton"
+              type="button"
+              onClick={handleOpenUpdate}
+              title={t('reactSettingsUpdateAvailableDescription', {
+                version: updateCheck.latestVersion ? `v${updateCheck.latestVersion}` : '',
+              })}
+              className="h-8 px-2.5 rounded-control flex items-center gap-1.5 text-[12px] font-medium bg-accent hover:bg-accent-ink text-white transition-colors shrink-0 active:scale-[0.98]"
+            >
+              <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>{t('sidebarUpdate')}</span>
+            </button>
+          )}
+        </div>
       </div>
     </aside>
   );
 }));
 
 Sidebar.displayName = 'Sidebar';
-

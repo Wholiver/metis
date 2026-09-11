@@ -62,9 +62,83 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(spawnAgentSchema.properties.context).toBeDefined();
 		expect(spawnAgentSchema.properties.mode).toBeDefined();
 		expect(spawnAgentSchema.properties.worktree).toBeDefined();
+		expect(spawnAgentSchema.properties.laneId).toBeDefined();
+		expect(spawnAgentSchema.properties.gate).toBeDefined();
 		expect(SPAWN_AGENT_GUIDANCE).toContain("Delegate a specific task to a specialized named agent");
 		expect(SPAWN_AGENT_GUIDANCE).toContain("snapshot of the parent workspace");
 		expect(SPAWN_AGENT_GUIDANCE).toContain("retained after successful completion");
+	});
+
+	it("separates process success from a blocked governed gate outcome", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-outcome-"));
+		tempDirs.push(tempDir);
+		const definition = createSpawnAgentToolDefinition(tempDir);
+		const execution = definition.execute(
+			"governed-g5",
+			{ agent: "reviewer", task: "Review integrated changes", laneId: "lane-a", gate: "G5" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+		await vi.waitFor(() => expect(mockChild.stdout.listenerCount("data")).toBeGreaterThan(0));
+		expect(spawnMock.mock.calls[0]?.[2]?.env).toMatchObject({ METIS_PERFORMANCE_LANE_ID: "lane-a", METIS_PERFORMANCE_GATE: "G5" });
+		mockChild.stdout.emit("data", Buffer.from(`${JSON.stringify({
+			type: "tool_execution_end",
+			toolCallId: "gate-1",
+			toolName: "performance_gate",
+			result: { details: { reports: [{ gate: "G5", itemId: "lane-a", verdict: "blocked", evidence: "artifacts/g5.md" }] } },
+		})}\n`));
+		mockChild.emit("close", 0);
+		const result = await execution;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload).toMatchObject({
+			status: "success",
+			outcome: "blocked",
+			gate: "G5",
+			itemId: "lane-a",
+			evidence: "artifacts/g5.md",
+		});
+	});
+
+	it("returns no_verdict when a governed child exits zero without its gate", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-no-verdict-"));
+		tempDirs.push(tempDir);
+		const definition = createSpawnAgentToolDefinition(tempDir);
+		const execution = definition.execute(
+			"governed-g6",
+			{ agent: "verifier", task: "Verify", laneId: "lane-a", gate: "G6" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+		await vi.waitFor(() => expect(mockChild.stdout.listenerCount("data")).toBeGreaterThan(0));
+		mockChild.emit("close", 0);
+		const result = await execution;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload).toMatchObject({ status: "success", outcome: "no_verdict", gate: "G6", itemId: "lane-a" });
+	});
+
+	it.each([
+		["invalid_brief", { outcome: "invalid_brief", code: "INVALID_BRIEF" }],
+		["fail", { details: { reports: [{ gate: "G4", itemId: "lane-a", verdict: "fail", evidence: "artifacts/not-done.md" }] } }],
+	] as const)("keeps exit zero but returns structured %s outcome", async (expected, gateResult) => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-semantic-"));
+		tempDirs.push(tempDir);
+		const definition = createSpawnAgentToolDefinition(tempDir);
+		const execution = definition.execute("semantic", { agent: "implementer", task: "Implement", laneId: "lane-a", gate: "G4" }, new AbortController().signal, () => {}, undefined as never);
+		await vi.waitFor(() => expect(mockChild.stdout.listenerCount("data")).toBeGreaterThan(0));
+		mockChild.stdout.emit("data", Buffer.from(`${JSON.stringify({ type: "tool_execution_end", toolCallId: "gate", toolName: "performance_gate", result: gateResult })}\n`));
+		mockChild.emit("close", 0);
+		const result = await execution;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload.status).toBe("success");
+		expect(payload.outcome).toBe(expected);
 	});
 
 	it("parses CLI flags for agent, depth, parent-id, root-run-id, and context", () => {
@@ -79,6 +153,9 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			"run-root-456",
 			"--agent-context",
 			"Extra analysis info",
+			"--max-spawn-depth", "3",
+			"--max-children", "4",
+			"--max-concurrent", "5",
 		]);
 
 		expect(parsed.agent).toBe("implementer");
@@ -86,6 +163,9 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(parsed.parentId).toBe("planner-123");
 		expect(parsed.rootRunId).toBe("run-root-456");
 		expect(parsed.agentContext).toBe("Extra analysis info");
+		expect(parsed.maxSpawnDepth).toBe(3);
+		expect(parsed.maxChildren).toBe(4);
+		expect(parsed.maxConcurrent).toBe(5);
 	});
 
 	it("executes in sync mode by default and returns structured success result", async () => {
@@ -142,6 +222,9 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(argsPassed).toContain("anthropic/claude-opus-4");
 		expect(argsPassed).toContain("--thinking");
 		expect(argsPassed).toContain("xhigh");
+		expect(argsPassed).toContain("--max-spawn-depth");
+		expect(argsPassed).toContain("--max-children");
+		expect(argsPassed).toContain("--max-concurrent");
 		expect(spawnOptions.env).toMatchObject({
 			METIS_PERFORMANCE_RUN_ID: "perf-001",
 			METIS_PERFORMANCE_GOVERNANCE_ROOT: "/tmp/perf-001",

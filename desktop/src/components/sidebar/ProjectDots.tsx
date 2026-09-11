@@ -119,7 +119,7 @@ export const ProjectDots: React.FC<ProjectDotsProps> = ({
 
   return (
     <div
-      className="w-full h-9 bg-black/[0.04] dark:bg-white/[0.06] rounded-[8px] p-1 flex items-center gap-1 select-none no-drag relative overflow-hidden"
+      className="w-full h-8 bg-hover-2 rounded-control p-0.5 flex items-center gap-0.5 select-none no-drag relative overflow-hidden"
       role="tablist"
       aria-label="Projects"
       data-project-switcher=""
@@ -135,13 +135,13 @@ export const ProjectDots: React.FC<ProjectDotsProps> = ({
           <div
             ref={indicatorRef}
             aria-hidden="true"
-            className="absolute left-0 top-0 rounded-[6px] bg-white text-slate-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] font-semibold dark:bg-[#282d38] dark:text-slate-100 dark:shadow-[0_1px_2px_rgba(0,0,0,0.3)] pointer-events-none z-0 will-change-transform transition-[transform,width,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+            className="absolute left-0 top-0 rounded-chip bg-surface text-ink shadow-btn font-medium pointer-events-none z-0 will-change-transform transition-[transform,width,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
             style={{ opacity: 0 }}
           />
         )}
 
         {projects.length === 0 ? (
-          <span className="px-2 text-[12px] text-slate-400 select-none truncate">No projects</span>
+          <span className="px-2 text-[12px] text-ink-3 select-none truncate">No projects</span>
         ) : (
           projects.map((project) => {
             const isActive = project.id === activeProjectId;
@@ -153,10 +153,10 @@ export const ProjectDots: React.FC<ProjectDotsProps> = ({
                 aria-selected={isActive}
                 aria-label={`Open project ${project.name}`}
                 onClick={() => handleSelectTab(project.id)}
-                className={`h-full flex-1 min-w-0 px-2 flex items-center justify-center rounded-[6px] text-[12px] font-medium transition-[color,transform] duration-150 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-1.5 focus-visible:ring-slate-400/60 z-[1] relative ${
+                className={`h-full flex-1 min-w-0 px-2 flex items-center justify-center rounded-chip text-[12px] font-medium transition-[color,transform] duration-150 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-1.5 focus-visible:ring-[color:var(--focus)] z-[1] relative ${
                   isActive
-                    ? 'text-slate-900 dark:text-slate-100 font-semibold'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    ? 'text-ink font-semibold'
+                    : 'text-ink-3 hover:text-ink'
                 }`}
                 title={project.path ? `${project.name} (${project.path})` : project.name}
                 data-project-tab={project.id}
@@ -173,7 +173,7 @@ export const ProjectDots: React.FC<ProjectDotsProps> = ({
         onClick={onAddProject}
         aria-label="Add project"
         title="Add or open project folder"
-        className="w-7 h-7 shrink-0 rounded-[6px] flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-black/[0.04] dark:hover:bg-white/10 active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-1.5 focus-visible:ring-slate-400/60 z-[1] relative"
+        className="w-7 h-7 shrink-0 rounded-chip flex items-center justify-center text-ink-3 hover:text-ink hover:bg-hover active:scale-95 transition-[background-color,color,transform] focus-visible:outline-none focus-visible:ring-1.5 focus-visible:ring-[color:var(--focus)] z-[1] relative"
         data-add-project-button=""
       >
         <Plus className="w-3.5 h-3.5 stroke-[2]" />
@@ -181,4 +181,3 @@ export const ProjectDots: React.FC<ProjectDotsProps> = ({
     </div>
   );
 };
-

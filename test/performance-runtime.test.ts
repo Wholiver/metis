@@ -71,6 +71,236 @@ describe("built-in Performance runtime", () => {
 		runtime.recordGateReport({ gate: "G2-verify", actor: "scope-verifier-1", role: "fresh-verifier", verdict: "pass", evidence: receipt(state, "scope-verify") });
 	}
 
+	const boundedAdmission = {
+		tier: "T1" as const,
+		taskShape: "bounded" as const,
+		deliverables: ["Parser accepts the documented input"],
+		acceptanceCriteria: ["Regression test passes"],
+		verificationCommands: ["npm test -- parser"],
+		sharedMutableState: false,
+		lanes: [{
+			id: "parser-fix",
+			objective: "Repair parser behavior",
+			framework: "backend-fix",
+			ownedPaths: ["src/core/parser.ts", "test/parser.test.ts"],
+			deliverables: ["Parser fix and regression test"],
+			acceptanceCriteria: ["Malformed input returns the documented error"],
+			verificationCommands: ["npm test -- parser"],
+			dependsOn: [],
+		}],
+	};
+
+	it("admits a bounded task into typed v2 state without a scope-authoring round trip", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({
+			kind: "admit",
+			mission: "Repair the parser",
+			workspaceRoot: "/workspace",
+			admission: boundedAdmission,
+		});
+
+		expect(state).toMatchObject({
+			schemaVersion: 2,
+			frontier: "G0",
+			activeItemId: "parser-fix",
+			admission: { tier: "T1", taskShape: "bounded" },
+		});
+		expect(readFileSync(join(state.governanceRoot, "ROADMAP.md"), "utf8")).toContain("## Item: parser-fix");
+		expect(readFileSync(join(state.governanceRoot, "GATELOG.md"), "utf8")).toContain("ADMISSION tier=T1");
+		expect(runtime.liveStateSummary()).toContain("route: T1/bounded");
+	});
+
+	it("keeps identical admission idempotent and rejects unsafe parallel admission", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const first = runtime.admit({ kind: "admit", mission: "Repair parser", workspaceRoot: "/workspace", admission: boundedAdmission });
+		const second = runtime.admit({ kind: "admit", mission: "Repair parser", workspaceRoot: "/workspace", admission: boundedAdmission });
+		expect(second.runId).toBe(first.runId);
+
+		expect(() => new PerformanceRuntime(agentDir).admit({
+			kind: "admit",
+			mission: "Parallel repair",
+			workspaceRoot: "/workspace",
+			admission: {
+				...boundedAdmission,
+				tier: "T3",
+				taskShape: "parallel",
+				lanes: [
+					{ ...boundedAdmission.lanes[0], id: "left", ownedPaths: ["src/core"] },
+					{ ...boundedAdmission.lanes[0], id: "right", ownedPaths: ["src/core/parser.ts"] },
+				],
+			},
+		})).toThrow("REPAIR_REQUIRED");
+	});
+
+	it("validates all admission tiers, shared state, cycles, and empty acceptance", () => {
+		const makeRuntime = () => {
+			const root = mkdtempSync(join(tmpdir(), "metis-performance-"));
+			roots.push(root);
+			return new PerformanceRuntime(root);
+		};
+		for (const tier of ["T0", "T1"] as const) {
+			expect(makeRuntime().admit({ kind: "admit", mission: tier, workspaceRoot: "/workspace", admission: { ...boundedAdmission, tier } }).admission?.tier).toBe(tier);
+		}
+		const sequential = { ...boundedAdmission, tier: "T2" as const, taskShape: "sequential-complex" as const, sharedMutableState: true };
+		const sequentialRuntime = makeRuntime();
+		expect(sequentialRuntime.admit({ kind: "admit", mission: "T2", workspaceRoot: "/workspace", admission: sequential }).admission?.sharedMutableState).toBe(true);
+		expect(sequentialRuntime.reserveSpawn("root", "implementer", "impl-1", "parser-fix")).toEqual({ valid: true });
+		expect(sequentialRuntime.reserveSpawn("root", "implementer", "impl-2", "parser-fix")).toMatchObject({ valid: false });
+		const parallel = {
+			...boundedAdmission, tier: "T3" as const, taskShape: "parallel" as const,
+			lanes: [
+				{ ...boundedAdmission.lanes[0], id: "left", framework: "backend-implement" as const, ownedPaths: ["src/left.ts"] },
+				{ ...boundedAdmission.lanes[0], id: "right", framework: "backend-implement" as const, ownedPaths: ["src/right.ts"] },
+			],
+		};
+		const parallelRuntime = makeRuntime();
+		expect(parallelRuntime.admit({ kind: "admit", mission: "T3", workspaceRoot: "/workspace", admission: parallel }).admission?.lanes).toHaveLength(2);
+		expect(parallelRuntime.prepareSpawn({ agent: "implementer", task: "Build left", laneId: "left" }).worktree).toBe("auto");
+		expect(parallelRuntime.prepareSpawn({ agent: "reviewer", task: "Review left", laneId: "left" }).worktree).toBeUndefined();
+		const laneWorker = new PerformanceRuntime(join(parallelRuntime.state!.governanceRoot, "..", ".."), {
+			METIS_PERFORMANCE_RUN_ID: parallelRuntime.state!.runId,
+			METIS_PERFORMANCE_LANE_ID: "right",
+			METIS_PERFORMANCE_GATE: "G4",
+		});
+		expect(laneWorker.context()).toContain("Assigned lane: right; assigned gate: G4");
+		expect(laneWorker.liveStateSummary()).toContain("active item: right");
+		expect(parallelRuntime.reserveSpawn("root", "implementer", "left-1", "left")).toEqual({ valid: true });
+		expect(parallelRuntime.reserveSpawn("root", "implementer", "left-2", "left")).toMatchObject({ valid: false });
+		expect(parallelRuntime.reserveSpawn("root", "implementer", "right-1", "right")).toEqual({ valid: true });
+		const parallelState = parallelRuntime.state!;
+		parallelRuntime.recordGateReport({ gate: "G4", itemId: "left", actor: "left-1", role: "implementer", verdict: "pass", evidence: receipt(parallelState, "left-implementation") });
+		expect(parallelRuntime.state).toMatchObject({ frontier: "G4", implementedItemIds: ["left"] });
+		parallelRuntime.recordGateReport({ gate: "G4", itemId: "right", actor: "right-1", role: "implementer", verdict: "pass", evidence: receipt(parallelState, "right-implementation") });
+		expect(parallelRuntime.state).toMatchObject({ frontier: "G4-assurance", implementedItemIds: ["left", "right"] });
+		const mixedRuntime = makeRuntime();
+		const mixedState = mixedRuntime.admit({ kind: "admit", mission: "Mixed T3", workspaceRoot: "/workspace", admission: {
+			...parallel,
+			lanes: [parallel.lanes[0], { ...parallel.lanes[1], framework: "backend-fix" as const }],
+		} });
+		expect(mixedRuntime.reserveSpawn("root", "implementer", "right-too-early", "right")).toMatchObject({ valid: false });
+		mixedRuntime.recordGateReport({ gate: "G4", itemId: "left", actor: "left", role: "implementer", verdict: "pass", evidence: receipt(mixedState, "mixed-left") });
+		expect(mixedRuntime.state).toMatchObject({ frontier: "G0", activeItemId: "right", implementedItemIds: ["left"] });
+		expect(() => makeRuntime().admit({ kind: "admit", mission: "shared", workspaceRoot: "/workspace", admission: { ...parallel, sharedMutableState: true } })).toThrow("REPAIR_REQUIRED");
+		expect(() => makeRuntime().admit({ kind: "admit", mission: "cycle", workspaceRoot: "/workspace", admission: { ...parallel, lanes: [
+			{ ...parallel.lanes[0], dependsOn: ["right"] }, { ...parallel.lanes[1], dependsOn: ["left"] },
+		] } })).toThrow("cycle");
+		expect(() => makeRuntime().admit({ kind: "admit", mission: "empty", workspaceRoot: "/workspace", admission: { ...boundedAdmission, acceptanceCriteria: [] } })).toThrow("acceptanceCriteria");
+	});
+
+	it("routes spawns by admitted tier and omits L1 framework instructions for workers", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({ kind: "admit", mission: "Repair parser", workspaceRoot: "/workspace", admission: boundedAdmission });
+
+		expect(validatePerformanceSpawn({ parentRole: "root", childRole: "implementer", liveAgents: 0 }, state).valid).toBe(false);
+		expect(validatePerformanceSpawn({ parentRole: "root", childRole: "reviewer", liveAgents: 0 }, state).valid).toBe(true);
+		expect(validatePerformanceSpawn({ parentRole: "root", childRole: "fresh-verifier", liveAgents: 0 }, state).valid).toBe(true);
+
+		const previousRole = process.env.METIS_AGENT_NAME;
+		try {
+			process.env.METIS_AGENT_NAME = "implementer";
+			const protocol = runtime.contextBlocks().find((block) => block.id === "performance-protocol")?.content ?? "";
+			expect(protocol).toContain("G4 implementation worker");
+			expect(protocol).not.toContain("L1 FEATURE-SUPERVISOR");
+		} finally {
+			if (previousRole === undefined) delete process.env.METIS_AGENT_NAME;
+			else process.env.METIS_AGENT_NAME = previousRole;
+		}
+	});
+
+	it("builds a complete shared-cwd T1 child brief from the admitted lane", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({ kind: "admit", mission: "Repair parser", workspaceRoot: "/workspace/project", admission: boundedAdmission });
+		const dispatch = runtime.prepareSpawn({ agent: "reviewer", task: "Review integrated parser change", laneId: "parser-fix" });
+
+		expect(dispatch).toMatchObject({ laneId: "parser-fix", gate: "G5", worktree: undefined });
+		expect(dispatch.task).toContain(`Mission SHA-256: ${state.missionSha256}`);
+		expect(dispatch.task).toContain("Workspace root/cwd: /workspace/project");
+		expect(dispatch.task).toContain("Owned paths: src/core/parser.ts, test/parser.test.ts");
+		expect(dispatch.task).toContain("Acceptance criteria: Malformed input returns the documented error");
+		expect(dispatch.task).toContain("Verification commands: npm test -- parser");
+	});
+
+	it("rehydrates v2 admission state with mission binding intact", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({ kind: "admit", mission: "Repair parser", workspaceRoot: "/workspace", admission: boundedAdmission });
+		const restored = new PerformanceRuntime(agentDir, {
+			METIS_PERFORMANCE_RUN_ID: state.runId,
+			METIS_PERFORMANCE_GOVERNANCE_ROOT: state.governanceRoot,
+			METIS_PERFORMANCE_NONCE: state.nonce,
+			METIS_PERFORMANCE_MISSION_SHA256: state.missionSha256,
+			METIS_PERFORMANCE_MISSION_BYTES: String(state.missionBytes),
+		});
+		expect(restored.state).toMatchObject({ schemaVersion: 2, runId: state.runId, admission: boundedAdmission });
+		expect(restored.prepareSpawn({ agent: "verifier", task: "Verify", laneId: "parser-fix" }).gate).toBe("G6");
+	});
+
+	it("allows admission revision only at G2/G1 fallback with zero live leases", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const planAdmission = {
+			...boundedAdmission,
+			tier: "T2" as const,
+			taskShape: "sequential-complex" as const,
+			lanes: [{ ...boundedAdmission.lanes[0], framework: "plan-design" }],
+		};
+		const first = runtime.admit({ kind: "admit", mission: "Design parser", workspaceRoot: "/workspace", admission: planAdmission });
+		expect(first.frontier).toBe("G1");
+		const revised = runtime.admit({ kind: "admit", mission: "Design parser with streaming", workspaceRoot: "/workspace", admission: {
+			...planAdmission, deliverables: ["Streaming parser design"],
+		} });
+		expect(revised.runId).toBe(first.runId);
+		expect(readFileSync(join(revised.governanceRoot, "PROMPTS.txt"), "utf8")).toBe("MISSION\nDesign parser with streaming\n");
+		expect(revised.missionSha256).not.toBe(first.missionSha256);
+
+		expect(runtime.reserveSpawn("root", "planner", "planner-live", "parser-fix")).toEqual({ valid: true });
+		expect(() => runtime.admit({ kind: "admit", mission: "Another scope", workspaceRoot: "/workspace", admission: planAdmission })).toThrow("zero live agents");
+		runtime.releaseSpawn("planner-live");
+		writeFileSync(join(revised.governanceRoot, "artifacts", "g1.md"), "evidence", "utf8");
+		runtime.recordGateReport({ gate: "G1", actor: "planner", role: "planner", verdict: "pass", evidence: "artifacts/g1.md" });
+		expect(() => runtime.admit({ kind: "admit", mission: "Forbidden frontier", workspaceRoot: "/workspace", admission: planAdmission })).toThrow("backtrack to G2 or G1");
+	});
+
+	it("completes T0 at root with explicit assurance skips and zero spawn", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({ kind: "admit", mission: "Rename exact option", workspaceRoot: "/workspace", admission: {
+			...boundedAdmission, tier: "T0", lanes: [{ ...boundedAdmission.lanes[0], framework: "apply", objective: "Rename --old to --new" }],
+		} });
+		expect(runtime.allowedSpawnRoles()).toEqual([]);
+		runtime.recordGateReport({ gate: "G4", actor: "root", role: "root", verdict: "pass", evidence: receipt(state, "t0-apply") });
+		expect(runtime.state).toMatchObject({ status: "completed", frontier: "complete", completedItemIds: ["parser-fix"] });
+		const log = readFileSync(join(state.governanceRoot, "GATELOG.md"), "utf8");
+		expect(log).toContain("SKIP G5 reason=T0");
+		expect(log).toContain("SKIP G6 reason=T0");
+		expect(log).toContain("SKIP goal-check reason=T0");
+	});
+
+	it("completes T1 after root G4 plus independent shared-workspace G5/G6", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({ kind: "admit", mission: "Add parser option", workspaceRoot: "/workspace", admission: {
+			...boundedAdmission, lanes: [{ ...boundedAdmission.lanes[0], framework: "backend-implement" }],
+		} });
+		runtime.recordGateReport({ gate: "G4", actor: "root", role: "root", verdict: "pass", evidence: receipt(state, "t1-implementation") });
+		runtime.recordGateReport({ gate: "G5", actor: "reviewer-1", role: "reviewer", verdict: "pass", evidence: receipt(state, "t1-review") });
+		runtime.recordGateReport({ gate: "G6", actor: "verifier-1", role: "verifier", verdict: "pass", evidence: receipt(state, "t1-verify") });
+		expect(runtime.state).toMatchObject({ status: "completed", frontier: "complete", completedItemIds: ["parser-fix"] });
+		expect(readFileSync(join(state.governanceRoot, "GATELOG.md"), "utf8")).toContain("SKIP goal-check reason=T1");
+	});
+
 	it("persists governance outside cwd with a hash-bound mission pointer", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
 		roots.push(agentDir);

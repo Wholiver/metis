@@ -22,16 +22,16 @@ export const UserBubble = React.memo<UserBubbleProps>(({ message }) => {
                 key={attachment.id}
                 src={attachment.previewUrl}
                 alt={attachment.name}
-                className="max-h-[240px] max-w-[320px] rounded-2xl object-contain outline outline-1 outline-black/10 dark:outline-white/10"
+                className="max-h-[240px] max-w-[320px] rounded-card object-contain shadow-hairline"
                 data-message-attachment="image"
               />
             ) : (
               <div
                 key={attachment.id}
-                className="flex h-12 max-w-[280px] items-center gap-2.5 rounded-xl border border-slate-200/90 dark:border-[#272b36] bg-white dark:bg-[#1a1d24] px-3 text-left shadow-[0_2px_8px_rgba(15,23,42,0.06)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.2)]"
+                className="flex h-12 max-w-[280px] items-center gap-2.5 rounded-[12px] border border-line bg-surface px-3 text-left shadow-hairline"
                 data-message-attachment={attachment.kind}
               >
-                <span className="grid h-8 w-8 flex-none place-items-center rounded-lg bg-slate-100 dark:bg-[#232732] text-slate-500 dark:text-slate-400">
+                <span className="grid h-8 w-8 flex-none place-items-center rounded-[8px] bg-field text-ink-3">
                   {attachment.kind === 'video' ? (
                     <Video className="h-4 w-4 stroke-[1.8]" />
                   ) : (
@@ -39,18 +39,21 @@ export const UserBubble = React.memo<UserBubbleProps>(({ message }) => {
                   )}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[12px] font-medium text-slate-700 dark:text-slate-200">{attachment.name}</span>
-                  <span className="block text-[10.5px] text-slate-400 dark:text-slate-500 tabular-nums">{attachment.sizeText}</span>
+                  <span className="block truncate text-[12px] font-medium text-ink">{attachment.name}</span>
+                  <span className="block text-[10.5px] text-ink-3 tabular-nums">{attachment.sizeText}</span>
                 </span>
               </div>
             ))}
           </div>
         )}
         {(message.content || message.failed) && (
-          <div className="bg-[#f1f3f6] dark:bg-[#212631] text-[#0f172a] dark:text-[#f1f5f9] px-4 py-2.5 rounded-[10px] max-w-full text-[14px] leading-relaxed font-normal text-left whitespace-pre-wrap break-words text-pretty">
+          <div
+            className="max-w-full rounded-[10px] border border-line bg-surface px-3.5 py-2 text-left text-[14px] font-normal leading-[1.5] text-ink whitespace-pre-wrap break-words text-pretty shadow-hairline"
+            data-user-bubble=""
+          >
             {message.content}
             {message.failed && (
-              <span className="block mt-1.5 text-[11px] text-rose-600 dark:text-rose-400" role="status">Not sent</span>
+              <span className="mt-1.5 block text-[11px] text-red" role="status">Not sent</span>
             )}
           </div>
         )}
@@ -60,4 +63,3 @@ export const UserBubble = React.memo<UserBubbleProps>(({ message }) => {
 });
 
 UserBubble.displayName = 'UserBubble';
-

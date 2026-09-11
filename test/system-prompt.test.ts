@@ -1,5 +1,11 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { buildInstructionStack, buildSystemPrompt, compileInstructionStack, instructionStackHash } from "../src/core/system-prompt.ts";
+import { BUILTIN_COORDINATOR } from "../src/core/agent-definition.ts";
+import { SPAWN_AGENT_GUIDANCE } from "../src/core/tools/spawn_agent.ts";
+import { PerformanceRuntime } from "../src/core/performance-runtime.ts";
 
 describe("instruction stack", () => {
 	test("renders trusted base and developer instructions in deterministic order", () => {
@@ -52,7 +58,7 @@ describe("instruction stack", () => {
 		expect(prompt).not.toContain("LIVE WORKING MEMORY");
 		expect(prompt).not.toContain("remember_user_intent exactly once");
 		expect(prompt).not.toContain("after 8 non-log tool calls");
-		expect(prompt).toContain("active workflow provides a checklist");
+		expect(prompt).toContain("Keep concise progress visible");
 	});
 
 	test("keeps Plan conversational and Build execution-oriented with unified role identity", () => {
@@ -67,8 +73,8 @@ describe("instruction stack", () => {
 		expect(planPrompt).toContain("Never present clarification questions as ordinary assistant text");
 		expect(buildPrompt).toContain("Primary Coordinator & Engineering Engine (Coordinator & Executor)");
 		expect(buildPrompt).toContain("strictly forbid repetitive '正在...', '我将...'");
-		expect(buildPrompt).toContain("initialize or refresh update_plan before mutating tools");
-		expect(buildPrompt).toContain("Progress & Implementation: maintain visible progress pacing");
+		expect(buildPrompt).toContain("Read-only investigation may precede admission; mutating work may not");
+		expect(buildPrompt).toContain("keep integrated-workspace evidence current");
 	});
 
 	test("requires intermediate updates before tool execution in every mode", () => {
@@ -96,13 +102,41 @@ describe("instruction stack", () => {
 		expect(buildInstructionStack({ cwd: "/workspace", memoryOverview: "   \n  " }).memoryOverview).toBeUndefined();
 	});
 
-	test("incorporates Phase 0 Intent Classification & Admission Check across base instructions and Build mode", () => {
+	test("uses one authoritative structured Build admission policy", () => {
 		const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "build" });
-		expect(prompt).toContain("Phase 0: Intent Classification & Admission Check (Triage Fast-Path)");
-		expect(prompt).toContain("Conversational / General Query / Greeting");
-		expect(prompt).toContain("First apply Phase 0 Admission Check");
-		expect(prompt).toContain("respond directly in text without mutating tools, creating ROADMAP/GATELOG files, or spawning subagents");
+		expect(prompt).toContain("Authoritative Build admission policy");
+		expect(prompt).toContain("Conversational or read-only requests");
+		expect(prompt).toContain("call performance_admit before the first write, edit, bash, spawn_agent, update_plan, or performance_gate");
+		expect(prompt.match(/authoritative Build admission policy/gi)).toHaveLength(2);
+	});
+
+	test("routes T0/T1 without implementation subagents and keeps assurance semantic", () => {
+		const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "build" });
+		expect(prompt).toContain("T0 bounded mechanical work: root implements and verifies; zero spawn");
+		expect(prompt).toContain("T1 bounded fix or feature: root performs G4; then fresh reviewer G5 and fresh verifier G6");
+
+		// BUILTIN_COORDINATOR role contract
+		expect(BUILTIN_COORDINATOR.systemPrompt).toContain("T0 never reaches this role");
+		expect(BUILTIN_COORDINATOR.systemPrompt).toContain("T1 uses root implementation followed by fresh G5 review and G6 verification");
+
+		// spawn_agent tool guidance negative constraint
+		expect(SPAWN_AGENT_GUIDANCE).toContain("T0 forbids spawn_agent");
+		expect(SPAWN_AGENT_GUIDANCE).toContain("T1 keeps implementation on root and permits only fresh reviewer/verifier assurance");
+
+		// performance runtime emits admitted route, not pre-admission triage prose
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-prompt-test-"));
+		try {
+			const runtime = new PerformanceRuntime(tempDir);
+			runtime.admit({ kind: "admit", mission: "Simple task test", workspaceRoot: "/workspace", admission: {
+				tier: "T0", taskShape: "bounded", deliverables: ["file updated"], acceptanceCriteria: ["exact change present"],
+				verificationCommands: ["git diff --check"], sharedMutableState: false,
+				lanes: [{ id: "apply", objective: "apply exact edit", framework: "apply", ownedPaths: ["README.md"], deliverables: ["file updated"], acceptanceCriteria: ["exact change present"], verificationCommands: ["git diff --check"], dependsOn: [] }],
+			} });
+			const protocolBlock = runtime.contextBlocks().find((b) => b.id === "performance-protocol");
+			expect(protocolBlock?.content).toContain("root G4 executor for the admitted T0 bounded lane");
+			expect(protocolBlock?.content).not.toContain("L1 FEATURE-SUPERVISOR");
+		} finally {
+			rmSync(tempDir, { recursive: true, force: true });
+		}
 	});
 });
-
-

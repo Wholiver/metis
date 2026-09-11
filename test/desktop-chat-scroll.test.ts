@@ -23,13 +23,28 @@ it('keeps the Electron chat at the bottom without interrupting history reading',
         react: join(desktop, 'node_modules/react'),
         'react-dom': join(desktop, 'node_modules/react-dom'),
       },
+      plugins: [{
+        name: 'svg-raw',
+        setup(pluginBuild) {
+          pluginBuild.onResolve({ filter: /\.svg\?raw$/ }, (args) => {
+            const clean = args.path.replace(/\?raw$/, '');
+            const resolved = requireDesktop.resolve(clean, { paths: [args.resolveDir] });
+            return { path: resolved, namespace: 'svg-raw' };
+          });
+          pluginBuild.onLoad({ filter: /.*/, namespace: 'svg-raw' }, async (args) => {
+            const contents = await readFile(args.path, 'utf8');
+            return { contents: `export default ${JSON.stringify(contents)};`, loader: 'js' };
+          });
+        },
+      }],
       define: { 'process.env.NODE_ENV': '"development"' },
     });
     const postcss = requireDesktop('postcss');
-    const tailwind = requireDesktop('tailwindcss');
-    const { css } = await postcss([tailwind({
-      content: [join(desktop, 'src/**/*.{js,ts,jsx,tsx}')],
-    })]).process(await readFile(join(desktop, 'src/index.css'), 'utf8'), { from: undefined });
+    const tailwind = requireDesktop('@tailwindcss/postcss');
+    const { css } = await postcss([tailwind()]).process(
+      await readFile(join(desktop, 'src/index.css'), 'utf8'),
+      { from: join(desktop, 'src/index.css') },
+    );
     await writeFile(join(directory, 'fixture.css'), css);
     await writeFile(join(directory, 'index.html'), `<!doctype html><html><head>
       <link rel="stylesheet" href="fixture.css">

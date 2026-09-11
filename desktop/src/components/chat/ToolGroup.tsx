@@ -91,6 +91,9 @@ export const ToolGroup = React.memo<ToolGroupProps>(({ parts, streaming = false,
   const listRef = useRef<HTMLDivElement>(null);
   const wasStreaming = useRef(streaming);
   const userOverrideRef = useRef(false);
+  const [revealedPartCount, setRevealedPartCount] = useState(() => (
+    streaming && !preserveExistingItems ? Math.min(1, parts.length) : parts.length
+  ));
   const updateKey = useMemo(() => parts.map((part) => [
     part.id,
     part.progress?.state || '',
@@ -124,11 +127,7 @@ export const ToolGroup = React.memo<ToolGroupProps>(({ parts, streaming = false,
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [expanded, updateKey]);
-
-  const [revealedPartCount, setRevealedPartCount] = useState(() => (
-    streaming && !preserveExistingItems ? Math.min(1, parts.length) : parts.length
-  ));
+  }, [expanded, revealedPartCount, updateKey]);
 
   useEffect(() => {
     if (!streaming || preserveExistingItems) {
@@ -217,4 +216,3 @@ export const ToolGroup = React.memo<ToolGroupProps>(({ parts, streaming = false,
 });
 
 ToolGroup.displayName = 'ToolGroup';
-

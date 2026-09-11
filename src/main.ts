@@ -33,6 +33,7 @@ import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dis
 import type { ModelRegistry } from "./core/model-registry.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
+import { getGlobalSpawnGuard } from "./core/spawn-guard.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
 import type { CreateAgentSessionOptions } from "./core/sdk.ts";
 import {
@@ -546,6 +547,11 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 	}
 	time("parseArgs");
+	getGlobalSpawnGuard().updateConfig({
+		...(parsed.maxSpawnDepth !== undefined ? { maxSpawnDepth: parsed.maxSpawnDepth } : {}),
+		...(parsed.maxChildren !== undefined ? { maxChildrenPerAgent: parsed.maxChildren } : {}),
+		...(parsed.maxConcurrent !== undefined ? { maxConcurrentAgents: parsed.maxConcurrent } : {}),
+	});
 
 	if (parsed.depth !== undefined) {
 		process.env.METIS_AGENT_DEPTH = String(parsed.depth);
@@ -973,4 +979,3 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 }
-

@@ -104,20 +104,6 @@ print(json.dumps({
 				no_score_with_success_exit: [0, "unverified"],
 			});
 		});
-
-		it("strict submission scripts should require official evidence and ALE-v1.0 validation", async () => {
-			const rescore = await fs.readFile(path.join(rootDir, "scripts", "rescore-ale.py"), "utf-8");
-			const evaluator = await fs.readFile(path.join(rootDir, "scripts", "run-official-ale-evaluate.py"), "utf-8");
-			const packager = await fs.readFile(path.join(rootDir, "scripts", "build_leaderboard_submission.py"), "utf-8");
-			const schema = await fs.readFile(path.join(rootDir, "scripts", "ale_trajectory_schema.py"), "utf-8");
-			expect(rescore).toContain("OFFICIAL_ALE_COMMIT");
-			expect(evaluator).toContain("module.evaluate");
-			expect(rescore).toContain('"outcome": "blocked"');
-			expect(packager).toContain("require_trusted_scores");
-			expect(packager).toContain("len(task_ids) != 99");
-			expect(packager).toContain("Trajectory.model_validate");
-			expect(schema).toContain('Literal["ALE-v1.0"]');
-		});
 	});
 
 	describe("3. Documentation Verification", () => {

@@ -6,6 +6,9 @@ const aiSrcCompat = fileURLToPath(new URL("../ai/src/compat.ts", import.meta.url
 const aiSrcOAuth = fileURLToPath(new URL("../ai/src/oauth.ts", import.meta.url));
 const agentSrcIndex = fileURLToPath(new URL("../agent/src/index.ts", import.meta.url));
 const tuiSrcIndex = fileURLToPath(new URL("../tui/src/index.ts", import.meta.url));
+const lobehubIconsStaticSvg = fileURLToPath(
+	new URL("./desktop/node_modules/@lobehub/icons-static-svg", import.meta.url),
+);
 
 export default defineConfig({
 	test: {
@@ -31,6 +34,8 @@ export default defineConfig({
 			{ find: /^@mariozechner\/pi-ai\/oauth$/, replacement: aiSrcOAuth },
 			{ find: /^@mariozechner\/pi-agent-core$/, replacement: agentSrcIndex },
 			{ find: /^@mariozechner\/pi-tui$/, replacement: tuiSrcIndex },
+			{ find: /^@lobehub\/icons-static-svg$/, replacement: lobehubIconsStaticSvg },
+			{ find: /^@lobehub\/icons-static-svg\/(.*)$/, replacement: `${lobehubIconsStaticSvg}/$1` },
 		],
 	},
 });

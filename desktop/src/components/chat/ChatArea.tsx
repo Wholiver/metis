@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Agent, CollaborationMode, ContextUsage, MemoryState, Message, ModelOption, PendingUserInput, SendMessageOptions, ThinkingOption, TokenBreakdown, UserInputResponse, WorkflowProposalState } from '../../types';
+import { Agent, CollaborationMode, ContextUsage, MemoryState, Message, ModelOption, PendingUserInput, ProjectItem, SendMessageOptions, ThinkingOption, TokenBreakdown, UserInputResponse, WorkflowPlanState, WorkflowProposalState } from '../../types';
 import { IDLE_COMPOSER_ACTIVITY, reduceComposerActivity } from '../../lib/composer';
 import { resolveConversationProgress } from '../../lib/work-progress';
+import { RateLimitWindow } from '../inspector/UsageQuotaCard';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
@@ -13,6 +14,9 @@ interface ChatAreaProps {
   messages: Message[];
   workspacePath?: string;
   projectName?: string;
+  projects?: ProjectItem[];
+  activeProject?: ProjectItem;
+  onSelectProject?: (id: string) => void | Promise<void>;
   isSidebarOpen?: boolean;
   isInspectorOpen?: boolean;
   onToggleSidebar?: () => void;
@@ -37,9 +41,8 @@ interface ChatAreaProps {
   isStreaming?: boolean;
   isLoading?: boolean;
   workflowProposal?: WorkflowProposalState;
-  planActionsEnabled?: boolean;
-  onProcessProposal?: () => void;
-  onRefineProposal?: (request: string) => void;
+  workflowPlan?: WorkflowPlanState;
+  onOpenPlan?: (markdown: string) => void;
   pendingUserInput?: PendingUserInput;
   onRespondToUserInput: (requestId: string, response: UserInputResponse) => boolean | Promise<boolean>;
   onNewChat?: () => void;
@@ -47,6 +50,11 @@ interface ChatAreaProps {
   onOpenMemorySettings?: () => void;
   contextUsage?: ContextUsage;
   tokenBreakdown?: TokenBreakdown;
+  isOAuth?: boolean;
+  totalCost?: number;
+  totalTokens?: number;
+  quota5h?: RateLimitWindow;
+  quota7d?: RateLimitWindow;
 }
 
 export const ChatArea = React.memo<ChatAreaProps>(({
@@ -54,6 +62,9 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   messages,
   workspacePath,
   projectName,
+  projects = [],
+  activeProject,
+  onSelectProject,
   isSidebarOpen = true,
   isInspectorOpen = true,
   onToggleSidebar,
@@ -78,9 +89,8 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   isStreaming = false,
   isLoading = false,
   workflowProposal,
-  planActionsEnabled = false,
-  onProcessProposal,
-  onRefineProposal,
+  workflowPlan,
+  onOpenPlan,
   pendingUserInput,
   onRespondToUserInput,
   onNewChat,
@@ -88,6 +98,11 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   onOpenMemorySettings,
   contextUsage,
   tokenBreakdown,
+  isOAuth = false,
+  totalCost,
+  totalTokens,
+  quota5h,
+  quota7d,
 }) => {
   const [composerActivity, setComposerActivity] = useState(IDLE_COMPOSER_ACTIVITY);
 
@@ -116,9 +131,14 @@ export const ChatArea = React.memo<ChatAreaProps>(({
     showActiveProgress,
     Boolean(pendingUserInput)
   );
+  const lastMessage = messages[messages.length - 1];
+  const workflowPlanInterrupted = !showActiveProgress
+    && lastMessage?.role === 'assistant'
+    && lastMessage.stopReason === 'aborted';
+  const isHomeEmpty = messages.length === 0 && !isLoading && !showActiveProgress && !pendingUserInput;
 
   return (
-    <main data-purpose="main-chat" className="flex-1 h-full bg-[#ffffff] dark:bg-[#16171a] flex flex-col min-w-[360px] overflow-hidden relative">
+    <main data-purpose="main-chat" className="flex-1 h-full bg-page flex flex-col min-w-[360px] overflow-hidden relative">
       <ChatHeader
         agent={agent}
         isSidebarOpen={isSidebarOpen}
@@ -128,8 +148,6 @@ export const ChatArea = React.memo<ChatAreaProps>(({
         onNewChat={onNewChat}
         memoryState={memoryState}
         onOpenMemorySettings={onOpenMemorySettings}
-        contextUsage={contextUsage}
-        tokenBreakdown={tokenBreakdown}
       />
       <MessageList
         key={agent.id}
@@ -138,12 +156,13 @@ export const ChatArea = React.memo<ChatAreaProps>(({
         projectName={projectName}
         isLoading={isLoading}
         isStreaming={showActiveProgress}
+        isHomeEmpty={isHomeEmpty}
         workflowProposal={workflowProposal}
-        planActionsEnabled={planActionsEnabled}
-        onProcessProposal={onProcessProposal}
-        onRefineProposal={onRefineProposal}
+        onOpenPlan={onOpenPlan}
         pendingUserInput={pendingUserInput}
         onSendMessage={handleSendMessage}
+        collaborationMode={collaborationMode}
+        model={activeModel}
       />
       {pendingUserInput ? (
         <UserInputCard request={pendingUserInput}
@@ -171,9 +190,22 @@ export const ChatArea = React.memo<ChatAreaProps>(({
           skills={skills}
           disabled={showActiveProgress || isLoading || isCompacting}
           isStreaming={showActiveProgress}
+          isHomeEmpty={isHomeEmpty}
+          projects={projects}
+          activeProject={activeProject}
+          onSelectProject={onSelectProject}
           onAbort={onAbort}
           workProgress={currentProgress}
           isWorkIdle={isCurrentIdle}
+          workflowPlan={workflowPlan}
+          workflowPlanInterrupted={workflowPlanInterrupted}
+          contextUsage={contextUsage}
+          tokenBreakdown={tokenBreakdown}
+          isOAuth={isOAuth}
+          totalCost={totalCost}
+          totalTokens={totalTokens}
+          quota5h={quota5h}
+          quota7d={quota7d}
         />
       )}
     </main>

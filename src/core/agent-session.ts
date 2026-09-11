@@ -106,6 +106,7 @@ import {
 	type InstructionStack,
 } from "./system-prompt.ts";
 import { getGlobalSpawnGuard } from "./spawn-guard.ts";
+import { isGitRepositoryRoot } from "./worktree.ts";
 import {
 	extractProposedPlan,
 	resolveWorkflowProposal,
@@ -126,6 +127,7 @@ import {
 	PerformanceRuntime,
 	summarizePerformanceRun,
 	type PerformanceAttendance,
+	type PerformanceAdmission,
 	type PerformanceConcurrency,
 	type PerformanceRunState,
 	type PerformanceRunSummary,
@@ -414,6 +416,9 @@ export class AgentSession {
 	private _activeRunInstructionStack: InstructionStack | undefined;
 	private readonly _workflowRuntime = new WorkflowRuntime();
 	private readonly _performanceRuntime: PerformanceRuntime;
+	private _performanceAdmissionRequired = false;
+	private _pendingPerformanceMission?: string;
+	private _pendingPerformanceInvocation?: ReturnType<AgentSession["_parsePerformanceInvocation"]>;
 	private _collaborationMode: CollaborationMode = "build";
 	/** Configured Build tool set. Plan mode derives a read-only view without replacing it. */
 	private _buildToolNames: string[] | undefined;
@@ -529,6 +534,13 @@ export class AgentSession {
 				return {
 					block: true,
 					reason: `Tool ${toolCall.name} is unavailable in Plan mode because it may modify state.`,
+				};
+			}
+			if (this._performanceAdmissionRequired
+				&& ["write", "edit", "bash", "spawn_agent", "update_plan", "performance_gate"].includes(toolCall.name)) {
+				return {
+					block: true,
+					reason: `Tool ${toolCall.name} requires a successful performance_admit call for the current Build request.`,
 				};
 			}
 			const subagentBarrierActive = this._subagentPauseActive;
@@ -2024,6 +2036,9 @@ export class AgentSession {
 			}
 
 			let proposalForExecution: WorkflowProposalState | undefined;
+			this._performanceAdmissionRequired = false;
+			this._pendingPerformanceMission = undefined;
+			this._pendingPerformanceInvocation = undefined;
 			if (this._collaborationMode === "build") {
 				if (options?.workflowAction === "process_proposal") {
 					const proposal = this.workflowProposal;
@@ -2035,9 +2050,8 @@ export class AgentSession {
 					this._resetCompletedWorkflowPlanForNewPrompt();
 				}
 			}
-			// Plan mode is intentionally read-only: it persists a conversational proposal
-			// but must not open a runnable Performance lane. Build mode always opens one
-			// for a direct task; Process binds that lane to the approved proposal itself.
+			// Plan mode is read-only. Build mode records a pending mission but does not
+			// open governance until the model submits a typed admission contract.
 			if (
 				this._collaborationMode === "build"
 				&& currentText.trim()
@@ -2048,28 +2062,18 @@ export class AgentSession {
 				const mission = directInvocation.mission;
 				if (!mission) throw new Error("Performance task is empty after removing runtime directives.");
 				const activeTools = new Set(this.getActiveToolNames());
-				// Minimal/custom SDK tool sets may intentionally omit native governance.
-				// A built-in gate that is merely disabled is a safety failure, never a
-				// silent fallback to ungoverned Build.
 				const hasNativePerformanceGate = this.getAllTools().some((tool) => tool.name === "performance_gate");
-				const requestsNativeBuild = ["read", "write", "edit", "bash", "spawn_agent"].some((tool) => activeTools.has(tool));
+				const hasNativePerformanceAdmit = this.getAllTools().some((tool) => tool.name === "performance_admit");
+				const requestsNativeBuild = ["write", "edit", "bash", "spawn_agent"].some((tool) => activeTools.has(tool));
 				if (hasNativePerformanceGate && requestsNativeBuild && !activeTools.has("performance_gate")) {
 					throw new Error("Performance control capability is disabled; direct Build cannot start without performance_gate.");
 				}
-				if (hasNativePerformanceGate && requestsNativeBuild) {
-					const activeRun = this._performanceRuntime.state;
-					const run = activeRun?.status === "active"
-						? this._performanceRuntime.steer(mission)
-						: this._performanceRuntime.start({
-							...(await this._resolvePerformanceStart(mission, directInvocation)),
-							capabilities: {
-								read: activeTools.has("read"),
-								write: activeTools.has("write") || activeTools.has("edit"),
-								run: activeTools.has("bash"),
-							},
-						});
-					this._appendPerformanceRunEntry(run);
+				if (hasNativePerformanceAdmit && requestsNativeBuild && !activeTools.has("performance_admit")) {
+					throw new Error("Performance admission capability is disabled; direct Build cannot mutate without performance_admit.");
 				}
+				this._pendingPerformanceMission = mission;
+				this._pendingPerformanceInvocation = directInvocation;
+				this._performanceAdmissionRequired = hasNativePerformanceGate && hasNativePerformanceAdmit && requestsNativeBuild;
 			}
 			const memoryOverview = this._memoryCoordinator?.getMemoryOverview();
 			const memoryOverviewBlock = memoryOverview ? {
@@ -2082,7 +2086,9 @@ export class AgentSession {
 			// Both blocks are stable for the life of a run (protocol text and run identity),
 			// so they are injected once and then served from the provider's cached prefix.
 			// Live gate state rides the performance_gate / read_plan results instead.
-			const performanceBlocks = this._collaborationMode === "build" ? this._performanceRuntime.contextBlocks() : [];
+			const performanceBlocks = this._collaborationMode === "build" && !this._performanceAdmissionRequired
+				? this._performanceRuntime.contextBlocks()
+				: [];
 
 			const stepInstructions: InstructionStack = {
 				base: this._instructionStack.base,
@@ -3538,11 +3544,20 @@ export class AgentSession {
 								METIS_PERFORMANCE_MISSION_BYTES: String(this._performanceRuntime.state.missionBytes),
 							} : undefined,
 						}),
+						prepareDispatch: async (input) => {
+							if (!this._performanceRuntime.state?.admission) return input;
+							const prepared = this._performanceRuntime.prepareSpawn(input);
+							if (prepared.worktree && !(await isGitRepositoryRoot(this._cwd))) {
+								throw new Error("REPAIR_REQUIRED: T3 parallel implementers require a Git repository root; revise admission to T2 for shared-cwd serial execution.");
+							}
+							return { ...input, ...prepared };
+						},
 						validateSpawn: (input, runtime, childAgentId) => {
 							const decision = this._performanceRuntime.reserveSpawn(
 								runtime?.currentAgentName ?? "root",
 								input.agent,
 								childAgentId,
+								input.laneId,
 							);
 							return decision.valid ? undefined : decision.message;
 						},
@@ -3567,6 +3582,40 @@ export class AgentSession {
 					performanceGate: {
 						runtime: () => this._performanceRuntime,
 						actor: () => ({ id: process.env.METIS_AGENT_ID ?? "root", role: process.env.METIS_AGENT_NAME ?? "root" }),
+					},
+					performanceAdmit: {
+						admit: async (admission: PerformanceAdmission) => {
+							const mission = this._pendingPerformanceMission;
+							const invocation = this._pendingPerformanceInvocation;
+							if (!mission || !invocation) throw new Error("performance_admit has no pending Build mission.");
+							const active = this._performanceRuntime.state;
+							// A new mutating user scope explicitly invalidates prior admission.
+							// steer() first enforces zero leases and reopens canonical state at G2.
+							if (active?.status === "active" && active.mission !== mission) this._performanceRuntime.steer(mission);
+							const activeTools = new Set(this.getActiveToolNames());
+							const start = await this._resolvePerformanceStart(mission, invocation);
+							const run = this._performanceRuntime.admit({
+								...start,
+								maxConcurrent: Math.min(start.maxConcurrent, getGlobalSpawnGuard().getConfig().maxConcurrentAgents),
+								kind: "admit",
+								mission,
+								workspaceRoot: this._cwd,
+								admission,
+								capabilities: {
+									read: activeTools.has("read"),
+									write: activeTools.has("write") || activeTools.has("edit"),
+									run: activeTools.has("bash"),
+								},
+							});
+							this._performanceAdmissionRequired = false;
+							this._appendPerformanceRunEntry(run);
+							return run;
+						},
+						context: () => {
+							const live = this._performanceRuntime.liveStateSummary();
+							const roles = this._performanceRuntime.allowedSpawnRoles();
+							return [live, `allowed roles: ${roles.join(", ") || "none"}.`].filter(Boolean).join("\n");
+						},
 					},
 					askUser: { handler: () => (request, signal) => this._askUser(request, signal) },
 					queryMemoryDb: { query: (sql, params) => this._memoryCoordinator?.query(sql, params) ?? [] },
@@ -3598,7 +3647,7 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "update_plan", "ask_user", "read_plan", "performance_gate", "query_memory_db"];
+			: ["read", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "update_plan", "ask_user", "read_plan", "performance_admit", "performance_gate", "query_memory_db"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
@@ -4409,4 +4458,3 @@ export class AgentSession {
 		return this._extensionRunner;
 	}
 }
-

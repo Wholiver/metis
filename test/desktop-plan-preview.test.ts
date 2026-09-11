@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { extractProposedPlan, splitPlanTitle } from '../desktop/src/lib/plan-preview';
+import { extractProposedPlan, splitPlanTitle, summarizePlanPreview } from '../desktop/src/lib/plan-preview';
 import { estimateThinkingDurationMs, formatThinkingDuration } from '../desktop/src/lib/thinking';
 import {
   planWorkProgressExpressionUpdate,
@@ -112,6 +112,13 @@ describe('desktop plan preview', () => {
     expect(splitPlanTitle('## Summary\nBody')).toEqual({ title: 'Plan', body: '## Summary\nBody' });
   });
 
+  it('reduces the preview body to a clean recommendation-style summary', () => {
+    expect(summarizePlanPreview('## Summary\n\n- **Ship safely** with [`checks`](https://example.com).\n- Keep rollback ready.'))
+      .toBe('Ship safely with checks.');
+    expect(summarizePlanPreview('## Implementation\n\n1. Inspect the renderer.\n2. Build it.'))
+      .toBe('Inspect the renderer.');
+  });
+
   it('wires authoritative proposal state, safe Markdown, and process action', () => {
     const bubble = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/AgentBubble.tsx'), 'utf8');
     const markdown = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/MarkdownContent.tsx'), 'utf8');
@@ -127,26 +134,51 @@ describe('desktop plan preview', () => {
     expect(source).toContain('METIS_DESKTOP_CAPTURE_PLAN_PREVIEW');
     expect(source).toContain("document.querySelector('[data-plan-preview]')");
     expect(source).toContain('processHitArea');
-    expect(source).toContain('collapsedMaxHeight');
-    expect(source).toContain('expandedMaxHeight');
+    expect(source).toContain('hasRecommendationCard');
+    expect(source).toContain('inspectorShowsProposalAndTodos');
     expect(source).toContain('actionsBackgroundTransparent');
     expect(source).toContain('actionsDividerRemoved');
     expect(source).toContain('buttonsUseInterfacePills');
     expect(source).toContain('buttonsUseNeutralPalette');
+    expect(source).toContain('hasActionsCard');
+    expect(source).toContain('actionsCardMatchesUserBubble');
+    expect(source).toContain('previewHasHorizontalDivider');
+    expect(source).toContain('METIS_DESKTOP_CAPTURE_PLAN_CARD');
+    expect(source).toContain('[capture:plan-card]');
+    expect(source).toContain('cardExpanded');
+    expect(source).toContain('widthPreserved');
     const component = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/PlanPreview.tsx'), 'utf8');
+    const panel = readFileSync(resolve(process.cwd(), 'desktop/src/components/inspector/InspectorPlanPanel.tsx'), 'utf8');
     const css = readFileSync(resolve(process.cwd(), 'desktop/src/index.css'), 'utf8');
-    expect(component).toContain('plan-preview-actions');
-    expect(component).not.toContain('bg-[#fbfcfd]');
-    expect(component).not.toContain('border-t border-[#edf0f3]');
-    expect(component).toContain('data-plan-refine=""');
-    expect(component).toContain('data-plan-process=""');
-    expect(component).toContain('data-plan-refine-send=""');
-    expect(component).toContain('bg-[#f1f3f6]');
-    expect(component).not.toContain('bg-[#e1e7f0]');
-    expect(component).not.toContain('bg-[#567a70]');
-    expect(component).toContain('rounded-[10px]');
-    expect(component).not.toContain('bg-[#172033]');
-    expect(css).toMatch(/\.plan-preview-actions\s*\{[\s\S]*?background:\s*transparent/);
+    expect(component).toContain('data-plan-preview');
+    expect(component).toContain('<RecommendationCard');
+    expect(component).not.toContain('Created Plan');
+    expect(component).not.toContain('eyebrow=');
+    expect(component).toContain('onOpenPlan');
+    expect(component).toContain('collapsedBody={summary || undefined}');
+    expect(component).toContain('plan-preview-markdown');
+    expect(component).not.toContain('data-plan-process');
+    expect(panel).toContain('data-inspector-plan-panel');
+    expect(panel).toContain('data-inspector-plan-markdown');
+    expect(panel).toContain('data-inspector-plan-todos');
+    expect(panel).not.toContain('reactUiPlanTodos');
+    expect(panel.indexOf('data-inspector-plan-todos')).toBeLessThan(panel.indexOf('data-inspector-plan-markdown'));
+    expect(panel).toContain('data-inspector-plan-todos-pin');
+    expect(panel).toContain('data-inspector-plan-todos-fade');
+    expect(panel).toContain('data-inspector-plan-body');
+    expect(panel).toContain('bg-gradient-to-b from-page');
+    expect(panel).toContain('rounded-card');
+    expect(panel).toContain('data-plan-process=""');
+    expect(panel).toContain('data-plan-refine=""');
+    expect(panel).toContain('data-plan-refine-send=""');
+    expect(panel).toContain('data-inspector-plan-actions-card');
+    expect(panel).toContain('rounded-full bg-hover-2');
+    expect(panel).toContain('rounded-full bg-accent');
+    expect(panel).toContain('rounded-card bg-surface px-3.5 py-2.5 shadow-card');
+    expect(panel).not.toContain('reactUiPlanTodos');
+    expect(panel).not.toContain('rounded-[10px] px-3.5 py-3');
+    expect(panel).not.toContain('bg-[#f1f3f6]');
+    expect(panel).toContain('plan-preview-actions sticky');
   });
 
   it('ships repeatable Electron checks for directly rendered thinking', () => {
@@ -331,7 +363,8 @@ describe('desktop plan preview', () => {
     expect(work).not.toContain('<WorkProgressIndicator');
     expect(turn).not.toContain('<WorkProgressIndicator');
     expect(composer).toContain('data-composer-progress-slot=""');
-    expect(composer).toContain('<WorkProgressIndicator progress={workProgress} idle={isWorkIdle}');
+    expect(composer).toContain('<WorkProgressIndicator progress={workProgress} idle={false}');
+    expect(composer).toContain('workProgress && !isWorkIdle');
     expect(list).toContain('key="active-assistant-turn"');
     expect(list).toContain('messages={[]}');
     expect(indicator).toContain('data-progress-phase={progress.phase}');
@@ -409,28 +442,20 @@ describe('desktop plan preview', () => {
     expect(main).toContain('afterUserMessage');
   });
 
-  it('ships repeatable Electron checks for archived Tool cards', () => {
+  it('ships repeatable Electron checks for the original Tool group', () => {
     const source = readFileSync(resolve(process.cwd(), 'desktop/main.cjs'), 'utf8');
-    const css = readFileSync(resolve(process.cwd(), 'desktop/src/index.css'), 'utf8');
     expect(source).toContain('METIS_DESKTOP_CAPTURE_TOOLS');
+    expect(source).toContain("document.querySelector('[data-assistant-work]')");
     expect(source).toContain("document.querySelector('[data-tool-group]')");
     expect(source).toContain('hasToolGroup');
     expect(source).toContain('hasInternalOverflow');
     expect(source).toContain('autoScrolledToBottom');
-    expect(source).toContain('rowGap');
     expect(source).toContain('lastRowVisible');
-    expect(source).toContain('fadeBackdropFilter');
-    expect(source).toContain('topFadeBackgroundImage');
-    expect(css).toMatch(/\.tool-header-bar\s*\{[\s\S]*?min-height:\s*24px;[\s\S]*?padding:\s*0;[\s\S]*?border-radius:\s*0;[\s\S]*?background:\s*transparent/);
-    expect(css).toMatch(/\.tool-card\.running \.tool-header-bar\s*\{\s*background:\s*transparent/);
-    expect(css).toMatch(/\.tool-name\s*\{[\s\S]*?color:\s*#737373;[\s\S]*?font-size:\s*var\(--body-copy-size\);[\s\S]*?font-weight:\s*var\(--body-copy-weight\);[\s\S]*?line-height:\s*var\(--body-copy-line-height\)/);
-    expect(css).toMatch(/\.tool-group-list\s*\{[\s\S]*?max-height:\s*168px;[\s\S]*?overflow-y:\s*auto/);
-    expect(css).toMatch(/\.tool-group-row\s*\{[\s\S]*?min-height:\s*24px/);
-    expect(css).toMatch(/\.tool-group\.has-overflow \.tool-group-body::after\s*\{[\s\S]*?height:\s*var\(--work-overflow-fade-height\);[\s\S]*?background:\s*var\(--work-overflow-fade\)/);
-    expect(css).not.toMatch(/\.tool-group\.has-overflow \.tool-group-body::after\s*\{[^}]*backdrop-filter/);
+    expect(source).toContain('workedTitleAvoidsBlue');
+    expect(source).toContain('rowGap');
   });
 
-  it('uses the archived CoT timing and presentation contract', () => {
+  it('uses the original work chain for thinking, tools, and final output', () => {
     expect(estimateThinkingDurationMs('x'.repeat(12))).toBe(1200);
     expect(estimateThinkingDurationMs('x'.repeat(6000))).toBe(30000);
     expect(formatThinkingDuration(1250)).toBe('1.3s');
@@ -440,28 +465,17 @@ describe('desktop plan preview', () => {
     const thought = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/ThinkingBlock.tsx'), 'utf8');
     const turn = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/AssistantTurn.tsx'), 'utf8');
     const tool = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/ToolCard.tsx'), 'utf8');
-    const css = readFileSync(resolve(process.cwd(), 'desktop/src/index.css'), 'utf8');
-    expect(work).toContain('cot-container');
-    expect(work).toContain('cot-collapse-wrapper');
-    expect(work).toContain('groupAssistantWorkItems');
-    expect(work).toContain('<ToolGroup');
-    expect(work).toContain('Worked for ${formatThinkingDuration(durationMs)}');
-    expect(thought).toContain('data-direct-thinking="true"');
-    expect(thought).not.toContain('Thoughts');
-    expect(thought).toContain('aria-expanded={expanded}');
-    expect(thought).toContain('data-thinking-scroll');
     expect(turn).toContain('isSubagentLaunchNotice');
+    expect(turn).toContain('<AssistantWork');
+    expect(turn).toContain('<AgentBubble');
     expect(turn).toContain('after-expanded-work');
-    expect(turn).not.toContain('turn-final-divider');
-    expect(css).toContain('--work-final-gap: 8px');
-    expect(css).toMatch(/\.turn-final-response\.after-expanded-work\s*\{[\s\S]*?margin-top:\s*var\(--work-final-gap\)/);
-    expect(css).toMatch(/\.turn-final-response\.after-expanded-work > \[data-message-role="assistant"\]\s*\{[\s\S]*?margin-top:\s*0/);
-    expect(tool).toContain('subagent-tool-card');
-    expect(tool).toContain('data-job-id');
+    expect(work).toContain('groupAssistantWorkItems');
+    expect(work).toContain('<ToolCard');
+    expect(work).not.toContain('<ToolGroup');
+    expect(work).toContain('<ThinkingBlock');
+    expect(thought).toContain('data-direct-thinking="true"');
+    expect(tool).toContain('data-part-key={part.id}');
     expect(tool).toContain('tool-details-body');
-    expect(tool).toContain('Arguments:');
-    expect(tool).toContain('Output:');
-    expect(tool).not.toContain('<ToolIcon');
+    expect(tool).toContain('BasicTool');
   });
 });
-
