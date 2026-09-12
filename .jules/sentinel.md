@@ -1,0 +1,4 @@
+## 2025-02-23 - [Timing Leak in Server Authentication]
+**Vulnerability:** The `safeEqual` function in `src/modes/server/server-mode.ts` attempted to prevent timing attacks using `crypto.timingSafeEqual`, but it explicitly checked `actualBuffer.length === expectedBuffer.length` first. This short-circuit creates a measurable timing difference, leaking the length of the expected password.
+**Learning:** Using `timingSafeEqual` with unequal length buffers throws an error, prompting developers to check lengths first. However, early length returns reintroduce the timing leak for string length.
+**Prevention:** To securely compare strings of potentially different lengths in constant time, hash both strings (e.g., using SHA-256) and then compare the resulting fixed-length hashes using `timingSafeEqual`.
