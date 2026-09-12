@@ -47,9 +47,15 @@ describe("Bundle 8: Benchmark Harness, Concurrency, Failures & Safety (Feats 58,
 			defaultTimeoutMs: 3000,
 		});
 		setGlobalSpawnGuard(guard);
+		vi.spyOn(process, "kill").mockImplementation(() => {
+			const err = new Error();
+			(err as any).code = "ESRCH";
+			throw err;
+		});
 	});
 
 	afterEach(async () => {
+		vi.restoreAllMocks();
 		spawnMock.mockReset();
 		guard.killAllChildren("SIGKILL");
 		if (tempDir) {
