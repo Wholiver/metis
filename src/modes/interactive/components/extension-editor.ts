@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 /**
  * Multi-line editor component for extensions.
  * Supports Ctrl+G for external editor.
@@ -128,7 +129,7 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 		}
 
 		const currentText = this.editor.getText();
-		const tmpFile = path.join(os.tmpdir(), `metis-extension-editor-${Date.now()}.md`);
+		const tmpFile = path.join(os.tmpdir(), `metis-extension-editor-${crypto.randomUUID()}.md`);
 
 		try {
 			fs.writeFileSync(tmpFile, currentText, "utf-8");
