@@ -39,6 +39,7 @@ describe("Bundle 7: TerminalBench & Harbor Adapter and Docs Verification", () =>
 			expect(adapterContent).toContain("--output-final-answer");
 			expect(adapterContent).toContain("--no-session");
 			expect(adapterContent).toContain("--mode");
+			expect(adapterContent).toContain("--execution-profile");
 			expect(adapterContent).toContain("trace_summary");
 			expect(adapterContent).toContain("harness_error");
 			expect(adapterContent).toContain("task_failure");
@@ -53,6 +54,7 @@ describe("Bundle 7: TerminalBench & Harbor Adapter and Docs Verification", () =>
 			expect(adapterContent).toContain("self.metis_bin");
 			expect(adapterContent).toContain("-p");
 			expect(adapterContent).toContain("json");
+			expect(adapterContent).toContain("reliable-headless");
 		});
 	});
 
@@ -80,6 +82,13 @@ describe("Bundle 7: TerminalBench & Harbor Adapter and Docs Verification", () =>
 			expect(tbDoc).toContain("Harbor");
 			expect(tbDoc).toContain("output-final-answer");
 			expect(tbDoc).toContain("trace_summary");
+		});
+
+		it("harbor adapter records reliable-headless profile and public task paths", async () => {
+			const harborAgent = await fs.readFile(path.join(rootDir, "adapters", "harbor_tb", "agent.py"), "utf-8");
+			expect(harborAgent).toContain("reliable-headless");
+			expect(harborAgent).toContain("METIS_TASK_INPUT");
+			expect(harborAgent).toContain("METIS_WORKSPACE_POLICY");
 		});
 	});
 });

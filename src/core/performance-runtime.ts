@@ -9,6 +9,7 @@ import {
 	type PerformanceRoadmapItem,
 } from "./performance-roadmap.ts";
 import { getPerformanceFramework } from "./performance-frameworks.ts";
+import { isHostDispatchActive } from "./host-dispatch.ts";
 
 /**
  * Runtime control plane for the Codex variant of Performance.
@@ -437,13 +438,22 @@ export function summarizePerformanceRun(state: Readonly<PerformanceRunState> | u
 	};
 }
 
-export function validatePerformanceSpawn(request: PerformanceSpawnRequest, state: PerformanceRunState): PerformanceSpawnDecision {
-	if (!KNOWN_ROLES.has(request.childRole)) return { valid: false, message: `Performance rejects unknown role "${request.childRole}".` };
+export function validatePerformanceSpawn(
+	request: PerformanceSpawnRequest & { hostDispatch?: boolean },
+	state: PerformanceRunState,
+): PerformanceSpawnDecision {
+	const hostDispatch = Boolean(request.hostDispatch) || isHostDispatchActive();
+	const hostOwnedRoles = new Set(["planner", "implementer", "verifier", "contract-solver", "repairer", "reviewer", "fresh-verifier"]);
+	if (!KNOWN_ROLES.has(request.childRole) && !(hostDispatch && hostOwnedRoles.has(request.childRole))) {
+		return { valid: false, message: `Performance rejects unknown role "${request.childRole}".` };
+	}
 	if (request.liveAgents >= state.maxConcurrent) {
 		return { valid: false, message: `Performance live-agent ceiling reached (${state.maxConcurrent}); collect a worker before dispatching another.` };
 	}
 	if (state.admission && !TIER_ROLES[state.admission.tier].has(request.childRole)) {
-		return { valid: false, message: `Performance ${state.admission.tier} route does not permit ${request.childRole}.` };
+		if (!(hostDispatch && hostOwnedRoles.has(request.childRole))) {
+			return { valid: false, message: `Performance ${state.admission.tier} route does not permit ${request.childRole}.` };
+		}
 	}
 	if (request.parentRole === "root" || request.parentRole === "coordinator") {
 		return { valid: true };
@@ -599,9 +609,28 @@ ${line(state, `FRONTIER ${state.frontier}`)}
 	}
 
 	/** Build a complete, hash-bound child brief from canonical v2 admission state. */
-	prepareSpawn(input: { agent: string; task: string; context?: string; laneId?: string; gate?: PerformancePreparedSpawn["gate"] }): PerformancePreparedSpawn {
+	prepareSpawn(input: {
+		agent: string;
+		task: string;
+		context?: string;
+		laneId?: string;
+		gate?: PerformancePreparedSpawn["gate"];
+		/** Internal only — set by Controller ALS / hostDispatch, never model schema. */
+		hostDispatch?: boolean;
+	}): PerformancePreparedSpawn {
 		const state = this.stateValue;
+		const hostDispatch = Boolean(input.hostDispatch) || isHostDispatchActive();
+		const hostOwnedRoles = new Set(["planner", "implementer", "verifier", "contract-solver", "repairer", "reviewer", "fresh-verifier"]);
 		if (!state?.admission) return { task: input.task, context: input.context, laneId: input.laneId, gate: input.gate };
+		// Controller hostDispatch only: allow short-loop roles under T1. Plain model spawn keeps TIER_ROLES.
+		if (hostDispatch && hostOwnedRoles.has(input.agent) && !TIER_ROLES[state.admission.tier].has(input.agent)) {
+			return {
+				task: input.task,
+				context: [input.context, "Host-owned reliable-headless dispatch; do not call performance_gate."].filter(Boolean).join("\n"),
+				laneId: input.laneId ?? state.activeItemId ?? state.admission.lanes[0]?.id,
+				gate: undefined,
+			};
+		}
 		if (!TIER_ROLES[state.admission.tier].has(input.agent)) throw new Error(`Performance ${state.admission.tier} route does not permit ${input.agent}.`);
 		const laneId = input.laneId ?? state.activeItemId;
 		const lane = laneId ? state.admission.lanes.find((candidate) => candidate.id === laneId) : undefined;
@@ -1067,7 +1096,7 @@ ${line(state, "FRONTIER G2")}
 
 	validateSpawn(parentRole: string, childRole: string, liveAgents: number): PerformanceSpawnDecision {
 		if (!this.stateValue) return { valid: true };
-		return validatePerformanceSpawn({ parentRole, childRole, liveAgents }, this.stateValue);
+		return validatePerformanceSpawn({ parentRole, childRole, liveAgents, hostDispatch: isHostDispatchActive() }, this.stateValue);
 	}
 
 	/** Atomically reserve a process slot shared by every child in this run. */
@@ -1088,7 +1117,10 @@ ${line(state, "FRONTIER G2")}
 					return { valid: false, message: "Performance run is unavailable or no longer active." };
 				}
 			}
-			const decision = validatePerformanceSpawn({ parentRole, childRole, liveAgents: latest.leases.length }, latest);
+			const decision = validatePerformanceSpawn(
+				{ parentRole, childRole, liveAgents: latest.leases.length, hostDispatch: isHostDispatchActive() },
+				latest,
+			);
 			if (!decision.valid) return decision;
 			if (latest.admission?.tier === "T2" && childRole === "implementer" && latest.leases.some((lease) => lease.role === "implementer")) {
 				return { valid: false, message: "Performance T2 serial route already has a live implementer." };

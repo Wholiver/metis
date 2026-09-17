@@ -177,6 +177,28 @@ describe("sanitizeGeneratedSessionName", () => {
 		).toBe("复制视频中的网站，一比一复制");
 	});
 
+	it("strips Chinese accessibility list wrappers from fallback titles", () => {
+		expect(
+			generateFallbackSessionName([
+				{
+					role: "user",
+					content: "第 Generate an SVG / a pelican riding a bicycle 项",
+					timestamp: Date.now(),
+				},
+			]),
+		).toBe("Generate an SVG / a pelican riding a bicycle");
+		expect(
+			generateFallbackSessionName([
+				{
+					role: "user",
+					content: "第Generate an SVG / a pelican riding a bicycle項",
+					timestamp: Date.now(),
+				},
+			]),
+		).toBe("Generate an SVG / a pelican riding a bicycle");
+		expect(sanitizeGeneratedSessionName("第 Pelican Bicycle 项")).toBe("Pelican Bicycle");
+	});
+
 	it("uses a provider-independent title for empty multimodal messages", () => {
 		expect(
 			generateFallbackSessionName([

@@ -369,6 +369,8 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     const hook = source('desktop/src/hooks/useMetisServer.ts');
     expect(hook).toContain("type === 'tool_execution_update'");
     expect(hook).toContain('applyToolExecutionUpdate');
+    expect(hook).toContain("type === 'tool_execution_end'");
+    expect(hook).toContain('applyToolExecutionEnd');
     expect(hook).not.toContain("['agent_start', 'turn_start', 'tool_execution_start', 'tool_execution_update', 'tool_execution_end']");
   });
 
@@ -525,13 +527,15 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(html).not.toContain('message_end');
   });
 
-  it('verifies SubagentDetailView uses AssistantWork and WorkProgressIndicator', () => {
-    const detailViewSource = source('desktop/src/components/inspector/SubagentDetailView.tsx');
-    expect(detailViewSource).toContain("import { AssistantWork } from '../chat/AssistantWork'");
-    expect(detailViewSource).toContain("import { WorkProgressIndicator } from '../chat/WorkProgressIndicator'");
-    expect(detailViewSource).toContain('<AssistantWork');
-    expect(detailViewSource).toContain('preserveExistingItems');
-    expect(detailViewSource).toContain('<WorkProgressIndicator');
+  it('verifies SubagentConversation reuses main-chat UserBubble and AssistantTurn', () => {
+    const detailViewSource = source('desktop/src/components/chat/SubagentConversation.tsx');
+    expect(detailViewSource).toContain("import { UserBubble } from './UserBubble'");
+    expect(detailViewSource).toContain("import { AssistantTurn } from './AssistantTurn'");
+    expect(detailViewSource).toContain('<UserBubble');
+    expect(detailViewSource).toContain('<AssistantTurn');
+    expect(detailViewSource).toContain('onOpenSubagent={onOpenSubagent}');
+    expect(detailViewSource).not.toContain('WorkProgressIndicator');
+    expect(detailViewSource).not.toContain('MarkdownContent');
   });
 
   it('renders SubagentsList with layout and status icons matching PlanPoints', () => {
@@ -678,7 +682,10 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(hook).toContain('const [messagesSessionId, setMessagesSessionId] = useState(');
     expect(hook).toContain('setMessagesSessionId(state.sessionId');
     expect(hook).toContain('messagesSessionId,');
-    expect(hook).toContain("setMessages([]);\n    setMessagesSessionId('');");
+    expect(hook).toContain('messagesCacheRef');
+    expect(hook).toContain('setMessages([])');
+    expect(hook).toContain("setMessagesSessionId('')");
+    expect(hook).toContain('setIsLoadingMessages');
 
     expect(app).toContain('messagesSessionId,');
     expect(app).toContain('isMessagesInSync = Boolean(activeAgentId && messagesSessionId === activeAgentId)');

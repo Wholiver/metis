@@ -1,23 +1,30 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { FileText, Video } from 'lucide-react';
 import { Message } from '../../types';
+import { normalizeUserMessageForDisplay } from '../../lib/attachments';
 
 interface UserBubbleProps {
   message: Message;
 }
 
 export const UserBubble = React.memo<UserBubbleProps>(({ message }) => {
+  const { text, attachments } = useMemo(
+    () => normalizeUserMessageForDisplay(message.content || '', message.attachments),
+    [message.content, message.attachments],
+  );
+
   return (
     <div
       className="my-2 flex w-full min-w-0 max-w-full justify-end"
       data-message-id={message.id}
       data-message-role="user"
+      data-i18n-skip=""
       data-failed={message.failed ? 'true' : undefined}
     >
       <div className="flex max-w-[500px] flex-col items-end gap-1.5">
-        {message.attachments && message.attachments.length > 0 && (
+        {attachments.length > 0 && (
           <div className="flex max-w-full flex-wrap justify-end gap-1.5" data-message-attachments="">
-            {message.attachments.map((attachment) => attachment.kind === 'image' && attachment.previewUrl ? (
+            {attachments.map((attachment) => attachment.kind === 'image' && attachment.previewUrl ? (
               <img
                 key={attachment.id}
                 src={attachment.previewUrl}
@@ -46,12 +53,12 @@ export const UserBubble = React.memo<UserBubbleProps>(({ message }) => {
             ))}
           </div>
         )}
-        {(message.content || message.failed) && (
+        {(text || message.failed) && (
           <div
             className="max-w-full rounded-[10px] border border-line bg-surface px-3.5 py-2 text-left text-[14px] font-normal leading-[1.5] text-ink whitespace-pre-wrap break-words text-pretty shadow-hairline"
             data-user-bubble=""
           >
-            {message.content}
+            {text}
             {message.failed && (
               <span className="mt-1.5 block text-[11px] text-red" role="status">Not sent</span>
             )}

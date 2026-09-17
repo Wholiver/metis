@@ -1,0 +1,9 @@
+{
+  "id": "child-worktree-misses-venv",
+  "failureCode": "CHILD_WORKSPACE_DRIFT",
+  "description": "Isolated worktree snapshot omits gitignored task venv / staged paths",
+  "parentEntries": ["input/spec.md", ".venv/bin/python", "software/run.sh"],
+  "isolatedVisibleEntries": ["input/spec.md", "software/run.sh"],
+  "missingInChild": [".venv/bin/python"],
+  "reliableHeadlessWorkspacePolicy": "shared"
+}

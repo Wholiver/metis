@@ -143,6 +143,8 @@ class MetisAdapter:
             prompt,
             "--mode",
             "json",
+            "--execution-profile",
+            os.environ.get("METIS_EXECUTION_PROFILE", "reliable-headless"),
             "--output-final-answer",
             str(answer_file_path),
             "--no-session",

@@ -361,6 +361,34 @@ const PERFORMANCE_GATE_TOOL_CONTRACT = [
 	"G2 order is fixed: close G2 first, then G2-review and G2-verify while frontier is G2-assurance.",
 ].join("\n");
 
+const RELIABLE_HEADLESS_CHILD_RESULT_CONTRACT = [
+	"",
+	"## Reliable-headless ChildResult contract",
+	"Do not call performance_gate. The host controller owns gate evidence.",
+	"Before exiting, print exactly one JSON object on its own line with this shape:",
+	'{"status":"completed|failed|blocked|invalid","summary":"...","filesChanged":["rel/path"],"commands":[{"argv":["cmd"],"cwd":".","exitCode":0}],"findings":[{"code":"...","message":"..."}],"proposedRepair":"...optional..."}',
+	"Only mutate owned paths. Stay in the shared scored cwd. Do not invent hidden grader paths.",
+].join("\n");
+
+const WORKER_ROLES_WITHOUT_GATE = new Set([
+	"planner",
+	"implementer",
+	"reviewer",
+	"verifier",
+	"fresh-verifier",
+	"repairer",
+	"contract-solver",
+]);
+
+function applyReliableHeadlessAgentProfile(config: ResolvedAgentConfig): ResolvedAgentConfig {
+	const tools = config.tools?.filter((tool) => tool !== "performance_gate");
+	let systemPrompt = config.systemPrompt.replace(PERFORMANCE_GATE_TOOL_CONTRACT, "").trimEnd();
+	if (WORKER_ROLES_WITHOUT_GATE.has(config.name) || !config.tools?.includes("spawn_agent")) {
+		systemPrompt = `${systemPrompt}\n${RELIABLE_HEADLESS_CHILD_RESULT_CONTRACT}`;
+	}
+	return { ...config, tools, systemPrompt };
+}
+
 function bindBuiltinPromptToNativeRuntime(agent: AgentDefinition): AgentDefinition {
 	return {
 		...agent,
@@ -911,7 +939,7 @@ export function resolveAgentConfig(options: ResolveAgentConfigOptions): Resolved
 		...(agent.env ?? {}),
 	};
 
-	return {
+	return applyReliableHeadlessAgentProfile({
 		name: agent.name,
 		description: agent.description,
 		systemPrompt: agent.systemPrompt,
@@ -923,5 +951,5 @@ export function resolveAgentConfig(options: ResolveAgentConfigOptions): Resolved
 		maxSpawnDepth: agent.maxSpawnDepth,
 		source: agent.source,
 		filePath: agent.filePath,
-	};
+	});
 }

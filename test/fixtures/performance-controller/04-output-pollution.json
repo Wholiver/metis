@@ -1,0 +1,7 @@
+{
+  "id": "output-pollution-venv",
+  "failureCode": "OUTPUT_POLLUTION",
+  "description": "Submission output directory contains runtime pollution such as .venv",
+  "outputEntries": [".venv", "result.json", "__pycache__"],
+  "polluters": [".venv", "__pycache__"]
+}

@@ -19,7 +19,11 @@ export interface PerformanceGateToolOptions {
 	actor?: () => { id: string; role: string };
 }
 
-/** Native control-plane tool; writes only the external Performance governance root. */
+/**
+ * Native control-plane tool for Build/Plan Performance runs (G0–G7 frontier).
+ * Reliable-headless named children still omit this tool and emit ChildResult instead;
+ * the root Build session keeps performance_gate so admission → gate advancement works.
+ */
 export function createPerformanceGateToolDefinition(options: PerformanceGateToolOptions): ToolDefinition<typeof performanceGateSchema> {
 	return {
 		name: "performance_gate",
@@ -32,10 +36,15 @@ export function createPerformanceGateToolDefinition(options: PerformanceGateTool
 			const runtime = options.runtime?.();
 			if (!runtime || !runtime.state) throw new Error("performance_gate requires an active Performance run.");
 			const actor = options.actor?.() ?? { id: "root", role: "root" };
-			runtime.recordGateReport({ gate: gate as Exclude<PerformanceGate, "complete" | "blocked">, itemId, actor: actor.id, role: actor.role, verdict: verdict as PerformanceVerdict, evidence });
-			// The run's live state rides this result instead of a per-turn context block:
-			// the gate call is what moves the frontier, so reporting it here keeps the
-			// model current without appending a new state block ahead of every request.
+			runtime.recordGateReport({
+				gate: gate as Exclude<PerformanceGate, "complete" | "blocked">,
+				itemId,
+				actor: actor.id,
+				role: actor.role,
+				verdict: verdict as PerformanceVerdict,
+				evidence,
+			});
+			// Live run state rides this result instead of a per-turn context block.
 			const live = runtime.liveStateSummary();
 			const text = live
 				? `Performance gate verdict recorded: ${gate}.\n${live}`
@@ -48,4 +57,3 @@ export function createPerformanceGateToolDefinition(options: PerformanceGateTool
 export function createPerformanceGateTool(options: PerformanceGateToolOptions) {
 	return wrapToolDefinition(createPerformanceGateToolDefinition(options));
 }
-

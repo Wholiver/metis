@@ -181,6 +181,7 @@ class ALEMetisAdapter:
             answer_file_path = Path(temp_answer_file.name)
 
         bin_cmd = self._resolve_bin_cmd()
+        execution_profile = os.environ.get("METIS_EXECUTION_PROFILE", "reliable-headless").strip() or "reliable-headless"
         cmd: List[str] = list(bin_cmd) + [
             "-p",
             prompt,
@@ -188,6 +189,8 @@ class ALEMetisAdapter:
             "json",
             "--collaboration-mode",
             "build",
+            "--execution-profile",
+            execution_profile,
             "--output-final-answer",
             str(answer_file_path),
             "--no-session",
@@ -209,6 +212,13 @@ class ALEMetisAdapter:
             cmd.extend(extra_args)
 
         env = self.inject_credentials(extra_env)
+        env["METIS_EXECUTION_PROFILE"] = execution_profile
+        env.setdefault("METIS_WORKSPACE_POLICY", "shared")
+        # Public task directories only — never hidden grader paths.
+        for key, name in (("METIS_TASK_INPUT", "input"), ("METIS_TASK_OUTPUT", "output"), ("METIS_TASK_SOFTWARE", "software")):
+            candidate = resolved_workdir / name
+            if candidate.exists():
+                env.setdefault(key, str(candidate.resolve()))
 
         if docker_container:
             docker_shell_path = Path(__file__).resolve().parent / "docker_shell.sh"

@@ -107,6 +107,7 @@ import {
 } from "./system-prompt.ts";
 import { getGlobalSpawnGuard } from "./spawn-guard.ts";
 import { isGitRepositoryRoot } from "./worktree.ts";
+import { SharedMutatingOwnerRegistry, isMutatingChildRole, isReliableHeadlessProfile } from "./workspace-probe.ts";
 import {
 	extractProposedPlan,
 	resolveWorkflowProposal,
@@ -119,7 +120,9 @@ import {
 	WorkflowToolError,
 	WorkflowRuntime,
 } from "./workflow-runtime.ts";
+import { createBrowserHostFromEnv } from "./browser-host.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
+import { createBrowserToolDefinitions } from "./tools/browser.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 import { type MemoryCoordinator, type MemoryRecordSummary, type MemorySearchOptions, type MemoryState } from "./memory-coordinator.ts";
@@ -432,6 +435,7 @@ export class AgentSession {
 	private readonly _pendingSubagentResults = new Map<string, string>();
 	private _subagentResultDeliveryInProgress = false;
 	private _subagentResultDrainPromise: Promise<void> | undefined;
+	private readonly _sharedMutatingOwners = new SharedMutatingOwnerRegistry();
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -1641,6 +1645,25 @@ export class AgentSession {
 
 	getToolDefinition(name: string): ToolDefinition | undefined {
 		return this._toolDefinitions.get(name)?.definition;
+	}
+
+	/**
+	 * Resolve a tool definition only when it is currently active on the agent
+	 * (`agent.state.tools`) and workflow-dispatchable. Registry presence alone
+	 * (`_toolDefinitions` / getToolDefinition) is not enough for host spawn.
+	 */
+	getActiveToolDefinition(name: string): ToolDefinition | undefined {
+		if (!this.getActiveToolNames().includes(name)) {
+			return undefined;
+		}
+		const definition = this._toolDefinitions.get(name)?.definition;
+		if (!definition) {
+			return undefined;
+		}
+		if (!this._workflowRuntime.canDispatchTool(name, definition, this._collaborationMode)) {
+			return undefined;
+		}
+		return definition;
 	}
 
 	/**
@@ -3536,6 +3559,12 @@ export class AgentSession {
 								.getSkills()
 								.skills.filter((s) => s.sourceInfo.source === "cli" || s.sourceInfo.scope === "temporary")
 								.map((s) => s.filePath),
+							ownedPaths: (() => {
+								const run = this._performanceRuntime.state;
+								const laneId = process.env.METIS_PERFORMANCE_LANE_ID ?? run?.activeItemId;
+								const lane = run?.admission?.lanes.find((candidate) => candidate.id === laneId);
+								return lane?.ownedPaths;
+							})(),
 							env: this._performanceRuntime.state ? {
 								METIS_PERFORMANCE_RUN_ID: this._performanceRuntime.state.runId,
 								METIS_PERFORMANCE_GOVERNANCE_ROOT: this._performanceRuntime.state.governanceRoot,
@@ -3545,12 +3574,29 @@ export class AgentSession {
 							} : undefined,
 						}),
 						prepareDispatch: async (input) => {
-							if (!this._performanceRuntime.state?.admission) return input;
+							if (!this._performanceRuntime.state?.admission) {
+								if (isReliableHeadlessProfile() && isMutatingChildRole(input.agent) && input.worktree) {
+									return { ...input, worktree: undefined };
+								}
+								return input;
+							}
 							const prepared = this._performanceRuntime.prepareSpawn(input);
-							if (prepared.worktree && !(await isGitRepositoryRoot(this._cwd))) {
+							const merged = {
+								...input,
+								task: prepared.task,
+								context: prepared.context,
+								laneId: prepared.laneId,
+								gate: prepared.gate,
+								worktree: prepared.worktree,
+							};
+							if (isReliableHeadlessProfile()) {
+								// Headless benchmarks keep sequential mutating children in the scored cwd.
+								return { ...merged, worktree: undefined };
+							}
+							if (merged.worktree && !(await isGitRepositoryRoot(this._cwd))) {
 								throw new Error("REPAIR_REQUIRED: T3 parallel implementers require a Git repository root; revise admission to T2 for shared-cwd serial execution.");
 							}
-							return { ...input, ...prepared };
+							return merged;
 						},
 						validateSpawn: (input, runtime, childAgentId) => {
 							const decision = this._performanceRuntime.reserveSpawn(
@@ -3562,6 +3608,11 @@ export class AgentSession {
 							return decision.valid ? undefined : decision.message;
 						},
 						releaseSpawn: (childAgentId) => this._performanceRuntime.releaseSpawn(childAgentId),
+						claimMutatingOwner: (childAgentId, role, ownedPaths) => {
+							if (!isReliableHeadlessProfile() || !isMutatingChildRole(role)) return undefined;
+							return this._sharedMutatingOwners.claim(childAgentId, ownedPaths);
+						},
+						releaseMutatingOwner: (childAgentId) => this._sharedMutatingOwners.release(childAgentId),
 						onStatusChange: (jobId, running) => this._setSubagentRunning(jobId, running),
 						sendMessage: (jobId, result) => this._queueSubagentResult(jobId, result),
 					},
@@ -3621,8 +3672,18 @@ export class AgentSession {
 					queryMemoryDb: { query: (sql, params) => this._memoryCoordinator?.query(sql, params) ?? [] },
 				});
 
+		const toolDefinitionRecord = baseToolDefinitions as Record<string, ToolDefinition>;
+		const browserHost = createBrowserHostFromEnv();
+		const browserToolNames: string[] = [];
+		if (browserHost) {
+			for (const definition of createBrowserToolDefinitions({ host: browserHost })) {
+				toolDefinitionRecord[definition.name] = definition;
+				browserToolNames.push(definition.name);
+			}
+		}
+
 		this._baseToolDefinitions = new Map(
-			Object.entries(baseToolDefinitions).map(([name, tool]) => [name, tool as ToolDefinition]),
+			Object.entries(toolDefinitionRecord).map(([name, tool]) => [name, tool as ToolDefinition]),
 		);
 
 		const extensionsResult = this._resourceLoader.getExtensions();
@@ -3647,8 +3708,38 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "update_plan", "ask_user", "read_plan", "performance_admit", "performance_gate", "query_memory_db"];
-		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
+			: [
+					"read",
+					"bash",
+					"edit",
+					"write",
+					"spawn_agent",
+					"websearch",
+					"webfetch",
+					"update_plan",
+					"ask_user",
+					"read_plan",
+					"performance_admit",
+					"performance_gate",
+					"query_memory_db",
+					...browserToolNames,
+				];
+		// SDK passes initialActiveToolNames without dynamic browser_* tools; always merge them in
+		// so Desktop sessions actually expose browser_navigate etc. to the model.
+		const baseActiveToolNames = [
+			...new Set([...(options.activeToolNames ?? defaultActiveToolNames), ...browserToolNames]),
+		];
+		if (browserHost) {
+			const bashDefinition = toolDefinitionRecord.bash;
+			if (bashDefinition) {
+				const guideline =
+					"When browser_* tools are available, never use bash `open`, `open -a Safari/Chrome`, `xdg-open`, or `qlmanage` to preview local HTML/SVG/pages — use browser_navigate (file path or file:// URL) instead.";
+				const existing = bashDefinition.promptGuidelines ?? [];
+				if (!existing.includes(guideline)) {
+					bashDefinition.promptGuidelines = [...existing, guideline];
+				}
+			}
+		}
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
 			includeAllExtensionTools: options.includeAllExtensionTools,

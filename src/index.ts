@@ -425,6 +425,13 @@ export {
 	type Skill,
 	type SkillFrontmatter,
 } from "./core/skills.ts";
+export {
+	createBrowserHostFromEnv,
+	createHttpBrowserHostClient,
+	type BrowserHostClient,
+	type BrowserHostCommand,
+	type BrowserHostResult,
+} from "./core/browser-host.ts";
 export { createSyntheticSourceInfo } from "./core/source-info.ts";
 export { type EditDiffResult, generateDiffString, generateUnifiedPatch } from "./core/tools/edit-diff.ts";
 // Tools
@@ -459,6 +466,10 @@ export {
 	type AgentManagementToolOptions,
 	createWebSearchToolDefinition,
 	createWebFetchToolDefinition,
+	BROWSER_TOOL_NAMES,
+	createBrowserToolDefinitions,
+	type BrowserToolName,
+	type BrowserToolOptions,
 	createGrepToolDefinition,
 	createLocalBashOperations,
 	createLsToolDefinition,

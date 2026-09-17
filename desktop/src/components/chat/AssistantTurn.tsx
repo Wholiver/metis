@@ -14,9 +14,11 @@ interface AssistantTurnProps {
   workflowProposal?: WorkflowProposalState;
   onOpenPlan?: (markdown: string) => void;
   pendingUserInput?: PendingUserInput;
-  onRetry?: () => void;
+  onRetry?: (promptText: string) => void;
+  retryPrompt?: string;
   collaborationMode?: CollaborationMode;
   model?: ModelOption;
+  onOpenSubagent?: (partId: string) => void;
 }
 
 export function isSubagentLaunchNotice(text: string): boolean {
@@ -112,9 +114,10 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
   if (prev.workflowProposal !== next.workflowProposal) return false;
   if (prev.pendingUserInput !== next.pendingUserInput) return false;
   if (prev.onOpenPlan !== next.onOpenPlan) return false;
-  if (prev.onRetry !== next.onRetry) return false;
+  if (prev.onOpenSubagent !== next.onOpenSubagent) return false;
   if (prev.collaborationMode !== next.collaborationMode) return false;
   if (prev.model !== next.model) return false;
+  if (prev.retryPrompt !== next.retryPrompt) return false;
 
   const prevMsgs = prev.messages;
   const nextMsgs = next.messages;
@@ -135,8 +138,10 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   onOpenPlan,
   pendingUserInput,
   onRetry,
+  retryPrompt,
   collaborationMode,
   model,
+  onOpenSubagent,
 }) => {
   const isWaitingUserInput = Boolean(pendingUserInput);
   const failureMessage = !streaming ? messages.find((m) => (
@@ -154,6 +159,9 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
       model={model}
     />
   ) : null;
+  const retryHandler = failureMessage && retryPrompt && onRetry
+    ? () => onRetry(retryPrompt)
+    : undefined;
   const hasWork = streaming || isWaitingUserInput || entries.some(({ part }) => part.type === 'thinking' || part.type === 'toolCall');
   if (!hasWork) {
     const nonFailureMessages = failureMessage
@@ -169,7 +177,7 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
             onOpenPlan={onOpenPlan}
           />
         ))}
-        {failureMessage && <AssistantErrorCard error={errorText} onRetry={onRetry} />}
+        {failureMessage && <AssistantErrorCard error={errorText} onRetry={retryHandler} />}
         {footer}
       </>
     );
@@ -231,6 +239,7 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
         items={workItems}
         streaming={streaming}
         durationMs={workDuration}
+        onOpenSubagent={onOpenSubagent}
       />
       {finalMessage && (
         <div className="turn-final-response after-expanded-work w-full min-w-0 max-w-full">
@@ -244,7 +253,7 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
       {failureMessage && (
         <AssistantErrorCard
           error={errorText}
-          onRetry={onRetry}
+          onRetry={retryHandler}
         />
       )}
       {footer}

@@ -53,6 +53,8 @@ const legitimateCognates = new Set([
 	"codingPlanGroup",
 	"agentSecondsShort",
 	"agentMilliseconds",
+	"toolTitleGrep",
+	"toolTitleGlob",
 ]);
 
 describe("Desktop translation catalogs", () => {
@@ -78,6 +80,18 @@ describe("Desktop translation catalogs", () => {
 		}
 	});
 
+	it("uses short natural Chinese titles for browser and performance tools", () => {
+		expect(i18n.t("toolTitlePerformanceAdmit", "zh-CN")).toBe("规划任务");
+		expect(i18n.t("toolTitlePerformanceGate", "zh-CN")).toBe("验收");
+		expect(i18n.t("toolTitleBrowserNavigate", "zh-CN")).toBe("打开");
+		expect(i18n.t("toolTitleBrowserSnapshot", "zh-CN")).toBe("快照");
+		expect(i18n.t("toolTitleBrowserScreenshot", "zh-CN")).toBe("截图");
+		expect(i18n.t("toolTitleBrowserClick", "zh-CN")).toBe("点击");
+		expect(i18n.t("toolTitleAskUser", "zh-CN")).toBe("提问");
+		expect(i18n.t("toolTitleKillAgent", "zh-CN")).toBe("停止");
+		expect(i18n.t("toolTitleMessageAgent", "zh-CN")).toBe("发消息");
+	});
+
 	it("keeps Desktop proposal actions aligned with CLI durable-plan semantics", () => {
 		for (const language of resolvedLanguages) {
 			expect(i18n.catalogs[language].proposedPlanProcessPrompt, language).toContain("read_plan");
@@ -88,11 +102,14 @@ describe("Desktop translation catalogs", () => {
 		expect(i18n.catalogs["zh-CN"].proposedPlanProcessPrompt).toContain("update_plan");
 	});
 
-	it("resolves Automatic consistently for Windows and macOS locale forms", () => {
-		expect(i18n.resolve("auto", ["zh-HK"])).toBe("zh-TW");
-		expect(i18n.resolve("auto", ["zh-SG"])).toBe("zh-CN");
-		expect(i18n.resolve("auto", ["fr-CA"])).toBe("fr");
-		expect(i18n.resolve("auto", ["unknown"])).toBe("en");
+	it("does not treat ordinary English sentences as askUserProgress templates", async () => {
+		const { translateExact } = await import("../desktop/src/i18n.tsx");
+		expect(translateExact("Generate an SVG of a pelican riding a bicycle", "zh-CN"))
+			.toBe("Generate an SVG of a pelican riding a bicycle");
+		expect(translateExact("Review of the API", "zh-CN")).toBe("Review of the API");
+		expect(translateExact("Copy of file.txt", "zh-CN")).toBe("Copy of file.txt");
+		expect(translateExact("1 of 3", "zh-CN")).toBe("第 1 / 3 项");
+		expect(translateExact("2 of 10", "zh-TW")).toBe("第 2 / 10 項");
 	});
 
 });

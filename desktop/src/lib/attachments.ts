@@ -3,6 +3,7 @@ import {
   MessageAttachment,
   MessageAttachmentKind,
 } from '../types';
+import { cleanPastedText } from './composer';
 
 export const MAX_INLINE_TEXT_BYTES = 1024 * 1024;
 export const MAX_INLINE_IMAGE_BYTES = 7 * 1024 * 1024;
@@ -107,13 +108,24 @@ export function composeAttachmentPayload(text: string, attachments: MessageAttac
   images?: ImageContent[];
 } {
   const blocks = attachments.map(attachmentPrompt);
-  const message = [text.trim(), ...blocks].filter(Boolean).join('\n\n');
+  const cleanedText = cleanPastedText(text).trim();
+  const message = [cleanedText, ...blocks].filter(Boolean).join('\n\n');
   const images = attachments.flatMap((attachment): ImageContent[] => (
     attachment.kind === 'image' && attachment.data && attachment.mimeType
       ? [{ type: 'image', data: attachment.data, mimeType: attachment.mimeType }]
       : []
   ));
   return { message, ...(images.length > 0 ? { images } : {}) };
+}
+
+function stripResidualAttachmentMarkup(value: string): string {
+  // Canonical open tags that lost their close tag, or alternate `<metis_attachment:token>` forms.
+  return value
+    .replace(/<metis_attachment\b[^>]*>[\s\S]*?<\/metis_attachment:[a-zA-Z0-9_-]+>/g, '')
+    .replace(/<metis_attachment:[a-zA-Z0-9_-]+>[\s\S]*?<\/metis_attachment:[a-zA-Z0-9_-]+>/g, '')
+    .replace(/<\/?metis_attachment\b[^>]*>/g, '')
+    .replace(/<\/?metis_attachment:[a-zA-Z0-9_-]+>/g, '')
+    .trim();
 }
 
 export function parseAttachmentPayloadText(value: string): {
@@ -147,7 +159,47 @@ export function parseAttachmentPayloadText(value: string): {
     openPattern.lastIndex = cursor;
   }
   visible.push(value.slice(cursor));
-  return { text: visible.join('').trim(), attachments };
+  return { text: stripResidualAttachmentMarkup(visible.join('')), attachments };
+}
+
+export function mergeMessageAttachments(
+  existing: MessageAttachment[] | undefined,
+  parsed: MessageAttachment[],
+): MessageAttachment[] {
+  const byId = new Map<string, MessageAttachment>();
+  for (const attachment of existing || []) {
+    byId.set(attachment.id, attachment);
+  }
+  for (const attachment of parsed) {
+    const previous = byId.get(attachment.id);
+    // Prefer existing preview/data fields when re-parsing wire format after a session switch.
+    byId.set(
+      attachment.id,
+      previous
+        ? {
+            ...attachment,
+            ...previous,
+            id: attachment.id,
+            name: attachment.name || previous.name,
+            kind: attachment.kind || previous.kind,
+            sizeText: attachment.sizeText || previous.sizeText,
+          }
+        : attachment,
+    );
+  }
+  return Array.from(byId.values());
+}
+
+/** Display-layer normalization so wire-format leaks never reach the user bubble. */
+export function normalizeUserMessageForDisplay(
+  content: string,
+  attachments?: MessageAttachment[],
+): { text: string; attachments: MessageAttachment[] } {
+  const parsed = parseAttachmentPayloadText(content || '');
+  return {
+    text: cleanPastedText(parsed.text),
+    attachments: mergeMessageAttachments(attachments, parsed.attachments),
+  };
 }
 
 export function extractImageAttachments(content: unknown): MessageAttachment[] {

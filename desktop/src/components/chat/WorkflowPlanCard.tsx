@@ -15,13 +15,14 @@ function isPlanComplete(plan: WorkflowPlanState): boolean {
 }
 
 function StepIcon({ status }: { status: WorkflowPlanStep['status'] }) {
+  // Keep one square marker for pending / active / done so the in-progress list
+  // matches the finished checklist chrome instead of mixing bars and circles.
+  const frame =
+    'flex size-[15px] shrink-0 items-center justify-center rounded-[3.5px] border border-[color-mix(in_srgb,var(--ink-3)_70%,transparent)]';
+
   if (status === 'completed') {
     return (
-      <span
-        className="flex size-[15px] shrink-0 items-center justify-center rounded-[3.5px] border border-[color-mix(in_srgb,var(--ink-3)_70%,transparent)] text-ink-3"
-        aria-hidden="true"
-        data-plan-step-icon="completed"
-      >
+      <span className={cn(frame, 'text-ink-3')} aria-hidden="true" data-plan-step-icon="completed">
         <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20 6L9 17l-5-5" />
         </svg>
@@ -30,22 +31,12 @@ function StepIcon({ status }: { status: WorkflowPlanStep['status'] }) {
   }
   if (status === 'in_progress') {
     return (
-      <span
-        className="flex size-[15px] shrink-0 items-center justify-center rounded-full border-[1.5px] border-ink-2"
-        aria-hidden="true"
-        data-plan-step-icon="in_progress"
-      >
-        <span className="size-[5px] rounded-full bg-ink-2" />
+      <span className={cn(frame, 'border-ink-2 text-ink-2')} aria-hidden="true" data-plan-step-icon="in_progress">
+        <span className="size-[5px] rounded-[1.5px] bg-ink-2" />
       </span>
     );
   }
-  return (
-    <span
-      className="h-5 w-[3px] shrink-0 rounded-full bg-[color-mix(in_srgb,var(--ink-3)_48%,transparent)]"
-      aria-hidden="true"
-      data-plan-step-icon="pending"
-    />
-  );
+  return <span className={frame} aria-hidden="true" data-plan-step-icon="pending" />;
 }
 
 export const WorkflowPlanCard: React.FC<WorkflowPlanCardProps> = ({

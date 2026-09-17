@@ -14,6 +14,7 @@ import {
   MemoryStick,
   Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   Server,
@@ -27,6 +28,7 @@ import {
   X,
 } from 'lucide-react';
 import type { CollaborationMode, MemoryState, ModelOption, ProjectItem, ProviderCatalogEntry, ThinkingOption } from '../../types';
+import type { ArchivedSessionRecord } from '../../lib/archived-sessions';
 import { RELEASES_URL, type UpdateCheckState } from '../../hooks/useUpdateCheck';
 import { translateExact } from '../../i18n';
 import { modelLabel } from '../chat/ModelSwitcher';
@@ -68,6 +70,9 @@ type SettingsDialogProps = {
   onSelectThinkingLevel: (level: string) => Promise<void>;
   onSelectCollaborationMode: (mode: CollaborationMode) => Promise<boolean>;
   onNewSession: () => Promise<boolean>;
+  archivedSessions?: ArchivedSessionRecord[];
+  onRestoreArchivedSession?: (sessionId: string) => void;
+  onDeleteArchivedSession?: (sessionId: string) => Promise<void>;
 };
 
 type ProviderConfig = {
@@ -260,6 +265,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [sessionName, setSessionName] = useState('');
   const [language, setLanguagePreference] = useState('auto');
   const [languageOptions, setLanguageOptions] = useState<LanguageOption[]>(fallbackLanguageOptions);
+  const [deletingArchivedId, setDeletingArchivedId] = useState<string | null>(null);
   const translate = (value: string) => translateExact(value, language);
 
   const desktop = (window as any).metisDesktop;
@@ -909,6 +915,85 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </Row>
         </Card>
         <Card>
+          <Row
+            label={translate('Archived conversations')}
+            description={translate('Hidden from the sidebar. Restore them here, or delete permanently.')}
+            stacked
+          >
+            {(props.archivedSessions?.length ?? 0) === 0 ? (
+              <p className="text-[12.5px] text-ink-3" data-archived-sessions-empty="">
+                {translate('No archived conversations')}
+              </p>
+            ) : (
+              <ul className="max-h-48 w-full space-y-1 overflow-y-auto scrollbar-none" data-archived-sessions-list="">
+                {(props.archivedSessions ?? []).map((item) => {
+                  const isDeleting = deletingArchivedId === item.id;
+                  return (
+                  <li
+                    key={item.id}
+                    data-archived-session-row={item.id}
+                    className="flex min-h-[40px] items-center justify-between gap-3 rounded-control px-2 py-1.5 hover:bg-hover-2"
+                  >
+                    <p className="min-w-0 truncate text-[13px] font-medium text-ink">{item.name}</p>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        className={iconButtonClass}
+                        disabled={Boolean(deletingArchivedId)}
+                        title={translate('Restore conversation')}
+                        aria-label={translate('Restore conversation')}
+                        data-restore-archived-session=""
+                        onClick={() => {
+                          props.onRestoreArchivedSession?.(item.id);
+                          setFeedback(translate('Conversation restored.'));
+                        }}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        className={dangerIconButtonClass}
+                        disabled={disabled || Boolean(deletingArchivedId)}
+                        title={translate('Delete permanently')}
+                        aria-label={translate('Delete permanently')}
+                        data-delete-archived-session=""
+                        onClick={() => void (async () => {
+                          const confirmed = await requestApproval({
+                            title: translate('Delete permanently'),
+                            message: translate('This permanently deletes the conversation file. This cannot be undone.'),
+                            confirmLabel: translate('Delete permanently'),
+                            danger: true,
+                          });
+                          if (confirmed === null) return;
+                          if (!props.onDeleteArchivedSession) {
+                            setError('Delete handler unavailable');
+                            return;
+                          }
+                          setDeletingArchivedId(item.id);
+                          setError('');
+                          try {
+                            await props.onDeleteArchivedSession(item.id);
+                            setFeedback(translate('Conversation deleted permanently.'));
+                          } catch (cause) {
+                            setError(cause instanceof Error ? cause.message : String(cause));
+                          } finally {
+                            setDeletingArchivedId(null);
+                          }
+                        })()}
+                      >
+                        {isDeleting
+                          ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                          : <Trash2 className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Row>
+        </Card>
+        <Card>
           <Row label="Metis Desktop" description={`Version ${appInfo.version || '—'} · ${appInfo.platform || '—'}`}>
             <Status>{appInfo.name || 'Metis'}</Status>
           </Row>
@@ -966,6 +1051,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
     { id: 'export-session', tab: 'about' as SettingsTab, title: 'Export session', desc: 'HTML is readable; JSONL can be resumed.', keywords: 'export html jsonl 导出 会话' },
     { id: 'import-session', tab: 'about' as SettingsTab, title: 'Import session', desc: 'Create and switch to a session from JSONL.', keywords: 'import 导入 会话' },
     { id: 'share-session', tab: 'about' as SettingsTab, title: 'Share session', desc: 'Create a private GitHub Gist link.', keywords: 'share gist 分享 链接' },
+    { id: 'archived-conversations', tab: 'about' as SettingsTab, title: 'Archived conversations', desc: 'Hidden from the sidebar. Restore them here, or delete permanently.', keywords: 'archive restore delete 归档 恢复 删除 隐藏' },
     { id: 'app-update', tab: 'about' as SettingsTab, title: 'Software update', desc: 'Compare this build against the published release manifest.', keywords: 'software update version check 软件更新 检查更新' },
     { id: 'reload-resources', tab: 'about' as SettingsTab, title: 'Reload Agent resources', desc: 'Reload extensions, Skills, themes and models.', keywords: 'reload restart resources 重载 重新加载' },
   ], []);

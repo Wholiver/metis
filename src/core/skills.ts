@@ -89,7 +89,32 @@ export interface LoadSkillsResult {
 	diagnostics: ResourceDiagnostic[];
 }
 
-export const BUILTIN_SKILLS: Skill[] = [];
+function resolveBuiltinSkillsDir(): string | undefined {
+	const candidates = [
+		join(__dirname, "builtins", "skills"),
+		join(__dirname, "..", "builtins", "skills"),
+		// Dev / test: running from src/core or dist/core without copied assets yet
+		join(__dirname, "..", "..", "src", "core", "builtins", "skills"),
+	];
+	for (const dir of candidates) {
+		if (existsSync(dir)) {
+			return dir;
+		}
+	}
+	return undefined;
+}
+
+function loadBuiltinSkills(): Skill[] {
+	const dir = resolveBuiltinSkillsDir();
+	if (!dir) {
+		return [];
+	}
+	const { skills } = loadSkillsFromDirInternal(dir, "builtin", true);
+	return skills;
+}
+
+/** Built-in skills shipped with Metis (lowest discovery priority). */
+export const BUILTIN_SKILLS: Skill[] = loadBuiltinSkills();
 
 /**
  * Validate skill name per Agent Skills spec.

@@ -3,7 +3,7 @@ import { AssistantContentPart } from '../../types';
 import { formatThinkingDuration } from '../../lib/thinking';
 import { MarkdownContent } from './MarkdownContent';
 import { ThinkingBlock } from './ThinkingBlock';
-import { ToolCard, ToolPart } from './ToolCard';
+import { ToolCard, ToolPart, isToolCallFinished } from './ToolCard';
 import { ContextToolGroup, isContextGroupTool } from './ContextToolGroup';
 
 interface AssistantWorkProps {
@@ -12,6 +12,7 @@ interface AssistantWorkProps {
   durationMs?: number;
   preserveExistingItems?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  onOpenSubagent?: (partId: string) => void;
 }
 
 export function assistantWorkTitle(streaming: boolean, elapsedMs: number, durationMs?: number): string {
@@ -56,29 +57,53 @@ export function groupAssistantWorkItems(items: AssistantContentPart[]): Assistan
   return grouped;
 }
 
-export const AssistantWork = React.memo<AssistantWorkProps>(({
+function areAssistantWorkPropsEqual(prev: AssistantWorkProps, next: AssistantWorkProps): boolean {
+  if (prev.streaming !== next.streaming) return false;
+  if (prev.durationMs !== next.durationMs) return false;
+  if (prev.onExpandedChange !== next.onExpandedChange) return false;
+  if (prev.onOpenSubagent !== next.onOpenSubagent) return false;
+  const prevItems = prev.items;
+  const nextItems = next.items;
+  if (prevItems === nextItems) return true;
+  if (prevItems.length !== nextItems.length) return false;
+  for (let index = 0; index < prevItems.length; index += 1) {
+    if (prevItems[index] !== nextItems[index]) return false;
+  }
+  return true;
+}
+
+const AssistantWorkComponent: React.FC<AssistantWorkProps> = ({
   items,
   streaming = false,
   durationMs,
   preserveExistingItems: _preserveExistingItems = false,
   onExpandedChange,
+  onOpenSubagent,
 }) => {
   useEffect(() => {
     onExpandedChange?.(true);
   }, [onExpandedChange, streaming, items.length]);
 
   const renderItems = useMemo(() => groupAssistantWorkItems(items), [items]);
-  const lastToolId = [...renderItems]
+  const lastTool = [...renderItems]
     .reverse()
     .flatMap((item) => (
       item.type === 'contextGroup'
         ? [...item.parts].reverse()
         : item.type === 'toolCall' ? [item] : []
-    ))[0]?.id;
-  // OpenCode: busy only on the last assistant context group while the turn is working.
-  const lastContextGroupId = [...renderItems]
+    ))[0];
+  const lastToolId = lastTool?.id;
+  const lastToolLive = Boolean(streaming && lastTool && !isToolCallFinished(lastTool));
+  // OpenCode: busy only on the last assistant context group while that group still has in-flight tools.
+  const lastContextGroup = [...renderItems]
     .reverse()
-    .find((item) => item.type === 'contextGroup')?.id;
+    .find((item) => item.type === 'contextGroup');
+  const lastContextGroupId = lastContextGroup?.id;
+  const lastContextGroupLive = Boolean(
+    streaming
+    && lastContextGroup
+    && lastContextGroup.parts.some((part) => !isToolCallFinished(part)),
+  );
 
   return (
     <section className="cot-container" data-assistant-work>
@@ -90,15 +115,16 @@ export const AssistantWork = React.memo<AssistantWorkProps>(({
                 contentNode = (
                   <ContextToolGroup
                     parts={item.parts}
-                    streaming={streaming && item.parts.some((part) => part.id === lastToolId)}
-                    busy={streaming && item.id === lastContextGroupId}
+                    streaming={lastToolLive && item.parts.some((part) => part.id === lastToolId)}
+                    busy={lastContextGroupLive && item.id === lastContextGroupId}
                   />
                 );
               } else if (item.type === 'toolCall') {
                 contentNode = (
                   <ToolCard
                     part={item as ToolPart}
-                    streaming={streaming && item.id === lastToolId}
+                    streaming={lastToolLive && item.id === lastToolId}
+                    onOpenSubagent={onOpenSubagent}
                   />
                 );
               } else {
@@ -117,6 +143,8 @@ export const AssistantWork = React.memo<AssistantWorkProps>(({
       </div>
     </section>
   );
-});
+};
+
+export const AssistantWork = React.memo(AssistantWorkComponent, areAssistantWorkPropsEqual);
 
 AssistantWork.displayName = 'AssistantWork';

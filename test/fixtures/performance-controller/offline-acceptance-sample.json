@@ -1,0 +1,22 @@
+{
+  "profile": "reliable-headless",
+  "contractHash": "abc",
+  "completion": {
+    "passed": false,
+    "reasons": [{ "code": "REQUIRED_ARTIFACT_MISSING", "message": "missing output/result.json" }],
+    "requiredArtifactsPresent": false,
+    "forbiddenArtifactsAbsent": true,
+    "checksPassed": false,
+    "unresolvedFindings": 1
+  },
+  "children": [
+    {
+      "agentId": "implementer-1",
+      "role": "implementer",
+      "cwd": "/tmp/task",
+      "workspacePolicy": "shared",
+      "exitCode": 0,
+      "outcome": "pass"
+    }
+  ]
+}

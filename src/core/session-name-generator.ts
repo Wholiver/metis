@@ -31,8 +31,21 @@ function getMessageText(message: AgentMessage): string {
 		.join(" ");
 }
 
+/** Strip Chinese Chromium/macOS accessibility list markers ("第 … 项/項") from titles. */
+export function stripAccessibilityListWrapper(value: string): string {
+	const sanitized = value.replace(/[\u200B-\u200D\uFEFF\u2060\u200E\u200F]/g, "").trim();
+	const match =
+		/^第(?:\s*[\d一二三四五六七八九十]+[.\s、项項:：]+|\s*[-*•·]\s*|\s*)([\s\S]+?)\s*[项項][。.]?$/.exec(
+			sanitized,
+		);
+	if (!match) return sanitized;
+	const inner = match[1].trim();
+	if (!inner || /^(\d+|[一二三四五六七八九十]+)$/.test(inner)) return sanitized;
+	return inner;
+}
+
 export function sanitizeGeneratedSessionName(value: string): string | undefined {
-	const firstLine = value
+	const firstLine = stripAccessibilityListWrapper(value)
 		.replace(/<think>[\s\S]*?<\/think>/gi, "")
 		.trim()
 		.split(/\r?\n/, 1)[0]
@@ -52,8 +65,9 @@ export function generateFallbackSessionName(messages: readonly AgentMessage[]): 
 	const originalText = firstUserMessage ? getMessageText(firstUserMessage).trim() : "";
 	if (!originalText) return "New task";
 
-	const withoutLeadingFile = originalText.replace(/^(['"“‘])(?:\/|[A-Za-z]:\\).+?['"”’]\s*/, "");
-	return sanitizeGeneratedSessionName(withoutLeadingFile || originalText) ?? "New task";
+	const withoutWrapper = stripAccessibilityListWrapper(originalText);
+	const withoutLeadingFile = withoutWrapper.replace(/^(['"“‘])(?:\/|[A-Za-z]:\\).+?['"”’]\s*/, "");
+	return sanitizeGeneratedSessionName(withoutLeadingFile || withoutWrapper) ?? "New task";
 }
 
 export async function generateSessionName(options: GenerateSessionNameOptions): Promise<string | undefined> {

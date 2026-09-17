@@ -19,7 +19,10 @@ export type StreamingTextProps = {
   variant?: string;
   /** Prefer rendering safe Markdown via children (MarkdownContent). */
   children?: ReactNode;
-  /** When true, show the streaming caret after children. */
+  /**
+   * Kept for API parity with callers. Metis does not render a streaming caret:
+   * Markdown ends in block elements, so a trailing caret drops onto its own line.
+   */
   streaming?: boolean;
   fill?: boolean;
   className?: string;
@@ -50,13 +53,6 @@ export default function StreamingText({
     <div className={cn(fill ? "w-full min-w-0 max-w-full" : "min-h-[15.5rem] w-full max-w-95", className)}>
       <div className="text-[14px] leading-relaxed text-ink [overflow-wrap:anywhere]">
         {children}
-        {streaming && (
-          <span
-            className="ml-0.5 inline-block h-3 w-0.5 translate-y-0.5 rounded-full bg-ink align-middle"
-            style={{ animation: "fade-in 150ms ease-out both" }}
-            aria-label="Receiving message"
-          />
-        )}
       </div>
 
       {done && followUps && followUps.length > 0 && (

@@ -308,6 +308,11 @@ function rebuildBashResultRenderComponent(
 	}
 }
 
+/** Prefer dedicated file tools; do not steer progress narration. */
+export const BASH_GUIDELINES = [
+	"When read/write/edit are available: read files with read, create or rewrite files with write, make precise edits with edit; use bash only to run programs, tests, and verification commands.",
+] as const;
+
 export function createBashToolDefinition(
 	cwd: string,
 	options?: BashToolOptions,
@@ -320,6 +325,7 @@ export function createBashToolDefinition(
 		label: "bash",
 		description: `Run bash in cwd; return stdout+stderr. Tail truncates at ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first; full output goes to temp file. Optional seconds timeout (nested subagents default to ${DEFAULT_SUBAGENT_BASH_TIMEOUT_SECONDS}s).`,
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
+		promptGuidelines: [...BASH_GUIDELINES],
 		parameters: bashSchema,
 		async execute(
 			_toolCallId,

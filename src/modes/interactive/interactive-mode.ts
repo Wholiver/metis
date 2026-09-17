@@ -100,6 +100,11 @@ import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { SUPPORTED_UI_LANGUAGES, type UiLanguage } from "../../core/ui-language.ts";
+import type { TaskPaths } from "../../core/execution-types.ts";
+import { ensureReliableExecutionEnv } from "../../core/execution-types.ts";
+import { buildContractInstruction } from "../../core/task-contract.ts";
+import { runReliableTurn } from "../../core/reliable-headless-runners.ts";
+import { getGlobalTraceCollector } from "../../core/trace-collector.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
@@ -369,6 +374,8 @@ export interface InteractiveModeOptions {
 	initialMessages?: string[];
 	/** Force verbose startup (overrides quietStartup setting) */
 	verbose?: boolean;
+	/** Optional task path hints for reliable-headless probe. */
+	taskPaths?: TaskPaths;
 }
 
 export class InteractiveMode {
@@ -955,24 +962,19 @@ export class InteractiveMode {
 
 		void this.maybeWarnAboutAnthropicSubscriptionAuth();
 
-		// Process initial messages
-		if (initialMessage) {
+		ensureReliableExecutionEnv();
+
+		// Process initial messages through reliable-headless turn runner.
+		if (initialMessage || (initialMessages && initialMessages.length > 0)) {
 			try {
-				await this.session.prompt(initialMessage, { images: initialImages });
+				await this.promptReliableTurn({
+					text: initialMessage ?? "",
+					images: initialImages,
+					followUpMessages: initialMessages,
+				});
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
-			}
-		}
-
-		if (initialMessages) {
-			for (const message of initialMessages) {
-				try {
-					await this.session.prompt(message);
-				} catch (error: unknown) {
-					const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-					this.showError(errorMessage);
-				}
 			}
 		}
 
@@ -982,11 +984,71 @@ export class InteractiveMode {
 			const workflowAction = this.nextPromptWorkflowAction;
 			this.nextPromptWorkflowAction = undefined;
 			try {
-				await this.session.prompt(userInput, workflowAction ? { workflowAction } : undefined);
+				if (workflowAction) {
+					await this.session.prompt(userInput, { workflowAction });
+				} else {
+					await this.promptReliableTurn({ text: userInput });
+				}
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
 			}
+		}
+	}
+
+	/** Collect latest assistant stopReason/text for host controller outcomes. */
+	private collectAssistantOutcome(): { finalText: string; stopReason?: AssistantMessage["stopReason"]; errorMessage?: string } {
+		const state = this.session.state;
+		const lastMessage = state.messages[state.messages.length - 1];
+		let finalText = "";
+		let stopReason: AssistantMessage["stopReason"] | undefined;
+		let errorMessage: string | undefined;
+		if (lastMessage?.role === "assistant") {
+			const assistantMsg = lastMessage as AssistantMessage;
+			stopReason = assistantMsg.stopReason;
+			errorMessage = assistantMsg.errorMessage;
+			if (assistantMsg.stopReason !== "error" && assistantMsg.stopReason !== "aborted") {
+				for (const content of assistantMsg.content) {
+					if (content.type === "text") {
+						finalText += (finalText ? "\n" : "") + content.text;
+					}
+				}
+			}
+		}
+		return { finalText, stopReason, errorMessage };
+	}
+
+	/**
+	 * Host-owned reliable turn: Controller when contract has independent oracle;
+	 * otherwise conversational prompt under reliable runtime. Never process.exit on task_failed.
+	 */
+	private async promptReliableTurn(args: {
+		text: string;
+		images?: ImageContent[];
+		followUpMessages?: string[];
+	}): Promise<void> {
+		ensureReliableExecutionEnv();
+		const instruction = buildContractInstruction(args.text || undefined, args.followUpMessages ?? []);
+		const result = await runReliableTurn({
+			session: {
+				prompt: (text, opts) => this.session.prompt(text, opts),
+				getActiveToolDefinition: (name) => this.session.getActiveToolDefinition(name),
+				performanceRun: this.session.performanceRun,
+			},
+			instruction,
+			cwd: this.sessionManager.getCwd(),
+			taskPaths: this.options.taskPaths,
+			policy: "chat-aware",
+			images: args.images,
+			rootPromptText: args.text || undefined,
+			followUpMessages: args.followUpMessages,
+			collectAssistantOutcome: () => this.collectAssistantOutcome(),
+			traceCollector: getGlobalTraceCollector(),
+		});
+		if (result.status !== "completed") {
+			const code = result.failure?.code ?? result.status;
+			const message = result.failure?.message ?? "Host verification failed";
+			this.showStatus(`Task ${result.status}: ${code} — ${message}`);
 		}
 	}
 

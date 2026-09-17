@@ -22,6 +22,8 @@ export interface BasicToolProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   allowOpenWhilePending?: boolean;
+  /** OpenCode `defer`: mount details only while open so huge transcripts stay out of the DOM. */
+  defer?: boolean;
   className?: string;
 }
 
@@ -40,6 +42,7 @@ export function BasicTool({
   open: openProp,
   onOpenChange,
   allowOpenWhilePending = false,
+  defer = false,
   className,
 }: BasicToolProps) {
   const contentId = useId();
@@ -48,6 +51,7 @@ export function BasicTool({
   const pending = status === 'pending' || status === 'running';
   const hasChildren = children != null && children !== false;
   const showArrow = hasChildren && !hideDetails && (!pending || allowOpenWhilePending);
+  const mountDetails = hasChildren && !hideDetails && (open || !defer);
 
   const setOpen = (value: boolean) => {
     if (openProp === undefined) setUncontrolledOpen(value);
@@ -86,7 +90,7 @@ export function BasicTool({
               {titleTrigger ? (
                 <div data-slot="basic-tool-tool-info-structured">
                   <div data-slot="basic-tool-tool-info-main">
-                    <span data-slot="basic-tool-tool-title" className={titleTrigger.titleClass}>
+                    <span data-slot="basic-tool-tool-title" data-i18n-skip="" className={titleTrigger.titleClass}>
                       <TextShimmer text={titleTrigger.title} active={pending} />
                     </span>
                     {(!pending || titleTrigger.subtitle || titleTrigger.args?.length) && (
@@ -130,12 +134,13 @@ export function BasicTool({
           )}
         </div>
       </button>
-      {hasChildren && !hideDetails && (
+      {mountDetails && (
         <div
           id={contentId}
           className={`basic-tool-content ${open ? 'open' : 'collapsed'}`}
           aria-hidden={!open}
           data-slot="collapsible-content"
+          data-defer={defer ? 'true' : undefined}
         >
           <div className="basic-tool-content-inner min-h-0">{children}</div>
         </div>

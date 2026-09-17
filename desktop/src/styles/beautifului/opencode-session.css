@@ -238,6 +238,10 @@
   opacity: 1;
 }
 
+.basic-tool-content[data-defer="true"] {
+  transition: none;
+}
+
 .basic-tool-content-inner {
   min-height: 0;
 }
@@ -467,6 +471,162 @@
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* OpenCode session-ui bash-output / generic tool-transcript — bordered panel, copy on hover. */
+[data-component="bash-output"],
+[data-component="tool-transcript"] {
+  direction: ltr;
+  unicode-bidi: isolate;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  position: relative;
+  overflow: hidden;
+  contain: content;
+}
+
+[data-component="bash-output"] [data-slot="tool-transcript-copy"],
+[data-component="tool-transcript"] [data-slot="tool-transcript-copy"] {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+[data-component="bash-output"]:hover [data-slot="tool-transcript-copy"],
+[data-component="bash-output"]:focus-within [data-slot="tool-transcript-copy"],
+[data-component="tool-transcript"]:hover [data-slot="tool-transcript-copy"],
+[data-component="tool-transcript"]:focus-within [data-slot="tool-transcript-copy"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+[data-slot="tool-transcript-copy-button"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+[data-slot="tool-transcript-copy-button"]:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+[data-component="bash-output"] [data-slot="tool-transcript-scroll"],
+[data-component="tool-transcript"] [data-slot="tool-transcript-scroll"] {
+  width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+[data-component="bash-output"] [data-slot="tool-transcript-scroll"]::-webkit-scrollbar,
+[data-component="tool-transcript"] [data-slot="tool-transcript-scroll"]::-webkit-scrollbar {
+  display: none;
+}
+
+[data-slot="tool-transcript-pre"] {
+  margin: 0;
+  padding: 12px;
+}
+
+[data-slot="tool-transcript-truncated"] {
+  padding: 0 12px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+[data-slot="tool-transcript-pre"] code {
+  font-family: var(--font-mono-face);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+
+[data-slot="tool-transcript-markdown"] {
+  padding: 12px;
+  min-width: 0;
+}
+
+[data-slot="tool-transcript-markdown"] .markdown-content {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+[data-slot="tool-transcript-markdown"] .markdown-content > *:first-child {
+  margin-top: 0;
+}
+
+[data-slot="tool-transcript-markdown"] .markdown-content > *:last-child {
+  margin-bottom: 0;
+}
+
+[data-slot="tool-transcript-markdown"] .markdown-content p {
+  margin: 0 0 0.55em;
+}
+
+[data-slot="tool-transcript-markdown"] .markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+[data-component="exa-tool-output"] {
+  width: 100%;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink-2);
+}
+
+[data-slot="exa-tool-links"] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+[data-slot="exa-tool-link"] {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--accent-ink, var(--ink));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+[data-slot="exa-tool-link"]:hover,
+[data-slot="exa-tool-link"]:visited {
+  color: var(--accent-ink, var(--ink));
+}
+
+[data-component="tool-output"] {
+  white-space: pre;
+}
+
+[data-component="tool-output"][data-scrollable] pre {
+  margin: 0;
+  padding: 0;
+  background: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

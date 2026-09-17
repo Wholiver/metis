@@ -141,6 +141,17 @@ export function isFileMutationTool(name: string): boolean {
     || /write_to_file|create_file|replace_file|edit_file|apply_patch/.test(normalized);
 }
 
+export function toolResultText(part: ToolPart): string {
+  const content = part.result?.content;
+  if (typeof content === 'string') return content;
+  if (content == null) return '';
+  try {
+    return JSON.stringify(content, null, 2);
+  } catch {
+    return String(content);
+  }
+}
+
 export function buildToolFileDiff(part: ToolPart, options: TurnFileChangeOptions = {}): {
   filename: string;
   path?: string;
@@ -175,6 +186,109 @@ export function buildToolFileDiff(part: ToolPart, options: TurnFileChangeOptions
   const rows = rowsFromEditArgs(args);
   if (rows.length === 0) return null;
   return { filename, path, rows, mode: 'diff' };
+}
+
+export type ToolExpandedView =
+  | { kind: 'diff'; filename: string; path?: string; rows: DiffRow[] }
+  | { kind: 'bash'; command: string; text: string }
+  | { kind: 'output'; text: string; format: 'markdown' | 'pre' | 'search'; links?: string[] };
+
+function isShellTool(name: string): boolean {
+  const normalized = name.toLowerCase();
+  return normalized === 'bash'
+    || normalized === 'exec'
+    || normalized === 'shell'
+    || /run_command|exec_command/.test(normalized);
+}
+
+function isWebSearchTool(name: string): boolean {
+  const normalized = name.toLowerCase();
+  return normalized.includes('websearch') || normalized.includes('search_web');
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001B\[[0-9;]*[A-Za-z]/g, '');
+}
+
+/** Keep expanded shell/pre output cheap to layout; copy still uses the full string. */
+export const TOOL_TRANSCRIPT_LINE_LIMIT = 80;
+export const TOOL_TRANSCRIPT_CHAR_LIMIT = 8_000;
+
+export function clipToolTranscript(
+  text: string,
+  lineLimit = TOOL_TRANSCRIPT_LINE_LIMIT,
+  charLimit = TOOL_TRANSCRIPT_CHAR_LIMIT,
+): { text: string; truncated: boolean; shownLines: number } {
+  if (!text) return { text: '', truncated: false, shownLines: 0 };
+  const lines = text.split('\n');
+  let truncated = lines.length > lineLimit;
+  let clipped = truncated ? lines.slice(0, lineLimit).join('\n') : text;
+  if (clipped.length > charLimit) {
+    clipped = clipped.slice(0, charLimit);
+    truncated = true;
+  }
+  const shownLines = clipped.length === 0 ? 0 : clipped.split('\n').length;
+  return { text: clipped, truncated, shownLines };
+}
+
+export function extractOutputUrls(text: string): string[] {
+  if (!text) return [];
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"'`)\]]+/g)) {
+    const url = match[0].replace(/[),.;:!?]+$/g, '');
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+  }
+  return urls;
+}
+
+function outputFormat(name: string, text: string): 'markdown' | 'pre' | 'search' {
+  if (isWebSearchTool(name)) return 'search';
+  const normalized = name.toLowerCase();
+  if (normalized === 'log' || normalized === 'video') return 'pre';
+  const trimmed = text.trim();
+  if (
+    (trimmed.startsWith('{') && trimmed.endsWith('}'))
+    || (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
+    return 'pre';
+  }
+  return 'markdown';
+}
+
+export function buildToolExpandedView(
+  part: ToolPart,
+  options: TurnFileChangeOptions = {},
+): ToolExpandedView | null {
+  if (isShellTool(part.name)) {
+    const args = asArgs(part.arguments);
+    const command = asString(args.command) ?? asString(args.cmd) ?? '';
+    const output = stripAnsi(toolResultText(part)).replace(/\r\n?/g, '\n');
+    if (!command && !output) return null;
+    return {
+      kind: 'bash',
+      command,
+      text: `$ ${command}${output ? `\n\n${output}` : ''}`,
+    };
+  }
+
+  const fileDiff = buildToolFileDiff(part, options);
+  if (fileDiff && fileDiff.rows.length > 0) {
+    return {
+      kind: 'diff',
+      filename: fileDiff.filename,
+      path: fileDiff.path,
+      rows: fileDiff.rows,
+    };
+  }
+
+  const output = toolResultText(part);
+  if (!output) return null;
+  const format = outputFormat(part.name, output);
+  const links = format === 'search' ? extractOutputUrls(output) : undefined;
+  return { kind: 'output', text: output, format, ...(links && links.length ? { links } : {}) };
 }
 
 /** Aggregate write/edit/apply_patch diffs for Review Turn mode. */

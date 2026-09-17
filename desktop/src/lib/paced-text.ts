@@ -1,9 +1,12 @@
 /**
  * OpenCode `createPacedValue` algorithm (MIT) — framework-agnostic.
  * Streams large text growth in readable steps while live; syncs immediately otherwise.
+ *
+ * Live updates are coalesced to ~50ms so Markdown re-parse does not run on every token.
  */
 
-export const TEXT_RENDER_PACE_MS = 24;
+export const TEXT_RENDER_PACE_MS = 50;
+/** Non-live catch-up still snaps immediately; live path never uses this for token drip. */
 export const TEXT_RENDER_IMMEDIATE = 512;
 const TEXT_RENDER_SNAP = /[\s.,!?;:)\]]/;
 
@@ -58,6 +61,7 @@ export function createPacedTextController(
       publish(latest);
       return;
     }
+    // Coalesce small live drips into one paint; large backlog still steps.
     if (latest.length - shown.length <= TEXT_RENDER_IMMEDIATE) {
       publish(latest);
       return;
@@ -82,12 +86,9 @@ export function createPacedTextController(
         publish(text);
         return;
       }
-      if (text.length - shown.length <= TEXT_RENDER_IMMEDIATE) {
-        clear();
-        publish(text);
-        return;
-      }
-      if (text.length === shown.length || timeout) return;
+      if (text.length === shown.length) return;
+      // Live: never publish on every token — schedule at most every TEXT_RENDER_PACE_MS.
+      if (timeout) return;
       timeout = setTimeout(run, TEXT_RENDER_PACE_MS);
     },
     dispose: clear,

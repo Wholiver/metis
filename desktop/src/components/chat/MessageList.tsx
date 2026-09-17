@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { CollaborationMode, Message, ModelOption, PendingUserInput, SendMessageOptions, WorkflowProposalState } from '../../types';
 import { UserBubble } from './UserBubble';
 import { AssistantTurn } from './AssistantTurn';
@@ -20,6 +20,7 @@ interface MessageListProps {
   onSendMessage?: (text: string, options?: SendMessageOptions) => boolean | void | Promise<boolean | void>;
   collaborationMode?: CollaborationMode;
   model?: ModelOption;
+  onOpenSubagent?: (partId: string) => void;
 }
 
 export const MessageList = React.memo<MessageListProps>(({
@@ -36,6 +37,7 @@ export const MessageList = React.memo<MessageListProps>(({
   onSendMessage,
   collaborationMode,
   model,
+  onOpenSubagent,
 }) => {
   const { t } = useI18n();
   void workspacePath;
@@ -54,20 +56,32 @@ export const MessageList = React.memo<MessageListProps>(({
     bottomThreshold: 10,
   });
 
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const laneRef = useRef<HTMLDivElement | null>(null);
-  const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+  const onSendMessageRef = useRef(onSendMessage);
+  onSendMessageRef.current = onSendMessage;
+  const handleRetry = useCallback((promptText: string) => {
+    void onSendMessageRef.current?.(promptText);
+  }, []);
+
+  const latestUserMessage = useMemo(
+    () => {
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (messages[index].role === 'user') return messages[index];
+      }
+      return undefined;
+    },
+    [messages],
+  );
   const latestUserId = latestUserMessage?.id;
   const latestUserTimestamp = latestUserMessage?.serverTimestamp;
+  const lastMessage = messages[messages.length - 1];
+  const contentEpoch = `${messages.length}:${lastMessage?.id ?? ''}:${typeof lastMessage?.content === 'string' ? lastMessage.content.length : 0}:${isStreaming ? 1 : 0}`;
   const previousUserIdRef = useRef(latestUserId);
 
   const bindScroll = useCallback((el: HTMLDivElement | null) => {
-    containerRef.current = el;
     setScrollElement(el);
   }, [setScrollElement]);
 
   const bindLane = useCallback((el: HTMLDivElement | null) => {
-    laneRef.current = el;
     setContentElement(el);
   }, [setContentElement]);
 
@@ -79,24 +93,7 @@ export const MessageList = React.memo<MessageListProps>(({
     }
     // Content growth follows only while the user has not scrolled away.
     scrollToBottom();
-  }, [latestUserId, isLoading, isStreaming, messages, resume, scrollToBottom]);
-
-  useEffect(() => {
-    const lane = laneRef.current;
-    const container = containerRef.current;
-    if (!lane && !container) return;
-    const onLayout = () => scrollToBottom();
-    const observer = new ResizeObserver(onLayout);
-    if (lane) observer.observe(lane);
-    if (container) observer.observe(container);
-    const clearance = lane?.querySelector('[data-composer-clearance]');
-    if (clearance) observer.observe(clearance);
-    lane?.addEventListener('load', onLayout, true);
-    return () => {
-      observer.disconnect();
-      lane?.removeEventListener('load', onLayout, true);
-    };
-  }, [scrollToBottom, messages.length, working]);
+  }, [latestUserId, isLoading, contentEpoch, resume, scrollToBottom]);
 
   const visibleTimeDivider = timeDivider || messages.find((message) => message.time)?.time;
   const renderGroups = useMemo(() => {
@@ -177,9 +174,11 @@ export const MessageList = React.memo<MessageListProps>(({
                 workflowProposal={workflowProposal}
                 onOpenPlan={onOpenPlan}
                 pendingUserInput={group === progressGroup ? pendingUserInput : undefined}
-                onRetry={group.promptText && onSendMessage ? () => onSendMessage(group.promptText!) : undefined}
+                onRetry={group.promptText ? handleRetry : undefined}
+                retryPrompt={group.promptText}
                 collaborationMode={collaborationMode}
                 model={model}
+                onOpenSubagent={onOpenSubagent}
               />
             )
           )}
@@ -193,6 +192,7 @@ export const MessageList = React.memo<MessageListProps>(({
               pendingUserInput={pendingUserInput}
               collaborationMode={collaborationMode}
               model={model}
+              onOpenSubagent={onOpenSubagent}
             />
           )}
           {!isHomeEmpty ? (

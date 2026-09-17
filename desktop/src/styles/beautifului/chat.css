@@ -386,15 +386,143 @@
 .tool-section-title:not(:first-child) { margin-top: 10px; }
 .tool-details-body pre { max-height: 260px; margin: 0; overflow: auto; color: var(--ink-2); font: 12px / 1.6 var(--font-mono-face); white-space: pre-wrap; }
 
-.subagent-tool-card .tool-name { max-width: min(260px, 36vw); }
-.subagent-tool-status { display: inline-flex; align-items: center; gap: 3px; color: var(--green); font-size: 10.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
-.subagent-tool-card.running .subagent-tool-status { color: var(--accent); }
-.subagent-tool-card.failed .subagent-tool-status, .subagent-tool-status.failed { color: var(--red); }
-.subagent-tool-status svg { width: 11px; height: 11px; stroke-width: 2; }
-.subagent-tool-task { margin: 5px 0 9px; color: var(--ink-2); font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
-.subagent-tool-meta { display: flex; align-items: center; flex-wrap: wrap; color: var(--ink-3); font-size: 10.5px; line-height: 1.35; }
-.subagent-tool-meta > * + *::before { display: inline-block; margin: 0 6px; color: var(--line-strong); content: "·"; }
-.subagent-tool-meta code { color: inherit; font: inherit; font-family: var(--font-mono-face); }
+/* OpenCode new-layout task-tool-card (subagent chip) */
+:root {
+  --task-agent-build: #2c47c8;
+  --task-agent-explore: #cb9f34;
+  --task-agent-plan: #c83d8b;
+  --task-agent-review: #2f7a3e;
+  --task-agent-writer: #7c3aed;
+  --task-agent-palette-0: #2090f5;
+  --task-agent-palette-1: #034cff;
+  --task-agent-palette-2: #fcb239;
+  --task-agent-palette-3: #a753ae;
+  --task-agent-palette-4: #ed4831;
+  --task-agent-palette-5: #3a8437;
+  --task-agent-palette-6: #ebb76e;
+  --task-agent-palette-7: #e6a8ea;
+}
+
+.dark {
+  --task-agent-build: #a2bcff;
+  --task-agent-explore: #f3da9b;
+  --task-agent-plan: #f799c6;
+  --task-agent-review: #7add71;
+  --task-agent-writer: #c4a1ff;
+}
+
+.tool-card.task-tool-chip {
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+.task-tool-chip-button {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.task-tool-chip-button:focus-visible {
+  border-radius: 8px;
+  outline: 2px solid var(--focus, var(--accent));
+  outline-offset: 2px;
+}
+
+[data-component="task-tool-card"] {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+[data-component="task-tool-surface"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink) 4.5%, var(--surface));
+}
+
+.dark [data-component="task-tool-surface"] {
+  background: color-mix(in srgb, white 6%, var(--surface));
+}
+
+[data-component="task-tool-card"] [data-slot="basic-tool-tool-info-main"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+[data-component="task-tool-icon"],
+[data-component="task-tool-spinner"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--task-agent-color, var(--ink-2));
+}
+
+[data-component="task-tool-spinner-dot"] {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--task-agent-color, var(--ink-2)) 35%, transparent);
+  border-top-color: var(--task-agent-color, var(--ink-2));
+  animation: task-tool-spin 0.7s linear infinite;
+}
+
+@keyframes task-tool-spin {
+  to { transform: rotate(360deg); }
+}
+
+[data-component="task-tool-title"] {
+  flex-shrink: 0;
+  height: 20px;
+  font-size: 13px;
+  font-weight: 530;
+  line-height: 20px;
+  letter-spacing: -0.04px;
+  color: var(--ink);
+}
+
+[data-component="task-tool-card"] [data-slot="basic-tool-tool-subtitle"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 440;
+  line-height: 20px;
+  letter-spacing: -0.04px;
+  color: var(--ink);
+}
+
+.subagent-tool-status { display: none; }
+.subagent-tool-task,
+.subagent-tool-meta { display: none; }
 
 .cot-title.working-shimmer,
 .tool-group-row-label.shimmering,

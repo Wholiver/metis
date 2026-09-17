@@ -14,6 +14,12 @@ declare global {
 const localizedText = new WeakMap<Text, LocalizedValueState>();
 const localizedAttributes = new WeakMap<Element, Map<string, LocalizedValueState>>();
 const localizableAttributes = ['aria-label', 'placeholder', 'title'];
+const I18N_SKIP_SELECTOR = '[data-i18n-skip], .markdown-content, pre, code, textarea, input';
+const MIN_TEMPLATE_LITERAL_CHARS = 12;
+
+function templateLiteralLength(template: string): number {
+  return template.replace(/\{[a-zA-Z0-9_]+\}/g, '').length;
+}
 
 function catalogs(): Catalogs {
   if (typeof window !== 'undefined' && window.metisDesktopI18nCatalogs) {
@@ -47,7 +53,13 @@ function matchTemplate(value: string): { key: string; variables: Record<string, 
       return '(.+?)';
     })}$`;
     const match = value.match(new RegExp(expression));
-    if (match) return { key, variables: Object.fromEntries(names.map((name, index) => [name, match[index + 1]])) };
+    if (!match) continue;
+    const variables = Object.fromEntries(names.map((name, index) => [name, match[index + 1]]));
+    if (templateLiteralLength(template) < MIN_TEMPLATE_LITERAL_CHARS) {
+      const capturesAreCompact = Object.values(variables).every((capture) => /^[\d.,:%+-]+$/.test(capture));
+      if (!capturesAreCompact) continue;
+    }
+    return { key, variables };
   }
   return undefined;
 }
@@ -72,7 +84,7 @@ function nextLocalizedValue(current: string, previous: LocalizedValueState | und
 }
 
 function translateNode(node: Text, preference: string) {
-  if (node.parentElement?.closest('[data-i18n-skip], .markdown-content, pre, code')) return;
+  if (node.parentElement?.closest(I18N_SKIP_SELECTOR)) return;
   const current = node.nodeValue || '';
   const next = nextLocalizedValue(current, localizedText.get(node), preference);
   localizedText.set(node, next);
@@ -80,6 +92,7 @@ function translateNode(node: Text, preference: string) {
 }
 
 function translateAttributes(element: Element, preference: string) {
+  if (element.closest(I18N_SKIP_SELECTOR)) return;
   const values = localizedAttributes.get(element) || new Map<string, LocalizedValueState>();
   localizedAttributes.set(element, values);
   for (const attribute of localizableAttributes) {

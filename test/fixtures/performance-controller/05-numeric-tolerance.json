@@ -1,0 +1,9 @@
+{
+  "id": "numeric-tolerance-fail",
+  "failureCode": "NUMERIC_TOLERANCE_FAILED",
+  "description": "Artifact schema is valid but numeric values exceed declared tolerance",
+  "expected": { "accuracy": 0.95 },
+  "actual": { "accuracy": 0.71 },
+  "tolerance": 0.02,
+  "checkId": "accuracy-tolerance"
+}

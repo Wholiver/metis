@@ -250,5 +250,38 @@ describe("Bundle 6: Headless Benchmark Mode, Exit Codes & Full Trace", () => {
 			}
 		});
 	});
+
+	describe("7. Reliable-headless recursive trace aggregation (Issue 7)", () => {
+		it("aggregates child records and rejects no_verdict in offline fixture", async () => {
+			const collector = new TraceCollector("run-offline");
+			collector.recordChildResult({
+				agentId: "implementer-1",
+				role: "implementer",
+				cwd: "/tmp/task",
+				workspacePolicy: "shared",
+				exitCode: 0,
+				outcome: "pass",
+			});
+			collector.recordExecution({
+				profile: "reliable-headless",
+				contractHash: "h1",
+				completion: {
+					passed: false,
+					reasons: [{ code: "REQUIRED_ARTIFACT_MISSING", message: "missing" }],
+					requiredArtifactsPresent: false,
+					forbiddenArtifactsAbsent: true,
+					checksPassed: false,
+					unresolvedFindings: 1,
+				},
+			});
+			const summary = collector.getSummary();
+			expect(summary.children?.[0]?.workspacePolicy).toBe("shared");
+			expect(summary.execution?.profile).toBe("reliable-headless");
+			expect(summary.children?.some((child) => child.outcome === "no_verdict")).toBe(false);
+
+			const { execFileSync } = await import("node:child_process");
+			execFileSync(process.execPath, ["scripts/eval/offline-acceptance.mjs"], { cwd: path.resolve(__dirname, "..") });
+		});
+	});
 });
 

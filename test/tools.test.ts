@@ -4,7 +4,13 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/bash-executor.ts";
-import { type BashOperations, createBashTool, createLocalBashOperations } from "../src/core/tools/bash.ts";
+import {
+	BASH_GUIDELINES,
+	type BashOperations,
+	createBashTool,
+	createBashToolDefinition,
+	createLocalBashOperations,
+} from "../src/core/tools/bash.ts";
 import { computeEditsDiff } from "../src/core/tools/edit-diff.ts";
 import { createWebFetchToolDefinition } from "../src/core/tools/webfetch.ts";
 import { createWebSearchToolDefinition } from "../src/core/tools/websearch.ts";
@@ -383,6 +389,32 @@ describe("Coding Agent Tools", () => {
 			expect(fetchGuidelines).toContain("only for material conflict");
 			expect(fetchGuidelines).toContain("only if licensed");
 			expect(fetchGuidelines).toContain("Never cite/mention fetched sources");
+		});
+	});
+
+	describe("bash tool prompting", () => {
+		it("prefers file tools over bash without steering progress narration", () => {
+			const bash = createBashToolDefinition(testDir);
+			const guidelines = bash.promptGuidelines ?? [];
+			const joined = guidelines.join(" ");
+
+			expect(guidelines).toEqual([...BASH_GUIDELINES]);
+			expect(joined).toContain("read files with read");
+			expect(joined).toContain("create or rewrite files with write");
+			expect(joined).toContain("precise edits with edit");
+			expect(joined).toContain("run programs, tests, and verification commands");
+			expect(bash.promptSnippet).toBe("Execute bash commands (ls, grep, find, etc.)");
+			expect(joined).not.toContain("scratchpad");
+			expect(joined).not.toContain("REPL");
+			expect(joined).not.toContain("thinking channel");
+			expect(joined).not.toContain("python3 -c");
+			expect(joined).not.toContain("node -e");
+			expect(joined).not.toContain("performance_admit");
+			expect(joined).not.toContain("update_plan");
+			expect(joined).not.toContain("skill");
+			expect(joined).not.toMatch(/\bmust use (?:the )?grep\b/i);
+			expect(joined).not.toMatch(/\bmust use (?:the )?find\b/i);
+			expect(joined).not.toMatch(/\bmust use (?:the )?ls\b/i);
 		});
 	});
 

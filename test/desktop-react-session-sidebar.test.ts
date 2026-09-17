@@ -58,6 +58,12 @@ describe('desktop React session sidebar', () => {
     expect(mainSource).toContain('"X-Metis-Desktop": "1"');
     expect(selectConversation).toContain("await request<SessionState & { cancelled: boolean }>('/session/switch'");
     expect(selectConversation).toContain('await loadMessages(targetSessionId, true)');
+    expect(selectConversation).toContain('messagesCacheRef');
+    expect(selectConversation).toContain('setIsLoadingMessages');
+    expect(selectConversation).toContain('suppressSessionChangedRef.current = true');
+    expect(selectConversation).not.toContain('setIsLoadingSessions(true)');
+    expect(source).toContain('isLoadingMessages');
+    expect(appSource).toContain('isLoadingMessages');
 
     const markup = renderToStaticMarkup(React.createElement(Sidebar, {
       agents: [sessionToAgent(session)],
@@ -92,6 +98,7 @@ describe('desktop React session sidebar', () => {
     expect(itemSource).not.toContain('ConversationIcon');
     expect(itemSource).toContain('data-conversation-row={agent.id}');
     expect(itemSource).toContain('data-conversation-content');
+    expect(itemSource).toContain('data-i18n-skip');
     expect(itemSource).toContain('h-8');
     expect(itemSource).toContain('rounded-[8px]');
     expect(sidebarSource).not.toContain('ConversationIcon');
@@ -112,25 +119,88 @@ describe('desktop React session sidebar', () => {
     expect(sidebarSource).toContain('rounded-[7px] bg-hover-2');
     expect(sidebarSource).not.toContain('ProjectDots');
     expect(itemSource).toContain("indented ? 'pl-[30px] pr-2' : 'px-2'");
-    expect(itemSource).toContain('PixelOrbitLoader');
+    expect(itemSource).toContain('PixelDotsLoader');
+    expect(itemSource).toContain('beautiful-shimmer');
     expect(itemSource).toContain('data-conversation-working');
     expect(itemSource).toContain('absolute right-full');
-    expect(sidebarSource).toContain('workingAgentId');
-    expect(sidebarSource).toContain('isWorking={Boolean(workingAgentId) && agent.id === workingAgentId}');
+    expect(itemSource).toContain('overflow-visible');
+    expect(itemSource).toContain('block truncate');
+    expect(itemSource).toContain('data-archive-conversation');
+    expect(itemSource).toContain('group-hover:opacity-100');
+    expect(itemSource).toContain('onArchive');
+    expect(sidebarSource).toContain('workingAgentIds');
+    expect(sidebarSource).toContain('workingAgentIds?.has(agent.id)');
+    expect(sidebarSource).toContain('archivedSessionIds');
+    expect(sidebarSource).toContain('onArchiveAgent');
   });
 
-  it('ships the orbiting pixel loader used for working conversations', () => {
-    const loader = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/PixelOrbitLoader.tsx'), 'utf8');
+  it('hides archived conversations and renders a hover archive control left of the timestamp', () => {
+    const agent = sessionToAgent(session);
+    const visible = renderToStaticMarkup(React.createElement(Sidebar, {
+      agents: [agent],
+      activeAgentId: session.id,
+      width: 260,
+      archivedSessionIds: new Set<string>(),
+      onSelectAgent: () => undefined,
+      onArchiveAgent: () => undefined,
+    }));
+    expect(visible).toContain(`data-conversation-row="${session.id}"`);
+    expect(visible).toContain('data-archive-conversation');
+    expect(agent.time).toBeTruthy();
+    expect(visible.indexOf('data-archive-conversation')).toBeLessThan(visible.indexOf(agent.time));
+
+    const hidden = renderToStaticMarkup(React.createElement(Sidebar, {
+      agents: [agent],
+      activeAgentId: session.id,
+      width: 260,
+      archivedSessionIds: new Set([session.id]),
+      onSelectAgent: () => undefined,
+      onArchiveAgent: () => undefined,
+    }));
+    expect(hidden).not.toContain(`data-conversation-row="${session.id}"`);
+  });
+
+  it('ships the dots pixel loader used for working conversations', () => {
+    const loader = readFileSync(resolve(process.cwd(), 'desktop/src/components/sidebar/PixelDotsLoader.tsx'), 'utf8');
     const css = readFileSync(resolve(process.cwd(), 'desktop/src/styles/beautifului/foundation.css'), 'utf8');
     const app = readFileSync(resolve(process.cwd(), 'desktop/src/App.tsx'), 'utf8');
 
-    expect(loader).toContain('text-ink-3');
-    expect(loader).toContain('ORBIT_ORDER');
+    expect(loader).toContain('rounded-full');
+    expect(loader).toContain('bg-ink');
+    expect(loader).toContain('CHEVRON_DELAYS');
+    expect(loader).toContain('(column + Math.abs(row - 1)) * 90');
+    expect(loader).toContain('650');
     expect(loader).toContain('pixel-on');
     expect(css).toContain('@keyframes pixel-on');
-    expect(loader).toContain('opacity: delay === null ? 0.12 : 0.28');
-    expect(app).toContain('workingAgentId=');
-    expect(app).toContain('isStreaming || isCompacting');
+    expect(css).toContain('.beautiful-shimmer');
+    expect(app).toContain('workingAgentIds=');
+    expect(app).toContain('workingSessionIds');
+  });
+
+  it('keeps working indicators for non-active conversations in the sidebar', () => {
+    const agent = sessionToAgent(session);
+    const background = {
+      ...agent,
+      id: 'background-session',
+      name: 'Background thinking',
+    };
+    const markup = renderToStaticMarkup(React.createElement(Sidebar, {
+      agents: [agent, background],
+      activeAgentId: agent.id,
+      width: 260,
+      workingAgentIds: new Set(['background-session']),
+      onSelectAgent: () => undefined,
+    }));
+    expect(markup).toContain('data-conversation-row="background-session"');
+    expect(markup).toContain('data-conversation-working="true"');
+    const backgroundStart = markup.indexOf('data-conversation-row="background-session"');
+    const workingAttr = markup.indexOf('data-conversation-working="true"');
+    expect(workingAttr).toBeGreaterThan(backgroundStart);
+    const activeChunk = markup.slice(
+      markup.indexOf(`data-conversation-row="${agent.id}"`),
+      backgroundStart,
+    );
+    expect(activeChunk).not.toContain('data-conversation-working="true"');
   });
 
   it('wires list, switch, create, messages, and prompt actions through the Server bridge', () => {
@@ -143,6 +213,9 @@ describe('desktop React session sidebar', () => {
     expect(source).toContain("...(options.images?.length ? { images: options.images } : {})");
     expect(source).toContain("type === 'message_start' || type === 'message_update' || type === 'message_end'");
     expect(source).toContain("event.serverSessionId !== activeSessionIdRef.current");
+    expect(source).toContain('workingSessionIds');
+    expect(source).toContain('markSessionsWorking(event, true)');
+    expect(source).toContain('await loadMessages(activeSessionIdRef.current || undefined, true)');
     expect(source).toContain("type === 'session_info_changed'");
     expect(source).toContain("type === 'session_name_generation' && event.status === 'completed'");
     expect(source).toContain("agent.id === activeSessionIdRef.current ? { ...agent, name: generatedName } : agent");
@@ -174,6 +247,22 @@ describe('desktop React session sidebar', () => {
   it('prefers generated session names and handles empty sessions', () => {
     expect(sessionTitle({ ...session, name: 'Generated title' })).toBe('Generated title');
     expect(sessionTitle({ ...session, firstMessage: '(no messages)' })).toBe('New conversation');
+  });
+
+  it('strips Chinese accessibility list wrappers from session titles', () => {
+    expect(sessionTitle({
+      ...session,
+      name: undefined,
+      firstMessage: '第 Generate an SVG / a pelican riding a bicycle 项',
+    })).toBe('Generate an SVG / a pelican riding a bicycle');
+    expect(sessionTitle({
+      ...session,
+      name: '第Generate an SVG / a pelican riding a bicycle項',
+    })).toBe('Generate an SVG / a pelican riding a bicycle');
+    expect(sessionSubtitle({
+      ...session,
+      lastMessage: '第 Follow-up request 项',
+    })).toBe('Follow-up request');
   });
 
   it('keeps the active new conversation visible while the persisted list catches up', () => {
@@ -280,6 +369,37 @@ describe('desktop React session sidebar', () => {
     })).toMatchObject({
       content: 'Inspect this',
       attachments: [{ name: 'shot.png', previewUrl: attachment.previewUrl }],
+    });
+    expect(payload.message).toContain('<metis_attachment');
+    expect(toMessage({
+      role: 'user',
+      content: [{ type: 'text', text: payload.message }],
+    })?.content).not.toContain('<metis_attachment');
+  });
+
+  it('preserves optimistic attachments when Server user message omits them', () => {
+    const optimistic = {
+      id: 'optimistic-user-1',
+      role: 'user' as const,
+      content: 'Inspect this',
+      optimistic: true,
+      attachments: [{
+        id: 'shot-1',
+        kind: 'image' as const,
+        name: 'shot.png',
+        sizeText: '1.0 KB',
+        previewUrl: 'data:image/png;base64,abc',
+      }],
+    };
+    const serverUser = toMessage({
+      role: 'user',
+      timestamp: 10,
+      content: 'Inspect this',
+    })!;
+    const merged = upsertConversationMessage([optimistic], serverUser);
+    expect(merged[0].attachments?.[0]).toMatchObject({
+      id: 'shot-1',
+      previewUrl: 'data:image/png;base64,abc',
     });
   });
 
@@ -535,8 +655,10 @@ describe('desktop React session sidebar', () => {
     expect(headerSource).toContain('!isSidebarOpen');
     expect(headerSource).toContain('PanelLeftOpen');
     expect(headerSource).toContain('onNewChat');
+    expect(headerSource).toContain('data-i18n-skip');
     expect(chatAreaSource).toContain('onNewChat={onNewChat}');
-    expect(appSource).toContain('onNewChat={newConversation}');
+    expect(appSource).toContain('onNewChat={handleNewChat}');
+    expect(appSource).toContain('void newConversation()');
   });
 
   it('renders redesigned borderless rectangular project switcher matching Settings button size', () => {

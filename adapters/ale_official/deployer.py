@@ -367,6 +367,8 @@ class MetisDeployer(BaseAgentDeployer):
 			"json",
 			"--collaboration-mode",
 			cfg.collaboration_mode,
+			"--execution-profile",
+			os.environ.get("METIS_EXECUTION_PROFILE", "reliable-headless"),
 			"--provider",
 			cfg.provider,
 			"--model",
@@ -398,6 +400,8 @@ class MetisDeployer(BaseAgentDeployer):
 		env["METIS_OFFLINE"] = env.get("METIS_OFFLINE", "0")
 		# Avoid accidental interactive prompts.
 		env["CI"] = "1"
+		env.setdefault("METIS_EXECUTION_PROFILE", "reliable-headless")
+		env.setdefault("METIS_WORKSPACE_POLICY", "shared")
 		return env
 
 	@staticmethod

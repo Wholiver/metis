@@ -13,8 +13,14 @@ type MarkdownSegment =
   | { type: 'code'; language: string; code: string; key: string };
 
 const FENCED_CODE = /```([\w+-]*)\n([\s\S]*?)```/g;
+const HTML_CACHE_LIMIT = 200;
+const htmlCache = new Map<string, string>();
 
-function splitMarkdown(markdown: string): MarkdownSegment[] {
+export function clearMarkdownHtmlCache(): void {
+  htmlCache.clear();
+}
+
+export function splitMarkdown(markdown: string): MarkdownSegment[] {
   const segments: MarkdownSegment[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -41,20 +47,54 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
   return segments;
 }
 
-function renderHtml(markdown: string): string {
-  return DOMPurify.sanitize(marked.parse(markdown, {
+export function renderHtml(markdown: string): string {
+  const cached = htmlCache.get(markdown);
+  if (cached !== undefined) {
+    // Refresh LRU order.
+    htmlCache.delete(markdown);
+    htmlCache.set(markdown, cached);
+    return cached;
+  }
+  const html = DOMPurify.sanitize(marked.parse(markdown, {
     async: false,
     breaks: true,
     gfm: true,
   }) as string);
+  htmlCache.set(markdown, html);
+  if (htmlCache.size > HTML_CACHE_LIMIT) {
+    const oldest = htmlCache.keys().next().value;
+    if (oldest !== undefined) htmlCache.delete(oldest);
+  }
+  return html;
 }
 
-export const MarkdownContent: React.FC<MarkdownContentProps> = ({ markdown, className = '' }) => {
+function MarkdownContentInner({ markdown, className = '' }: MarkdownContentProps) {
   const segments = useMemo(() => splitMarkdown(markdown), [markdown]);
+  const renderedSegments = useMemo(() => segments.map((segment) => (
+    segment.type === 'code'
+      ? segment
+      : { type: 'html' as const, html: renderHtml(segment.html) }
+  )), [segments]);
+
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = (e.target as HTMLElement).closest('a');
+    if (target && target.href && (target.href.startsWith('http://') || target.href.startsWith('https://'))) {
+      if (e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent('metis:open-browser', {
+          detail: { url: target.href, newTab: true },
+        }));
+      }
+    }
+  };
 
   return (
-    <div className={`markdown-content w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere] ${className}`}>
-      {segments.map((segment, index) => {
+    <div
+      onClick={handleClick}
+      className={`markdown-content w-full min-w-0 max-w-full break-words [overflow-wrap:anywhere] ${className}`}
+    >
+      {renderedSegments.map((segment, index) => {
         if (segment.type === 'code') {
           return (
             <div key={segment.key} className="my-2">
@@ -67,15 +107,17 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ markdown, clas
             </div>
           );
         }
-        const html = renderHtml(segment.html);
-        if (!html.trim()) return null;
+        if (!segment.html.trim()) return null;
         return (
           <div
             key={`html-${index}`}
-            dangerouslySetInnerHTML={{ __html: html }}
+            dangerouslySetInnerHTML={{ __html: segment.html }}
           />
         );
       })}
     </div>
   );
-};
+}
+
+export const MarkdownContent = React.memo(MarkdownContentInner);
+MarkdownContent.displayName = 'MarkdownContent';

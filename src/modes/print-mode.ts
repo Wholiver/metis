@@ -2,7 +2,19 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { AssistantMessage, ImageContent } from "@earendil-works/metis-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
+import type { ExecutionProfile, ExecutionResult, TaskPaths } from "../core/execution-types.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
+import {
+	mapExecutionStatusToExitCode,
+	resolveExecutionProfile,
+	resolveTaskPathsFromEnv,
+} from "../core/task-execution-controller.ts";
+import { buildContractInstruction } from "../core/task-contract.ts";
+import { runReliableTurn } from "../core/reliable-headless-runners.ts";
+import type {
+	HostNamedChildExecuteInput,
+	HostNamedChildExecuteResult,
+} from "../core/host-named-child-runner.ts";
 import {
 	getGlobalTraceCollector,
 	type TraceCollector,
@@ -28,6 +40,22 @@ export interface PrintModeOptions {
 	traceCollector?: TraceCollector;
 	/** Root run or current agent TraceContext */
 	traceContext?: TraceContext;
+	/** Execution profile (sole value reliable-headless). */
+	executionProfile?: ExecutionProfile;
+	/** Optional task path hints for reliable-headless probe. */
+	taskPaths?: TaskPaths;
+	/** Working directory for probe/completion (defaults to process.cwd()). */
+	cwd?: string;
+	/** Test seam: inject a precomputed ExecutionResult and skip host controller. */
+	executionResult?: ExecutionResult;
+	/**
+	 * Test/production seam for host-owned named-child dispatch.
+	 * When set, Controller runPlanner/runImplementer/runVerifier use this instead of spawning processes.
+	 */
+	hostNamedChildExecute?: (
+		input: HostNamedChildExecuteInput,
+		signal?: AbortSignal,
+	) => Promise<HostNamedChildExecuteResult>;
 }
 
 /**
@@ -36,6 +64,9 @@ export interface PrintModeOptions {
  */
 export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: PrintModeOptions): Promise<number> {
 	const { mode, messages = [], initialMessage, initialImages, outputFinalAnswer } = options;
+	const executionProfile = resolveExecutionProfile(options.executionProfile);
+	const taskPaths = options.taskPaths ?? resolveTaskPathsFromEnv();
+	const cwd = options.cwd ?? process.cwd();
 	let exitCode = 0;
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
@@ -161,6 +192,27 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		});
 	};
 
+	const collectAssistantOutcome = (): { finalText: string; stopReason?: AssistantMessage["stopReason"]; errorMessage?: string } => {
+		const state = session.state;
+		const lastMessage = state.messages[state.messages.length - 1];
+		let finalText = "";
+		let stopReason: AssistantMessage["stopReason"] | undefined;
+		let errorMessage: string | undefined;
+		if (lastMessage?.role === "assistant") {
+			const assistantMsg = lastMessage as AssistantMessage;
+			stopReason = assistantMsg.stopReason;
+			errorMessage = assistantMsg.errorMessage;
+			if (assistantMsg.stopReason !== "error" && assistantMsg.stopReason !== "aborted") {
+				for (const content of assistantMsg.content) {
+					if (content.type === "text") {
+						finalText += (finalText ? "\n" : "") + content.text;
+					}
+				}
+			}
+		}
+		return { finalText, stopReason, errorMessage };
+	};
+
 	try {
 		if (mode === "json") {
 			const header = session.sessionManager.getHeader();
@@ -179,6 +231,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 					instructionSources: session.instructionSources,
 					instructionDiagnostics: session.instructionDiagnostics,
 					memoryState: session.memoryState,
+					executionProfile,
 				},
 				activeTraceContext,
 			);
@@ -187,33 +240,51 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 		await rebindSession();
 
-		if (initialMessage) {
-			await session.prompt(initialMessage, { images: initialImages });
-		}
-
-		for (const message of messages) {
-			await session.prompt(message);
-		}
-
-		const state = session.state;
-		const lastMessage = state.messages[state.messages.length - 1];
 		let finalAnswerText = "";
 
-		if (lastMessage?.role === "assistant") {
-			const assistantMsg = lastMessage as AssistantMessage;
-			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
-				console.error(assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`);
-				exitCode = 1;
-			} else {
-				for (const content of assistantMsg.content) {
-					if (content.type === "text") {
-						finalAnswerText += (finalAnswerText ? "\n" : "") + content.text;
-					}
-				}
-				if (mode === "text") {
-					writeRawStdout(`${finalAnswerText}\n`);
-				}
-			}
+		const executionResult = await runReliableTurn({
+			session: {
+				prompt: (text, opts) => session.prompt(text, opts),
+				getActiveToolDefinition: (name) => session.getActiveToolDefinition(name),
+				performanceRun: session.performanceRun,
+			},
+			instruction: buildContractInstruction(initialMessage, messages),
+			cwd,
+			taskPaths,
+			policy: "strict",
+			images: initialImages,
+			rootPromptText: initialMessage,
+			followUpMessages: messages,
+			collectAssistantOutcome,
+			traceCollector,
+			hostNamedChildExecute: options.hostNamedChildExecute,
+			executionResult: options.executionResult,
+		});
+
+		finalAnswerText = executionResult.finalText;
+		exitCode = mapExecutionStatusToExitCode(executionResult.status);
+		traceCollector.recordExecution({
+			profile: "reliable-headless",
+			model: session.model?.id,
+			provider: session.model?.provider,
+			thinking: session.thinkingLevel,
+			contractHash: executionResult.contract.contractHash,
+			repairAttempts: executionResult.attempts.filter((attempt) => attempt.role === "repairer").length,
+			failureFingerprint: executionResult.failure
+				? `${executionResult.failure.code}|${executionResult.failure.message}`.slice(0, 240)
+				: undefined,
+			completion: executionResult.completion,
+		});
+
+		if (mode === "text" && finalAnswerText) {
+			writeRawStdout(`${finalAnswerText}\n`);
+		}
+		if (mode === "json") {
+			const enriched = traceCollector.injectTraceContext(
+				{ type: "execution_result", ...executionResult },
+				activeTraceContext,
+			);
+			writeRawStdout(`${JSON.stringify(enriched)}\n`);
 		}
 
 		if (outputFinalAnswer && finalAnswerText) {
@@ -248,4 +319,3 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		await flushRawStdout();
 	}
 }
-

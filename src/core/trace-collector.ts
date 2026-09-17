@@ -1,7 +1,11 @@
 /**
  * Full lifecycle Trace Context and aggregated Token/Cost/Latency collector
- * (Feats 35, 36, 37, 38)
+ * (Feats 35, 36, 37, 38) plus reliable-headless child/execution metadata (Issue 7).
  */
+
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import type { ChildResult, CompletionDecision, ExecutionProfile } from "./execution-types.ts";
 
 export interface TraceContext {
 	rootRunId: string;
@@ -30,6 +34,32 @@ export interface AgentTokenStats {
 	turnCount: number;
 }
 
+export interface ChildTraceRecord {
+	agentId: string;
+	role: string;
+	cwd: string;
+	workspacePolicy: "shared" | "isolated";
+	exitCode: number | null;
+	outcome?: string;
+	childResult?: ChildResult;
+	model?: string;
+	provider?: string;
+}
+
+export interface ExecutionTraceRecord {
+	profile: ExecutionProfile;
+	metisCommit?: string;
+	model?: string;
+	thinking?: string;
+	provider?: string;
+	contractHash?: string;
+	artifactHash?: string;
+	checkerHash?: string;
+	repairAttempts?: number;
+	failureFingerprint?: string;
+	completion?: CompletionDecision;
+}
+
 export interface TraceSummaryPayload {
 	type: "trace_summary";
 	rootRunId: string;
@@ -41,10 +71,14 @@ export interface TraceSummaryPayload {
 	totalDurationMs: number;
 	agentCount: number;
 	agents: AgentTokenStats[];
+	children?: ChildTraceRecord[];
+	execution?: ExecutionTraceRecord;
 }
 
 export class TraceCollector {
 	private readonly agentStats = new Map<string, AgentTokenStats>();
+	private readonly childResults: ChildTraceRecord[] = [];
+	private execution?: ExecutionTraceRecord;
 	private readonly startTime = Date.now();
 	private readonly rootRunId: string;
 
@@ -104,14 +138,48 @@ export class TraceCollector {
 		stats.turnCount += 1;
 	}
 
+	public recordChildResult(record: ChildTraceRecord): void {
+		this.childResults.push(record);
+	}
+
+	public getChildResults(): ChildResult[] {
+		return this.childResults.map((entry) => entry.childResult).filter((result): result is ChildResult => Boolean(result));
+	}
+
+	public getChildTraceRecords(): ChildTraceRecord[] {
+		return [...this.childResults];
+	}
+
+	public recordExecution(record: ExecutionTraceRecord): void {
+		this.execution = { ...(this.execution ?? { profile: record.profile }), ...record };
+	}
+
 	public mergeChildTrace(childTrace: AgentTokenStats | TraceSummaryPayload): void {
 		if ("type" in childTrace && childTrace.type === "trace_summary") {
 			for (const agent of childTrace.agents) {
-				this.agentStats.set(agent.agentId, agent);
+				const existing = this.agentStats.get(agent.agentId);
+				if (!existing) {
+					this.agentStats.set(agent.agentId, agent);
+					continue;
+				}
+				// Idempotent replay: keep first observation; do not double-count tokens.
+			}
+			if (childTrace.children) {
+				const seen = new Set(this.childResults.map((c) => c.agentId));
+				for (const child of childTrace.children) {
+					if (seen.has(child.agentId)) continue;
+					seen.add(child.agentId);
+					this.childResults.push(child);
+				}
+			}
+			if (childTrace.execution) {
+				this.recordExecution(childTrace.execution);
 			}
 		} else {
 			const stats = childTrace as AgentTokenStats;
-			this.agentStats.set(stats.agentId, stats);
+			if (!this.agentStats.has(stats.agentId)) {
+				this.agentStats.set(stats.agentId, stats);
+			}
 		}
 	}
 
@@ -143,6 +211,8 @@ export class TraceCollector {
 			totalDurationMs,
 			agentCount: Math.max(1, agents.length),
 			agents,
+			children: this.childResults.length > 0 ? [...this.childResults] : undefined,
+			execution: this.execution,
 		};
 	}
 
@@ -172,3 +242,38 @@ export function setGlobalTraceCollector(collector: TraceCollector): void {
 	globalTraceCollector = collector;
 }
 
+/**
+ * Recursively load summary.json envelopes under a trace directory and merge into collector.
+ * Supports parent→child→grandchild on-disk aggregation across process boundaries.
+ */
+export function loadAndMergeTraceTree(traceDir: string, collector: TraceCollector): TraceSummaryPayload {
+	const visit = (dir: string) => {
+		if (!existsSync(dir)) return;
+		const summaryPath = join(dir, "summary.json");
+		if (existsSync(summaryPath)) {
+			try {
+				const parsed = JSON.parse(readFileSync(summaryPath, "utf8")) as TraceSummaryPayload;
+				collector.mergeChildTrace(parsed);
+			} catch {
+				// ignore malformed envelopes
+			}
+		}
+		let entries: string[] = [];
+		try {
+			entries = readdirSync(dir);
+		} catch {
+			return;
+		}
+		for (const entry of entries) {
+			const full = join(dir, entry);
+			try {
+				if (statSync(full).isDirectory()) visit(full);
+			} catch {
+				// ignore
+			}
+		}
+	};
+
+	visit(traceDir);
+	return collector.getSummary();
+}

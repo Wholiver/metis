@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  diffRowsEqual,
   filterReviewFiles,
   parseUnifiedDiff,
   resolveReviewMode,
   reviewChangesOptions,
+  reviewFilesEqual,
 } from '../desktop/src/lib/review-diff';
 import { collectTurnFileDiffs } from '../desktop/src/lib/tool-diff';
 import type { AssistantContentPart } from '../desktop/src/types';
@@ -97,6 +99,26 @@ describe('desktop review-diff helpers', () => {
     expect(hook).toContain('collectTurnFileDiffs');
     expect(hook).toContain("resolvedMode === 'turn'");
     expect(hook).toContain('turnDiffs.find');
+    expect(hook).toContain('reviewFilesEqual');
+    expect(hook).toContain('diffRowsEqual');
+    expect(hook).toContain('setLoadingList(false)');
+    expect(hook).toContain('setLoadingPatch(false)');
     expect(hook).not.toContain('if (info.isRepo && workspace?.diff)');
+  });
+
+  it('treats identical turn file diffs as unchanged', () => {
+    const rows = [
+      { old: null, cur: 1, type: 'add' as const, pieces: [{ text: 'fresh', change: 'add' as const }] },
+    ];
+    const left = [{ file: 'README.md', additions: 1, deletions: 0, rows }];
+    const right = [{
+      file: 'README.md',
+      additions: 1,
+      deletions: 0,
+      rows: [{ old: null, cur: 1, type: 'add' as const, pieces: [{ text: 'fresh', change: 'add' as const }] }],
+    }];
+    expect(diffRowsEqual(rows, right[0].rows)).toBe(true);
+    expect(reviewFilesEqual(left, right)).toBe(true);
+    expect(reviewFilesEqual(left, [{ file: 'README.md', additions: 2, deletions: 0, rows }])).toBe(false);
   });
 });

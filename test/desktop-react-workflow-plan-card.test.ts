@@ -24,7 +24,10 @@ describe('desktop React workflow plan card', () => {
     expect(card).toContain("data-plan-step-icon=\"completed\"");
     expect(card).toContain("data-plan-step-icon=\"in_progress\"");
     expect(card).toContain("data-plan-step-icon=\"pending\"");
-    expect(card).toContain('h-5 w-[3px]');
+    expect(card).toContain('size-[15px]');
+    expect(card).toContain('rounded-[3.5px]');
+    expect(card).not.toContain('h-5 w-[3px]');
+    expect(card).not.toContain('rounded-full border-[1.5px]');
     expect(card).toContain('min-h-8 items-center gap-3');
     expect(card).toContain('w-[18px]');
     expect(card).toContain('line-through');
@@ -41,7 +44,8 @@ describe('desktop React workflow plan card', () => {
     expect(composer).not.toContain('data-composer-plan-shell');
     expect(composer).not.toContain('data-composer-input-nest');
     expect(composer).not.toContain('expandSlot=');
-    expect(composer).not.toContain('plain');
+    expect(composer).not.toContain('data-plan-plain');
+    expect(composer).not.toContain('plain?:');
     expect(composer).not.toContain('data-composer-progress-slot');
     expect(composer.indexOf('data-composer-plan-slot')).toBeLessThan(composer.indexOf('{promptBar}'));
 

@@ -9,6 +9,7 @@ import {
 	filesFromTransfer,
 	formatFileSize,
 	imageMimeType,
+	normalizeUserMessageForDisplay,
 	parseAttachmentPayloadText,
 	transferHasFiles,
 } from "../desktop/src/lib/attachments.ts";
@@ -46,6 +47,42 @@ describe("desktop attachment helpers", () => {
 		expect(parsed.text).toBe("Inspect this");
 		expect(parsed.attachments).toEqual([video]);
 		expect(formatFileSize(1024 * 1024)).toBe("1.0 MB");
+	});
+
+	it("strips malformed metis_attachment markup that lacks data attributes", () => {
+		const malformed = [
+			'User note',
+			'<metis_attachment:4dd707ba-4a24-4ee8-80ff-40dd174f1646>已添加图片 "shot.png"，请结合图片内容处理。</metis_attachment:4dd707ba-4a24-4ee8-80ff-40dd174f1646>',
+		].join('\n\n');
+		const parsed = parseAttachmentPayloadText(malformed);
+		expect(parsed.text).toBe('User note');
+		expect(parsed.text).not.toContain('metis_attachment');
+		expect(parsed.attachments).toEqual([]);
+	});
+
+	it("normalizeUserMessageForDisplay hides wire format and merges previews", () => {
+		const image = {
+			id: "image-1",
+			kind: "image" as const,
+			name: "shot.png",
+			sizeText: "1.0 KB",
+			mimeType: "image/png",
+			data: "iVBORw0KGgo=",
+			previewUrl: "data:image/png;base64,iVBORw0KGgo=",
+		};
+		const payload = composeAttachmentPayload("inspect", [image]);
+		const normalized = normalizeUserMessageForDisplay(payload.message, [{
+			id: "image-1",
+			kind: "image",
+			name: "shot.png",
+			sizeText: "1.0 KB",
+			previewUrl: image.previewUrl,
+			data: image.data,
+			mimeType: image.mimeType,
+		}]);
+		expect(normalized.text).toBe("inspect");
+		expect(normalized.text).not.toContain("<metis_attachment");
+		expect(normalized.attachments[0]?.previewUrl).toBe(image.previewUrl);
 	});
 
 	it("builds Server ImageContent and restores image previews from message history", () => {
@@ -88,6 +125,13 @@ describe("desktop edit menus", () => {
 		});
 		expect(template.find((item) => item.role === "copy")?.enabled).toBe(true);
 		expect(template.find((item) => item.role === "paste")?.enabled).toBe(true);
+	});
+
+	it("sanitizes browser accessibility list item wrappers when displaying user messages", () => {
+		const normalized = normalizeUserMessageForDisplay("第 Generate an SVG / a pelican riding a bicycle 项");
+		expect(normalized.text).toBe("Generate an SVG / a pelican riding a bicycle");
+		expect(normalizeUserMessageForDisplay("第Generate an SVG / a pelican riding a bicycle項").text)
+			.toBe("Generate an SVG / a pelican riding a bicycle");
 	});
 });
 

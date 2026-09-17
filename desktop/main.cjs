@@ -16,6 +16,7 @@ const {
 	restoreMetisServer,
 } = require("./server-connection.cjs");
 const desktopI18n = require("./i18n.cjs");
+const { createBrowserHostController } = require("./browser-host.cjs");
 const { WorkspaceCreateError, createWorkspaceDirectory } = require("./workspace-create.cjs");
 const workspaceGit = require("./workspace-git.cjs");
 
@@ -35,6 +36,11 @@ let workspaceRoot = findDefaultWorkspace();
 let metisServer = { ...DEFAULT_METIS_SERVER };
 let pendingMetisServer;
 let metisEventController;
+let browserHostController = createBrowserHostController({
+	getMainWindow: () => mainWindow,
+	getWorkspaceRoot: () => workspaceRoot,
+});
+let browserHostReady;
 
 function nativeText(key, variables) {
 	return desktopI18n.t(key, desktopLanguage, variables, [app.getLocale()]);
@@ -123,14 +129,61 @@ function findMetisCli() {
 	return undefined;
 }
 
-async function isLocalServerHealthy(target) {
+async function getLocalServerHealth(target) {
 	try {
 		const response = await net.fetch(`${target.baseUrl}/global/health`, { signal: AbortSignal.timeout(500) });
-		if (!response.ok) return false;
-		const data = await response.json();
-		return data?.healthy === true;
+		if (!response.ok) return null;
+		return await response.json();
 	} catch {
-		return false;
+		return null;
+	}
+}
+
+async function isLocalServerHealthy(target) {
+	const data = await getLocalServerHealth(target);
+	return data?.healthy === true;
+}
+
+async function freeLocalServerPort(port, baseUrl) {
+	const pids = new Set();
+	const targetPort = Number(port);
+	try {
+		if (process.platform === "win32") {
+			const { stdout } = await execFileAsync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf8", maxBuffer: 2 * 1024 * 1024 });
+			for (const line of stdout.split(/\r?\n/)) {
+				if (!/\bLISTEN/i.test(line)) continue;
+				const parts = line.trim().split(/\s+/);
+				// Proto LocalAddress ForeignAddress State PID — match exact local port only.
+				const localAddress = parts[1] ?? "";
+				const localPort = Number((localAddress.match(/:(\d+)$/) || [])[1]);
+				if (!Number.isFinite(localPort) || localPort !== targetPort) continue;
+				const pid = Number(parts[parts.length - 1]);
+				if (Number.isFinite(pid) && pid > 0) pids.add(pid);
+			}
+		} else {
+			const { stdout } = await execFileAsync("lsof", ["-nP", `-iTCP:${targetPort}`, "-sTCP:LISTEN", "-t"], {
+				encoding: "utf8",
+			});
+			for (const line of stdout.split(/\r?\n/)) {
+				const pid = Number(line.trim());
+				if (Number.isFinite(pid) && pid > 0) pids.add(pid);
+			}
+		}
+	} catch (error) {
+		if (error?.code !== "ENOENT" && error?.code !== 1) {
+			console.error("[desktop] Failed to locate listeners on local Server port:", error);
+		}
+	}
+	for (const pid of pids) {
+		try {
+			process.kill(pid, "SIGTERM");
+		} catch (error) {
+			if (error?.code !== "ESRCH") console.error(`[desktop] Failed to stop pid ${pid} on Server port ${port}:`, error);
+		}
+	}
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		if (!(await isLocalServerHealthy({ baseUrl }))) return;
+		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
 }
 
@@ -154,11 +207,20 @@ async function ensureLocalMetisServer(server = metisServer) {
 }
 
 async function startLocalMetisServer(target) {
-	if (await isLocalServerHealthy(target)) {
-		if (autoServerProcess && autoServerTarget?.baseUrl !== target.baseUrl) stopAutoServer();
-		cancelAutoServerRestart();
-		autoServerRestartDelay = 500;
-		return true;
+	const health = await getLocalServerHealth(target);
+	if (health?.healthy === true) {
+		const needsBrowserHost = Boolean(browserHostController.baseUrl);
+		const serverHasBrowserHost = health.browserHostConfigured === true;
+		if (!needsBrowserHost || serverHasBrowserHost) {
+			if (autoServerProcess && autoServerTarget?.baseUrl !== target.baseUrl) stopAutoServer();
+			cancelAutoServerRestart();
+			autoServerRestartDelay = 500;
+			return true;
+		}
+		// Healthy but missing METIS_BROWSER_HOST (upgrade / external listener). Replace so browser_* tools work.
+		console.warn("[desktop] Local Server is healthy without browser-host env; restarting with Desktop browser host.");
+		if (autoServerProcess) stopAutoServer();
+		await freeLocalServerPort(target.port, target.baseUrl);
 	}
 	if (autoServerProcess && autoServerTarget?.baseUrl !== target.baseUrl) stopAutoServer();
 	if (autoServerProcess) return waitForLocalServer(autoServerProcess, target);
@@ -173,9 +235,18 @@ async function startLocalMetisServer(target) {
 		const defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 		envPath = envPath ? `${envPath}:${defaultPath}` : defaultPath;
 	}
+	const serverEnv = {
+		...process.env,
+		PATH: envPath,
+		METIS_EXECUTION_PROFILE: "reliable-headless",
+	};
+	if (browserHostController.baseUrl) {
+		serverEnv.METIS_BROWSER_HOST = browserHostController.baseUrl;
+		serverEnv.METIS_BROWSER_HOST_TOKEN = browserHostController.token;
+	}
 	const serverProcess = utilityProcess.fork(cliPath, ["server", "--hostname", target.hostname, "--port", String(target.port)], {
 		cwd: workspaceRoot,
-		env: { ...process.env, PATH: envPath },
+		env: serverEnv,
 		stdio: ["ignore", "pipe", "pipe"],
 		serviceName: "Metis Server",
 	});
@@ -1935,9 +2006,13 @@ function createWindow() {
 		webPreferences.nodeIntegration = false;
 		webPreferences.contextIsolation = true;
 		webPreferences.sandbox = true;
-		if (!isHttpUrl(params.src)) event.preventDefault();
+		webPreferences.webSecurity = true;
+		const src = params.src || "";
+		const allowed = !src || src === "about:blank" || isHttpUrl(src) || src.startsWith("file:");
+		if (!allowed) event.preventDefault();
 	});
 	mainWindow.webContents.on("did-attach-webview", (_event, guest) => {
+		browserHostController.registerGuest(guest);
 		guest.setWindowOpenHandler(({ url }) => {
 			if (isHttpUrl(url)) void shell.openExternal(url);
 			return { action: "deny" };
@@ -1959,7 +2034,7 @@ function createWindow() {
 	});
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
 	loadDesktopPreferences();
 	if (process.platform === "darwin") app.dock?.setIcon(createAppIcon());
 	rebuildApplicationMenu();
@@ -1969,6 +2044,15 @@ app.whenReady().then(() => {
 	createWindow();
 	process.stderr.write("[desktop] performence mode loaded\n");
 	console.log("performence mode loaded");
+	try {
+		browserHostReady = browserHostController.start();
+		await browserHostReady;
+		process.env.METIS_BROWSER_HOST = browserHostController.baseUrl;
+		process.env.METIS_BROWSER_HOST_TOKEN = browserHostController.token;
+		process.stderr.write(`[desktop] browser host listening on ${browserHostController.baseUrl}\n`);
+	} catch (error) {
+		console.error("[desktop] Failed to start browser host:", error);
+	}
 	void ensureLocalMetisServer();
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) {
@@ -1985,6 +2069,7 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
 	appIsQuitting = true;
 	metisEventController?.abort();
+	browserHostController.stop();
 	stopAutoServer();
 });
 
@@ -2168,6 +2253,21 @@ function registerIpc() {
 	// The update manifest lookup lives in the CLI runtime (src/utils/version-check.ts),
 	// so the desktop shell forwards to the local server instead of reimplementing it.
 	ipcMain.handle("update:check", () => metisRequest("/global/update-check", { timeoutMs: 15_000 }));
+
+	ipcMain.handle("browser:bind-tab", (_event, payload = {}) => {
+		const result = browserHostController.bindTab(payload.tabId, payload.webContentsId, {
+			url: payload.url,
+			title: payload.title,
+		});
+		return result;
+	});
+	ipcMain.handle("browser:update-tab-meta", (_event, payload = {}) => {
+		browserHostController.updateTabMeta(payload.tabId, {
+			url: payload.url,
+			title: payload.title,
+		});
+		return true;
+	});
 }
 
 function resolveAgentDir() {

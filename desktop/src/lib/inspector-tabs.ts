@@ -1,4 +1,4 @@
-export type InspectorTabKind = 'files' | 'plan' | 'subagents';
+export type InspectorTabKind = 'files' | 'plan' | 'subagents' | 'browser';
 
 export interface InspectorTab {
   id: string;
@@ -7,6 +7,12 @@ export interface InspectorTab {
   scrollTop: number;
   viewedProposalMarkdown: string | null;
   viewedProposalSessionId: string | null;
+  browserUrl?: string;
+  browserTitle?: string;
+  browserFavicon?: string;
+  browserCanGoBack?: boolean;
+  browserCanGoForward?: boolean;
+  browserIsLoading?: boolean;
 }
 
 export interface InspectorTabsState {
@@ -21,13 +27,18 @@ export type InspectorTabsAction =
     kind: InspectorTabKind;
     viewedProposalMarkdown?: string | null;
     viewedProposalSessionId?: string | null;
+    browserUrl?: string;
+    browserTitle?: string;
   }
   | {
     type: 'openOrActivate';
     kind: InspectorTabKind;
     viewedProposalMarkdown?: string | null;
     viewedProposalSessionId?: string | null;
+    browserUrl?: string;
+    browserTitle?: string;
   }
+  | { type: 'openSubagentDetail'; selectedSubagentId: string }
   | { type: 'activate'; tabId: string }
   | { type: 'close'; tabId: string }
   | { type: 'move'; tabId: string; toIndex: number }
@@ -35,7 +46,7 @@ export type InspectorTabsAction =
   | {
     type: 'update';
     tabId: string;
-    patch: Partial<Pick<InspectorTab, 'selectedSubagentId' | 'scrollTop' | 'viewedProposalMarkdown' | 'viewedProposalSessionId'>>;
+    patch: Partial<Pick<InspectorTab, 'selectedSubagentId' | 'scrollTop' | 'viewedProposalMarkdown' | 'viewedProposalSessionId' | 'browserUrl' | 'browserTitle' | 'browserFavicon' | 'browserCanGoBack' | 'browserCanGoForward' | 'browserIsLoading'>>;
   };
 
 function createTab(
@@ -43,6 +54,8 @@ function createTab(
   id: string,
   viewedProposalMarkdown: string | null = null,
   viewedProposalSessionId: string | null = null,
+  browserUrl?: string,
+  browserTitle?: string,
 ): InspectorTab {
   return {
     id,
@@ -51,6 +64,8 @@ function createTab(
     scrollTop: 0,
     viewedProposalMarkdown,
     viewedProposalSessionId,
+    browserUrl: browserUrl !== undefined ? browserUrl : (kind === 'browser' ? '' : undefined),
+    browserTitle: browserTitle !== undefined ? browserTitle : (kind === 'browser' ? 'Browser' : undefined),
   };
 }
 
@@ -89,6 +104,8 @@ export function inspectorTabsReducer(
         id,
         action.viewedProposalMarkdown ?? null,
         action.viewedProposalSessionId ?? null,
+        action.browserUrl,
+        action.browserTitle,
       )],
       activeTabId: id,
       nextId: state.nextId + 1,
@@ -108,6 +125,12 @@ export function inspectorTabsReducer(
         viewedProposalSessionId: action.viewedProposalSessionId !== undefined
           ? action.viewedProposalSessionId
           : existing.viewedProposalSessionId,
+        browserUrl: action.browserUrl !== undefined
+          ? action.browserUrl
+          : existing.browserUrl,
+        browserTitle: action.browserTitle !== undefined
+          ? action.browserTitle
+          : existing.browserTitle,
         scrollTop: 0,
       };
       return { ...state, tabs, activeTabId: existing.id };
@@ -119,7 +142,31 @@ export function inspectorTabsReducer(
         id,
         action.viewedProposalMarkdown ?? null,
         action.viewedProposalSessionId ?? null,
+        action.browserUrl,
+        action.browserTitle,
       )],
+      activeTabId: id,
+      nextId: state.nextId + 1,
+    };
+  }
+
+  if (action.type === 'openSubagentDetail') {
+    const existing = state.tabs.find((tab) => tab.kind === 'subagents');
+    if (existing) {
+      const index = state.tabs.findIndex((tab) => tab.id === existing.id);
+      const tabs = [...state.tabs];
+      tabs[index] = {
+        ...existing,
+        selectedSubagentId: action.selectedSubagentId,
+        scrollTop: 0,
+      };
+      return { ...state, tabs, activeTabId: existing.id };
+    }
+    const id = `subagents-${state.nextId}`;
+    const tab = createTab('subagents', id);
+    tab.selectedSubagentId = action.selectedSubagentId;
+    return {
+      tabs: [...state.tabs, tab],
       activeTabId: id,
       nextId: state.nextId + 1,
     };

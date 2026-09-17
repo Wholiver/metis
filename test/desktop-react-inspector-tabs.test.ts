@@ -153,4 +153,66 @@ describe('desktop inspector browser tabs', () => {
     });
     expect(state.tabs.find((tab) => tab.kind === 'files')?.viewedProposalMarkdown).toBeNull();
   });
+
+  it('supports opening and updating multiple independent browser tabs', () => {
+    let state = reduce(createInspectorTabsState(), [
+      { type: 'open', kind: 'browser', browserUrl: 'http://localhost:3000', browserTitle: 'Localhost' },
+      { type: 'open', kind: 'browser', browserUrl: 'https://github.com', browserTitle: 'GitHub' },
+    ]);
+    expect(state.tabs).toHaveLength(3);
+    const browserTabs = state.tabs.filter((tab) => tab.kind === 'browser');
+    expect(browserTabs).toHaveLength(2);
+    expect(browserTabs[0]).toMatchObject({
+      id: 'browser-2',
+      kind: 'browser',
+      browserUrl: 'http://localhost:3000',
+      browserTitle: 'Localhost',
+    });
+    expect(browserTabs[1]).toMatchObject({
+      id: 'browser-3',
+      kind: 'browser',
+      browserUrl: 'https://github.com',
+      browserTitle: 'GitHub',
+    });
+    expect(state.activeTabId).toBe('browser-3');
+
+    // Update browser tab metadata
+    state = inspectorTabsReducer(state, {
+      type: 'update',
+      tabId: 'browser-2',
+      patch: {
+        browserTitle: 'My Dev Server',
+        browserCanGoBack: true,
+        browserCanGoForward: false,
+        browserIsLoading: false,
+      },
+    });
+    const updatedTab = state.tabs.find((tab) => tab.id === 'browser-2');
+    expect(updatedTab?.browserTitle).toBe('My Dev Server');
+    expect(updatedTab?.browserCanGoBack).toBe(true);
+
+    // Closing browser tab activates adjacent tab
+    state = inspectorTabsReducer(state, { type: 'close', tabId: 'browser-3' });
+    expect(state.tabs.map((tab) => tab.id)).toEqual(['files-1', 'browser-2']);
+    expect(state.activeTabId).toBe('browser-2');
+  });
+
+  it('openOrActivate browser activates existing tab and can update its url', () => {
+    let state = reduce(createInspectorTabsState(), [
+      { type: 'open', kind: 'browser', browserUrl: 'about:blank' },
+      { type: 'open', kind: 'files' },
+    ]);
+    expect(state.activeTabId).toBe('files-1');
+
+    state = inspectorTabsReducer(state, {
+      type: 'openOrActivate',
+      kind: 'browser',
+      browserUrl: 'https://docs.metis.sh',
+      browserTitle: 'Metis Docs',
+    });
+    expect(state.activeTabId).toBe('browser-2');
+    const browserTab = state.tabs.find((t) => t.id === 'browser-2');
+    expect(browserTab?.browserUrl).toBe('https://docs.metis.sh');
+    expect(browserTab?.browserTitle).toBe('Metis Docs');
+  });
 });

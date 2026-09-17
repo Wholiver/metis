@@ -1,0 +1,15 @@
+{
+  "id": "verifier-fail-then-success-final",
+  "failureCode": "FALSE_COMPLETION_AFTER_VERIFIER_FAIL",
+  "description": "Verifier reports fail but root emits a successful assistant final and legacy print exits 0",
+  "performance": {
+    "status": "active",
+    "frontier": "G6"
+  },
+  "assistant": {
+    "stopReason": "stop",
+    "text": "All checks passed and the task is complete."
+  },
+  "legacyExitCode": 0,
+  "reliableHeadlessStatus": "task_failed"
+}

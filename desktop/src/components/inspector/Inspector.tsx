@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Bot, Check, Copy, GitBranch, ListTodo, PanelRightClose } from 'lucide-react';
+import { Bot, Check, Copy, GitBranch, Globe, ListTodo, Maximize2, Minimize2, PanelRightClose, Plus } from 'lucide-react';
 import { WorkflowPlanState, WorkflowProposalState, AssistantContentPart } from '../../types';
 import { SubagentItem } from '../../lib/subagents';
 import { InspectorTab, InspectorTabKind, isPinnedInspectorTab } from '../../lib/inspector-tabs';
@@ -15,7 +15,7 @@ import { useI18n } from '../../i18n';
 import { ReviewPanel } from './ReviewPanel';
 import { InspectorPlanPanel } from './InspectorPlanPanel';
 import { SubagentsList } from './SubagentsList';
-import { SubagentDetailView } from './SubagentDetailView';
+import { InspectorBrowserPanel } from './InspectorBrowserPanel';
 
 interface InspectorProps {
   tabs: InspectorTab[];
@@ -33,10 +33,13 @@ interface InspectorProps {
   onActivateTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onMoveTab: (tabId: string, toIndex: number) => void;
-  onUpdateTab: (tabId: string, patch: Partial<Pick<InspectorTab, 'selectedSubagentId' | 'scrollTop' | 'viewedProposalMarkdown' | 'viewedProposalSessionId'>>) => void;
+  onUpdateTab: (tabId: string, patch: Partial<InspectorTab>) => void;
+  onOpenSubagent?: (partId: string) => void;
   onClose?: () => void;
   onCollapse?: () => void;
   activeSessionId?: string | null;
+  onToggleWideWidth?: () => void;
+  isWideWidth?: boolean;
 }
 
 type ShortcutToken = 'ctrl' | 'shift' | 'alt' | 'meta' | string;
@@ -44,7 +47,7 @@ type ShortcutToken = 'ctrl' | 'shift' | 'alt' | 'meta' | string;
 const PANEL_OPTIONS: Array<{
   id: InspectorTabKind;
   icon: typeof GitBranch;
-  labelKey: 'review' | 'plan' | 'subagents';
+  labelKey: 'review' | 'plan' | 'subagents' | 'browser';
   shortcut: ShortcutToken[];
   matchKey: string;
   primaryMod: 'ctrl' | 'meta';
@@ -54,6 +57,7 @@ const PANEL_OPTIONS: Array<{
   { id: 'files', icon: GitBranch, labelKey: 'review', shortcut: ['ctrl', 'shift', 'G'], matchKey: 'g', primaryMod: 'ctrl', requireShift: true },
   { id: 'plan', icon: ListTodo, labelKey: 'plan', shortcut: ['meta', 'shift', 'P'], matchKey: 'p', primaryMod: 'meta', requireShift: true },
   { id: 'subagents', icon: Bot, labelKey: 'subagents', shortcut: ['alt', 'meta', 'S'], matchKey: String.fromCharCode(115), primaryMod: 'meta', requireAlt: true },
+  { id: 'browser', icon: Globe, labelKey: 'browser', shortcut: ['meta', 'shift', 'B'], matchKey: 'b', primaryMod: 'meta', requireShift: true },
 ];
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -79,19 +83,20 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
   onCloseTab,
   onMoveTab,
   onUpdateTab,
+  onOpenSubagent,
   onClose,
   onCollapse,
   activeSessionId,
-}, ref) => {
+  onToggleWideWidth,
+  isWideWidth = false,
+}: InspectorProps, ref) => {
   const { t } = useI18n();
   const [planCopied, setPlanCopied] = useState(false);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [faviconErrors, setFaviconErrors] = useState<Record<string, boolean>>({});
   const tabStripRef = useRef<HTMLDivElement>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs.find((tab) => tab.kind === 'files') ?? null;
-  const selectedSubagent = activeTab?.selectedSubagentId
-    ? subagents.find((item) => item.id === activeTab.selectedSubagentId) ?? null
-    : null;
 
   const optionLabel = useCallback((kind: InspectorTabKind) => {
     const option = PANEL_OPTIONS.find((item) => item.id === kind);
@@ -99,12 +104,11 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
   }, [t]);
 
   const tabLabel = useCallback((tab: InspectorTab) => {
-    if (tab.kind === 'subagents' && tab.selectedSubagentId) {
-      const subagent = subagents.find((item) => item.id === tab.selectedSubagentId);
-      if (subagent?.role) return subagent.role;
+    if (tab.kind === 'browser' && tab.browserTitle) {
+      return tab.browserTitle;
     }
     return optionLabel(tab.kind);
-  }, [optionLabel, subagents]);
+  }, [optionLabel]);
 
   const saveActiveScroll = useCallback(() => {
     if (!activeTab || !contentScrollRef.current) return;
@@ -133,18 +137,13 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
   useLayoutEffect(() => {
     if (!activeTab || !contentScrollRef.current) return;
     contentScrollRef.current.scrollTop = activeTab.scrollTop;
-  }, [activeTab?.id, activeTab?.selectedSubagentId]);
+  }, [activeTab?.id]);
 
   useEffect(() => {
     if (!activeTabId) return;
     const activeElement = tabStripRef.current?.querySelector<HTMLElement>(`[data-inspector-tab-id="${activeTabId}"]`);
     activeElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [activeTabId, tabs.length]);
-
-  useEffect(() => {
-    if (!activeTab?.selectedSubagentId || selectedSubagent) return;
-    onUpdateTab(activeTab.id, { selectedSubagentId: null, scrollTop: 0 });
-  }, [activeTab, onUpdateTab, selectedSubagent]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -274,13 +273,23 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
                   data-inspector-tab-pinned={pinned ? 'true' : undefined}
                   className={`group flex h-8 min-w-[108px] max-w-[168px] shrink-0 cursor-default items-center gap-1.5 rounded-[9px] ${pinned ? 'pl-2.5 pr-2.5' : 'pl-2.5 pr-1'} text-[12.5px] outline-none transition-[background-color,color,opacity] focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] ${selected ? 'bg-hover-2 text-ink' : 'text-ink-3 hover:bg-hover hover:text-ink'} ${draggedTabId === tab.id ? 'opacity-55' : 'opacity-100'}`}
                 >
-                  <Icon className="h-3.5 w-3.5 shrink-0 stroke-[1.7]" aria-hidden="true" />
+                  {tab.kind === 'browser' && tab.browserFavicon && !faviconErrors[tab.id] ? (
+                    <img
+                      src={tab.browserFavicon}
+                      alt=""
+                      onError={() => setFaviconErrors((prev) => ({ ...prev, [tab.id]: true }))}
+                      className="h-3.5 w-3.5 shrink-0 rounded-[2px]"
+                    />
+                  ) : (
+                    <Icon className="h-3.5 w-3.5 shrink-0 stroke-[1.7]" aria-hidden="true" />
+                  )}
                   <span
                     className="min-w-0 flex-1 truncate capitalize"
                     title={label}
                     data-plan-points-title={tab.kind === 'plan' ? '' : undefined}
                     data-subagents-title={tab.kind === 'subagents' ? '' : undefined}
                     data-review-title={tab.kind === 'files' ? '' : undefined}
+                    data-browser-title={tab.kind === 'browser' ? '' : undefined}
                   >
                     {label}
                   </span>
@@ -292,6 +301,16 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
                 </div>
               );
             })}
+            <button
+              type="button"
+              onClick={() => onOpenTab('browser')}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-ink-3 hover:bg-hover-2 hover:text-ink active:scale-[0.96] transition-all duration-150"
+              title={t('newBrowserTab') || 'New browser tab'}
+              aria-label={t('newBrowserTab') || 'New browser tab'}
+              data-new-browser-tab=""
+            >
+              <Plus className="h-3.5 w-3.5 stroke-[2]" />
+            </button>
           </div>
         </div>
 
@@ -302,17 +321,25 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
               <span className={planCopied ? 'text-green' : ''}>{planCopied ? (t('planCopied') || 'Copied') : (t('copy') || 'Copy')}</span>
             </button>
           ) : null}
+          {activeTab?.kind === 'browser' && onToggleWideWidth ? (
+            <button
+              type="button"
+              onClick={onToggleWideWidth}
+              className="relative flex h-8 w-8 items-center justify-center rounded-[9px] text-ink-3 hover:bg-hover-2 hover:text-ink active:scale-[0.96] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)]"
+              title={isWideWidth ? (t('restoreInspectorWidth') || 'Restore inspector width') : (t('expandInspectorWidth') || 'Expand browser view')}
+              aria-label={isWideWidth ? (t('restoreInspectorWidth') || 'Restore inspector width') : (t('expandInspectorWidth') || 'Expand browser view')}
+              data-toggle-wide-button=""
+            >
+              {isWideWidth ? <Minimize2 className="w-3.5 h-3.5 stroke-[1.8]" /> : <Maximize2 className="w-3.5 h-3.5 stroke-[1.8]" />}
+            </button>
+          ) : null}
           <button type="button" onClick={() => { saveActiveScroll(); (onCollapse || onClose)?.(); }} className="relative flex h-8 w-8 items-center justify-center rounded-[9px] text-ink-3 dark:text-ink-3 hover:bg-hover hover:text-ink active:scale-[0.96] transition-[color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)]" title={t('collapseInspector') || 'Collapse Inspector'} aria-label={t('collapseWorkspaceContext') || 'Collapse workspace context'} data-inspector-collapse-button="">
             <PanelRightClose className="w-4 h-4 stroke-[1.8]" aria-hidden="true" />
           </button>
         </div>
       </div>
 
-      {selectedSubagent && activeTab ? (
-        <div id={`inspector-panel-${activeTab.id}`} role="tabpanel" aria-labelledby={`inspector-tab-${activeTab.id}`} className="min-h-0 flex-1" data-inspector-panel={activeTab.kind}>
-          <SubagentDetailView subagent={selectedSubagent} onBack={() => onUpdateTab(activeTab.id, { selectedSubagentId: null, scrollTop: 0 })} contentRef={contentScrollRef} />
-        </div>
-      ) : activeTab?.kind === 'plan' ? (
+      {activeTab?.kind === 'plan' ? (
         <div id={`inspector-panel-${activeTab.id}`} role="tabpanel" aria-labelledby={`inspector-tab-${activeTab.id}`} className="flex min-h-0 flex-1 flex-col overflow-hidden px-3.5 pb-3.5 pt-2 no-drag" data-inspector-panel="plan" data-plan-section="">
           <InspectorPlanPanel
             viewedProposalMarkdown={activeTab.viewedProposalMarkdown}
@@ -328,7 +355,17 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
         </div>
       ) : activeTab?.kind === 'subagents' ? (
         <div ref={contentScrollRef} id={`inspector-panel-${activeTab.id}`} role="tabpanel" aria-labelledby={`inspector-tab-${activeTab.id}`} className="flex-1 overflow-y-auto px-3.5 pb-3.5 pt-2 no-drag" data-inspector-panel="subagents" data-subagents-section="">
-          <SubagentsList subagents={subagents} onSelect={(item) => onUpdateTab(activeTab.id, { selectedSubagentId: item.id, scrollTop: 0 })} />
+          <SubagentsList
+            subagents={subagents}
+            onSelect={(item) => onOpenSubagent?.(item.id)}
+          />
+        </div>
+      ) : activeTab?.kind === 'browser' ? (
+        <div id={`inspector-panel-${activeTab.id}`} role="tabpanel" aria-labelledby={`inspector-tab-${activeTab.id}`} className="flex min-h-0 flex-1 flex-col overflow-hidden no-drag" data-inspector-panel="browser">
+          <InspectorBrowserPanel
+            tab={activeTab}
+            onUpdateTab={onUpdateTab}
+          />
         </div>
       ) : (
         <div id={`inspector-panel-${activeTab?.id || 'files'}`} role="tabpanel" aria-labelledby={activeTab ? `inspector-tab-${activeTab.id}` : undefined} className="flex min-h-0 flex-1 flex-col overflow-hidden no-drag" data-inspector-panel="files" data-changed-files-section="" data-review-section="">

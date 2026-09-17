@@ -22,6 +22,7 @@ import { ComposerUsageFooter } from './ComposerUsageFooter';
 import { HomeProjectSwitcher } from './HomeProjectSwitcher';
 import { MetisCloudMark } from './MetisCloudMark';
 import PromptBar from '../primitives/PromptBar';
+import { cleanPastedText } from '../../lib/composer';
 
 interface ComposerProps {
   agent: Agent;
@@ -343,7 +344,7 @@ export const Composer = React.memo<ComposerProps>(({
 
   const handleSubmit = async () => {
     if ((!text.trim() && attachments.length === 0) || disabled || isAttaching) return;
-    const draftText = text;
+    const draftText = cleanPastedText(text);
     const draftAttachments = attachments;
     const payload = composeAttachmentPayload(draftText, draftAttachments);
     setText('');
@@ -466,9 +467,26 @@ export const Composer = React.memo<ComposerProps>(({
       ) : undefined}
       inputProps={{
         onPaste: (event) => {
-          if (!transferHasFiles(event.clipboardData)) return;
-          event.preventDefault();
-          void addAttachments(filesFromTransfer(event.clipboardData));
+          if (transferHasFiles(event.clipboardData)) {
+            event.preventDefault();
+            void addAttachments(filesFromTransfer(event.clipboardData));
+            return;
+          }
+          const rawText = event.clipboardData?.getData('text/plain');
+          if (rawText) {
+            const cleaned = cleanPastedText(rawText);
+            if (cleaned !== rawText) {
+              event.preventDefault();
+              const target = event.currentTarget;
+              const start = target.selectionStart ?? target.value.length;
+              const end = target.selectionEnd ?? target.value.length;
+              const next = target.value.slice(0, start) + cleaned + target.value.slice(end);
+              setText(next);
+              requestAnimationFrame(() => {
+                target.setSelectionRange(start + cleaned.length, start + cleaned.length);
+              });
+            }
+          }
         },
         'aria-label': t('promptAria'),
       }}

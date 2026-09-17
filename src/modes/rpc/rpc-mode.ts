@@ -15,6 +15,7 @@ import * as crypto from "node:crypto";
 import { getSupportedThinkingLevels, getThinkingOptions } from "@earendil-works/metis-ai/compat";
 import { type AskUserResponse, validateAskUserResponse } from "../../core/ask-user.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { ensureReliableExecutionEnv } from "../../core/execution-types.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -53,6 +54,7 @@ export type {
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
 export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
+	ensureReliableExecutionEnv();
 	takeOverStdout();
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;

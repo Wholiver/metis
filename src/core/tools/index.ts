@@ -27,6 +27,7 @@ export {
 	type QueryMemoryDbToolOptions,
 } from "./query-memory-db.ts";
 export {
+	BASH_GUIDELINES,
 	type BashOperations,
 	type BashSpawnContext,
 	type BashSpawnHook,
@@ -162,6 +163,13 @@ export {
 	type WebFetchToolInput,
 	type WebFetchToolOptions,
 } from "./webfetch.ts";
+export {
+	BROWSER_TOOL_NAMES,
+	createBrowserToolDefinitions,
+	createBrowserTools,
+	type BrowserToolName,
+	type BrowserToolOptions,
+} from "./browser.ts";
 
 import type { AgentTool } from "@earendil-works/metis-agent-core";
 import type { ToolDefinition } from "../extensions/types.ts";

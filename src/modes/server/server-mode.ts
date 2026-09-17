@@ -18,10 +18,16 @@ import type {
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
 import { resolveModelScope } from "../../core/model-resolver.ts";
+import { deleteSessionFile } from "../../core/session-files.ts";
 import { SessionManager } from "../../core/session-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import { ProjectTrustStore } from "../../core/trust-manager.ts";
 import { isUiLanguage, SUPPORTED_UI_LANGUAGES } from "../../core/ui-language.ts";
+import { ensureReliableExecutionEnv } from "../../core/execution-types.ts";
+import { resolveTaskPathsFromEnv } from "../../core/task-execution-controller.ts";
+import { runReliableTurn } from "../../core/reliable-headless-runners.ts";
+import { getGlobalTraceCollector } from "../../core/trace-collector.ts";
+import type { AssistantMessage } from "@earendil-works/metis-ai";
 import { getChangelogPath } from "../../utils/changelog.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { getLatestMetisRelease, isNewerPackageVersion } from "../../utils/version-check.ts";
@@ -74,6 +80,7 @@ export async function startServerMode(
 	runtimeHost: AgentSessionRuntime,
 	options: ServerModeOptions = {},
 ): Promise<ServerHandle> {
+	ensureReliableExecutionEnv();
 	const hostname = options.hostname ?? DEFAULT_HOSTNAME;
 	const port = options.port ?? DEFAULT_PORT;
 	const username = options.username ?? process.env.METIS_SERVER_USERNAME ?? "metis";
@@ -128,6 +135,7 @@ export async function startServerMode(
 		if (key) desktopRuntimesBySessionPath.set(key, host);
 		retainedDesktopRuntimes.add(host);
 	};
+	/** Desktop auto-server injects METIS_BROWSER_HOST; AgentSession registers browser_* only when that env is set. */
 	const isDesktopRequest = (request: IncomingMessage): boolean => request.headers["x-metis-desktop"] === "1";
 
 	const serializeEvent = (event: object, eventSessionId = session.sessionId): string => {
@@ -368,7 +376,13 @@ export async function startServerMode(
 		const url = new URL(request.url ?? "/", `http://${request.headers.host ?? hostname}`);
 		const method = request.method ?? "GET";
 		if (method === "GET" && url.pathname === "/global/health") {
-			return sendJson(response, 200, { healthy: true, version: VERSION });
+			return sendJson(response, 200, {
+				healthy: true,
+				version: VERSION,
+				// Desktop uses this to decide whether a healthy listener can be reused
+				// or must be restarted with METIS_BROWSER_HOST injected.
+				browserHostConfigured: Boolean(process.env.METIS_BROWSER_HOST?.trim()),
+			});
 		}
 		if (method === "GET" && url.pathname === "/global/update-check") {
 			const latest = await getLatestMetisRelease(VERSION);
@@ -744,6 +758,35 @@ export async function startServerMode(
 			session.setSessionName(name);
 			return sendJson(response, 200, { success: true });
 		}
+		if (method === "DELETE" && url.pathname === "/session") {
+			const body = await readJsonBody<{ sessionPath?: string }>(request);
+			const sessionPath = body?.sessionPath?.trim();
+			if (!sessionPath) return sendError(response, 400, "invalid_request", "sessionPath is required");
+			const resolvedPath = path.resolve(sessionPath);
+			if (!resolvedPath.endsWith(".jsonl")) {
+				return sendError(response, 400, "invalid_request", "sessionPath must be a .jsonl session file");
+			}
+			if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) {
+				return sendError(response, 404, "session_not_found", `Session file not found: ${resolvedPath}`);
+			}
+			const activePath = session.sessionFile ? path.resolve(session.sessionFile) : undefined;
+			if (activePath && activePath === resolvedPath) {
+				return sendError(response, 409, "session_active", "Cannot delete the active session");
+			}
+			for (const [, desktopRuntime] of desktopRuntimesBySessionPath) {
+				const desktopActive = desktopRuntime.session.sessionFile
+					? path.resolve(desktopRuntime.session.sessionFile)
+					: undefined;
+				if (desktopActive && desktopActive === resolvedPath) {
+					return sendError(response, 409, "session_active", "Cannot delete an active Desktop session");
+				}
+			}
+			const result = await deleteSessionFile(resolvedPath);
+			if (!result.ok) {
+				return sendError(response, 500, "delete_failed", result.error || "Failed to delete session file");
+			}
+			return sendJson(response, 200, { success: true, method: result.method, sessionPath: resolvedPath });
+		}
 		if (method === "POST" && url.pathname === "/extension/ui-response") {
 			const body = await readJsonBody<RpcExtensionUIResponse>(request);
 			if (!body?.id) return sendError(response, 400, "invalid_request", "id is required");
@@ -1086,6 +1129,7 @@ export async function startServerMode(
 	}
 
 	async function submitPrompt(body: ServerPromptRequest): Promise<void> {
+		ensureReliableExecutionEnv();
 		const promptSession = session;
 		const sessionWithAutoName = promptSession as typeof promptSession & {
 			ensureSessionName?: (options?: { prompt?: string }) => Promise<string | undefined>;
@@ -1098,26 +1142,104 @@ export async function startServerMode(
 			void sessionWithAutoName.ensureSessionName({ prompt: body.message });
 		}
 
+		const collectAssistantOutcome = () => {
+			const state = promptSession.state;
+			const lastMessage = state.messages[state.messages.length - 1];
+			let finalText = "";
+			let stopReason: AssistantMessage["stopReason"] | undefined;
+			let errorMessage: string | undefined;
+			if (lastMessage?.role === "assistant") {
+				const assistantMsg = lastMessage as AssistantMessage;
+				stopReason = assistantMsg.stopReason;
+				errorMessage = assistantMsg.errorMessage;
+				if (assistantMsg.stopReason !== "error" && assistantMsg.stopReason !== "aborted") {
+					for (const content of assistantMsg.content) {
+						if (content.type === "text") {
+							finalText += (finalText ? "\n" : "") + content.text;
+						}
+					}
+				}
+			}
+			return { finalText, stopReason, errorMessage };
+		};
+
+		const useDirectPromptPath =
+			!isContentPrompt || Boolean(body.workflowAction) || Boolean(body.streamingBehavior);
+
+		if (useDirectPromptPath) {
+			await new Promise<void>((resolve, reject) => {
+				let settled = false;
+				const promptTask = promptSession.prompt(body.message, {
+					images: normalizeImageContents(body.images),
+					streamingBehavior: body.streamingBehavior,
+					workflowAction: body.workflowAction,
+					source: "rpc",
+					preflightResult: (succeeded) => {
+						if (succeeded && !settled) {
+							settled = true;
+							resolve();
+						}
+					},
+				});
+				void promptTask.catch((cause: unknown) => {
+					if (!settled) {
+						settled = true;
+						reject(cause);
+					}
+				});
+			});
+			return;
+		}
+
 		await new Promise<void>((resolve, reject) => {
 			let settled = false;
-			const promptTask = promptSession.prompt(body.message, {
-				images: normalizeImageContents(body.images),
-				streamingBehavior: body.streamingBehavior,
-				workflowAction: body.workflowAction,
-				source: "rpc",
-				preflightResult: (succeeded) => {
-					if (succeeded && !settled) {
-						settled = true;
-						resolve();
-					}
-				},
-			});
-			void promptTask.catch((cause: unknown) => {
+			const resolveOnce = () => {
+				if (!settled) {
+					settled = true;
+					resolve();
+				}
+			};
+			const rejectOnce = (cause: unknown) => {
 				if (!settled) {
 					settled = true;
 					reject(cause);
 				}
-			});
+			};
+
+			void runReliableTurn({
+				session: {
+					prompt: (text, opts) =>
+						promptSession.prompt(text, {
+							images: opts?.images ?? normalizeImageContents(body.images),
+							source: "rpc",
+							preflightResult: (succeeded) => {
+								if (succeeded) resolveOnce();
+							},
+						}),
+					getActiveToolDefinition: (name) => promptSession.getActiveToolDefinition(name),
+					performanceRun: promptSession.performanceRun,
+				},
+				instruction: body.message,
+				cwd: promptSession.sessionManager.getCwd(),
+				taskPaths: resolveTaskPathsFromEnv(),
+				policy: "chat-aware",
+				images: normalizeImageContents(body.images),
+				rootPromptText: body.message,
+				collectAssistantOutcome,
+				traceCollector: getGlobalTraceCollector(),
+			})
+				.then((executionResult) => {
+					broadcast({
+						type: "execution_result",
+						status: executionResult.status,
+						completion: executionResult.completion,
+						failure: executionResult.failure,
+						contractHash: executionResult.contract.contractHash,
+						attempts: executionResult.attempts.map((a) => ({ role: a.role, status: a.status })),
+					});
+					resolveOnce();
+				})
+				.catch(rejectOnce);
 		});
 	}
 

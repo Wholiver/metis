@@ -42,15 +42,17 @@ interface SidebarProps {
   isLoading?: boolean;
   error?: string;
   updateCheck?: UpdateCheckState;
+  archivedSessionIds?: ReadonlySet<string>;
   onSelectAgent: (agentId: string) => void;
   onSelectProject?: (projectId: string) => void;
   onPrefetchProjectSessions?: (project: ProjectItem) => void;
   onAddProject?: () => void;
   onNewChat?: () => void;
+  onArchiveAgent?: (agent: Agent) => void;
   onOpenSettings?: () => void;
   onToggleSidebar?: () => void;
-  /** Session currently streaming / compacting — show orbit loader on that row. */
-  workingAgentId?: string | null;
+  /** Sessions currently streaming / compacting — show dots loader on those rows. */
+  workingAgentIds?: ReadonlySet<string>;
 }
 
 function filterAgents(agents: Agent[], searchQuery: string): Agent[] {
@@ -73,14 +75,16 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
   isLoading = false,
   error = '',
   updateCheck,
+  archivedSessionIds,
   onSelectAgent,
   onSelectProject,
   onPrefetchProjectSessions,
   onAddProject,
   onNewChat,
+  onArchiveAgent,
   onOpenSettings,
   onToggleSidebar,
-  workingAgentId = null,
+  workingAgentIds = undefined,
 }, ref) => {
   const { t } = useI18n();
   const [searchQuery, setSearchQuery] = useState('');
@@ -165,12 +169,16 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
         }
       }
     }
-    if (cached && cached.length > 0) return cached;
-    if (project.id === activeProjectId) {
-      return agents.filter((agent) => !agent.projectPath || pathsEqual(agent.projectPath, project.path));
+    let list: Agent[];
+    if (cached && cached.length > 0) list = cached;
+    else if (project.id === activeProjectId) {
+      list = agents.filter((agent) => !agent.projectPath || pathsEqual(agent.projectPath, project.path));
+    } else {
+      list = cached || [];
     }
-    return cached || [];
-  }, [activeProjectId, agents, agentsByProject]);
+    if (!archivedSessionIds || archivedSessionIds.size === 0) return list;
+    return list.filter((agent) => !archivedSessionIds.has(agent.id));
+  }, [activeProjectId, agents, agentsByProject, archivedSessionIds]);
 
 
   const itemsContainerRef = useRef<HTMLDivElement>(null);
@@ -343,8 +351,13 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
               key={agent.id}
               agent={agent}
               isActive={agent.id === currentActiveId}
-              isWorking={Boolean(workingAgentId) && agent.id === workingAgentId}
+              isWorking={Boolean(
+                workingAgentIds?.has(agent.id)
+                || (agent.sessionPath && workingAgentIds?.has(agent.sessionPath))
+              )}
               onClick={() => handleSelectAgent(agent.id)}
+              onArchive={onArchiveAgent ? () => onArchiveAgent(agent) : undefined}
+              archiveLabel={t('archiveConversation')}
               indented={options.indented}
             />
           ))}
@@ -543,11 +556,16 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
 
         {projects.length === 0 && (
           <div className="mt-1" data-project-conversations="">
-            {renderConversationList(agents, {
-              attachIndicator: true,
-              showActiveLoading: true,
-              projectKey: '__none__',
-            })}
+            {renderConversationList(
+              archivedSessionIds && archivedSessionIds.size > 0
+                ? agents.filter((agent) => !archivedSessionIds.has(agent.id))
+                : agents,
+              {
+                attachIndicator: true,
+                showActiveLoading: true,
+                projectKey: '__none__',
+              },
+            )}
           </div>
         )}
       </div>

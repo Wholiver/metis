@@ -1,0 +1,15 @@
+{
+  "id": "child-exit-zero-no-child-result",
+  "failureCode": "CHILD_RESULT_INVALID",
+  "description": "Governed child exits 0 without emitting ChildResult (performance_gate disabled)",
+  "spawn": {
+    "agent": "verifier",
+    "gate": "G6",
+    "laneId": "lane-a",
+    "exitCode": 0,
+    "gateCalled": false
+  },
+  "expectedOutcome": "invalid",
+  "expectedStatus": "error",
+  "expectedErrorCode": "CHILD_RESULT_INVALID"
+}

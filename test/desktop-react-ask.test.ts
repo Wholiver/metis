@@ -31,7 +31,12 @@ describe('desktop React Ask interface', () => {
     expect(hook).toContain("type === 'user_input_request' && event.request");
     expect(hook).toContain('setPendingUserInput(event.request)');
     expect(hook).toContain("request(`/session/user-input/${encodeURIComponent(requestId)}`, 'POST', response)");
-    expect(hook).toContain("type === 'tool_execution_start' || type === 'tool_execution_end'");
+    expect(hook).toContain("type === 'tool_execution_end'");
+    expect(hook).toContain('applyToolExecutionEnd');
+    expect(hook).toContain('applyToolExecutionUpdate');
+    // Tool start/end must not force a full /session/messages snapshot during streaming.
+    expect(hook).not.toContain('if (isEnd) reconcileCurrentSession()');
+    expect(hook).not.toMatch(/tool_execution_start.*\n.*reconcileCurrentSession/);
   });
 
   it('restores composer focus after Ask disappears', () => {

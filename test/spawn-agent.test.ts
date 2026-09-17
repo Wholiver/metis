@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,6 +44,23 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		while (tempDirs.length > 0) rmSync(tempDirs.pop()!, { recursive: true, force: true });
 	});
 
+
+	function childResultLine(summary: string, status: "completed" | "failed" | "blocked" | "invalid" = "completed"): string {
+		return `${JSON.stringify({
+			status,
+			summary,
+			filesChanged: [],
+			commands: [],
+			findings: [],
+		})}\n`;
+	}
+
+	function writeAsyncChildResult(cwd: string, summary: string, status: "completed" | "failed" | "blocked" | "invalid" = "completed"): void {
+		const logName = readdirSync(cwd).find((name) => name.startsWith(".metis-agent-") && name.endsWith(".log"));
+		if (!logName) throw new Error(`async child log not found in ${cwd}`);
+		writeFileSync(join(cwd, logName), childResultLine(summary, status), "utf8");
+	}
+
 	function createMockChildProcess() {
 		const emitter = new EventEmitter() as any;
 		emitter.stdout = new EventEmitter();
@@ -84,22 +101,17 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		);
 		await vi.waitFor(() => expect(mockChild.stdout.listenerCount("data")).toBeGreaterThan(0));
 		expect(spawnMock.mock.calls[0]?.[2]?.env).toMatchObject({ METIS_PERFORMANCE_LANE_ID: "lane-a", METIS_PERFORMANCE_GATE: "G5" });
-		mockChild.stdout.emit("data", Buffer.from(`${JSON.stringify({
-			type: "tool_execution_end",
-			toolCallId: "gate-1",
-			toolName: "performance_gate",
-			result: { details: { reports: [{ gate: "G5", itemId: "lane-a", verdict: "blocked", evidence: "artifacts/g5.md" }] } },
-		})}\n`));
+		mockChild.stdout.emit("data", Buffer.from(childResultLine("review blocked", "blocked")));
 		mockChild.emit("close", 0);
 		const result = await execution;
 		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
 		expect(payload).toMatchObject({
-			status: "success",
+			status: "error",
 			outcome: "blocked",
 			gate: "G5",
 			itemId: "lane-a",
-			evidence: "artifacts/g5.md",
 		});
+		expect(payload.error).toContain("review blocked");
 	});
 
 	it("returns no_verdict when a governed child exits zero without its gate", async () => {
@@ -119,13 +131,13 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		mockChild.emit("close", 0);
 		const result = await execution;
 		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
-		expect(payload).toMatchObject({ status: "success", outcome: "no_verdict", gate: "G6", itemId: "lane-a" });
+		expect(payload).toMatchObject({ status: "error", outcome: "invalid", gate: "G6", itemId: "lane-a", errorCode: "CHILD_RESULT_INVALID" });
 	});
 
 	it.each([
-		["invalid_brief", { outcome: "invalid_brief", code: "INVALID_BRIEF" }],
-		["fail", { details: { reports: [{ gate: "G4", itemId: "lane-a", verdict: "fail", evidence: "artifacts/not-done.md" }] } }],
-	] as const)("keeps exit zero but returns structured %s outcome", async (expected, gateResult) => {
+		["invalid", "invalid" as const],
+		["fail", "failed" as const],
+	] as const)("keeps exit zero but returns structured %s ChildResult outcome", async (expected, childStatus) => {
 		const mockChild = createMockChildProcess();
 		spawnMock.mockReturnValue(mockChild);
 		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-semantic-"));
@@ -133,12 +145,12 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		const definition = createSpawnAgentToolDefinition(tempDir);
 		const execution = definition.execute("semantic", { agent: "implementer", task: "Implement", laneId: "lane-a", gate: "G4" }, new AbortController().signal, () => {}, undefined as never);
 		await vi.waitFor(() => expect(mockChild.stdout.listenerCount("data")).toBeGreaterThan(0));
-		mockChild.stdout.emit("data", Buffer.from(`${JSON.stringify({ type: "tool_execution_end", toolCallId: "gate", toolName: "performance_gate", result: gateResult })}\n`));
+		mockChild.stdout.emit("data", Buffer.from(childResultLine(`semantic ${expected}`, childStatus)));
 		mockChild.emit("close", 0);
 		const result = await execution;
 		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
-		expect(payload.status).toBe("success");
-		expect(payload.outcome).toBe(expected);
+		expect(payload.status).toBe("error");
+		expect(payload.outcome).toBe(expected === "invalid" ? "invalid" : "fail");
 	});
 
 	it("parses CLI flags for agent, depth, parent-id, root-run-id, and context", () => {
@@ -234,7 +246,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			expect(spawnOptions.detached).toBe(true);
 		}
 		// Simulate child output and normal close
-		mockChild.stdout.emit("data", Buffer.from("Planning completed successfully.\nSteps: 1, 2, 3"));
+		mockChild.stdout.emit("data", Buffer.from(`Planning completed successfully.\nSteps: 1, 2, 3\n${childResultLine("Planning completed successfully.\nSteps: 1, 2, 3")}`));
 		mockChild.emit("close", 0);
 
 		const result = await executePromise;
@@ -246,7 +258,8 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(payload.depth).toBe(1);
 		expect(payload.parentId).toBe("root");
 		expect(payload.rootRunId).toBe("run-001");
-		expect(payload.result).toBe("Planning completed successfully.\nSteps: 1, 2, 3");
+		expect(payload.result).toContain("Planning completed successfully.");
+		expect(payload.outcome).toBe("pass");
 	});
 
 	it.each([undefined, 180])("handles a 180-second interval with timeoutSeconds=%s without invalidating the Performance run", async (timeoutSeconds) => {
@@ -270,6 +283,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		await vi.advanceTimersByTimeAsync(181_001);
 		if (timeoutSeconds === undefined) {
 			expect(child.kill).not.toHaveBeenCalled();
+			child.stdout.emit("data", Buffer.from(childResultLine("scope ok")));
 			child.emit("close", 0);
 		}
 		const result = await execution;
@@ -358,7 +372,8 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(statuses.length).toBe(1);
 		expect(statuses[0][1]).toBe(true);
 
-		// Trigger close
+		// Async completion reads the child log file (not piped stdout).
+		writeAsyncChildResult(tempDir, "tests passed");
 		mockChild.emit("close", 0);
 		await new Promise((r) => setTimeout(r, 50));
 
@@ -393,6 +408,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			undefined as never,
 		);
 		const initialPayload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		writeAsyncChildResult(tempDir, "review done");
 		mockChild.emit("exit", 0, null);
 		await new Promise((resolve) => setTimeout(resolve, 1_100));
 
@@ -478,7 +494,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		await new Promise((r) => setTimeout(r, 20));
 		expect(updates.some((text) => /"status": "started"/.test(text) && /scoper/.test(text))).toBe(true);
 
-		mockChild.stdout.emit("data", Buffer.from("scope ready"));
+		mockChild.stdout.emit("data", Buffer.from(`scope ready\n${childResultLine("scope ready")}`));
 		mockChild.emit("close", 0);
 		await executePromise;
 	});
@@ -503,14 +519,14 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		);
 		await new Promise((resolve) => setTimeout(resolve, 20));
 
-		mockChild.stdout.emit("data", Buffer.from("nested work complete"));
+		mockChild.stdout.emit("data", Buffer.from(`nested work complete\n${childResultLine("nested work complete")}`));
 		mockChild.emit("exit", 0, null);
 		await new Promise((resolve) => setTimeout(resolve, 1_100));
 
 		const result = await executePromise;
 		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
 		expect(payload.status).toBe("success");
-		expect(payload.result).toBe("nested work complete");
+		expect(payload.result).toContain("nested work complete");
 		expect(releases).toEqual([payload.agentId]);
 	});
 
@@ -534,6 +550,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			undefined as never,
 		);
 		await new Promise((resolve) => setTimeout(resolve, 20));
+		mockChild.stdout.emit("data", Buffer.from(childResultLine("lease released")));
 		mockChild.emit("close", 0);
 
 		const result = await executePromise;
@@ -562,8 +579,10 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			undefined as never,
 		);
 		await new Promise((resolve) => setTimeout(resolve, 20));
-		const isolatedPath = spawnMock.mock.calls[0][2].cwd as string;
-		expect(existsSync(isolatedPath)).toBe(true);
+		const spawnCwd = spawnMock.mock.calls[0][2].cwd as string;
+		// Reliable-headless keeps mutating children on shared cwd; do not delete it on cancel.
+		expect(spawnCwd).toBe(tempDir);
+		expect(existsSync(spawnCwd)).toBe(true);
 		controller.abort();
 		await new Promise((resolve) => setTimeout(resolve, 1_100));
 
@@ -572,8 +591,93 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(payload.status).toBe("error");
 		expect(payload.error).toContain("cancelled");
 		expect(payload.worktreeRetained).toBe(false);
-		expect(existsSync(isolatedPath)).toBe(false);
+		expect(existsSync(tempDir)).toBe(true);
 		expect(mockChild.kill).toHaveBeenCalled();
 		expect(releases).toEqual([payload.agentId]);
+	});
+
+	it("reliable-headless keeps mutating children in shared cwd despite worktree request", async () => {
+		const previous = process.env.METIS_EXECUTION_PROFILE;
+		process.env.METIS_EXECUTION_PROFILE = "reliable-headless";
+		delete process.env.METIS_WORKSPACE_POLICY;
+		try {
+			const mockChild = createMockChildProcess();
+			spawnMock.mockReturnValue(mockChild);
+			const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-shared-"));
+			tempDirs.push(tempDir);
+			const definition = createSpawnAgentToolDefinition(tempDir);
+			const execution = definition.execute(
+				"shared-cwd",
+				{ agent: "implementer", task: "Write output", worktree: "temp" },
+				new AbortController().signal,
+				() => {},
+				undefined as never,
+			);
+			await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
+			expect(spawnMock.mock.calls[0]?.[2]?.cwd).toBe(tempDir);
+			expect(spawnMock.mock.calls[0]?.[1]).toContain("--execution-profile");
+			expect(spawnMock.mock.calls[0]?.[1]).toContain("reliable-headless");
+			mockChild.stdout.emit("data", Buffer.from(`${JSON.stringify({
+				status: "completed",
+				summary: "wrote output",
+				filesChanged: [],
+				commands: [],
+				findings: [],
+			})}\n`));
+			mockChild.emit("close", 0);
+			const result = await execution;
+			const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+			expect(payload.status).toBe("success");
+			expect(payload.outcome).toBe("pass");
+			expect(payload.worktree).toBeUndefined();
+		} finally {
+			if (previous === undefined) delete process.env.METIS_EXECUTION_PROFILE;
+			else process.env.METIS_EXECUTION_PROFILE = previous;
+		}
+	});
+
+	it("rejects overlapping shared mutating owners under reliable-headless", async () => {
+		const previous = process.env.METIS_EXECUTION_PROFILE;
+		process.env.METIS_EXECUTION_PROFILE = "reliable-headless";
+		try {
+			const mockChild = createMockChildProcess();
+			spawnMock.mockReturnValue(mockChild);
+			const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-owner-"));
+			tempDirs.push(tempDir);
+			const active = new Set<string>();
+			const definition = createSpawnAgentToolDefinition(tempDir, {
+				claimMutatingOwner: (id) => {
+					if (active.size > 0) return `OVERLAPPING_OWNED_PATHS: busy`;
+					active.add(id);
+					return undefined;
+				},
+				releaseMutatingOwner: (id) => {
+					active.delete(id);
+				},
+			});
+			const first = definition.execute(
+				"owner-1",
+				{ agent: "implementer", task: "first" },
+				new AbortController().signal,
+				() => {},
+				undefined as never,
+			);
+			await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(1));
+			const second = await definition.execute(
+				"owner-2",
+				{ agent: "implementer", task: "second" },
+				new AbortController().signal,
+				() => {},
+				undefined as never,
+			);
+			const secondPayload = JSON.parse(second.content[0].text) as ChildAgentResultPayload;
+			expect(secondPayload.status).toBe("error");
+			expect(secondPayload.error).toContain("OVERLAPPING_OWNED_PATHS");
+			mockChild.emit("close", 0);
+			await first;
+		} finally {
+			if (previous === undefined) delete process.env.METIS_EXECUTION_PROFILE;
+			else process.env.METIS_EXECUTION_PROFILE = previous;
+		}
 	});
 });

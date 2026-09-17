@@ -100,3 +100,39 @@ export function resolveReviewMode(
   }
   return options[0] || 'turn';
 }
+
+export function diffRowsEqual(left: DiffRow[] = [], right: DiffRow[] = []): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a.type !== b.type || a.old !== b.old || a.cur !== b.cur) return false;
+    if (a.pieces.length !== b.pieces.length) return false;
+    for (let pieceIndex = 0; pieceIndex < a.pieces.length; pieceIndex += 1) {
+      const pieceA = a.pieces[pieceIndex];
+      const pieceB = b.pieces[pieceIndex];
+      if (pieceA.text !== pieceB.text || pieceA.change !== pieceB.change) return false;
+    }
+  }
+  return true;
+}
+
+export function reviewFilesEqual<T extends {
+  file: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+  rows?: DiffRow[];
+}>(left: T[], right: T[]): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => {
+    const other = right[index];
+    return item.file === other.file
+      && item.additions === other.additions
+      && item.deletions === other.deletions
+      && (item.patch || '') === (other.patch || '')
+      && diffRowsEqual(item.rows, other.rows);
+  });
+}

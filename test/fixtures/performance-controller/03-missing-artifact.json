@@ -1,0 +1,16 @@
+{
+  "id": "required-artifact-missing",
+  "failureCode": "REQUIRED_ARTIFACT_MISSING",
+  "description": "Declared deliverable path is absent from the workspace",
+  "contract": {
+    "kind": "artifact",
+    "requiredArtifacts": [{ "path": "output/result.csv", "nonEmpty": true }],
+    "forbiddenArtifacts": [],
+    "constraints": [],
+    "checks": [],
+    "environment": { "requiredPaths": ["output"], "requiredCommands": [] },
+    "unresolved": []
+  },
+  "workspaceEntries": ["output"],
+  "presentArtifacts": []
+}

@@ -537,6 +537,101 @@ function toTimestamp(value: unknown): number | undefined {
   return undefined;
 }
 
+function subagentItemFromToolCall(
+  part: Extract<AssistantContentPart, { type: 'toolCall' }>,
+  options: { sessionId?: string; startedAtFallback?: number } = {},
+): SubagentItem | null {
+  if (!/^(spawn_agent|subagent)$/i.test(part.name)) return null;
+
+  const args = (part.arguments && typeof part.arguments === 'object')
+    ? (part.arguments as Record<string, any>)
+    : {};
+
+  const role = String(args.agent || args.role || 'subagent');
+  const task = String(args.task || args.title || args.prompt || '');
+  const context = args.context ? String(args.context) : undefined;
+  const mode = (args.mode === 'async' || args.mode === 'sync') ? args.mode : 'sync';
+  const worktree = args.worktree ? String(args.worktree) : undefined;
+
+  const result = part.result;
+  const rawOutput = result?.content || '';
+  const payload = parsePayload(rawOutput);
+
+  let status: 'running' | 'completed' | 'failed' = 'running';
+  const payloadDurationMs = typeof payload?.elapsedSec === 'number' && Number.isFinite(payload.elapsedSec)
+    ? Math.max(0, payload.elapsedSec * 1000)
+    : undefined;
+  let durationMs = payloadDurationMs ?? part.progress?.durationMs;
+  const startedAt = part.progress?.startedAt ?? options.startedAtFallback;
+  const completedAt = part.progress?.completedAt ?? toTimestamp(result?.timestamp);
+
+  if (durationMs === undefined && startedAt !== undefined && completedAt !== undefined && completedAt >= startedAt) {
+    durationMs = completedAt - startedAt;
+  }
+
+  const progressState = part.progress?.state;
+  if (progressState === 'failed' || result?.isError) {
+    status = 'failed';
+  } else if (progressState === 'running') {
+    status = 'running';
+  } else if (payload) {
+    if (payload.status === 'success' || payload.status === 'completed') {
+      status = 'completed';
+    } else if (payload.status === 'error' || payload.status === 'timed_out') {
+      status = 'failed';
+    } else if (payload.status === 'started' || payload.status === 'running' || mode === 'async') {
+      status = progressState === 'completed' ? 'completed' : 'running';
+    }
+  } else if (result && result.content && !result.isError) {
+    status = progressState === 'completed' || progressState === undefined ? 'completed' : 'running';
+  }
+
+  const displayResult = payload?.result
+    || (payload?.status === 'started' || payload?.status === 'running'
+      ? (typeof (payload as { message?: unknown }).message === 'string'
+        ? String((payload as { message: string }).message)
+        : rawOutput)
+      : undefined)
+    || (payload ? undefined : rawOutput)
+    || undefined;
+  const errorText = payload?.error || (result?.isError ? rawOutput : undefined);
+  const subagentParts = parseSubagentOutputToParts(part.id, displayResult || rawOutput, payload?.parts);
+
+  return {
+    id: part.id,
+    sessionId: options.sessionId,
+    agentId: payload?.agentId || args.agentId,
+    role,
+    task,
+    context,
+    mode,
+    worktree: payload?.worktree || worktree,
+    status,
+    startedAt,
+    completedAt,
+    durationMs,
+    rawOutput,
+    result: displayResult,
+    error: errorText,
+    exitCode: payload?.exitCode,
+    parts: subagentParts,
+  };
+}
+
+/** Collect spawn_agent/subagent tool calls from a flat parts list (supports nested transcripts). */
+export function collectSubagentItemsFromParts(
+  parts: AssistantContentPart[],
+  sessionId?: string,
+): SubagentItem[] {
+  const items: SubagentItem[] = [];
+  for (const part of parts) {
+    if (part.type !== 'toolCall') continue;
+    const item = subagentItemFromToolCall(part, { sessionId });
+    if (item) items.push(item);
+  }
+  return items.reverse();
+}
+
 export function collectSubagentItems(messages: Message[], sessionId?: string): SubagentItem[] {
   const items: SubagentItem[] = [];
 
@@ -544,87 +639,55 @@ export function collectSubagentItems(messages: Message[], sessionId?: string): S
     const parts = message.parts || [];
     for (const part of parts) {
       if (part.type !== 'toolCall') continue;
-      if (!/^(spawn_agent|subagent)$/i.test(part.name)) continue;
-
-      const args = (part.arguments && typeof part.arguments === 'object')
-        ? (part.arguments as Record<string, any>)
-        : {};
-
-      const role = String(args.agent || args.role || 'subagent');
-      const task = String(args.task || args.title || args.prompt || '');
-      const context = args.context ? String(args.context) : undefined;
-      const mode = (args.mode === 'async' || args.mode === 'sync') ? args.mode : 'sync';
-      const worktree = args.worktree ? String(args.worktree) : undefined;
-
-      const result = part.result;
-      const rawOutput = result?.content || '';
-      const payload = parsePayload(rawOutput);
-
-      let status: 'running' | 'completed' | 'failed' = 'running';
-      const payloadDurationMs = typeof payload?.elapsedSec === 'number' && Number.isFinite(payload.elapsedSec)
-        ? Math.max(0, payload.elapsedSec * 1000)
-        : undefined;
-      let durationMs = payloadDurationMs ?? part.progress?.durationMs;
-      const startedAt = part.progress?.startedAt ?? toTimestamp(message.serverTimestamp);
-      const completedAt = part.progress?.completedAt ?? toTimestamp(result?.timestamp);
-
-      if (durationMs === undefined && startedAt !== undefined && completedAt !== undefined && completedAt >= startedAt) {
-        durationMs = completedAt - startedAt;
-      }
-
-      const progressState = part.progress?.state;
-      if (progressState === 'failed' || result?.isError) {
-        status = 'failed';
-      } else if (progressState === 'running') {
-        status = 'running';
-      } else if (payload) {
-        if (payload.status === 'success' || payload.status === 'completed') {
-          status = 'completed';
-        } else if (payload.status === 'error' || payload.status === 'timed_out') {
-          status = 'failed';
-        } else if (payload.status === 'started' || payload.status === 'running' || mode === 'async') {
-          status = progressState === 'completed' ? 'completed' : 'running';
-        }
-      } else if (result && result.content && !result.isError) {
-        // Snapshot/final tool results lack progress; live partials always carry progress.state.
-        status = progressState === 'completed' || progressState === undefined ? 'completed' : 'running';
-      }
-
-      const displayResult = payload?.result
-        || (payload?.status === 'started' || payload?.status === 'running'
-          ? (typeof (payload as { message?: unknown }).message === 'string'
-            ? String((payload as { message: string }).message)
-            : rawOutput)
-          : undefined)
-        || (payload ? undefined : rawOutput)
-        || undefined;
-      const errorText = payload?.error || (result?.isError ? rawOutput : undefined);
-      const subagentParts = parseSubagentOutputToParts(part.id, displayResult || rawOutput, payload?.parts);
-
-      items.push({
-        id: part.id,
+      const item = subagentItemFromToolCall(part, {
         sessionId,
-        agentId: payload?.agentId || args.agentId,
-        role,
-        task,
-        context,
-        mode,
-        worktree: payload?.worktree || worktree,
-        status,
-        startedAt,
-        completedAt,
-        durationMs,
-        rawOutput,
-        result: displayResult,
-        error: errorText,
-        exitCode: payload?.exitCode,
-        parts: subagentParts,
+        startedAtFallback: toTimestamp(message.serverTimestamp),
       });
+      if (item) items.push(item);
     }
   }
 
-  // Return in reverse chronological order (newest first)
   return items.reverse();
+}
+
+/** Walk a nested subagent id path from root-level items. */
+export function resolveSubagentPath(
+  roots: SubagentItem[],
+  path: string[],
+): SubagentItem | null {
+  if (path.length === 0) return null;
+  let level = roots;
+  let current: SubagentItem | null = null;
+  for (const id of path) {
+    current = level.find((item) => item.id === id) ?? null;
+    if (!current) return null;
+    level = collectSubagentItemsFromParts(current.parts, current.sessionId);
+  }
+  return current;
+}
+
+/** Resolve each hop in the path for breadcrumb titles. */
+export function resolveSubagentTrail(
+  roots: SubagentItem[],
+  path: string[],
+): SubagentItem[] {
+  const trail: SubagentItem[] = [];
+  let level = roots;
+  for (const id of path) {
+    const current = level.find((item) => item.id === id);
+    if (!current) break;
+    trail.push(current);
+    level = collectSubagentItemsFromParts(current.parts, current.sessionId);
+  }
+  return trail;
+}
+
+/** Keep only the longest valid prefix of a nested navigation path. */
+export function truncateValidSubagentPath(
+  roots: SubagentItem[],
+  path: string[],
+): string[] {
+  return resolveSubagentTrail(roots, path).map((item) => item.id);
 }
 
 export function formatSubagentDuration(durationMs?: number): string {

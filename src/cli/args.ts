@@ -6,6 +6,8 @@ import type { ThinkingLevel } from "@earendil-works/metis-agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
+import type { ExecutionProfile } from "../core/execution-types.ts";
+import { isExecutionProfile } from "../core/execution-types.ts";
 import type { CollaborationMode } from "../core/workflow-runtime.ts";
 
 export type Mode = "text" | "json" | "rpc" | "server";
@@ -17,6 +19,8 @@ export interface Args {
 	baseInstructions?: string;
 	developerInstructions?: string[];
 	collaborationMode?: CollaborationMode;
+	/** Headless execution profile. Sole value: reliable-headless (legacy removed). */
+	executionProfile?: ExecutionProfile;
 	thinking?: ThinkingLevel;
 	continue?: boolean;
 	resume?: boolean;
@@ -156,6 +160,23 @@ export function parseArgs(args: string[]): Args {
 				result.collaborationMode = mode;
 			} else {
 				result.diagnostics.push({ type: "error", message: `Invalid collaboration mode: ${mode}. Use build or plan.` });
+			}
+		} else if (arg === "--execution-profile" && i + 1 < args.length) {
+			const profile = args[++i];
+			if (isExecutionProfile(profile) || profile === "legacy") {
+				// legacy is accepted for argv compatibility but forced to reliable-headless later.
+				result.executionProfile = "reliable-headless";
+				if (profile === "legacy") {
+					result.diagnostics.push({
+						type: "warning",
+						message: "execution profile 'legacy' has been removed; using reliable-headless.",
+					});
+				}
+			} else {
+				result.diagnostics.push({
+					type: "error",
+					message: `Invalid execution profile: ${profile}. Use reliable-headless.`,
+				});
 			}
 		} else if (arg === "--name" || arg === "-n") {
 			if (i + 1 < args.length) {
@@ -359,6 +380,7 @@ ${chalk.bold("Options:")}
   --base-instructions <text>     Replace built-in base instruction profile
   --developer-instructions <text> Add trusted developer instructions (repeatable)
   --collaboration-mode <mode>    Workflow mode: plan (default) or build
+  --execution-profile <profile>  Execution profile (sole value: reliable-headless; legacy removed)
   --mode <mode>                  Output mode: text (default), json, or rpc
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session

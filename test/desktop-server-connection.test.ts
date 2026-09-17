@@ -53,3 +53,16 @@ describe('desktop Server connection preferences', () => {
     expect(localServerTarget('http://127.0.0.1:4096/metis')).toBeUndefined();
   });
 });
+
+describe('desktop local Server browser-host restart wiring', () => {
+  it('restarts a healthy Server that lacks browserHostConfigured when Desktop browser host is ready', () => {
+    const main = require('node:fs').readFileSync(require('node:path').join(__dirname, '../desktop/main.cjs'), 'utf8');
+    expect(main).toContain('browserHostConfigured');
+    expect(main).toContain('Local Server is healthy without browser-host env; restarting with Desktop browser host.');
+    expect(main).toContain('freeLocalServerPort');
+    expect(main).toContain('METIS_BROWSER_HOST');
+    expect(main).toContain('localAddress.match(/:(\\d+)$/)');
+    expect(main).toContain('localPort !== targetPort');
+    expect(main).not.toContain('line.includes(needle)');
+  });
+});

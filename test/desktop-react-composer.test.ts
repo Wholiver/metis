@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import {
+  cleanPastedText,
   composerTextareaHeight,
   hasComposerLineBreak,
   IDLE_COMPOSER_ACTIVITY,
@@ -334,5 +335,81 @@ describe('desktop React multiline composer', () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it('strips browser accessibility list item wrappers when pasting text', () => {
+    // Exact user-reported scenario (from Twitter/X copy in Chinese Chromium/macOS):
+    expect(cleanPastedText('第 Generate an SVG of a pelican riding a bicycle. 项'))
+      .toBe('Generate an SVG of a pelican riding a bicycle.');
+
+    // With surrounding whitespace / newlines
+    expect(cleanPastedText('  第 Generate an SVG of a pelican riding a bicycle. 项 \n'))
+      .toBe('Generate an SVG of a pelican riding a bicycle.');
+
+    // With item number
+    expect(cleanPastedText('第 1 项 Generate an SVG of a pelican riding a bicycle. 项'))
+      .toBe('Generate an SVG of a pelican riding a bicycle.');
+
+    // With item number and colon
+    expect(cleanPastedText('第 1 项：Generate an SVG of a pelican riding a bicycle. 项'))
+      .toBe('Generate an SVG of a pelican riding a bicycle.');
+
+    // With bullet marker
+    expect(cleanPastedText('第 • Generate an SVG of a pelican riding a bicycle. 项'))
+      .toBe('Generate an SVG of a pelican riding a bicycle.');
+
+    // Zero-width spaces, BOM, and direction marks stripped
+    expect(cleanPastedText('\u200B第 Generate an SVG / a pelican riding a bicycle 项\uFEFF'))
+      .toBe('Generate an SVG / a pelican riding a bicycle');
+
+    // Without trailing period
+    expect(cleanPastedText('第 Generate an SVG / a pelican riding a bicycle 项'))
+      .toBe('Generate an SVG / a pelican riding a bicycle');
+
+    // With trailing Chinese period
+    expect(cleanPastedText('第 Generate an SVG / a pelican riding a bicycle 项。'))
+      .toBe('Generate an SVG / a pelican riding a bicycle');
+
+    // No space between 第/项 and content
+    expect(cleanPastedText('第Generate an SVG / a pelican riding a bicycle项'))
+      .toBe('Generate an SVG / a pelican riding a bicycle');
+
+    // Traditional Chinese 項
+    expect(cleanPastedText('第 Generate an SVG / a pelican riding a bicycle 項'))
+      .toBe('Generate an SVG / a pelican riding a bicycle');
+    expect(cleanPastedText('第Generate an SVG / a pelican riding a bicycle項'))
+      .toBe('Generate an SVG / a pelican riding a bicycle');
+
+    // Chinese content inside
+    expect(cleanPastedText('第 这是一个中文测试提示词 项'))
+      .toBe('这是一个中文测试提示词');
+
+    // Multiline tweet inside one item wrapper
+    expect(cleanPastedText('第 First line of tweet\nSecond line of tweet 项'))
+      .toBe('First line of tweet\nSecond line of tweet');
+
+    // Multiple list items on separate lines
+    expect(cleanPastedText('第 Item 1 项\n第 Item 2 项'))
+      .toBe('Item 1\nItem 2');
+
+    // Negative cases: legitimate text containing "第" and "项" should NOT be modified
+    expect(cleanPastedText('第三项内容')).toBe('第三项内容');
+    expect(cleanPastedText('第一项')).toBe('第一项');
+    expect(cleanPastedText('第 2 项')).toBe('第 2 项');
+    expect(cleanPastedText('关于第 2 项的说明')).toBe('关于第 2 项的说明');
+    expect(cleanPastedText('Hello world')).toBe('Hello world');
+    expect(cleanPastedText('')).toBe('');
+
+    // Wiring check in Composer and PromptBar
+    const composer = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/Composer.tsx'), 'utf8');
+    const promptBar = readFileSync(resolve(process.cwd(), 'desktop/src/components/primitives/PromptBar.tsx'), 'utf8');
+    const hook = readFileSync(resolve(process.cwd(), 'desktop/src/hooks/useMetisServer.ts'), 'utf8');
+    expect(composer).toContain('cleanPastedText(rawText)');
+    expect(composer).toContain('cleanPastedText(text)');
+    expect(promptBar).toContain('cleanPastedText(rawText)');
+    expect(promptBar).toContain('cleanPastedText(event.target.value)');
+    expect(promptBar).toContain('onPaste={(event)');
+    expect(hook).toContain('cleanPastedText(event.name');
+    expect(hook).toContain('message: wireMessage');
   });
 });

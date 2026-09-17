@@ -184,22 +184,10 @@ export function useAutoScroll(options: UseAutoScrollOptions) {
     const observer = new ResizeObserver(onResize);
     if (target) observer.observe(target);
     if (scrollEl) observer.observe(scrollEl);
-    const mutationTarget = target ?? scrollEl;
-    const mutationObserver = mutationTarget
-      ? new MutationObserver(onResize)
-      : null;
-    if (mutationTarget && mutationObserver) {
-      mutationObserver.observe(mutationTarget, {
-        subtree: true,
-        childList: true,
-        characterData: true,
-        attributes: true,
-        attributeFilter: ['class', 'aria-expanded', 'data-open', 'style'],
-      });
-    }
+    // Height changes from streaming markdown / tools are covered by ResizeObserver.
+    // Avoid a whole-tree MutationObserver (characterData) — it fires on every token.
     return () => {
       observer.disconnect();
-      mutationObserver?.disconnect();
     };
   }, [scrollToBottom, options.working]);
 

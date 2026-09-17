@@ -74,6 +74,8 @@ describe("instruction stack", () => {
 		expect(buildPrompt).toContain("Primary Coordinator & Engineering Engine (Coordinator & Executor)");
 		expect(buildPrompt).toContain("strictly forbid repetitive '正在...', '我将...'");
 		expect(buildPrompt).toContain("Read-only investigation may precede admission; mutating work may not");
+		expect(buildPrompt).toContain("Creating or generating files, SVG, images, pages, or other artifacts is mutating work");
+		expect(buildPrompt).toContain("Do not finish after a first-draft write");
 		expect(buildPrompt).toContain("keep integrated-workspace evidence current");
 	});
 
@@ -107,12 +109,23 @@ describe("instruction stack", () => {
 		expect(prompt).toContain("Authoritative Build admission policy");
 		expect(prompt).toContain("Conversational or read-only requests");
 		expect(prompt).toContain("call performance_admit before the first write, edit, bash, spawn_agent, update_plan, or performance_gate");
+		expect(prompt).toContain("Never skip admission to finish faster");
+		expect(prompt).toContain("A first-draft write is not completion");
+		expect(prompt).toContain("Do not stop after the first plausible artifact");
 		expect(prompt.match(/authoritative Build admission policy/gi)).toHaveLength(2);
+	});
+
+	test("treats artifact generation as mutating closed-loop work, not chat", () => {
+		const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "build" });
+		expect(prompt).toContain("creates, edits, generates, or opens a file, image, SVG, page, script, or other workspace artifact is mutating Build work");
+		expect(prompt).toContain("Artifact and generation work (SVG, image, page, report, data file)");
+		expect(prompt).toContain("at least one repair pass if that check fails");
+		expect(prompt).not.toContain("Reliable-headless short loop");
 	});
 
 	test("routes T0/T1 without implementation subagents and keeps assurance semantic", () => {
 		const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "build" });
-		expect(prompt).toContain("T0 bounded mechanical work: root implements and verifies; zero spawn");
+		expect(prompt).toContain("T0 bounded mechanical work: root still implements and verifies with a real closed loop");
 		expect(prompt).toContain("T1 bounded fix or feature: root performs G4; then fresh reviewer G5 and fresh verifier G6");
 
 		// BUILTIN_COORDINATOR role contract

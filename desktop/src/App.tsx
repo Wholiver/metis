@@ -14,9 +14,21 @@ import {
   collectSubagentItems,
   mergeSubagentHistoryItems,
   parseSubagentHistory,
+  resolveSubagentPath,
+  resolveSubagentTrail,
+  truncateValidSubagentPath,
   SUBAGENT_HISTORY_STORAGE_KEY,
   type SubagentHistory,
 } from './lib/subagents';
+import {
+  archiveSession,
+  archivedSessionIds as archivedSessionIdSet,
+  listArchivedSessions,
+  loadArchivedSessions,
+  saveArchivedSessions,
+  unarchiveSession,
+  type ArchivedSessionsMap,
+} from './lib/archived-sessions';
 import { useMetisServer } from './hooks/useMetisServer';
 import { useUpdateCheck } from './hooks/useUpdateCheck';
 import { useSystemTheme } from './hooks/useSystemTheme';
@@ -33,7 +45,7 @@ const MIN_SIDEBAR_WIDTH = 224;
 const MAX_SIDEBAR_WIDTH = 500;
 
 const MIN_INSPECTOR_WIDTH = 360;
-const MAX_INSPECTOR_WIDTH = 550;
+const MAX_INSPECTOR_WIDTH = 850;
 
 const PLAN_CAPTURE_MARKDOWN = `# Plan、Ask、Memory 与默认工作流升级
 
@@ -278,6 +290,7 @@ export function App() {
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [activeProjectId, setActiveProjectId] = useState('');
   const [projectsReady, setProjectsReady] = useState(false);
+  const [archivedSessions, setArchivedSessions] = useState<ArchivedSessionsMap>(() => loadArchivedSessions());
   const activeProject = projects.find((project) => project.id === activeProjectId);
   const {
     agents,
@@ -302,6 +315,7 @@ export function App() {
     isChangingThinking,
     selectThinkingLevel,
     isStreaming,
+    workingSessionIds,
     isConnected,
     isCompacting,
     collaborationMode,
@@ -311,6 +325,7 @@ export function App() {
     workflowProposal,
     pendingUserInput,
     isLoadingSessions,
+    isLoadingMessages,
     sessionError,
     memoryState,
     runMemory,
@@ -318,6 +333,7 @@ export function App() {
     refreshMemory,
     request,
     refresh,
+    removeConversation,
     connectServer,
     selectConversation,
     newConversation,
@@ -367,6 +383,7 @@ export function App() {
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
   const [skillCommands, setSkillCommands] = useState<SkillCommand[]>([]);
   const [activeResizer, setActiveResizer] = useState<'sidebar' | 'inspector' | null>(null);
+  const [viewingSubagentStack, setViewingSubagentStack] = useState<string[]>([]);
   const [subagentHistory, setSubagentHistory] = useState<SubagentHistory>(() => {
     if (typeof localStorage === 'undefined') return {};
     return parseSubagentHistory(localStorage.getItem(SUBAGENT_HISTORY_STORAGE_KEY));
@@ -482,6 +499,7 @@ export function App() {
       ? undefined
       : workflowPlan;
   const displayedWorkspacePath = capturePlanPoints || captureInspectorTabs ? PLAN_POINTS_CAPTURE_WORKSPACE : activeProject?.path;
+  const previousToolPartsRef = useRef<AssistantContentPart[]>([]);
   const displayedToolParts = useMemo(() => {
     const toolParts: AssistantContentPart[] = [];
     for (const msg of displayedMessages) {
@@ -490,6 +508,14 @@ export function App() {
         if (part.type === 'toolCall') toolParts.push(part);
       }
     }
+    const previous = previousToolPartsRef.current;
+    if (
+      previous.length === toolParts.length
+      && previous.every((part, index) => part === toolParts[index])
+    ) {
+      return previous;
+    }
+    previousToolPartsRef.current = toolParts;
     return toolParts;
   }, [displayedMessages]);
   const isMessagesInSync = Boolean(activeAgentId && messagesSessionId === activeAgentId);
@@ -506,6 +532,31 @@ export function App() {
       ? restoredSubagents
       : collectSubagentItems(displayedMessages, activeAgentId)
   ), [displayedMessages, messages, restoredSubagents, activeAgentId]);
+
+  const subagentTrail = useMemo(
+    () => resolveSubagentTrail(displayedSubagents, viewingSubagentStack),
+    [displayedSubagents, viewingSubagentStack],
+  );
+
+  const viewingSubagent = useMemo(
+    () => (viewingSubagentStack.length > 0
+      ? resolveSubagentPath(displayedSubagents, viewingSubagentStack)
+      : null),
+    [displayedSubagents, viewingSubagentStack],
+  );
+
+  useEffect(() => {
+    if (viewingSubagentStack.length === 0) return;
+    const valid = truncateValidSubagentPath(displayedSubagents, viewingSubagentStack);
+    if (valid.length !== viewingSubagentStack.length
+      || valid.some((id, index) => id !== viewingSubagentStack[index])) {
+      setViewingSubagentStack(valid);
+    }
+  }, [displayedSubagents, viewingSubagentStack]);
+
+  useEffect(() => {
+    setViewingSubagentStack([]);
+  }, [activeAgentId]);
 
   useEffect(() => {
     if (!activeAgentId || !messagesSessionId || messagesSessionId !== activeAgentId) return;
@@ -694,7 +745,54 @@ export function App() {
     if (activeProjectId) localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, activeProjectId);
   }, [activeProjectId, projects, projectsReady]);
 
-  const handleSelectProject = async (id: string) => {
+  useEffect(() => {
+    saveArchivedSessions(archivedSessions);
+  }, [archivedSessions]);
+
+  const archivedIds = useMemo(() => archivedSessionIdSet(archivedSessions), [archivedSessions]);
+  const archivedSessionList = useMemo(() => listArchivedSessions(archivedSessions), [archivedSessions]);
+
+  const handleArchiveAgent = useCallback(async (agent: Agent) => {
+    if (!agent.sessionPath) return;
+    let nextArchived: ArchivedSessionsMap = {};
+    setArchivedSessions((current) => {
+      nextArchived = archiveSession(current, {
+        id: agent.id,
+        name: agent.name,
+        sessionPath: agent.sessionPath!,
+        projectPath: agent.projectPath,
+      });
+      return nextArchived;
+    });
+    if (agent.id !== activeAgentId) return;
+
+    const projectPath = agent.projectPath || activeProject?.path;
+    const pool = (projectPath && projectAgentsByPath[projectPath])
+      || agents.filter((item) => !item.projectPath || item.projectPath === projectPath);
+    const visibleNext = pool.find((item) => item.id !== agent.id && !nextArchived[item.id]);
+    if (visibleNext) {
+      await selectConversation(visibleNext.id);
+      return;
+    }
+    await newConversation();
+  }, [activeAgentId, activeProject?.path, agents, newConversation, projectAgentsByPath, selectConversation]);
+
+  const handleRestoreArchivedSession = useCallback((sessionId: string) => {
+    setArchivedSessions((current) => unarchiveSession(current, sessionId));
+  }, []);
+
+  const handleDeleteArchivedSession = useCallback(async (sessionId: string) => {
+    const record = archivedSessions[sessionId];
+    if (!record) return;
+    if (sessionId === activeAgentId || record.sessionPath === activeAgent?.sessionPath) {
+      throw new Error('Cannot permanently delete the active conversation. Restore it or switch away first.');
+    }
+    await request('/session', 'DELETE', { sessionPath: record.sessionPath });
+    setArchivedSessions((current) => unarchiveSession(current, sessionId));
+    removeConversation(sessionId);
+  }, [activeAgent?.sessionPath, activeAgentId, archivedSessions, removeConversation, request]);
+
+  const handleSelectProject = useCallback(async (id: string) => {
     const targetProj = projects.find((p) => p.id === id);
     if (!targetProj || targetProj.id === activeProjectId) return;
     setActiveProjectId(id);
@@ -706,9 +804,33 @@ export function App() {
         console.warn('[desktop] Failed to set workspace:', err);
       }
     }
-  };
+  }, [activeProjectId, projects]);
+
+  const handleToggleSidebar = useCallback(() => {
+    setIsSidebarOpen((prev) => !prev);
+  }, []);
+
+  const handleCloseSidebar = useCallback(() => {
+    setIsSidebarOpen(false);
+  }, []);
+
+  const handleAbortTurn = useCallback(() => {
+    void abortTurn();
+  }, [abortTurn]);
+
+  const handleToggleInspector = useCallback(() => {
+    setIsInspectorOpen((prev) => {
+      if (!prev) dispatchInspectorTabs({ type: 'open', kind: 'files' });
+      return !prev;
+    });
+  }, []);
+
+  const handleCloseInspector = useCallback(() => {
+    setIsInspectorOpen(false);
+  }, []);
 
   const handleSelectAgent = useCallback(async (agentId: string) => {
+    setViewingSubagentStack([]);
     let ownerPath: string | undefined;
     for (const [path, list] of Object.entries(projectAgentsByPath)) {
       if (list.some((agent) => agent.id === agentId)) {
@@ -874,8 +996,80 @@ export function App() {
     };
   }, []);
 
+  const handleNewChat = useCallback(() => {
+    setViewingSubagentStack([]);
+    void newConversation();
+  }, [newConversation]);
+
   const handleOpenInspectorTab = useCallback((kind: InspectorTabKind) => {
+    setIsInspectorOpen(true);
     dispatchInspectorTabs({ type: 'open', kind });
+  }, []);
+
+  const handleToggleWideInspector = useCallback(() => {
+    setInspectorWidth((prev) => {
+      const next = prev >= 650 ? 380 : 750;
+      if (inspectorRef.current) {
+        inspectorRef.current.style.width = `${next}px`;
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleOpenBrowser = (event: Event) => {
+      const customEvent = event as CustomEvent<{ url?: string; newTab?: boolean }>;
+      const url = customEvent.detail?.url;
+      setIsInspectorOpen(true);
+      if (customEvent.detail?.newTab) {
+        dispatchInspectorTabs({ type: 'open', kind: 'browser', browserUrl: url });
+      } else {
+        dispatchInspectorTabs({ type: 'openOrActivate', kind: 'browser', browserUrl: url });
+      }
+    };
+    window.addEventListener('metis:open-browser', handleOpenBrowser);
+    return () => window.removeEventListener('metis:open-browser', handleOpenBrowser);
+  }, []);
+
+  useEffect(() => {
+    const desktop = (window as any).metisDesktop;
+    if (!desktop?.browser?.onEnsureTab) return;
+    const offEnsure = desktop.browser.onEnsureTab((payload: {
+      url?: string;
+      newTab?: boolean;
+      tabId?: string;
+    }) => {
+      setIsInspectorOpen(true);
+      if (payload?.tabId) {
+        dispatchInspectorTabs({ type: 'activate', tabId: payload.tabId });
+        if (payload.url) {
+          dispatchInspectorTabs({
+            type: 'update',
+            tabId: payload.tabId,
+            patch: { browserUrl: payload.url, browserIsLoading: true },
+          });
+        }
+        return;
+      }
+      if (payload?.newTab) {
+        dispatchInspectorTabs({ type: 'open', kind: 'browser', browserUrl: payload.url || '' });
+        return;
+      }
+      dispatchInspectorTabs({
+        type: 'openOrActivate',
+        kind: 'browser',
+        browserUrl: payload?.url || '',
+      });
+    });
+    const offSelect = desktop.browser.onSelectTab?.((payload: { tabId?: string }) => {
+      if (!payload?.tabId) return;
+      setIsInspectorOpen(true);
+      dispatchInspectorTabs({ type: 'activate', tabId: payload.tabId });
+    });
+    return () => {
+      offEnsure?.();
+      offSelect?.();
+    };
   }, []);
 
   const openInspectorPlan = useCallback((markdown?: string) => {
@@ -887,6 +1081,30 @@ export function App() {
       viewedProposalSessionId: activeAgentId || messagesSessionId || null,
     });
   }, [activeAgentId, messagesSessionId]);
+
+  const handleOpenSubagent = useCallback((partId: string) => {
+    setViewingSubagentStack((prev) => {
+      const existing = prev.indexOf(partId);
+      if (existing >= 0) return prev.slice(0, existing + 1);
+      return [...prev, partId];
+    });
+  }, []);
+
+  const handleOpenRootSubagent = useCallback((partId: string) => {
+    setViewingSubagentStack([partId]);
+  }, []);
+
+  const handleNavigateBreadcrumb = useCallback((depth: number) => {
+    if (depth < 0) {
+      setViewingSubagentStack([]);
+      return;
+    }
+    setViewingSubagentStack((prev) => prev.slice(0, depth + 1));
+  }, []);
+
+  const handleBackToParentAgent = useCallback(() => {
+    setViewingSubagentStack((prev) => prev.slice(0, -1));
+  }, []);
 
   useEffect(() => {
     if (capturePlanPreview || capturePlanPoints || capturePlanPointsEmpty || captureInspectorTabs || captureWorkflowPlan) return;
@@ -907,7 +1125,7 @@ export function App() {
 
   const handleUpdateInspectorTab = useCallback((
     tabId: string,
-    patch: Partial<Pick<InspectorTab, 'selectedSubagentId' | 'scrollTop' | 'viewedProposalMarkdown' | 'viewedProposalSessionId'>>,
+    patch: Partial<InspectorTab>,
   ) => {
     dispatchInspectorTabs({ type: 'update', tabId, patch });
   }, []);
@@ -932,17 +1150,19 @@ export function App() {
             isLoading={captureConversationIcons ? false : isLoadingSessions}
             error={captureConversationIcons ? undefined : sessionError}
             updateCheck={updateCheck}
+            archivedSessionIds={archivedIds}
             onSelectAgent={handleSelectAgent}
             onSelectProject={handleSelectProject}
             onPrefetchProjectSessions={captureConversationIcons ? undefined : prefetchProjectSessions}
             onAddProject={handleAddProject}
-            onNewChat={newConversation}
+            onNewChat={handleNewChat}
+            onArchiveAgent={captureConversationIcons ? undefined : handleArchiveAgent}
             onOpenSettings={() => setIsSettingsOpen(true)}
-            onToggleSidebar={() => setIsSidebarOpen(false)}
-            workingAgentId={
+            onToggleSidebar={handleCloseSidebar}
+            workingAgentIds={
               captureConversationIcons
-                ? null
-                : (isStreaming || isCompacting ? displayedSidebarActiveAgentId : null)
+                ? undefined
+                : workingSessionIds
             }
           />
 
@@ -967,14 +1187,14 @@ export function App() {
         onSelectProject={handleSelectProject}
         isSidebarOpen={isSidebarOpen}
         isInspectorOpen={isInspectorOpen}
-        onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
-        onNewChat={newConversation}
+        onToggleSidebar={handleToggleSidebar}
+        onNewChat={handleNewChat}
         onSendMessage={captureSettledSend
           ? async () => true
           : captureLocalSend
             ? () => new Promise<boolean | void>(() => {})
             : sendMessage}
-        onAbort={() => { void abortTurn(); }}
+        onAbort={handleAbortTurn}
         models={displayedModels}
         activeModel={displayedActiveModel}
         onSelectModel={selectModel}
@@ -990,14 +1210,9 @@ export function App() {
         isChangingCollaborationMode={isChangingCollaborationMode}
         skills={captureSkills ? SKILL_PICKER_CAPTURE_SKILLS : skillCommands}
         isCompacting={isCompacting}
-        onToggleInspector={() => {
-          setIsInspectorOpen((prev) => {
-            if (!prev) dispatchInspectorTabs({ type: 'open', kind: 'files' });
-            return !prev;
-          });
-        }}
+        onToggleInspector={handleToggleInspector}
         isStreaming={captureWorkflowPlan || captureTools || captureThinkingProgress || captureStreamingWork ? true : capturePlanPreview ? false : isStreaming}
-        isLoading={captureMessageWidth || captureThinkingProgress || capturePlanPreview || captureWorkflowPlan || captureLocalSend || captureSettledSend ? false : isLoadingSessions}
+        isLoading={captureMessageWidth || captureThinkingProgress || capturePlanPreview || captureWorkflowPlan || captureLocalSend || captureSettledSend ? false : isLoadingMessages}
         workflowProposal={displayedProposal}
         workflowPlan={displayedWorkflowPlan}
         onOpenPlan={openInspectorPlan}
@@ -1012,6 +1227,11 @@ export function App() {
         totalTokens={aggregateTotalTokens}
         quota5h={quota5h}
         quota7d={quota7d}
+        onOpenSubagent={handleOpenSubagent}
+        viewingSubagent={viewingSubagent}
+        subagentTrail={subagentTrail}
+        onNavigateBreadcrumb={handleNavigateBreadcrumb}
+        onBackToParent={handleBackToParentAgent}
       />
 
       {/* 3. Right Inspector Panel */}
@@ -1043,9 +1263,12 @@ export function App() {
             onCloseTab={handleCloseInspectorTab}
             onMoveTab={handleMoveInspectorTab}
             onUpdateTab={handleUpdateInspectorTab}
-            onClose={() => setIsInspectorOpen(false)}
-            onCollapse={() => setIsInspectorOpen(false)}
+            onOpenSubagent={handleOpenRootSubagent}
+            onClose={handleCloseInspector}
+            onCollapse={handleCloseInspector}
             activeSessionId={activeAgentId || messagesSessionId || null}
+            onToggleWideWidth={handleToggleWideInspector}
+            isWideWidth={inspectorWidth >= 650}
           />
         </>
       )}
@@ -1058,7 +1281,7 @@ export function App() {
         refresh={refresh}
         onConnectServer={connectServer}
         isConnected={isConnected}
-        isBusy={isStreaming || isCompacting || isLoadingSessions}
+        isBusy={isStreaming || isCompacting || isLoadingSessions || isLoadingMessages}
         models={models}
         providerCatalog={providerCatalog}
         activeModel={activeModel}
@@ -1076,6 +1299,9 @@ export function App() {
         onSelectThinkingLevel={selectThinkingLevel}
         onSelectCollaborationMode={selectCollaborationMode}
         onNewSession={newConversation}
+        archivedSessions={archivedSessionList}
+        onRestoreArchivedSession={handleRestoreArchivedSession}
+        onDeleteArchivedSession={handleDeleteArchivedSession}
       />
       <Onboarding
         open={isOnboardingOpen}

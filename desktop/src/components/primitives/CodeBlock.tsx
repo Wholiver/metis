@@ -112,6 +112,9 @@ export default function CodeBlock({
   const raw = code ?? (isDiff
     ? diff.map((row) => row.pieces.map((piece) => piece.text).join("")).join("\n")
     : lines.join("\n"));
+  const resolvedLines = lines.length > 0
+    ? lines
+    : (!isDiff && raw ? raw.replace(/\r\n/g, "\n").split("\n") : []);
 
   const copy = useCallback(() => {
     if (!raw) return;
@@ -155,7 +158,7 @@ export default function CodeBlock({
       ) : (
         <div className="relative">
           {!flush && <span className="pointer-events-none absolute inset-y-0 left-5 w-px bg-line" />}
-          {lines.map((line, i) => (
+          {resolvedLines.map((line, i) => (
             <div key={i} className="grid grid-cols-[28px_minmax(0,1fr)] items-start">
               <span className="select-none pr-1 text-right text-[11px] tabular-nums text-ink-3">{i + 1}</span>
               <code className="pr-3 pl-1 break-words whitespace-pre-wrap">{highlight(line)}</code>

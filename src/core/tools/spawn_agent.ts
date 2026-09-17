@@ -13,6 +13,9 @@ import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { getGlobalSpawnGuard, type SpawnGuard, type SpawnErrorCode, computeTaskHash } from "../spawn-guard.ts";
 import { createIsolatedWorkspace, type IsolatedWorkspace } from "../worktree.ts";
 import { filterChildEnvironment, sanitizeTraceData } from "../env-sanitizer.ts";
+import { isMutatingChildRole, resolveChildWorktree } from "../workspace-probe.ts";
+import type { ChildResult } from "../execution-types.ts";
+import { getGlobalTraceCollector, type TraceSummaryPayload } from "../trace-collector.ts";
 
 const SPAWN_PROGRESS_HEARTBEAT_MS = 5_000;
 const SPAWN_PROGRESS_THROTTLE_MS = 1_500;
@@ -91,6 +94,8 @@ export interface SpawnAgentRuntimeContext {
 	extensions?: string[];
 	env?: Record<string, string>;
 	agentChain?: string[];
+	/** Absolute owned paths for shared-cwd exclusivity checks. */
+	ownedPaths?: string[];
 }
 
 export interface SpawnAgentToolOptions {
@@ -104,6 +109,10 @@ export interface SpawnAgentToolOptions {
 	validateSpawn?: (input: SpawnAgentToolInput, runtime: SpawnAgentRuntimeContext | undefined, childAgentId: string) => string | undefined;
 	/** Releases a successful policy reservation after a child exits or launch fails. */
 	releaseSpawn?: (childAgentId: string) => void | Promise<void>;
+	/** Claim shared-cwd mutating ownership before launch; return error string to reject. */
+	claimMutatingOwner?: (childAgentId: string, role: string, ownedPaths: string[]) => string | undefined;
+	/** Release shared-cwd mutating ownership after child exit. */
+	releaseMutatingOwner?: (childAgentId: string) => void;
 	sendMessage?: (agentId: string, result: string) => void;
 	onStatusChange?: (agentId: string, running: boolean) => void;
 }
@@ -147,11 +156,11 @@ function getMetisInvocation(): { command: string; args: string[] } {
 
 export interface ChildAgentResultPayload {
 	status: "success" | "error" | "started" | "timed_out";
-	outcome?: "pass" | "fail" | "blocked" | "invalid_brief" | "no_verdict";
+	outcome?: "pass" | "fail" | "blocked" | "invalid_brief" | "no_verdict" | "invalid";
 	gate?: SpawnAgentToolInput["gate"];
 	itemId?: string;
 	evidence?: string;
-	errorCode?: SpawnErrorCode;
+	errorCode?: SpawnErrorCode | "CHILD_RESULT_INVALID";
 	agent: string;
 	agentId: string;
 	parentId: string;
@@ -166,6 +175,7 @@ export interface ChildAgentResultPayload {
 	exitCode?: number | null;
 	worktree?: string;
 	worktreeRetained?: boolean;
+	childResult?: ChildResult;
 }
 
 interface GateOutcome {
@@ -214,6 +224,163 @@ function extractGateOutcomeFromJsonLines(content: string, expectedGate?: SpawnAg
 		} catch {}
 	}
 	return latest;
+}
+
+function extractChildResultFromOutput(content: string): ChildResult | undefined {
+	let latest: ChildResult | undefined;
+	for (const line of content.split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith("{")) continue;
+		try {
+			const parsed = JSON.parse(trimmed) as Partial<ChildResult> & { type?: string };
+			if (parsed.type) continue;
+			if (!parsed.status || !parsed.summary || !Array.isArray(parsed.filesChanged) || !Array.isArray(parsed.commands) || !Array.isArray(parsed.findings)) {
+				continue;
+			}
+			if (!["completed", "failed", "blocked", "invalid"].includes(String(parsed.status))) continue;
+			latest = {
+				status: parsed.status,
+				summary: parsed.summary,
+				filesChanged: parsed.filesChanged,
+				commands: parsed.commands,
+				findings: parsed.findings,
+				proposedRepair: typeof parsed.proposedRepair === "string" ? parsed.proposedRepair : undefined,
+			};
+		} catch {}
+	}
+	return latest;
+}
+
+/** Extract nested trace_summary envelopes from child stdout/jsonl and merge into parent collector. */
+export function extractAndMergeChildTraceSummaries(
+	content: string,
+	collector: ReturnType<typeof getGlobalTraceCollector> = getGlobalTraceCollector(),
+): number {
+	let merged = 0;
+	for (const line of content.split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith("{") || !trimmed.includes("trace_summary")) continue;
+		try {
+			const parsed = JSON.parse(trimmed) as { type?: string };
+			if (parsed.type !== "trace_summary") continue;
+			collector.mergeChildTrace(parsed as TraceSummaryPayload);
+			merged += 1;
+		} catch {
+			// ignore malformed
+		}
+	}
+	return merged;
+}
+
+function validateChildResultAgainstWorkspace(result: ChildResult, workspaceCwd: string): string | undefined {
+	for (const relative of result.filesChanged) {
+		if (!relative || relative.includes("..")) return `Illegal filesChanged path: ${relative}`;
+		const absolute = path.resolve(workspaceCwd, relative);
+		if (!absolute.startsWith(path.resolve(workspaceCwd))) return `filesChanged escapes cwd: ${relative}`;
+		if (!existsSync(absolute)) return `Declared changed file missing: ${relative}`;
+	}
+	return undefined;
+}
+
+function resolveGovernedChildOutcome(args: {
+	isSuccess: boolean;
+	gate?: SpawnAgentToolInput["gate"];
+	gateOutcome?: GateOutcome;
+	stdoutData: string;
+	liveFinalText: string;
+	effectiveCwd: string;
+	agent: string;
+	agentId: string;
+	parentId: string;
+	rootRunId: string;
+	depth: number;
+	laneId?: string;
+	cwd: string;
+	workspacePath: string;
+	exitCode: number | null;
+	provider?: string;
+	model?: string;
+	baseUrl?: string;
+	errorAttribution: { error?: string; hint?: string };
+	parts?: any[];
+}): ChildAgentResultPayload & { parts?: any[] } {
+	const childResult = extractChildResultFromOutput(`${args.liveFinalText}\n${args.stdoutData}`);
+	let outcome: ChildAgentResultPayload["outcome"] = args.isSuccess
+		? (args.gateOutcome?.outcome ?? (args.gate ? "no_verdict" : undefined))
+		: "fail";
+	let errorCode: ChildAgentResultPayload["errorCode"];
+	let error = args.errorAttribution.error;
+	let hint = args.errorAttribution.hint;
+	let status: ChildAgentResultPayload["status"] = args.isSuccess ? "success" : "error";
+
+	if (args.isSuccess) {
+		if (!childResult) {
+			status = "error";
+			outcome = "invalid";
+			errorCode = "CHILD_RESULT_INVALID";
+			error = "CHILD_RESULT_INVALID: governed child exited 0 without a valid ChildResult";
+			hint = "Emit one ChildResult JSON line before exit; do not call performance_gate.";
+		} else {
+			const validationError = validateChildResultAgainstWorkspace(childResult, args.effectiveCwd);
+			if (validationError || childResult.status === "invalid") {
+				status = "error";
+				outcome = "invalid";
+				errorCode = "CHILD_RESULT_INVALID";
+				error = validationError ?? "ChildResult status=invalid";
+			} else if (childResult.status === "failed" || childResult.status === "blocked") {
+				status = "error";
+				outcome = childResult.status === "blocked" ? "blocked" : "fail";
+				error = childResult.summary;
+			} else {
+				outcome = "pass";
+			}
+		}
+	}
+
+	const payload: ChildAgentResultPayload & { parts?: any[] } = {
+		status,
+		agent: args.agent,
+		agentId: args.agentId,
+		parentId: args.parentId,
+		rootRunId: args.rootRunId,
+		depth: args.depth,
+		provider: args.provider,
+		model: args.model,
+		baseUrl: args.baseUrl,
+		exitCode: args.exitCode,
+		worktree: args.workspacePath !== args.cwd ? args.workspacePath : undefined,
+		worktreeRetained: status === "success" && args.workspacePath !== args.cwd,
+		outcome,
+		gate: args.gateOutcome?.gate ?? args.gate,
+		itemId: args.gateOutcome?.itemId ?? args.laneId,
+		evidence: args.gateOutcome?.evidence,
+		parts: args.parts,
+		result: args.liveFinalText || args.stdoutData.trim() || (status === "success" ? "(No output returned)" : undefined),
+		error,
+		hint,
+		errorCode,
+		childResult,
+	};
+
+	try {
+		getGlobalTraceCollector(args.rootRunId).recordChildResult({
+			agentId: args.agentId,
+			role: args.agent,
+			cwd: args.effectiveCwd,
+			workspacePolicy: args.workspacePath === args.cwd ? "shared" : "isolated",
+			exitCode: args.exitCode,
+			outcome: payload.outcome,
+			childResult,
+		});
+		extractAndMergeChildTraceSummaries(
+			`${args.liveFinalText}\n${args.stdoutData}`,
+			getGlobalTraceCollector(args.rootRunId),
+		);
+	} catch {
+		// Trace collection must not break spawn.
+	}
+
+	return payload;
 }
 
 function attributeChildError(stderr: string, stdout: string, exitCode: number | null): { error: string; hint?: string } {
@@ -275,7 +442,8 @@ export function createSpawnAgentToolDefinition(
 				};
 				return { content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }], details: undefined };
 			}
-			const { task, context, laneId, gate, mode = "sync", worktree, force, rationale, timeoutSeconds } = preparedInput;
+			const { task, context, laneId, gate, mode = "sync", worktree: requestedWorktree, force, rationale, timeoutSeconds } = preparedInput;
+			const worktree = resolveChildWorktree({ role: agent, requestedWorktree });
 			if (signal?.aborted) {
 				const payload: ChildAgentResultPayload = {
 					status: "error", agent, agentId: childAgentId, parentId, rootRunId, depth: childDepth,
@@ -291,7 +459,12 @@ export function createSpawnAgentToolDefinition(
 				};
 				return { content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }], details: undefined };
 			}
+			const ownedPaths = rt?.ownedPaths ?? ["."];
+			const releaseMutatingOwner = () => {
+				options?.releaseMutatingOwner?.(childAgentId);
+			};
 			const releaseSpawnReservation = async () => {
+				releaseMutatingOwner();
 				if (!options?.releaseSpawn) return;
 				for (let attempt = 0; attempt <= SPAWN_RELEASE_RETRY_DELAYS_MS.length; attempt++) {
 					try {
@@ -302,6 +475,22 @@ export function createSpawnAgentToolDefinition(
 						if (delayMs === undefined) return;
 						await new Promise((resolve) => setTimeout(resolve, delayMs));
 					}
+				}
+			};
+			if (isMutatingChildRole(agent)) {
+				const ownerError = options?.claimMutatingOwner?.(childAgentId, agent, ownedPaths);
+				if (ownerError) {
+					await releaseSpawnReservation();
+					const payload: ChildAgentResultPayload = {
+						status: "error",
+						agent,
+						agentId: childAgentId,
+						parentId,
+						rootRunId,
+						depth: childDepth,
+						error: ownerError,
+					};
+					return { content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }], details: undefined };
 				}
 			};
 
@@ -407,6 +596,7 @@ export function createSpawnAgentToolDefinition(
 				"--root-run-id", rootRunId,
 				"--agent-chain", childChain.join(","),
 			];
+			args.push("--execution-profile", "reliable-headless");
 			const guardConfig = guard.getConfig();
 			args.push(
 				"--max-spawn-depth", String(guardConfig.maxSpawnDepth),
@@ -458,6 +648,8 @@ export function createSpawnAgentToolDefinition(
 				METIS_AGENT_DEPTH: String(childDepth),
 				METIS_AGENT_CHAIN: childChain.join(","),
 				METIS_AGENT_NAME: agent,
+				METIS_EXECUTION_PROFILE: "reliable-headless",
+				METIS_WORKSPACE_POLICY: process.env.METIS_WORKSPACE_POLICY ?? "shared",
 				...(laneId ? { METIS_PERFORMANCE_LANE_ID: laneId } : {}),
 				...(gate ? { METIS_PERFORMANCE_GATE: gate } : {}),
 				ELECTRON_RUN_AS_NODE: "1",
@@ -837,30 +1029,30 @@ export function createSpawnAgentToolDefinition(
 
 							const isSuccess = exitCode === 0;
 							const errorAttribution = isSuccess ? { error: undefined, hint: undefined } : attributeChildError(stderrData, stdoutData, exitCode);
-							const payload: ChildAgentResultPayload & { parts?: any[] } = {
-								status: isSuccess ? "success" : "error",
+							const payload = resolveGovernedChildOutcome({
+								isSuccess,
+								gate,
+								gateOutcome,
+								stdoutData,
+								liveFinalText,
+								effectiveCwd,
 								agent,
 								agentId: childAgentId,
 								parentId,
 								rootRunId,
 								depth: childDepth,
+								laneId,
+								cwd,
+								workspacePath: workspace.workspacePath,
+								exitCode,
 								provider: rt?.provider ?? process.env.METIS_PROVIDER,
 								model: rt?.model ?? process.env.METIS_MODEL,
 								baseUrl: rt?.baseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL,
-									exitCode,
-									worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
-									worktreeRetained: isSuccess && workspace.workspacePath !== cwd,
-									outcome: isSuccess ? (gateOutcome?.outcome ?? (gate ? "no_verdict" : undefined)) : "fail",
-									gate: gateOutcome?.gate ?? gate,
-									itemId: gateOutcome?.itemId ?? laneId,
-									evidence: gateOutcome?.evidence,
-									parts: liveParts.length > 0 ? liveParts : undefined,
-								result: liveFinalText || (stdoutData || stderrData).trim() || (isSuccess ? "(No output returned)" : undefined),
-								error: errorAttribution.error,
-								hint: errorAttribution.hint,
-							};
+								errorAttribution,
+								parts: liveParts.length > 0 ? liveParts : undefined,
+							});
 							guard.updateChildStatus(childAgentId, {
-								status: isSuccess ? "completed" : "error",
+								status: payload.status === "success" ? "completed" : "error",
 								exitCode,
 								result: payload.result,
 								error: payload.error,
@@ -939,30 +1131,30 @@ export function createSpawnAgentToolDefinition(
 					? { error: "Agent execution cancelled.", hint: undefined }
 					: isSuccess ? { error: undefined, hint: undefined } : attributeChildError(resultContent, "", exitCode);
 				const gateOutcome = extractGateOutcomeFromJsonLines(resultContent, gate);
-				const payload: ChildAgentResultPayload = {
-					status: isSuccess ? "success" : "error",
+				const payload = resolveGovernedChildOutcome({
+					isSuccess: Boolean(isSuccess) && !cancelled,
+					gate,
+					gateOutcome,
+					stdoutData: resultContent,
+					liveFinalText: resultContent,
+					effectiveCwd,
 					agent,
 					agentId: childAgentId,
 					parentId,
 					rootRunId,
 					depth: childDepth,
+					laneId,
+					cwd,
+					workspacePath: workspace.workspacePath,
+					exitCode,
 					provider: rt?.provider ?? process.env.METIS_PROVIDER,
 					model: rt?.model ?? process.env.METIS_MODEL,
 					baseUrl: rt?.baseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL,
-					exitCode,
-					worktree: workspace.workspacePath !== cwd ? workspace.workspacePath : undefined,
-					worktreeRetained: isSuccess && workspace.workspacePath !== cwd,
-					outcome: isSuccess ? (gateOutcome?.outcome ?? (gate ? "no_verdict" : undefined)) : "fail",
-					gate: gateOutcome?.gate ?? gate,
-					itemId: gateOutcome?.itemId ?? laneId,
-					evidence: gateOutcome?.evidence,
-					result: resultContent.trim() || "(No output returned)",
-					error: errorAttribution.error,
-					hint: errorAttribution.hint,
-				};
+					errorAttribution,
+				});
 
 				guard.updateChildStatus(childAgentId, {
-					status: isSuccess ? "completed" : "error",
+					status: payload.status === "success" ? "completed" : "error",
 					exitCode,
 					result: payload.result,
 					error: payload.error,

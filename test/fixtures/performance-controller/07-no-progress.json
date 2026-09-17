@@ -1,0 +1,21 @@
+{
+  "id": "no-progress-fingerprint",
+  "failureCode": "NO_PROGRESS_FINGERPRINT",
+  "description": "Identical failure fingerprint appears twice; repair must stop",
+  "fingerprints": [
+    {
+      "checkId": "pytest-suite",
+      "exitCode": 1,
+      "errorSummary": "AssertionError: expected 3 got 2",
+      "artifactHash": "abc123"
+    },
+    {
+      "checkId": "pytest-suite",
+      "exitCode": 1,
+      "errorSummary": "AssertionError: expected 3 got 2",
+      "artifactHash": "abc123"
+    }
+  ],
+  "maxRepairAttempts": 2,
+  "shouldStop": true
+}

@@ -33,7 +33,9 @@ import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dis
 import type { ModelRegistry } from "./core/model-registry.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
+import { ensureReliableExecutionEnv } from "./core/execution-types.ts";
 import { getGlobalSpawnGuard } from "./core/spawn-guard.ts";
+import { resolveTaskPathsFromEnv } from "./core/task-execution-controller.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
 import type { CreateAgentSessionOptions } from "./core/sdk.ts";
 import {
@@ -537,6 +539,7 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	const parsed = parseArgs(args);
+	ensureReliableExecutionEnv();
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {
 			const color = d.type === "error" ? chalk.red : chalk.yellow;
@@ -941,6 +944,7 @@ export async function main(args: string[], options?: MainOptions) {
 			initialImages,
 			initialMessages: parsed.messages,
 			verbose: parsed.verbose,
+			taskPaths: resolveTaskPathsFromEnv(),
 		});
 		if (startupBenchmark) {
 			await interactiveMode.init();
@@ -964,12 +968,14 @@ export async function main(args: string[], options?: MainOptions) {
 		await interactiveMode.run();
 	} else {
 		printTimings();
+		const executionProfile = ensureReliableExecutionEnv();
 		const exitCode = await runPrintMode(runtime, {
 			mode: toPrintOutputMode(appMode),
 			messages: parsed.messages,
 			initialMessage,
 			initialImages,
 			outputFinalAnswer: parsed.outputFinalAnswer,
+			executionProfile,
 		});
 		stopThemeWatcher();
 		restoreStdout();

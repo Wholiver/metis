@@ -134,10 +134,10 @@ export function ContextToolGroup({
       : '',
   ].filter(Boolean);
   const labels = {
-    read: t('agentRead'),
-    list: t('contextListTool'),
-    glob: 'Glob',
-    grep: 'Grep',
+    read: t('toolTitleRead'),
+    list: t('toolTitleList'),
+    glob: t('toolTitleGlob'),
+    grep: t('toolTitleGrep'),
   };
 
   const setOpen = (value: boolean) => {
@@ -201,7 +201,7 @@ export function ContextToolGroup({
                     <div data-slot="basic-tool-tool-info">
                       <div data-slot="basic-tool-tool-info-structured">
                         <div data-slot="basic-tool-tool-info-main">
-                          <span data-slot="basic-tool-tool-title">
+                          <span data-slot="basic-tool-tool-title" data-i18n-skip="">
                             <TextShimmer text={trigger.title} active={running} />
                           </span>
                           {trigger.subtitle && (

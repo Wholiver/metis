@@ -14,6 +14,10 @@ describe('desktop React settings', () => {
     expect(sidebar).toContain('onOpenSettings');
     expect(app).toContain('<SettingsDialog');
     expect(app).toContain('onOpenSettings={() => setIsSettingsOpen(true)}');
+    expect(app).toContain('archivedSessions={archivedSessionList}');
+    expect(app).toContain('onRestoreArchivedSession={handleRestoreArchivedSession}');
+    expect(app).toContain('onDeleteArchivedSession={handleDeleteArchivedSession}');
+    expect(app).toContain('onArchiveAgent=');
   });
 
   it('keeps settings surfaces aligned with Beautiful UI window and card tokens', () => {
@@ -32,6 +36,7 @@ describe('desktop React settings', () => {
 
   it('retains every former settings category and wires stateful options to the Server bridge', () => {
     const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
+    const app = source('desktop/src/App.tsx');
     const main = source('desktop/main.cjs');
     for (const tab of ['general', 'model', 'agent', 'server', 'about']) {
       expect(settings).toContain(`id: '${tab}'`);
@@ -42,6 +47,17 @@ describe('desktop React settings', () => {
     for (const endpoint of ['/settings/defaults', '/session/settings', '/memory/settings', '/memory/run', '/memory/reset', '/session/name', '/session/compact']) {
       expect(settings).toContain(endpoint);
     }
+    expect(settings).toContain('data-archived-sessions-list');
+    expect(settings).toContain('data-restore-archived-session');
+    expect(settings).toContain('data-delete-archived-session');
+    expect(settings).toContain('archived-conversations');
+    expect(settings).toContain('onDeleteArchivedSession');
+    expect(settings).toContain('max-h-48');
+    expect(settings).toContain('overflow-y-auto');
+    expect(settings).not.toContain('{item.sessionPath}');
+    expect(app).toContain("request('/session', 'DELETE'");
+    expect(app).toContain('removeConversation(sessionId)');
+    expect(app).not.toContain('await refresh();\n  }, [activeAgent?.sessionPath, activeAgentId, archivedSessions, refresh, request]');
     expect(settings).toContain("command('/reload')");
     expect(settings).toContain('providerConfig?.saveCustom');
     expect(settings).toContain('providerConfig?.discoverModels');

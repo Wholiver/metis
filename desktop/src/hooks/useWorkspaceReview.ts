@@ -3,9 +3,11 @@ import { AssistantContentPart } from '../types';
 import type { DiffRow } from '../components/primitives/CodeBlock';
 import { collectTurnFileDiffs } from '../lib/tool-diff';
 import {
+  diffRowsEqual,
   filterReviewFiles,
   resolveReviewMode,
   reviewChangesOptions,
+  reviewFilesEqual,
 } from '../lib/review-diff';
 
 export type ReviewMode = 'git' | 'branch' | 'turn';
@@ -117,15 +119,23 @@ export function useWorkspaceReview({
   );
   const requestIdRef = useRef(0);
   const selectedFileRef = useRef<string | null>(null);
+  const filesRef = useRef(files);
+  const rowsRef = useRef(rows);
+  const previousTurnDiffsRef = useRef<ReviewFileDiff[]>([]);
   selectedFileRef.current = selectedFile;
+  filesRef.current = files;
+  rowsRef.current = rows;
 
   const options = useMemo(() => reviewChangesOptions(info), [info]);
   const resolvedMode = resolveReviewMode(mode, options);
   const filteredFiles = useMemo(() => filterReviewFiles(files, filter), [files, filter]);
-  const turnDiffs = useMemo(
-    () => turnFilesToDiffs(collectTurnFileDiffs(toolParts, { workspacePath })),
-    [toolParts, workspacePath],
-  );
+  const turnDiffs = useMemo(() => {
+    const next = turnFilesToDiffs(collectTurnFileDiffs(toolParts, { workspacePath }));
+    const previous = previousTurnDiffsRef.current;
+    if (reviewFilesEqual(previous, next)) return previous;
+    previousTurnDiffsRef.current = next;
+    return next;
+  }, [toolParts, workspacePath]);
 
   const setMode = useCallback((next: ReviewMode) => {
     setModeState(next);
@@ -170,54 +180,70 @@ export function useWorkspaceReview({
     }
   }, [sessionId]);
 
+  const syncSelectedFile = useCallback((list: ReviewFileDiff[]) => {
+    const current = selectedFileRef.current;
+    if (current && list.some((item) => item.file === current)) return;
+    const next = list[0]?.file ?? null;
+    if (next !== current) setSelectedFile(next);
+  }, [setSelectedFile]);
+
   useEffect(() => {
     if (!enabled) return;
     const workspace = desktopWorkspace();
+    if (!workspace?.gitInfo) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const nextInfo = await workspace.gitInfo();
+        if (cancelled) return;
+        setInfo((current) => (
+          current.isRepo === nextInfo.isRepo
+          && current.branch === nextInfo.branch
+          && current.defaultBranch === nextInfo.defaultBranch
+            ? current
+            : nextInfo
+        ));
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, workspacePath, sessionId]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (resolvedMode === 'turn') {
+      setLoadingList(false);
+      setFiles((current) => (reviewFilesEqual(current, turnDiffs) ? current : turnDiffs));
+      syncSelectedFile(turnDiffs);
+      return;
+    }
+
+    const workspace = desktopWorkspace();
     const requestId = ++requestIdRef.current;
     let cancelled = false;
-
+    if (filesRef.current.length === 0) setLoadingList(true);
+    setError(null);
     (async () => {
-      setLoadingList(true);
-      setError(null);
       try {
-        let nextInfo: ReviewGitInfo = { isRepo: false, branch: null, defaultBranch: null };
-        if (workspace?.gitInfo) {
-          nextInfo = await workspace.gitInfo();
-          if (cancelled || requestId !== requestIdRef.current) return;
-          setInfo(nextInfo);
-        }
-
-        const nextOptions = reviewChangesOptions(nextInfo);
-        setModeState((current) => resolveReviewMode(current, nextOptions));
-        const activeMode = resolveReviewMode(
-          (() => {
-            try {
-              return localStorage.getItem(sessionModeKey(sessionId)) || mode;
-            } catch {
-              return mode;
-            }
-          })(),
-          nextOptions,
-        );
-
         let list: ReviewFileDiff[] = [];
-        if (activeMode === 'turn') {
-          list = turnDiffs;
-        } else if (workspace?.gitStatus) {
-          const result = await workspace.gitStatus(activeMode);
+        if (workspace?.gitStatus) {
+          const result = await workspace.gitStatus(resolvedMode);
           if (cancelled || requestId !== requestIdRef.current) return;
-          setInfo(result.info);
+          setInfo((current) => (
+            current.isRepo === result.info.isRepo
+            && current.branch === result.info.branch
+            && current.defaultBranch === result.info.defaultBranch
+              ? current
+              : result.info
+          ));
           list = result.files;
         }
-
         if (cancelled || requestId !== requestIdRef.current) return;
-        setFiles(list);
-        const current = selectedFileRef.current;
-        if (current && !list.some((item) => item.file === current)) {
-          setSelectedFile(list[0]?.file ?? null);
-        } else if (!current && list[0]) {
-          setSelectedFile(list[0].file);
-        }
+        setFiles((current) => (reviewFilesEqual(current, list) ? current : list));
+        syncSelectedFile(list);
       } catch (err) {
         if (cancelled || requestId !== requestIdRef.current) return;
         setError(err instanceof Error ? err.message : String(err));
@@ -226,31 +252,33 @@ export function useWorkspaceReview({
         if (!cancelled && requestId === requestIdRef.current) setLoadingList(false);
       }
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [enabled, workspacePath, sessionId, resolvedMode, turnDiffs, setSelectedFile]);
+  }, [enabled, workspacePath, sessionId, resolvedMode, turnDiffs, syncSelectedFile]);
 
   useEffect(() => {
     if (!enabled || !selectedFile) {
       setPatch('');
       setRows([]);
+      setLoadingPatch(false);
       return;
     }
+    if (resolvedMode === 'turn') {
+      const match = turnDiffs.find((item) => item.file === selectedFile);
+      const nextRows = match?.rows || [];
+      const nextPatch = match?.patch || '';
+      setLoadingPatch(false);
+      setRows((current) => (diffRowsEqual(current, nextRows) ? current : nextRows));
+      setPatch((current) => (current === nextPatch ? current : nextPatch));
+      return;
+    }
+
     const workspace = desktopWorkspace();
     let cancelled = false;
-    setLoadingPatch(true);
+    if (rowsRef.current.length === 0) setLoadingPatch(true);
     (async () => {
       try {
-        if (resolvedMode === 'turn') {
-          const match = turnDiffs.find((item) => item.file === selectedFile);
-          if (!cancelled) {
-            setRows(match?.rows || []);
-            setPatch(match?.patch || '');
-          }
-          return;
-        }
         if (workspace?.gitDiff) {
           const result = await workspace.gitDiff(selectedFile, resolvedMode);
           if (!cancelled) {

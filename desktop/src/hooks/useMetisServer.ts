@@ -23,12 +23,13 @@ import {
   TokenBreakdown,
 } from '../types';
 import { extractImageAttachments, parseAttachmentPayloadText } from '../lib/attachments';
+import { cleanPastedText } from '../lib/composer';
 import {
   ExtensionUiRequest,
   ExtensionUiResponse,
   toExtensionUiRequest,
 } from '../lib/extension-ui';
-import { applyToolExecutionUpdate, extractToolResultText } from '../lib/tool-execution-update';
+import { applyToolExecutionEnd, applyToolExecutionUpdate, extractToolResultText } from '../lib/tool-execution-update';
 
 type MetisResponse<T> = {
   ok: boolean;
@@ -101,6 +102,8 @@ type MetisEvent = {
   state?: MemoryState;
   toolCallId?: string;
   partialResult?: unknown;
+  result?: unknown;
+  isError?: boolean;
 };
 
 const EMPTY_AGENT: Agent = {
@@ -128,12 +131,14 @@ export function formatSessionTime(value: string | number, now = Date.now()): str
 }
 
 export function sessionTitle(session: ServerSessionItem): string {
-  const title = session.name?.trim() || session.firstMessage?.trim();
+  const raw = session.name?.trim() || session.firstMessage?.trim();
+  const title = cleanPastedText(raw || '');
   return !title || title === '(no messages)' ? 'New conversation' : title;
 }
 
 export function sessionSubtitle(session: ServerSessionItem): string {
-  const prompt = session.lastMessage?.trim() || session.firstMessage?.trim();
+  const rawPrompt = session.lastMessage?.trim() || session.firstMessage?.trim();
+  const prompt = cleanPastedText(rawPrompt || '');
   return !prompt || prompt === '(no messages)' ? 'No messages yet' : prompt;
 }
 
@@ -452,24 +457,57 @@ function messageText(item: unknown): string {
   return extractToolResultText((item as { content?: unknown }).content);
 }
 
+type SubagentLookupItem = {
+  content?: unknown;
+  isError?: unknown;
+  timestamp?: unknown;
+  role?: unknown;
+  toolCallId?: unknown;
+};
+
+type SubagentProgressIndex = {
+  toolResultById: Map<string, SubagentLookupItem>;
+  launchByPartId: Map<string, SubagentLookupItem>;
+  completionByJobId: Map<string, SubagentLookupItem>;
+};
+
+export function buildSubagentProgressIndex(items: unknown[]): SubagentProgressIndex {
+  const toolResultById = new Map<string, SubagentLookupItem>();
+  const launchByPartId = new Map<string, SubagentLookupItem>();
+  const completionByJobId = new Map<string, SubagentLookupItem>();
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const source = item as SubagentLookupItem & { content?: unknown };
+    if (source.role === 'toolResult' && typeof source.toolCallId === 'string') {
+      toolResultById.set(source.toolCallId, source);
+    }
+    const content = source.content;
+    if (Array.isArray(content)) {
+      for (const contentPart of content) {
+        if (!contentPart || typeof contentPart !== 'object') continue;
+        const id = (contentPart as { id?: unknown }).id;
+        if (typeof id === 'string' && id && !launchByPartId.has(id)) {
+          launchByPartId.set(id, source);
+        }
+      }
+    }
+    const text = messageText(source);
+    const markerMatch = text.match(/\[Subagent Job ([^\]]+) finished\]/);
+    if (markerMatch?.[1] && !completionByJobId.has(markerMatch[1])) {
+      completionByJobId.set(markerMatch[1], source);
+    }
+  }
+  return { toolResultById, launchByPartId, completionByJobId };
+}
+
 export function getSubagentProgress(
   part: Extract<AssistantContentPart, { type: 'toolCall' }>,
   items: unknown[],
+  index: SubagentProgressIndex = buildSubagentProgressIndex(items),
 ): SubagentProgress {
   const jobId = String(part.id || '').slice(-6);
-  const toolResult = items.find((item) => {
-    if (!item || typeof item !== 'object') return false;
-    const message = item as { role?: unknown; toolCallId?: unknown };
-    return message.role === 'toolResult' && message.toolCallId === part.id;
-  }) as { content?: unknown; isError?: unknown; timestamp?: unknown } | undefined;
-  const launchMessage = items.find((item) => {
-    if (!item || typeof item !== 'object') return false;
-    const content = (item as { content?: unknown }).content;
-    return Array.isArray(content) && content.some((contentPart) => {
-      if (!contentPart || typeof contentPart !== 'object') return false;
-      return (contentPart as { id?: unknown }).id === part.id;
-    });
-  }) as { timestamp?: unknown } | undefined;
+  const toolResult = index.toolResultById.get(part.id);
+  const launchMessage = index.launchByPartId.get(part.id);
   const startedAt = toTimestamp(launchMessage?.timestamp);
   const progress = (state: SubagentProgress['state'], finishedAt?: number, exactDurationMs?: number): SubagentProgress => {
     const durationMs = exactDurationMs ?? (
@@ -489,8 +527,7 @@ export function getSubagentProgress(
     return progress('failed', toTimestamp(toolResult.timestamp));
   }
 
-  const completionMarker = `[Subagent Job ${jobId} finished]`;
-  const completionMessage = items.find((item) => messageText(item).includes(completionMarker)) as { timestamp?: unknown } | undefined;
+  const completionMessage = index.completionByJobId.get(jobId);
   if (toolResult) {
     const resultText = messageText(toolResult);
     let resultPayload: { status?: unknown; elapsedSec?: unknown } | undefined;
@@ -520,6 +557,94 @@ export function getSubagentProgress(
   return progress(state, toTimestamp(completionMessage?.timestamp));
 }
 
+function partsContentEqual(previous?: AssistantContentPart[], incoming?: AssistantContentPart[]): boolean {
+  if (previous === incoming) return true;
+  if (!previous || !incoming || previous.length !== incoming.length) return false;
+  for (let index = 0; index < previous.length; index += 1) {
+    const left = previous[index];
+    const right = incoming[index];
+    if (left.id !== right.id || left.type !== right.type) return false;
+    if (left.type === 'text' && right.type === 'text') {
+      if (left.text !== right.text) return false;
+      continue;
+    }
+    if (left.type === 'thinking' && right.type === 'thinking') {
+      if (left.thinking !== right.thinking || left.durationMs !== right.durationMs) return false;
+      continue;
+    }
+    if (left.type === 'toolCall' && right.type === 'toolCall') {
+      if (left.name !== right.name) return false;
+      if ((left.result?.content ?? '') !== (right.result?.content ?? '')) return false;
+      if (Boolean(left.result?.isError) !== Boolean(right.result?.isError)) return false;
+      if (left.progress?.state !== right.progress?.state) return false;
+      if (left.progress?.durationMs !== right.progress?.durationMs) return false;
+      if (JSON.stringify(left.arguments ?? null) !== JSON.stringify(right.arguments ?? null)) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+function messagesContentEqual(previous: Message, incoming: Message): boolean {
+  return previous.id === incoming.id
+    && previous.role === incoming.role
+    && previous.content === incoming.content
+    && previous.thinking === incoming.thinking
+    && previous.thinkingDurationMs === incoming.thinkingDurationMs
+    && previous.streaming === incoming.streaming
+    && previous.stopReason === incoming.stopReason
+    && previous.errorMessage === incoming.errorMessage
+    && previous.completedAt === incoming.completedAt
+    && previous.serverTimestamp === incoming.serverTimestamp
+    && previous.optimistic === incoming.optimistic
+    && previous.time === incoming.time
+    && (previous.usage?.totalTokens ?? 0) === (incoming.usage?.totalTokens ?? 0)
+    && (previous.usage?.cost ?? 0) === (incoming.usage?.cost ?? 0)
+    && partsContentEqual(previous.parts, incoming.parts)
+    && (previous.attachments?.length ?? 0) === (incoming.attachments?.length ?? 0);
+}
+
+/** Reuse prior message object identity when snapshot content is unchanged. */
+export function reuseStableMessages(previous: Message[], next: Message[]): Message[] {
+  if (previous.length === 0) return next;
+  if (previous === next) return previous;
+  const previousById = new Map(previous.map((message) => [message.id, message]));
+  let unchanged = previous.length === next.length;
+  const reused = next.map((incoming, index) => {
+    const prior = previousById.get(incoming.id);
+    if (prior && messagesContentEqual(prior, incoming)) {
+      if (previous[index] !== prior) unchanged = false;
+      return prior;
+    }
+    unchanged = false;
+    return incoming;
+  });
+  return unchanged && previous.every((message, index) => message === reused[index]) ? previous : reused;
+}
+
+/** Keep the same Set reference when membership does not change. */
+export function applyWorkingSessionIds(
+  current: ReadonlySet<string>,
+  ids: readonly string[],
+  working: boolean,
+): ReadonlySet<string> {
+  if (ids.length === 0) return current;
+  let changed = false;
+  const next = new Set(current);
+  for (const id of ids) {
+    if (working) {
+      if (!next.has(id)) {
+        next.add(id);
+        changed = true;
+      }
+    } else if (next.delete(id)) {
+      changed = true;
+    }
+  }
+  return changed ? next : current;
+}
+
 export function toMessages(
   items: unknown[],
   messageTimings: Array<{ messageTimestamp: number; completedAt: number }> = [],
@@ -544,6 +669,7 @@ export function toMessages(
         : {}),
     });
   }
+  const subagentIndex = buildSubagentProgressIndex(items);
   return items.flatMap((item, index) => {
     const message = toMessage(item, index, false, toolResults);
     if (message?.role === 'assistant' && message.serverTimestamp !== undefined) {
@@ -552,7 +678,7 @@ export function toMessages(
     }
     if (message?.parts) {
       message.parts = message.parts.map((part) => part.type === 'toolCall' && /^(subagent|spawn_agent)$/i.test(part.name)
-        ? { ...part, progress: getSubagentProgress(part, items) }
+        ? { ...part, progress: getSubagentProgress(part, items, subagentIndex) }
         : part);
     }
     return message ? [message] : [];
@@ -614,7 +740,12 @@ export function upsertConversationMessage(messages: Message[], incoming: Message
           parts: mergeAssistantParts(previous.parts, incoming.parts),
         } : {}),
       }
-    : incoming;
+    : {
+        ...incoming,
+        ...((!incoming.attachments || incoming.attachments.length === 0) && previous.attachments?.length
+          ? { attachments: previous.attachments }
+          : {}),
+      };
   return next;
 }
 
@@ -631,8 +762,10 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [messagesSessionId, setMessagesSessionId] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [workingSessionIds, setWorkingSessionIds] = useState<ReadonlySet<string>>(() => new Set());
   const [isConnected, setIsConnected] = useState(false);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [sessionError, setSessionError] = useState('');
   const [workflowPlan, setWorkflowPlan] = useState<WorkflowPlanState>();
   const [workflowProposal, setWorkflowProposal] = useState<WorkflowProposalState>();
@@ -657,6 +790,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const activeProjectRef = useRef(activeProject);
   const agentsRef = useRef<Agent[]>([]);
   const projectAgentsByPathRef = useRef<Record<string, Agent[]>>({});
+  const messagesCacheRef = useRef(new Map<string, Message[]>());
   const loadVersionRef = useRef(0);
   const messageLoadVersionRef = useRef(0);
   const refreshTimerRef = useRef<number>();
@@ -666,6 +800,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const extensionUiResponsePendingRef = useRef(false);
   const switchVersionRef = useRef(0);
   const pendingSwitchAgentIdRef = useRef<string | null>(null);
+  const suppressSessionChangedRef = useRef(false);
 
   useEffect(() => {
     activeProjectRef.current = activeProject;
@@ -678,6 +813,12 @@ export function useMetisServer(activeProject?: ProjectItem) {
   useEffect(() => {
     projectAgentsByPathRef.current = projectAgentsByPath;
   }, [projectAgentsByPath]);
+
+  useEffect(() => {
+    const sessionId = activeSessionIdRef.current || messagesSessionId;
+    if (!sessionId) return;
+    messagesCacheRef.current.set(sessionId, messages);
+  }, [messages, messagesSessionId]);
 
   const rememberProjectAgents = useCallback((projectPath: string, nextAgents: Agent[]) => {
     setProjectAgentsByPath((current) => {
@@ -757,10 +898,12 @@ export function useMetisServer(activeProject?: ProjectItem) {
     }
     setMessages((current) => {
       const optimisticUser = current.find((msg) => msg.role === 'user' && msg.optimistic);
-      if (optimisticUser && !nextMessages.some((msg) => msg.role === 'user')) {
-        return [optimisticUser, ...nextMessages];
-      }
-      return nextMessages;
+      const withOptimistic = optimisticUser && !nextMessages.some((msg) => msg.role === 'user')
+        ? [optimisticUser, ...nextMessages]
+        : nextMessages;
+      const reused = reuseStableMessages(current, withOptimistic);
+      if (state.sessionId) messagesCacheRef.current.set(state.sessionId, reused);
+      return reused;
     });
     setMessagesSessionId(state.sessionId || '');
     let latestUserPrompt: string | undefined;
@@ -784,6 +927,15 @@ export function useMetisServer(activeProject?: ProjectItem) {
     const nextCompacting = Boolean(state.isCompacting);
     setIsStreaming(nextStreaming);
     setIsCompacting(nextCompacting);
+    const loadedSessionId = state.sessionId || expectedSessionId || '';
+    if (loadedSessionId) {
+      const workingIds = [loadedSessionId];
+      if (state.sessionFile) {
+        const agent = agentsRef.current.find((entry) => entry.sessionPath === state.sessionFile);
+        if (agent && agent.id !== loadedSessionId) workingIds.push(agent.id);
+      }
+      setWorkingSessionIds((current) => applyWorkingSessionIds(current, workingIds, nextStreaming || nextCompacting));
+    }
     setCollaborationMode(state.collaborationMode || 'build');
     setWorkflowPlan(state.workflowPlan);
     setWorkflowProposal(state.workflowProposal);
@@ -980,9 +1132,36 @@ export function useMetisServer(activeProject?: ProjectItem) {
       }
     };
 
+    const resolveWorkingSessionIds = (event: MetisEvent): string[] => {
+      const sessionId = typeof event.serverSessionId === 'string' ? event.serverSessionId : '';
+      if (!sessionId) return [];
+      const ids = new Set<string>([sessionId]);
+      const sessionFile = typeof (event as { sessionFile?: unknown }).sessionFile === 'string'
+        ? (event as { sessionFile: string }).sessionFile
+        : '';
+      for (const agent of agentsRef.current) {
+        if (agent.id === sessionId || (sessionFile && agent.sessionPath === sessionFile)) {
+          ids.add(agent.id);
+        }
+      }
+      return Array.from(ids);
+    };
+
+    const markSessionsWorking = (event: MetisEvent, working: boolean) => {
+      const ids = resolveWorkingSessionIds(event);
+      if (ids.length === 0) return;
+      setWorkingSessionIds((current) => applyWorkingSessionIds(current, ids, working));
+    };
+
     const unsubscribeEvent = desktop.metis.onEvent((event: MetisEvent) => {
-      if (!acceptsEvent(event)) return;
       const type = event?.type || '';
+      // Track per-session working state before acceptsEvent filters other sessions.
+      if (['message_start', 'message_update', 'agent_start', 'turn_start', 'tool_execution_start', 'tool_execution_end', 'tool_execution_update'].includes(type)) {
+        markSessionsWorking(event, true);
+      } else if (type === 'agent_end' && !event.willRetry) {
+        markSessionsWorking(event, false);
+      }
+      if (!acceptsEvent(event)) return;
       if (['server.connected', 'message_start', 'message_update', 'message_end', 'agent_start', 'turn_start', 'tool_execution_start', 'tool_execution_end', 'user_input_request', 'session_info_changed'].includes(type)) {
         setSessionError('');
       }
@@ -1032,7 +1211,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
         if (!isEnd) {
           setIsStreaming(true);
         }
-        if (isEnd) reconcileCurrentSession();
+        // Streaming updates stay incremental — full snapshot only on agent_end / switch / explicit refresh.
         return;
       }
       if (type === 'tool_execution_update') {
@@ -1043,9 +1222,16 @@ export function useMetisServer(activeProject?: ProjectItem) {
         }
         return;
       }
-      if (['agent_start', 'turn_start', 'tool_execution_start', 'tool_execution_end'].includes(type)) {
+      if (type === 'tool_execution_end') {
         setIsStreaming(true);
-        if (type === 'tool_execution_start' || type === 'tool_execution_end') reconcileCurrentSession();
+        const toolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : '';
+        if (toolCallId) {
+          setMessages((current) => applyToolExecutionEnd(current, toolCallId, event.result, Boolean(event.isError)));
+        }
+        return;
+      }
+      if (['agent_start', 'turn_start', 'tool_execution_start'].includes(type)) {
+        setIsStreaming(true);
         return;
       }
       if (type === 'agent_end') {
@@ -1059,6 +1245,9 @@ export function useMetisServer(activeProject?: ProjectItem) {
         return;
       }
       if (type === 'server.session_changed') {
+        // Ignore the broadcast from our own /session/switch or /session/new — selectConversation
+        // already loads messages; a second loadProject+loadMessages causes switch jank.
+        if (suppressSessionChangedRef.current || pendingSwitchAgentIdRef.current) return;
         const project = activeProjectRef.current;
         if (project) void loadProject(project, false);
         return;
@@ -1076,7 +1265,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
         return;
       }
       if (type === 'session_info_changed' || (type === 'session_name_generation' && event.status === 'completed')) {
-        const generatedName = event.name?.trim();
+        const generatedName = cleanPastedText(event.name?.trim() || '').trim();
         if (generatedName) {
           setAgents((current) => current.map((agent) => (
             agent.id === activeSessionIdRef.current ? { ...agent, name: generatedName } : agent
@@ -1138,6 +1327,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
       flushPendingUpdate();
       setIsConnected(false);
       setIsStreaming(false);
+      setWorkingSessionIds(new Set());
     });
     const unsubscribeServerReady = desktop.metis.onServerReady?.(() => {
       void connect();
@@ -1194,13 +1384,21 @@ export function useMetisServer(activeProject?: ProjectItem) {
     if (agentId === activeSessionIdRef.current || agentId === pendingSwitchAgentIdRef.current) return;
     const previousAgentId = activeSessionIdRef.current;
     pendingSwitchAgentIdRef.current = agentId;
+    suppressSessionChangedRef.current = true;
     setActiveAgentId(agentId);
-    setMessages([]);
-    setMessagesSessionId('');
+    const cachedMessages = messagesCacheRef.current.get(agentId);
+    if (cachedMessages) {
+      setMessages(cachedMessages);
+      setMessagesSessionId(agentId);
+      setIsLoadingMessages(false);
+    } else {
+      setMessages([]);
+      setMessagesSessionId('');
+      setIsLoadingMessages(true);
+    }
     setWorkflowPlan(undefined);
     setWorkflowProposal(undefined);
     setPendingUserInput(undefined);
-    setIsLoadingSessions(true);
     setSessionError('');
     const currentSwitchVersion = ++switchVersionRef.current;
     try {
@@ -1234,11 +1432,18 @@ export function useMetisServer(activeProject?: ProjectItem) {
         pendingSwitchAgentIdRef.current = null;
         setActiveAgentId(previousAgentId);
         setSessionError(error instanceof Error ? error.message : String(error));
+        const previousCached = previousAgentId ? messagesCacheRef.current.get(previousAgentId) : undefined;
+        if (previousCached) {
+          setMessages(previousCached);
+          setMessagesSessionId(previousAgentId);
+        }
         if (previousAgentId) void loadMessages(previousAgentId, true);
       }
     } finally {
       if (currentSwitchVersion === switchVersionRef.current) {
-        setIsLoadingSessions(false);
+        pendingSwitchAgentIdRef.current = null;
+        suppressSessionChangedRef.current = false;
+        setIsLoadingMessages(false);
       }
     }
   }, [findCachedAgent, loadMessages, request]);
@@ -1248,6 +1453,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     if (!project) return false;
     setIsLoadingSessions(true);
     setSessionError('');
+    suppressSessionChangedRef.current = true;
     try {
       const state = await request<SessionState>('/session/new', 'POST', { cwd: project.path, collaborationMode: 'build' });
       activeSessionIdRef.current = state.sessionId || '';
@@ -1263,39 +1469,50 @@ export function useMetisServer(activeProject?: ProjectItem) {
       setSessionError(error instanceof Error ? error.message : String(error));
       setIsLoadingSessions(false);
       return false;
+    } finally {
+      suppressSessionChangedRef.current = false;
     }
   }, [loadProject, request]);
 
   const sendMessage = useCallback(async (text: string, options: SendMessageOptions = {}) => {
+    const wireMessage = cleanPastedText(text);
+    const userText = cleanPastedText(options.displayText ?? text);
     const optimistic: Message = {
       id: `optimistic-user-${Date.now()}`,
       role: 'user',
-      content: options.displayText ?? text,
+      content: userText,
       optimistic: true,
       ...(options.attachments?.length ? { attachments: options.attachments } : {}),
     };
     setMessages((current) => [...current, optimistic]);
     setIsStreaming(true);
-    const promptText = (options.displayText ?? text).trim();
-    if (promptText && activeSessionIdRef.current) {
+    const activeId = activeSessionIdRef.current;
+    if (activeId) {
+      setWorkingSessionIds((current) => applyWorkingSessionIds(current, [activeId], true));
+    }
+    const promptText = userText.trim();
+    if (promptText && activeId) {
       setAgents((current) => current.map((agent) => (
-        agent.id === activeSessionIdRef.current
+        agent.id === activeId
           ? { ...agent, subtitle: promptText }
           : agent
       )));
     }
     try {
       await request('/session/prompt', 'POST', {
-        message: text,
+        message: wireMessage,
         ...(options.images?.length ? { images: options.images } : {}),
         ...(options.workflowAction ? { workflowAction: options.workflowAction } : {}),
       }, 120_000);
-      await loadMessages(activeSessionIdRef.current || undefined);
+      await loadMessages(activeSessionIdRef.current || undefined, true);
       return true;
     } catch (error) {
       setMessages((current) => current.filter((message) => message.id !== optimistic.id));
       setSessionError(error instanceof Error ? error.message : String(error));
       setIsStreaming(false);
+      if (activeId) {
+        setWorkingSessionIds((current) => applyWorkingSessionIds(current, [activeId], false));
+      }
       return false;
     }
   }, [loadMessages, request]);
@@ -1383,6 +1600,24 @@ export function useMetisServer(activeProject?: ProjectItem) {
     else await loadMessages(activeSessionIdRef.current || undefined);
   }, [loadMessages, loadProject]);
 
+  const removeConversation = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    setAgents((current) => {
+      const next = current.filter((agent) => agent.id !== sessionId);
+      return next.length === current.length ? current : next;
+    });
+    setProjectAgentsByPath((current) => {
+      let changed = false;
+      const next: Record<string, Agent[]> = {};
+      for (const [projectPath, list] of Object.entries(current)) {
+        const filtered = list.filter((agent) => agent.id !== sessionId);
+        next[projectPath] = filtered;
+        if (filtered.length !== list.length) changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, []);
+
   const activeAgent = useMemo(
     () => agents.find((agent) => agent.id === activeAgentId) || {
       ...EMPTY_AGENT,
@@ -1463,6 +1698,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     isChangingThinking,
     selectThinkingLevel,
     isStreaming,
+    workingSessionIds,
     isConnected,
     isCompacting,
     collaborationMode,
@@ -1472,6 +1708,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     workflowProposal,
     pendingUserInput,
     isLoadingSessions,
+    isLoadingMessages,
     sessionError,
     memoryState,
     runMemory,
@@ -1479,6 +1716,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     refreshMemory,
     request,
     refresh,
+    removeConversation,
     connectServer,
     selectConversation,
     newConversation,

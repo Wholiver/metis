@@ -1,12 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Agent, CollaborationMode, ContextUsage, MemoryState, Message, ModelOption, PendingUserInput, ProjectItem, SendMessageOptions, ThinkingOption, TokenBreakdown, UserInputResponse, WorkflowPlanState, WorkflowProposalState } from '../../types';
 import { IDLE_COMPOSER_ACTIVITY, reduceComposerActivity } from '../../lib/composer';
+import { formatAgentTitle } from '../../lib/task-agent';
+import { SubagentItem } from '../../lib/subagents';
 import { RateLimitWindow } from '../inspector/UsageQuotaCard';
-import { ChatHeader } from './ChatHeader';
+import { ChatHeader, ChatBreadcrumbSegment } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
 import { SkillCommand } from './SkillPicker';
 import { UserInputCard } from './UserInputCard';
+import { SubagentConversation } from './SubagentConversation';
 
 interface ChatAreaProps {
   agent: Agent;
@@ -54,6 +57,11 @@ interface ChatAreaProps {
   totalTokens?: number;
   quota5h?: RateLimitWindow;
   quota7d?: RateLimitWindow;
+  onOpenSubagent?: (partId: string) => void;
+  viewingSubagent?: SubagentItem | null;
+  subagentTrail?: SubagentItem[];
+  onNavigateBreadcrumb?: (depth: number) => void;
+  onBackToParent?: () => void;
 }
 
 export const ChatArea = React.memo<ChatAreaProps>(({
@@ -102,6 +110,11 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   totalTokens,
   quota5h,
   quota7d,
+  onOpenSubagent,
+  viewingSubagent = null,
+  subagentTrail = [],
+  onNavigateBreadcrumb,
+  onBackToParent,
 }) => {
   const [composerActivity, setComposerActivity] = useState(IDLE_COMPOSER_ACTIVITY);
 
@@ -112,7 +125,7 @@ export const ChatArea = React.memo<ChatAreaProps>(({
     }));
   }, [isStreaming]);
 
-  const handleSendMessage = async (text: string, options?: SendMessageOptions) => {
+  const handleSendMessage = useCallback(async (text: string, options?: SendMessageOptions) => {
     setComposerActivity((current) => reduceComposerActivity(current, { type: 'send-started' }));
     try {
       const result = await onSendMessage(text, options);
@@ -122,14 +135,30 @@ export const ChatArea = React.memo<ChatAreaProps>(({
       setComposerActivity(IDLE_COMPOSER_ACTIVITY);
       throw error;
     }
-  };
+  }, [onSendMessage]);
 
   const showActiveProgress = composerActivity.localTaskPending || isStreaming || Boolean(pendingUserInput);
   const lastMessage = messages[messages.length - 1];
   const workflowPlanInterrupted = !showActiveProgress
     && lastMessage?.role === 'assistant'
     && lastMessage.stopReason === 'aborted';
-  const isHomeEmpty = messages.length === 0 && !isLoading && !showActiveProgress && !pendingUserInput;
+  const isHomeEmpty = messages.length === 0 && !isLoading && !showActiveProgress && !pendingUserInput && !viewingSubagent;
+
+  const breadcrumb = useMemo((): ChatBreadcrumbSegment[] | undefined => {
+    if (!viewingSubagent || subagentTrail.length === 0) return undefined;
+    return [
+      { id: `root:${agent.id}`, label: agent.name, depth: -1 },
+      ...subagentTrail.map((item, index) => ({
+        id: item.id,
+        label: formatAgentTitle(item.role),
+        depth: index,
+      })),
+    ];
+  }, [agent.id, agent.name, subagentTrail, viewingSubagent]);
+
+  const parentLabel = subagentTrail.length > 1
+    ? formatAgentTitle(subagentTrail[subagentTrail.length - 2]!.role)
+    : agent.name;
 
   return (
     <main data-purpose="main-chat" className="flex-1 h-full bg-page flex flex-col min-w-[360px] overflow-hidden relative">
@@ -142,23 +171,50 @@ export const ChatArea = React.memo<ChatAreaProps>(({
         onNewChat={onNewChat}
         memoryState={memoryState}
         onOpenMemorySettings={onOpenMemorySettings}
+        breadcrumb={breadcrumb}
+        onNavigateBreadcrumb={onNavigateBreadcrumb}
       />
-      <MessageList
-        key={agent.id}
-        messages={messages}
-        workspacePath={workspacePath}
-        projectName={projectName}
-        isLoading={isLoading}
-        isStreaming={showActiveProgress}
-        isHomeEmpty={isHomeEmpty}
-        workflowProposal={workflowProposal}
-        onOpenPlan={onOpenPlan}
-        pendingUserInput={pendingUserInput}
-        onSendMessage={handleSendMessage}
-        collaborationMode={collaborationMode}
-        model={activeModel}
-      />
-      {pendingUserInput ? (
+      {viewingSubagent ? (
+        <SubagentConversation
+          key={viewingSubagent.id}
+          subagent={viewingSubagent}
+          onOpenSubagent={onOpenSubagent}
+          collaborationMode={collaborationMode}
+          model={activeModel}
+        />
+      ) : (
+        <MessageList
+          key={agent.id}
+          messages={messages}
+          workspacePath={workspacePath}
+          projectName={projectName}
+          isLoading={isLoading}
+          isStreaming={showActiveProgress}
+          isHomeEmpty={isHomeEmpty}
+          workflowProposal={workflowProposal}
+          onOpenPlan={onOpenPlan}
+          pendingUserInput={pendingUserInput}
+          onSendMessage={handleSendMessage}
+          collaborationMode={collaborationMode}
+          model={activeModel}
+          onOpenSubagent={onOpenSubagent}
+        />
+      )}
+      {viewingSubagent ? (
+        <div
+          className="flex-shrink-0 border-t border-line px-4 py-3 flex items-center justify-center bg-page"
+          data-subagent-composer-bar=""
+        >
+          <button
+            type="button"
+            onClick={onBackToParent}
+            className="rounded-chip px-3 py-1.5 text-[13px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
+            data-back-to-parent=""
+          >
+            Back to {parentLabel}
+          </button>
+        </div>
+      ) : pendingUserInput ? (
         <UserInputCard
           request={pendingUserInput}
           onRespond={onRespondToUserInput}

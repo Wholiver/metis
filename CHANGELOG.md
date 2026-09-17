@@ -4,6 +4,17 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.3.0] - 2026-09-17
+
+### Reliable-headless Default, Desktop Browser & Tool UI Polish
+
+- 移除 `legacy` 执行配置：print/json、TUI、Desktop/server、RPC 与子智能体统一走 `reliable-headless`；`--execution-profile legacy` 仅兼容告警并回落到新配置。
+- 新增宿主侧 `TaskExecutionController` / `runReliableTurn`：对话轮次不再因缺失 oracle 强制失败；仅指令自带验收证据时进入 chat-aware Controller。
+- 恢复根会话 `performance_gate`，保证 Build/Plan G0–G7 前沿推进；named children 仍通过 ChildResult 回传证据。
+- Desktop Inspector 内置浏览器：`browser_*` 工具、`metis-browser` skill，以及本地 Server 与 `METIS_BROWSER_HOST` 的自动重连。
+- 工具卡片对齐 OpenCode 展开样式（写入/编辑 flush diff、终端 transcript、通用输出面板）；工具标题改为自然短词（打开/快照/截图/规划任务等）；终端展开延迟挂载并截断大输出，减轻卡顿。
+- 会话归档、任务芯片 / 子智能体对话视图与 Review Diff 运行时刷新稳定性等桌面端交互修复。
+
 ## [1.2.0] - 2026-09-11
 
 ### Desktop Beautiful UI Redesign, Workspace Review & Performance Admission

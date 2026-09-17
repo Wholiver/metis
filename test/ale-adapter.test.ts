@@ -48,6 +48,8 @@ describe("ALE-CLI Benchmark Adapter and Runner Suite", () => {
 			expect(adapterContent).toContain("--output-final-answer");
 			expect(adapterContent).toContain("--no-session");
 			expect(adapterContent).toContain("--mode");
+			expect(adapterContent).toContain("--execution-profile");
+			expect(adapterContent).toContain("METIS_TASK_INPUT");
 			expect(adapterContent).toContain("trace_summary");
 		});
 

@@ -252,6 +252,10 @@ describe("server mode", () => {
 		expect(spec.paths).toHaveProperty("/session/user-input/{requestId}");
 		expect(spec.paths).toHaveProperty("/config/providers");
 		expect(spec.paths).toHaveProperty("/session/model");
+		expect(spec.paths["/session"]).toEqual(expect.objectContaining({
+			get: expect.anything(),
+			delete: expect.anything(),
+		}));
 
 		const expiredInput = await fetch(`${handle.address.url}/session/user-input/missing`, {
 			method: "POST",
@@ -695,6 +699,45 @@ describe("server mode", () => {
 		expect(fixture.runtime.importFromJsonl).toHaveBeenCalledWith(jsonlPath);
 		expect((await command("/reload")).status).toBe(200);
 		expect(fixture.session.reload).toHaveBeenCalledOnce();
+	});
+
+	test("deletes non-active session files and rejects active session deletion", async () => {
+		const { mkdtempSync, writeFileSync, existsSync } = await import("node:fs");
+		const { tmpdir } = await import("node:os");
+		const { join } = await import("node:path");
+		const dir = mkdtempSync(join(tmpdir(), "metis-session-delete-"));
+		const activePath = join(dir, "active.jsonl");
+		const otherPath = join(dir, "other.jsonl");
+		writeFileSync(activePath, '{"type":"session","id":"active"}\n');
+		writeFileSync(otherPath, '{"type":"session","id":"other"}\n');
+
+		const fixture = createRuntimeFixture();
+		fixture.session.sessionFile = activePath;
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+
+		const missing = await fetch(`${handle.address.url}/session`, {
+			method: "DELETE",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(missing.status).toBe(400);
+
+		const active = await fetch(`${handle.address.url}/session`, {
+			method: "DELETE",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ sessionPath: activePath }),
+		});
+		expect(active.status).toBe(409);
+		expect(existsSync(activePath)).toBe(true);
+
+		const deleted = await fetch(`${handle.address.url}/session`, {
+			method: "DELETE",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ sessionPath: otherPath }),
+		});
+		expect(deleted.status).toBe(200);
+		expect(await deleted.json()).toMatchObject({ success: true, sessionPath: otherPath });
+		expect(existsSync(otherPath)).toBe(false);
 	});
 
 	test("starts title generation before dispatching the first Desktop prompt", async () => {

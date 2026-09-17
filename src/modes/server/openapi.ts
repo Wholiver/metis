@@ -63,7 +63,10 @@ export function createServerOpenApiDocument() {
 					},
 				},
 			},
-			"/session": { get: operation("Current session state", 200, json) },
+			"/session": {
+				get: operation("Current session state", 200, json),
+				delete: bodyOperation("Permanently delete a session file", json, 200, json),
+			},
 			"/sessions": { get: operation("List sessions for a workspace", 200, json) },
 			"/session/messages": { get: operation("Current messages", 200, json) },
 			"/session/entries": { get: operation("Persisted session entries", 200, json) },

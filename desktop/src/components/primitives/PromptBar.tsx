@@ -22,6 +22,7 @@ import { CollaborationMode, ModelOption } from "../../types";
 import { SkillCommand } from "../chat/SkillPicker";
 import { MessageAttachment } from "../../types";
 import { useI18n } from "../../i18n";
+import { cleanPastedText } from "../../lib/composer";
 
 /* The built-in "prism" palette is only cyan→indigo→magenta, so a sweep
  * reads as blue/purple. Build a true full-spectrum rainbow instead. */
@@ -692,9 +693,29 @@ export default function PromptBar({
               disabled={disabled}
               data-composer-input=""
               onChange={(event) => {
-                setDraft(event.target.value);
+                const nextVal = cleanPastedText(event.target.value);
+                setDraft(nextVal);
                 setDismissed(false);
                 setPlusOpen(false);
+              }}
+              onPaste={(event) => {
+                inputProps?.onPaste?.(event);
+                if (event.defaultPrevented) return;
+                const rawText = event.clipboardData?.getData("text/plain");
+                if (rawText) {
+                  const cleaned = cleanPastedText(rawText);
+                  if (cleaned !== rawText) {
+                    event.preventDefault();
+                    const target = event.currentTarget;
+                    const start = target.selectionStart ?? target.value.length;
+                    const end = target.selectionEnd ?? target.value.length;
+                    const next = target.value.slice(0, start) + cleaned + target.value.slice(end);
+                    setDraft(next);
+                    requestAnimationFrame(() => {
+                      target.setSelectionRange(start + cleaned.length, start + cleaned.length);
+                    });
+                  }
+                }
               }}
               onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
                 inputProps?.onKeyDown?.(event);
