@@ -4,43 +4,49 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+### Cursor SDK Provider
+
+- Replace Antigravity OAuth with a built-in Cursor SDK provider: choose Cursor in `/login` and paste a Cursor SDK API key (or set `CURSOR_API_KEY`) to use `cursor/*` models.
+- Load Pi packages compatibly: recognize a `package.json` `pi` manifest and resolve `@earendil-works/pi-*` to the corresponding Metis packages.
+
 ## [1.3.1] - 2026-09-18
 
 ### Packaged Desktop Fix & Tool Runtime Polish
 
-- 修复打包版 Desktop 启动崩溃：`main.cjs` 依赖的 `browser-host.cjs` 未打进 asar，打开应用报 `Cannot find module './browser-host.cjs'`。
-- SDK/会话默认工具补回 `grep` / `ls`；named 子智能体不再因性能运行环境误开 `performance_gate`。
-- `update_plan` 兼容 done/complete/in-progress 等状态别名；嵌套子智能体 bash 默认超时，避免无界命令卡住。
-- Desktop Inspector 在模型控制浏览器时显示 shine 边框；工具卡片、命令分组与会话标题（含 thinking 文本）更稳。
+- Fix a packaged Desktop launch crash: `main.cjs` required `browser-host.cjs`, which was missing from the asar, so opening the app failed with `Cannot find module './browser-host.cjs'`.
+- Restore `grep` / `ls` in the default SDK/session tool set; named child agents no longer incorrectly enable `performance_gate` from the performance-run environment.
+- `update_plan` accepts status aliases such as done/complete/in-progress; nested subagent bash commands now default to a timeout so unbounded commands cannot hang.
+- Desktop Inspector shows a shine border while the model controls the browser; tool cards, command grouping, and session titles (including thinking text) are more stable.
 
 ## [1.3.0] - 2026-09-17
 
 ### Reliable-headless Default, Desktop Browser & Tool UI Polish
 
-- 移除 `legacy` 执行配置：print/json、TUI、Desktop/server、RPC 与子智能体统一走 `reliable-headless`；`--execution-profile legacy` 仅兼容告警并回落到新配置。
-- 新增宿主侧 `TaskExecutionController` / `runReliableTurn`：对话轮次不再因缺失 oracle 强制失败；仅指令自带验收证据时进入 chat-aware Controller。
-- 恢复根会话 `performance_gate`，保证 Build/Plan G0–G7 前沿推进；named children 仍通过 ChildResult 回传证据。
-- Desktop Inspector 内置浏览器：`browser_*` 工具、`metis-browser` skill，以及本地 Server 与 `METIS_BROWSER_HOST` 的自动重连。
-- 工具卡片对齐 OpenCode 展开样式（写入/编辑 flush diff、终端 transcript、通用输出面板）；工具标题改为自然短词（打开/快照/截图/规划任务等）；终端展开延迟挂载并截断大输出，减轻卡顿。
-- 会话归档、任务芯片 / 子智能体对话视图与 Review Diff 运行时刷新稳定性等桌面端交互修复。
+- Remove the `legacy` execution profile: print/json, TUI, Desktop/server, RPC, and child agents all use `reliable-headless`; `--execution-profile legacy` is a compatibility warning and remaps to the new profile.
+- Add host-side `TaskExecutionController` / `runReliableTurn`: conversational turns no longer fail solely because an oracle is missing; chat-aware Controller entry requires instruction-owned acceptance evidence.
+- Restore root-session `performance_gate` so Build/Plan G0–G7 frontier advancement works; named children still report evidence via ChildResult.
+- Desktop Inspector embeds a browser: `browser_*` tools, the `metis-browser` skill, and automatic reconnect between the local Server and `METIS_BROWSER_HOST`.
+- Align tool cards with the OpenCode expanded layout (write/edit flush diffs, terminal transcripts, generic output panels); use short natural titles (open/snapshot/screenshot/plan task, and so on); delay-mount terminal expansion and truncate large output to reduce stutter.
+- Desktop interaction fixes for session archive, task chips / subagent conversation views, and Review Diff runtime refresh stability.
 
 ## [1.2.0] - 2026-09-11
 
 ### Desktop Beautiful UI Redesign, Workspace Review & Performance Admission
 
-- 全新桌面端设计重构（Beautiful UI）：引入完整 Design Tokens、原子组件体系（shadcn/ui）、平滑排版与 Inter Variable 字体。
-- 新增工作区代码变更审查中心（Workspace Review Panel）：支持侧边栏文件树过滤、精准 Diff 对比高亮与一键 Git 提交变更。
-- 引入 Performance Admission 机制与全新 `performance_admit` 工具，加固自主规划决策与执行准入。
-- 优化消息流式渐进呈现（PacedMarkdown）、智能自动滚屏（useAutoScroll）与全新交互动效。
+- Rebuild the Desktop UI (Beautiful UI) with a full design-token system, atomic components (shadcn/ui), refined typography, and Inter Variable.
+- Add a workspace change review center (Workspace Review Panel) with sidebar file-tree filtering, precise diff highlighting, and one-click Git commits.
+- Introduce Performance Admission and the `performance_admit` tool to harden autonomous planning decisions and execution gating.
+- Improve streamed message pacing (PacedMarkdown), smart auto-scroll (`useAutoScroll`), and interaction motion.
+- Refine the onboarding brand logo, thinking-chain placement, and system status indicator motion.
 
 ## [1.1.15] - 2026-09-06
 
 ### Compaction Optimization & Desktop Interaction Refinement
 
-- 精简上下文压缩输入：默认剔除冗余思维链（Thinking Blocks）并递归截断巨型工具调用参数，防止上下文膨胀。
-- 校准多语言 Token 估算：针对中文/CJK 字符引入加权计算，大幅提升会话压缩触发与上下文计算准确度。
-- 修复总结模型思考超额截断与桌面端压缩记录静默丢失问题。
-- 全面优化桌面端交互细节（主题响应式钩子 useSystemTheme、侧边栏、工具卡片及设置弹窗交互）。
+- Slim compaction input: drop redundant thinking blocks by default and recursively truncate huge tool-call arguments to prevent context bloat.
+- Recalibrate multilingual token estimates with CJK weighting, improving compaction triggers and context accounting.
+- Fix summary-model thinking over-truncation and silent loss of Desktop compaction records.
+- Polish Desktop interaction details (theme-responsive `useSystemTheme` hook, sidebar, tool cards, and settings dialog).
 
 ## [1.1.14] - 2026-09-05
 
