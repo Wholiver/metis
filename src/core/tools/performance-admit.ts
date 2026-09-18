@@ -4,13 +4,24 @@ import type { PerformanceAdmission, PerformanceRunState } from "../performance-r
 import type { ToolDefinition } from "../extensions/types.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
+function stringEnum<T extends readonly string[]>(values: T, description: string) {
+	return Type.Unsafe<T[number]>({
+		type: "string",
+		enum: [...values],
+		description,
+	});
+}
+
 const nonEmptyStrings = (description: string) => Type.Array(Type.String({ minLength: 1 }), { minItems: 1, description });
-const frameworkIds = listPerformanceFrameworks().map((framework) => Type.Literal(framework.id));
+const FRAMEWORK_IDS = listPerformanceFrameworks().map((framework) => framework.id);
 
 const admissionLaneSchema = Type.Object({
 	id: Type.String({ minLength: 1, description: "Stable lane identifier" }),
 	objective: Type.String({ minLength: 1, description: "Concrete lane objective" }),
-	framework: Type.Union(frameworkIds, { description: "Existing native framework id" }),
+	framework: stringEnum(
+		FRAMEWORK_IDS as [string, ...string[]],
+		"Native framework id. Enumerated on this field. Do not search the workspace for values. README / markdown docs use docs; a fully specified one-shot artifact uses apply.",
+	),
 	ownedPaths: nonEmptyStrings("Exact files or directory roots owned by this lane"),
 	deliverables: nonEmptyStrings("Observable lane deliverables"),
 	acceptanceCriteria: nonEmptyStrings("Falsifiable lane acceptance criteria"),
@@ -19,8 +30,11 @@ const admissionLaneSchema = Type.Object({
 });
 
 export const performanceAdmitSchema = Type.Object({
-	tier: Type.Union([Type.Literal("T0"), Type.Literal("T1"), Type.Literal("T2"), Type.Literal("T3")]),
-	taskShape: Type.Union([Type.Literal("bounded"), Type.Literal("sequential-complex"), Type.Literal("parallel")]),
+	tier: stringEnum(["T0", "T1", "T2", "T3"], "T0 for a single bounded artifact such as a README. Do not invent other tier names."),
+	taskShape: stringEnum(
+		["bounded", "sequential-complex", "parallel"],
+		"bounded for one-shot artifacts; sequential-complex for ordered multi-step work; parallel only for disjoint lanes. Never discrete, generic, or custom.",
+	),
 	deliverables: nonEmptyStrings("Task-level observable deliverables"),
 	acceptanceCriteria: nonEmptyStrings("Task-level falsifiable acceptance criteria"),
 	verificationCommands: nonEmptyStrings("Task-level real verification commands"),
@@ -38,13 +52,16 @@ export interface PerformanceAdmitToolOptions {
 function routeProtocol(state: PerformanceRunState): string {
 	const tier = state.admission?.tier;
 	const route = tier === "T0"
-		? "root performs implementation and verification; spawn_agent forbidden"
+		? "root performs implementation, independent checks, then G4; spawn_agent forbidden"
 		: tier === "T1"
 			? "root performs G4; dispatch fresh G5 reviewer and G6 verifier in shared integrated cwd"
 			: tier === "T2"
 				? "execute dependency-ordered lanes serially in shared cwd; conditional G1, then G5/G6, one G7 juror, goal-check"
 				: "parallelize only admitted disjoint implementation lanes; integrate before G5/G6/G7/sweep/goal-check";
-	return `route protocol: ${route}. Canonical state: ${state.governanceRoot}/run.json; ROADMAP.md is a deterministic projection.`;
+	const coerced = state.admission?.tierCoercedFrom
+		? ` Coerced from ${state.admission.tierCoercedFrom} to T0 for single-lane artifact apply/docs/polish.`
+		: "";
+	return `route protocol: ${route}.${coerced} Canonical state: ${state.governanceRoot}/run.json; ROADMAP.md is a deterministic projection.`;
 }
 
 /** Deep admission seam: validates route once, then returns compact current-turn context. */
@@ -58,6 +75,9 @@ export function createPerformanceAdmitToolDefinition(
 		promptSnippet: "Admit and route a Build task before any mutating, execution, planning, or subagent tool",
 		capabilities: { effect: "write", parallelSafe: false },
 		parameters: performanceAdmitSchema,
+		promptGuidelines: [
+			"Do not grep, read, or query memory/session logs to discover performance_admit values. taskShape is bounded, sequential-complex, or parallel. framework is a native id such as docs, apply, polish, or backend-fix. Creating a README is T0 + bounded + one docs lane; after admit, write the file.",
+		],
 		executionMode: "sequential",
 		execute: async (_id, input) => {
 			if (!options.admit) throw new Error("performance_admit is unavailable in this runtime.");

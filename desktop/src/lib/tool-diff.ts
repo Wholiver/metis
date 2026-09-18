@@ -193,7 +193,7 @@ export type ToolExpandedView =
   | { kind: 'bash'; command: string; text: string }
   | { kind: 'output'; text: string; format: 'markdown' | 'pre' | 'search'; links?: string[] };
 
-function isShellTool(name: string): boolean {
+export function isShellTool(name: string): boolean {
   const normalized = name.toLowerCase();
   return normalized === 'bash'
     || normalized === 'exec'
@@ -213,6 +213,36 @@ function stripAnsi(value: string): string {
 /** Keep expanded shell/pre output cheap to layout; copy still uses the full string. */
 export const TOOL_TRANSCRIPT_LINE_LIMIT = 80;
 export const TOOL_TRANSCRIPT_CHAR_LIMIT = 8_000;
+export const TOOL_TRIGGER_TEXT_LIMIT = 96;
+export const TOOL_TRIGGER_ARG_LIMIT = 48;
+
+const HEAVY_TOOL_ARG_KEYS = new Set([
+  'content',
+  'oldText',
+  'newText',
+  'old_string',
+  'new_string',
+  'OldString',
+  'NewString',
+  'patch',
+  'diff',
+  'file_text',
+  'CodeContent',
+  'code_content',
+  'edits',
+]);
+
+export function isHeavyToolArgKey(key: string): boolean {
+  return HEAVY_TOOL_ARG_KEYS.has(key);
+}
+
+/** Collapse heredocs and long paths so collapsed tool rows stay cheap to layout. */
+export function clipToolTriggerText(value: string, limit = TOOL_TRIGGER_TEXT_LIMIT): string {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  if (normalized.length <= limit) return normalized;
+  return `${normalized.slice(0, Math.max(1, limit - 1)).trimEnd()}…`;
+}
 
 export function clipToolTranscript(
   text: string,
@@ -247,7 +277,8 @@ export function extractOutputUrls(text: string): string[] {
 function outputFormat(name: string, text: string): 'markdown' | 'pre' | 'search' {
   if (isWebSearchTool(name)) return 'search';
   const normalized = name.toLowerCase();
-  if (normalized === 'log' || normalized === 'video') return 'pre';
+  if (normalized === 'log' || normalized === 'video' || normalized.startsWith('browser_')) return 'pre';
+  if (text.length > TOOL_TRANSCRIPT_CHAR_LIMIT) return 'pre';
   const trimmed = text.trim();
   if (
     (trimmed.startsWith('{') && trimmed.endsWith('}'))
@@ -256,6 +287,46 @@ function outputFormat(name: string, text: string): 'markdown' | 'pre' | 'search'
     return 'pre';
   }
   return 'markdown';
+}
+
+function hasResultText(part: ToolPart): boolean {
+  const content = part.result?.content;
+  if (typeof content === 'string') return content.length > 0;
+  return content != null;
+}
+
+/** Cheap collapsed-row check — do not parse diffs or concatenate transcripts. */
+export function toolHasExpandableDetails(part: ToolPart): boolean {
+  if (isShellTool(part.name)) {
+    const args = asArgs(part.arguments);
+    return Boolean(asString(args.command) ?? asString(args.cmd)) || hasResultText(part);
+  }
+  if (isFileMutationTool(part.name) && !part.result?.isError) {
+    const args = asArgs(part.arguments);
+    if (!filePathFromArgs(args)) return hasResultText(part);
+    const name = part.name.toLowerCase();
+    if (name === 'write' || /write_to_file|create_file/.test(name)) {
+      return Boolean(
+        asString(args.content)
+        ?? asString(args.CodeContent)
+        ?? asString(args.code_content)
+        ?? asString(args.file_text)
+      ) || hasResultText(part);
+    }
+    return Boolean(
+      asString(args.patch)
+      ?? asString(args.diff)
+      ?? asString(args.oldText)
+      ?? asString(args.newText)
+    ) || Array.isArray(args.edits) || hasResultText(part);
+  }
+  return hasResultText(part);
+}
+
+export function toolKindHint(part: ToolPart): string | undefined {
+  if (isShellTool(part.name)) return 'bash';
+  if (isFileMutationTool(part.name)) return 'file-diff';
+  return undefined;
 }
 
 export function buildToolExpandedView(

@@ -15,6 +15,7 @@ import {
 	loadAgentsFromDir,
 	parseAgentDefinition,
 	resolveAgentConfig,
+	sessionToolsForNamedAgent,
 	validateAgentDescription,
 	validateAgentName,
 	DefaultResourceLoader,
@@ -432,6 +433,34 @@ Custom prompt.
 
 		const { agents } = loader.getAgents();
 		expect(agents.length).toBe(0);
+	});
+});
+
+describe("named child performance_gate ownership", () => {
+	it("strips performance_gate from resolved named agents even when the parent allowlist includes it", () => {
+		const resolved = resolveAgentConfig({
+			agent: BUILTIN_IMPLEMENTER,
+			parentConfig: {
+				tools: [...(BUILTIN_IMPLEMENTER.tools ?? []), "performance_gate", "write"],
+			},
+		});
+		expect(resolved.tools ?? []).not.toContain("performance_gate");
+		expect(resolved.systemPrompt).toContain("ChildResult");
+		expect(resolved.systemPrompt).not.toContain("call the `performance_gate` tool");
+	});
+
+	it("does not restore performance_gate when a Performance run id is present", () => {
+		const stripped = ["read", "write", "bash"];
+		const restored = sessionToolsForNamedAgent(stripped, { METIS_PERFORMANCE_RUN_ID: "perf-001" });
+		expect(restored).toEqual(stripped);
+		expect(sessionToolsForNamedAgent(["read", "performance_gate"], { METIS_PERFORMANCE_RUN_ID: "perf-001" })).toEqual(["read"]);
+	});
+
+	it("keeps main.ts from re-adding performance_gate to named children", () => {
+		const mainSource = fs.readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
+		expect(mainSource).toContain("sessionToolsForNamedAgent");
+		expect(mainSource).not.toMatch(/\[\.\.\.resolvedConfig\.tools,\s*["']performance_gate["']\]/);
+		expect(mainSource).not.toMatch(/METIS_PERFORMANCE_RUN_ID[\s\S]{0,240}performance_gate/);
 	});
 });
 

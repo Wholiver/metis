@@ -81,6 +81,11 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 			ipcRenderer.on("browser:host-select-tab", handler);
 			return () => ipcRenderer.removeListener("browser:host-select-tab", handler);
 		},
+		onBusy: (listener) => {
+			const handler = (_event, payload) => listener(payload);
+			ipcRenderer.on("browser:host-busy", handler);
+			return () => ipcRenderer.removeListener("browser:host-busy", handler);
+		},
 	},
 });
 

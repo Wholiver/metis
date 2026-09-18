@@ -153,6 +153,37 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(payload.outcome).toBe(expected === "invalid" ? "invalid" : "fail");
 	});
 
+	it("does not let a completed ChildResult override a fail gate", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-fail-closed-"));
+		tempDirs.push(tempDir);
+		const definition = createSpawnAgentToolDefinition(tempDir);
+		const execution = definition.execute(
+			"fail-closed",
+			{ agent: "implementer", task: "Implement", laneId: "lane-a", gate: "G4" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+		await vi.waitFor(() => expect(mockChild.stdout.listenerCount("data")).toBeGreaterThan(0));
+		const failGate = JSON.stringify({
+			type: "tool_execution_end",
+			toolName: "performance_gate",
+			result: {
+				reports: [{ gate: "G4", verdict: "fail", itemId: "lane-a", evidence: "artifacts/g4.md" }],
+			},
+		});
+		mockChild.stdout.emit("data", Buffer.from(`${failGate}\n${childResultLine("looks complete", "completed")}`));
+		mockChild.emit("close", 0);
+		const result = await execution;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload.status).toBe("error");
+		expect(payload.outcome).toBe("fail");
+		expect(payload.error).toContain("fail-closed");
+		expect(payload.childResult?.status).toBe("completed");
+	});
+
 	it("parses CLI flags for agent, depth, parent-id, root-run-id, and context", () => {
 		const parsed = parseArgs([
 			"--agent",

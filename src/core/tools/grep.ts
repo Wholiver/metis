@@ -130,6 +130,8 @@ export function createGrepToolDefinition(
 		label: "grep",
 		description: `Search contents; return matching lines with paths+line numbers; respect .gitignore. Prefer searching within specific subdirectories or relative paths (e.g. '.', 'src/') rather than broad parent/root directories. Truncates at ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first; lines at ${GREP_MAX_LINE_LENGTH} chars.`,
 		promptSnippet: "Search file contents for patterns (prefer relative/subdirectories, respects .gitignore)",
+		promptGuidelines: ["Search file contents with grep, not bash. Do not use grep to list a directory; use ls."],
+		capabilities: { effect: "read", parallelSafe: true },
 		parameters: grepSchema,
 		async execute(
 			_toolCallId,

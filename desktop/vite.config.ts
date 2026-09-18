@@ -8,7 +8,7 @@ export default defineConfig({
   root: '.',
   build: {
     outDir: 'renderer',
-    emptyOutDir: true,
+    emptyOutDir: false,
     target: 'esnext',
   },
   resolve: {

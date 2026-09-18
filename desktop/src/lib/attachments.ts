@@ -4,6 +4,7 @@ import {
   MessageAttachmentKind,
 } from '../types';
 import { cleanPastedText } from './composer';
+import { revealPromptForDisplay } from './prompt-rewrite';
 
 export const MAX_INLINE_TEXT_BYTES = 1024 * 1024;
 export const MAX_INLINE_IMAGE_BYTES = 7 * 1024 * 1024;
@@ -197,7 +198,7 @@ export function normalizeUserMessageForDisplay(
 ): { text: string; attachments: MessageAttachment[] } {
   const parsed = parseAttachmentPayloadText(content || '');
   return {
-    text: cleanPastedText(parsed.text),
+    text: revealPromptForDisplay(cleanPastedText(parsed.text)),
     attachments: mergeMessageAttachments(attachments, parsed.attachments),
   };
 }

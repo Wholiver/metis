@@ -118,11 +118,17 @@ describe("AgentSession dynamic tool registration", () => {
 		expect(session.getActiveToolNames()).not.toContain("user_intent");
 		expect(session.getAllTools().map((tool) => tool.name)).toContain("user_intent");
 		expect(session.getActiveToolNames()).not.toContain("remember_user_intent");
-		expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["ask_user", "read_plan", "query_memory_db", "update_plan"]));
+		expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["ask_user", "read", "grep", "ls", "read_plan", "query_memory_db", "update_plan"]));
 		expect(session.getAllTools().map((tool) => tool.name)).toContain("remember_user_intent");
 		expect(session.systemPrompt).toContain("When you need prior knowledge, conventions, or project rules, first inspect ~/.metis/memories/memory-map.md");
+		expect(session.systemPrompt).toContain("- grep:");
+		expect(session.systemPrompt).toContain("- ls:");
 		session.setCollaborationMode("plan");
 		expect(session.getActiveToolNames()).toContain("query_memory_db");
+		expect(session.getActiveToolNames()).toContain("grep");
+		expect(session.getActiveToolNames()).toContain("ls");
+		expect(session.getActiveToolNames()).toContain("read");
+		expect(session.getActiveToolNames()).not.toContain("write");
 		session.dispose();
 	});
 

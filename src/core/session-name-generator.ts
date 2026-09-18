@@ -31,6 +31,21 @@ function getMessageText(message: AgentMessage): string {
 		.join(" ");
 }
 
+/** Prefer visible text; Gemini OAuth title calls often put the name in thinking only. */
+export function sessionNameTextFromAssistantContent(
+	content: Array<{ type: string; text?: string; thinking?: string }>,
+): string {
+	const texts: string[] = [];
+	const thoughts: string[] = [];
+	for (const part of content) {
+		if (part.type === "text" && typeof part.text === "string" && part.text.trim()) texts.push(part.text);
+		if (part.type === "thinking" && typeof part.thinking === "string" && part.thinking.trim()) {
+			thoughts.push(part.thinking);
+		}
+	}
+	return (texts.join("\n") || thoughts.join("\n")).trim();
+}
+
 /** Strip Chinese Chromium/macOS accessibility list markers ("第 … 项/項") from titles. */
 export function stripAccessibilityListWrapper(value: string): string {
 	const sanitized = value.replace(/[\u200B-\u200D\uFEFF\u2060\u200E\u200F]/g, "").trim();
@@ -139,11 +154,6 @@ export async function generateSessionName(options: GenerateSessionNameOptions): 
 		throw new Error(response.errorMessage || "Session name generation failed");
 	}
 
-	return sanitizeGeneratedSessionName(
-		response.content
-			.filter((part): part is { type: "text"; text: string } => part.type === "text")
-			.map((part) => part.text)
-			.join("\n"),
-	);
+	return sanitizeGeneratedSessionName(sessionNameTextFromAssistantContent(response.content));
 }
 

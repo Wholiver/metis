@@ -18,6 +18,8 @@ export interface BasicToolProps {
   children?: React.ReactNode;
   status?: string;
   hideDetails?: boolean;
+  /** Keep the expand chevron without mounting details until the row is opened. */
+  hasDetails?: boolean;
   defaultOpen?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -38,6 +40,7 @@ export function BasicTool({
   children,
   status,
   hideDetails = false,
+  hasDetails = false,
   defaultOpen = false,
   open: openProp,
   onOpenChange,
@@ -49,9 +52,9 @@ export function BasicTool({
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
   const open = openProp ?? uncontrolledOpen;
   const pending = status === 'pending' || status === 'running';
-  const hasChildren = children != null && children !== false;
+  const hasChildren = hasDetails || (children != null && children !== false);
   const showArrow = hasChildren && !hideDetails && (!pending || allowOpenWhilePending);
-  const mountDetails = hasChildren && !hideDetails && (open || !defer);
+  const mountDetails = hasChildren && !hideDetails && (open || !defer) && children != null && children !== false;
 
   const setOpen = (value: boolean) => {
     if (openProp === undefined) setUncontrolledOpen(value);
@@ -91,7 +94,9 @@ export function BasicTool({
                 <div data-slot="basic-tool-tool-info-structured">
                   <div data-slot="basic-tool-tool-info-main">
                     <span data-slot="basic-tool-tool-title" data-i18n-skip="" className={titleTrigger.titleClass}>
-                      <TextShimmer text={titleTrigger.title} active={pending} />
+                      {pending ? (
+                        <TextShimmer text={titleTrigger.title} active />
+                      ) : titleTrigger.title}
                     </span>
                     {(!pending || titleTrigger.subtitle || titleTrigger.args?.length) && (
                       <>

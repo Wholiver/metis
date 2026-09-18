@@ -82,6 +82,181 @@ function resolveNavigateUrl(raw, workspaceRoot) {
 	return { url: pathToFileURL(absolute).href, filePath: absolute };
 }
 
+const GUEST_LOAD_TIMEOUT_MS = 12_000;
+const SCREENSHOT_TIMEOUT_MS = 8_000;
+const PAINT_WAIT_TIMEOUT_MS = 2_000;
+const SVG_CROP_SCRIPT = String.raw`(() => {
+  const svg = document.querySelector('svg');
+  if (!svg) return null;
+  const rect = svg.getBoundingClientRect();
+  const base = svg.viewBox && svg.viewBox.baseVal;
+  let viewBox = null;
+  if (base && Number(base.width) > 0 && Number(base.height) > 0) {
+    viewBox = { width: Number(base.width), height: Number(base.height) };
+  } else {
+    const attr = svg.getAttribute('viewBox');
+    if (attr) {
+      const parts = attr.trim().split(/[\s,]+/).map(Number);
+      if (parts.length >= 4 && parts[2] > 0 && parts[3] > 0) {
+        viewBox = { width: parts[2], height: parts[3] };
+      }
+    }
+  }
+  return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, viewBox };
+})()`;
+
+function isStubFn(fn) {
+	return typeof fn === "function" && Boolean(fn.mock || fn._isMockFunction);
+}
+
+function canSubscribeGuestLoad(guest) {
+	return typeof guest?.once === "function" && typeof guest?.removeListener === "function" && !isStubFn(guest.once);
+}
+
+function withTimeout(promise, timeoutMs, message) {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+		Promise.resolve(promise).then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
+}
+
+function displayUrl(url) {
+	try {
+		const parsed = new URL(String(url || ""));
+		if (parsed.searchParams.has("metisReload")) {
+			parsed.searchParams.delete("metisReload");
+			return parsed.href;
+		}
+	} catch {
+		// keep original
+	}
+	return String(url || "");
+}
+
+function withFileReloadToken(url) {
+	const parsed = new URL(url);
+	parsed.searchParams.set("metisReload", `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+	return parsed.href;
+}
+
+function resolveLoadUrl(targetUrl) {
+	if (!isFileUrl(targetUrl)) return targetUrl;
+	return withFileReloadToken(targetUrl);
+}
+
+/**
+ * Crop black letterboxing created by SVG viewBox + width/height 100% inside a taller webview.
+ */
+function computeSvgContentRect(viewport, viewBox) {
+	const x = Number(viewport?.x);
+	const y = Number(viewport?.y);
+	const width = Number(viewport?.width);
+	const height = Number(viewport?.height);
+	if (!Number.isFinite(width) || !Number.isFinite(height) || width < 8 || height < 8) return null;
+	const originX = Number.isFinite(x) ? x : 0;
+	const originY = Number.isFinite(y) ? y : 0;
+	const vbW = Number(viewBox?.width);
+	const vbH = Number(viewBox?.height);
+	let outX = originX;
+	let outY = originY;
+	let outW = width;
+	let outH = height;
+	if (Number.isFinite(vbW) && Number.isFinite(vbH) && vbW > 0 && vbH > 0) {
+		const vbAspect = vbW / vbH;
+		const elAspect = width / height;
+		if (elAspect > vbAspect + 0.02) {
+			outW = height * vbAspect;
+			outX = originX + (width - outW) / 2;
+		} else if (vbAspect > elAspect + 0.02) {
+			outH = width / vbAspect;
+			outY = originY + (height - outH) / 2;
+		}
+	}
+	return {
+		x: Math.max(0, Math.round(outX)),
+		y: Math.max(0, Math.round(outY)),
+		width: Math.max(1, Math.round(outW)),
+		height: Math.max(1, Math.round(outH)),
+	};
+}
+
+async function waitForTwoAnimationFrames(guest) {
+	if (typeof guest?.executeJavaScript !== "function") return;
+	try {
+		await withTimeout(
+			guest.executeJavaScript(
+				"new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))",
+				true,
+			),
+			PAINT_WAIT_TIMEOUT_MS,
+			"Timed out waiting for Inspector browser paint",
+		);
+	} catch {
+		// Paint wait is best-effort; screenshots still proceed.
+	}
+}
+
+async function waitForGuestLoad(guest, timeoutMs = GUEST_LOAD_TIMEOUT_MS) {
+	if (!canSubscribeGuestLoad(guest)) {
+		await waitForTwoAnimationFrames(guest);
+		return;
+	}
+	await new Promise((resolve) => {
+		let settled = false;
+		const done = () => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			guest.removeListener("did-finish-load", onFinish);
+			guest.removeListener("did-fail-load", onFail);
+			resolve();
+		};
+		const onFinish = () => done();
+		const onFail = (_event, _code, _desc, _url, isMainFrame) => {
+			if (isMainFrame === false) return;
+			done();
+		};
+		const timer = setTimeout(done, timeoutMs);
+		guest.once("did-finish-load", onFinish);
+		guest.once("did-fail-load", onFail);
+	});
+	await waitForTwoAnimationFrames(guest);
+}
+
+async function navigateGuest(guest, loadUrl) {
+	const pendingLoad = canSubscribeGuestLoad(guest) ? waitForGuestLoad(guest) : undefined;
+	try {
+		if (typeof guest.loadURL === "function") {
+			await guest.loadURL(loadUrl);
+		}
+	} catch {
+		// Renderer may already be navigating via tab state; wait for load below.
+	}
+	if (pendingLoad) {
+		await pendingLoad;
+	} else {
+		await waitForTwoAnimationFrames(guest);
+	}
+}
+
+function guestPageMeta(guest, fallback = {}) {
+	const rawUrl = (typeof guest.getURL === "function" && guest.getURL()) || fallback.url || "";
+	const title = (typeof guest.getTitle === "function" && guest.getTitle()) || fallback.title || "Browser";
+	return {
+		url: displayUrl(rawUrl) || fallback.url || "",
+		title: title || "Browser",
+	};
+}
+
 function createBrowserHostController(options = {}) {
 	const getMainWindow = typeof options.getMainWindow === "function" ? options.getMainWindow : () => undefined;
 	const getWorkspaceRoot =
@@ -93,6 +268,7 @@ function createBrowserHostController(options = {}) {
 	const guestsById = new Map();
 	/** @type {Map<string, { resolve: Function, reject: Function, timer: NodeJS.Timeout }>} */
 	const pendingBinds = new Map();
+	let busyCount = 0;
 	let activeTabId = null;
 	let server = null;
 	let baseUrl = "";
@@ -179,8 +355,24 @@ function createBrowserHostController(options = {}) {
 		win.webContents.send(channel, payload);
 	}
 
+	function notifyHostBusy() {
+		try {
+			sendToRenderer("browser:host-busy", { busy: busyCount > 0 });
+		} catch {
+			// Renderer window may not exist yet in tests or early startup.
+		}
+	}
+
+	function tracksBrowserControl(command) {
+		if (command.op === "tabs" && (command.action === "list" || command.action === "select")) {
+			return false;
+		}
+		return true;
+	}
+
 	async function ensureBrowserTab({ url, newTab, tabId }) {
 		const targetUrl = url || "about:blank";
+		const loadUrl = resolveLoadUrl(targetUrl);
 		if (!newTab) {
 			const existingId = resolveTabId(tabId);
 			if (existingId) {
@@ -189,25 +381,21 @@ function createBrowserHostController(options = {}) {
 				if (guest && !guest.isDestroyed?.()) {
 					activeTabId = existingId;
 					sendToRenderer("browser:host-select-tab", { tabId: existingId });
-					if (targetUrl && targetUrl !== "about:blank") {
-						sendToRenderer("browser:host-ensure-tab", {
-							requestId: `nav-${Date.now()}`,
-							url: targetUrl,
-							newTab: false,
-							tabId: existingId,
-						});
-						try {
-							await guest.loadURL(targetUrl);
-						} catch {
-							// Renderer may already navigate via tab state.
-						}
-						meta.url = targetUrl;
-					}
+					sendToRenderer("browser:host-ensure-tab", {
+						requestId: `nav-${Date.now()}`,
+						url: loadUrl,
+						newTab: false,
+						tabId: existingId,
+					});
+					await navigateGuest(guest, loadUrl);
+					const page = guestPageMeta(guest, { url: targetUrl, title: meta.title });
+					meta.url = page.url;
+					meta.title = page.title;
 					return {
 						ok: true,
 						tabId: existingId,
-						url: meta.url || targetUrl,
-						title: meta.title || "Browser",
+						url: page.url,
+						title: page.title,
 					};
 				}
 			}
@@ -216,28 +404,27 @@ function createBrowserHostController(options = {}) {
 		const requestId = `br-${Date.now()}-${nextSyntheticId++}`;
 		sendToRenderer("browser:host-ensure-tab", {
 			requestId,
-			url: targetUrl === "about:blank" ? "" : targetUrl,
+			url: loadUrl,
 			newTab: Boolean(newTab),
 			tabId: tabId || undefined,
 		});
 		const bound = await waitForBind(tabId || "*", 20_000);
 		activeTabId = bound.tabId;
-		if (targetUrl && targetUrl !== "about:blank") {
-			const guest = guestsById.get(bound.webContentsId);
-			if (guest && !guest.isDestroyed()) {
-				try {
-					await guest.loadURL(targetUrl);
-				} catch {
-					// Renderer may already have started navigation via tab state.
-				}
-			}
+		const guest = guestsById.get(bound.webContentsId);
+		if (guest && !guest.isDestroyed?.()) {
+			await navigateGuest(guest, loadUrl);
 		}
 		const meta = tabs.get(bound.tabId);
+		const page = guest ? guestPageMeta(guest, { url: targetUrl, title: meta?.title }) : { url: targetUrl, title: meta?.title || "Browser" };
+		if (meta) {
+			meta.url = page.url;
+			meta.title = page.title;
+		}
 		return {
 			ok: true,
 			tabId: bound.tabId,
-			url: meta?.url || targetUrl,
-			title: meta?.title || "Browser",
+			url: page.url,
+			title: page.title,
 		};
 	}
 
@@ -250,6 +437,11 @@ function createBrowserHostController(options = {}) {
 			return { ok: false, error: "Invalid browser command" };
 		}
 
+		const tracksControl = tracksBrowserControl(command);
+		if (tracksControl) {
+			busyCount += 1;
+			notifyHostBusy();
+		}
 		try {
 			switch (command.op) {
 				case "navigate": {
@@ -430,13 +622,34 @@ function createBrowserHostController(options = {}) {
 				case "screenshot": {
 					const resolved = getGuest(command.tabId);
 					if (resolved.error) return { ok: false, error: resolved.error };
-					const image = await resolved.guest.capturePage();
+					await waitForTwoAnimationFrames(resolved.guest);
+					let cropRect = null;
+					try {
+						const info = await withTimeout(
+							runPageScript(resolved.guest, SVG_CROP_SCRIPT),
+							PAINT_WAIT_TIMEOUT_MS,
+							"Timed out measuring Inspector SVG bounds",
+						);
+						cropRect = computeSvgContentRect(info, info?.viewBox);
+					} catch {
+						cropRect = null;
+					}
+					const image = await withTimeout(
+						cropRect ? resolved.guest.capturePage(cropRect) : resolved.guest.capturePage(),
+						SCREENSHOT_TIMEOUT_MS,
+						"This operation was aborted",
+					);
 					const png = image.toPNG();
+					const page = guestPageMeta(resolved.guest, resolved.meta);
+					if (resolved.meta) {
+						resolved.meta.url = page.url;
+						resolved.meta.title = page.title;
+					}
 					return {
 						ok: true,
 						tabId: resolved.tabId,
-						url: resolved.meta?.url || resolved.guest.getURL?.(),
-						title: resolved.meta?.title || resolved.guest.getTitle?.(),
+						url: page.url,
+						title: page.title,
 						screenshotBase64: Buffer.from(png).toString("base64"),
 						mimeType: "image/png",
 					};
@@ -446,6 +659,11 @@ function createBrowserHostController(options = {}) {
 			}
 		} catch (error) {
 			return { ok: false, error: error instanceof Error ? error.message : String(error) };
+		} finally {
+			if (tracksControl) {
+				busyCount = Math.max(0, busyCount - 1);
+				notifyHostBusy();
+			}
 		}
 	}
 
@@ -543,4 +761,6 @@ module.exports = {
 	isFileUrl,
 	isAllowedBrowserUrl,
 	resolveNavigateUrl,
+	computeSvgContentRect,
+	displayUrl,
 };

@@ -55,6 +55,8 @@ describe("regression #5109: exclude tools", () => {
 			"bash",
 			"dynamic_tool",
 			"edit",
+			"grep",
+			"ls",
 			"performance_admit",
 			"performance_gate",
 			"query_memory_db",

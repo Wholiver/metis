@@ -77,6 +77,8 @@ describe("metis-browser skill + browser host tools", () => {
 		const body = readFileSync(skill!.filePath, "utf8");
 		expect(body).toContain("file://");
 		expect(body).toMatch(/open -a Safari|Safari\/Chrome|qlmanage/);
+		expect(body).toContain("browser_take_screenshot");
+		expect(body).toMatch(/Prefer `browser_take_screenshot`/);
 		expect(skill!.description.toLowerCase()).toContain("svg");
 	});
 

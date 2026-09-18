@@ -24,12 +24,14 @@ import {
 } from '../types';
 import { extractImageAttachments, parseAttachmentPayloadText } from '../lib/attachments';
 import { cleanPastedText } from '../lib/composer';
+import { revealPromptForDisplay, rewritePromptForModel } from '../lib/prompt-rewrite';
 import {
   ExtensionUiRequest,
   ExtensionUiResponse,
   toExtensionUiRequest,
 } from '../lib/extension-ui';
 import { applyToolExecutionEnd, applyToolExecutionUpdate, extractToolResultText } from '../lib/tool-execution-update';
+import { workflowPlanFromCustomEntry } from '../lib/workflow-plan';
 
 type MetisResponse<T> = {
   ok: boolean;
@@ -98,7 +100,7 @@ type MetisEvent = {
   name?: string;
   mode?: CollaborationMode;
   request?: PendingUserInput;
-  entry?: { type?: string; customType?: string };
+  entry?: { type?: string; customType?: string; timestamp?: string; data?: unknown };
   state?: MemoryState;
   toolCallId?: string;
   partialResult?: unknown;
@@ -132,13 +134,13 @@ export function formatSessionTime(value: string | number, now = Date.now()): str
 
 export function sessionTitle(session: ServerSessionItem): string {
   const raw = session.name?.trim() || session.firstMessage?.trim();
-  const title = cleanPastedText(raw || '');
+  const title = revealPromptForDisplay(cleanPastedText(raw || ''));
   return !title || title === '(no messages)' ? 'New conversation' : title;
 }
 
 export function sessionSubtitle(session: ServerSessionItem): string {
   const rawPrompt = session.lastMessage?.trim() || session.firstMessage?.trim();
-  const prompt = cleanPastedText(rawPrompt || '');
+  const prompt = revealPromptForDisplay(cleanPastedText(rawPrompt || ''));
   return !prompt || prompt === '(no messages)' ? 'No messages yet' : prompt;
 }
 
@@ -692,20 +694,45 @@ export function mergeAssistantParts(
   if (previous.length === 0) return incoming;
   if (incoming.length === 0) return previous;
   const incomingById = new Map(incoming.map((part) => [part.id, part]));
+  const incomingHasText = incoming.some((part) => part.type === 'text');
   const merged: AssistantContentPart[] = [];
   const seen = new Set<string>();
   for (const part of previous) {
     const replacement = incomingById.get(part.id);
     if (replacement) {
-      merged.push(replacement.type === 'toolCall' && part.type === 'toolCall' && !replacement.result && part.result
-        ? {
-            ...replacement,
-            result: part.result,
-            progress: replacement.progress ?? part.progress,
-          }
-        : replacement);
+      if (part.type === 'toolCall' && replacement.type === 'toolCall') {
+        const keepResult = Boolean(part.result && !replacement.result);
+        const sameResult = Boolean(
+          part.result
+          && replacement.result
+          && part.result.content === replacement.result.content
+          && part.result.isError === replacement.result.isError,
+        );
+        if (keepResult || sameResult) {
+          const nextProgress = replacement.progress ?? part.progress;
+          merged.push(nextProgress === part.progress ? part : { ...part, progress: nextProgress });
+        } else {
+          merged.push(replacement.result || !part.result
+            ? replacement
+            : {
+                ...replacement,
+                result: part.result,
+                progress: replacement.progress ?? part.progress,
+              });
+        }
+      } else if (part.type === 'text' && replacement.type === 'text' && replacement.text === part.text) {
+        merged.push(part);
+      } else if (part.type === 'thinking' && replacement.type === 'thinking' && replacement.thinking === part.thinking) {
+        merged.push(part);
+      } else {
+        merged.push(replacement);
+      }
       seen.add(part.id);
-    } else if (part.type === 'thinking' || part.type === 'toolCall') {
+    } else if (
+      part.type === 'thinking'
+      || part.type === 'toolCall'
+      || (part.type === 'text' && !incomingHasText)
+    ) {
       merged.push(part);
       seen.add(part.id);
     }
@@ -909,7 +936,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     let latestUserPrompt: string | undefined;
     for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
       if (nextMessages[index].role === 'user' && typeof nextMessages[index].content === 'string') {
-        const trimmed = nextMessages[index].content.trim();
+        const trimmed = revealPromptForDisplay(nextMessages[index].content.trim());
         if (trimmed) {
           latestUserPrompt = trimmed;
           break;
@@ -1261,6 +1288,9 @@ export function useMetisServer(activeProject?: ProjectItem) {
         return;
       }
       if (type === 'entry_appended' && ['workflow_plan', 'workflow_plan_reset'].includes(event.entry?.customType || '')) {
+        const nextPlan = workflowPlanFromCustomEntry(event.entry);
+        if (nextPlan === null) setWorkflowPlan(undefined);
+        else if (nextPlan) setWorkflowPlan(nextPlan);
         reconcileCurrentSession();
         return;
       }
@@ -1475,8 +1505,8 @@ export function useMetisServer(activeProject?: ProjectItem) {
   }, [loadProject, request]);
 
   const sendMessage = useCallback(async (text: string, options: SendMessageOptions = {}) => {
-    const wireMessage = cleanPastedText(text);
-    const userText = cleanPastedText(options.displayText ?? text);
+    const wireMessage = rewritePromptForModel(cleanPastedText(text));
+    const userText = revealPromptForDisplay(cleanPastedText(options.displayText ?? text));
     const optimistic: Message = {
       id: `optimistic-user-${Date.now()}`,
       role: 'user',

@@ -9,6 +9,8 @@ describe("browser active tool merge", () => {
 	it("merges browser tools into an SDK default active list", () => {
 		const sdkDefaults = [
 			"read",
+			"grep",
+			"ls",
 			"bash",
 			"edit",
 			"write",

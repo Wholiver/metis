@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fauxAssistantMessage } from "@earendil-works/metis-ai";
-import { generateFallbackSessionName, sanitizeGeneratedSessionName } from "../src/core/session-name-generator.ts";
+import { generateFallbackSessionName, sanitizeGeneratedSessionName, sessionNameTextFromAssistantContent } from "../src/core/session-name-generator.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
 describe("automatic session names", () => {
@@ -197,6 +197,22 @@ describe("sanitizeGeneratedSessionName", () => {
 			]),
 		).toBe("Generate an SVG / a pelican riding a bicycle");
 		expect(sanitizeGeneratedSessionName("第 Pelican Bicycle 项")).toBe("Pelican Bicycle");
+	});
+
+	it("uses thinking text when Gemini OAuth returns a thought-only title", () => {
+		expect(
+			sanitizeGeneratedSessionName(
+				sessionNameTextFromAssistantContent([{ type: "thinking", thinking: "鹈鹕骑行矢量动画" }]),
+			),
+		).toBe("鹈鹕骑行矢量动画");
+		expect(
+			sanitizeGeneratedSessionName(
+				sessionNameTextFromAssistantContent([
+					{ type: "thinking", thinking: "internal plan" },
+					{ type: "text", text: "鹈鹕骑车动态SVG" },
+				]),
+			),
+		).toBe("鹈鹕骑车动态SVG");
 	});
 
 	it("uses a provider-independent title for empty multimodal messages", () => {

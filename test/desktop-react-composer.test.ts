@@ -411,5 +411,7 @@ describe('desktop React multiline composer', () => {
     expect(promptBar).toContain('onPaste={(event)');
     expect(hook).toContain('cleanPastedText(event.name');
     expect(hook).toContain('message: wireMessage');
+    expect(hook).toContain('rewritePromptForModel(cleanPastedText(text))');
+    expect(hook).toContain('revealPromptForDisplay(cleanPastedText(options.displayText ?? text))');
   });
 });

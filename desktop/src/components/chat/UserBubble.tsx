@@ -1,17 +1,38 @@
-import React, { useMemo } from 'react';
-import { FileText, Video } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Check, Copy, FileText, Video } from 'lucide-react';
 import { Message } from '../../types';
 import { normalizeUserMessageForDisplay } from '../../lib/attachments';
+import { useI18n } from '../../i18n';
 
 interface UserBubbleProps {
   message: Message;
 }
 
+export function resolveUserPromptCopyText(message: Pick<Message, 'content' | 'attachments'>): string {
+  return normalizeUserMessageForDisplay(message.content || '', message.attachments).text.trim();
+}
+
 export const UserBubble = React.memo<UserBubbleProps>(({ message }) => {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
   const { text, attachments } = useMemo(
     () => normalizeUserMessageForDisplay(message.content || '', message.attachments),
     [message.content, message.attachments],
   );
+  const copyText = text.trim();
+
+  const handleCopy = async () => {
+    if (!copyText) return;
+    try {
+      await navigator.clipboard.writeText(copyText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  const copyLabel = copied
+    ? (t('logCopied') || 'Copied')
+    : (t('copyPrompt') || t('copy') || 'Copy prompt');
 
   return (
     <div
@@ -64,6 +85,27 @@ export const UserBubble = React.memo<UserBubbleProps>(({ message }) => {
             )}
           </div>
         )}
+        {copyText ? (
+          <div
+            className="flex min-h-6 items-center justify-end"
+            data-slot="user-prompt-copy-wrapper"
+            data-user-prompt-copy-wrapper=""
+          >
+            <button
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => { void handleCopy(); }}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] text-ink-3 hover:bg-hover hover:text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)]"
+              title={copyLabel}
+              aria-label={copyLabel}
+              data-user-prompt-copy=""
+            >
+              {copied
+                ? <Check className="h-3.5 w-3.5 stroke-[2.2] text-green" aria-hidden="true" />
+                : <Copy className="h-3.5 w-3.5 stroke-[1.8]" aria-hidden="true" />}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

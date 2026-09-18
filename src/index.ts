@@ -274,6 +274,7 @@ export {
 	type ParentAgentRuntimeConfig,
 	parseAgentDefinition,
 	resolveAgentConfig,
+	sessionToolsForNamedAgent,
 	type ResolveAgentConfigOptions,
 	type ResolvedAgentConfig,
 	validateAgentDescription,

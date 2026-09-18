@@ -37,6 +37,7 @@ import { ExtensionUiDialog } from './components/ExtensionUiDialog';
 import { Onboarding, shouldShowOnboarding } from './components/onboarding/Onboarding';
 import { SkillCommand } from './components/chat/SkillPicker';
 import { Agent, AssistantContentPart, Message, ModelOption, PendingUserInput, ProjectItem, ThinkingOption, WorkflowPlanState } from './types';
+import { resolveBrowserShineActive } from './lib/browser-control';
 
 const PROJECTS_STORAGE_KEY = 'metis.desktop.projects.v1';
 const ACTIVE_PROJECT_STORAGE_KEY = 'metis.desktop.activeProject.v1';
@@ -353,6 +354,8 @@ export function App() {
   const [inspectorWidth, setInspectorWidth] = useState<number>(300);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
+  const [browserHostBusy, setBrowserHostBusy] = useState(false);
+  const [browserShineLatched, setBrowserShineLatched] = useState(false);
   const [inspectorTabsState, dispatchInspectorTabs] = useReducer(
     inspectorTabsReducer,
     undefined,
@@ -518,6 +521,16 @@ export function App() {
     previousToolPartsRef.current = toolParts;
     return toolParts;
   }, [displayedMessages]);
+  const browserShine = resolveBrowserShineActive({
+    hostBusy: browserHostBusy,
+    streaming: isStreaming,
+    latched: browserShineLatched,
+    messages: displayedMessages,
+  });
+  const browserModelControlled = browserShine.active;
+  useEffect(() => {
+    setBrowserShineLatched(browserShine.nextLatched);
+  }, [browserShine.nextLatched]);
   const isMessagesInSync = Boolean(activeAgentId && messagesSessionId === activeAgentId);
   const currentSubagents = useMemo(
     () => (isMessagesInSync ? collectSubagentItems(messages, activeAgentId) : []),
@@ -1066,9 +1079,13 @@ export function App() {
       setIsInspectorOpen(true);
       dispatchInspectorTabs({ type: 'activate', tabId: payload.tabId });
     });
+    const offBusy = desktop.browser.onBusy?.((payload: { busy?: boolean }) => {
+      setBrowserHostBusy(Boolean(payload?.busy));
+    });
     return () => {
       offEnsure?.();
       offSelect?.();
+      offBusy?.();
     };
   }, []);
 
@@ -1269,6 +1286,7 @@ export function App() {
             activeSessionId={activeAgentId || messagesSessionId || null}
             onToggleWideWidth={handleToggleWideInspector}
             isWideWidth={inspectorWidth >= 650}
+            browserModelControlled={browserModelControlled}
           />
         </>
       )}

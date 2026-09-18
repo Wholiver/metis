@@ -37,6 +37,39 @@ const defaultWriteOperations: WriteOperations = {
 export interface WriteToolOptions {
 	/** Custom operations for file writing. Default: local filesystem */
 	operations?: WriteOperations;
+	/** Reject generate_vN-style copy loops. Default true. */
+	rejectVersionedWriteLoops?: boolean;
+}
+
+export const VERSIONED_WRITE_LOOP_LIMIT = 4;
+
+const VERSIONED_WRITE_LOOP_REJECTION =
+	"Stop creating versioned copies (generate_vN.py). Edit the existing generator or the deliverable, preview with browser_navigate when browser_* is available, then record G4.";
+
+const TRUNCATED_WRITE_REJECTION =
+	"This write call was truncated and has no path/content. Do not retry a _truncated stub. Call write again with the full path and file contents, or edit the existing file.";
+
+export function writeCallIsTruncatedStub(args: unknown): boolean {
+	if (!args || typeof args !== "object") return false;
+	const record = args as Record<string, unknown>;
+	if (typeof record._truncated !== "string" || !record._truncated.trim()) return false;
+	const path = record.path ?? record.file_path;
+	return typeof path !== "string" || typeof record.content !== "string";
+}
+
+export function prepareWriteArguments(input: unknown): WriteToolInput {
+	if (writeCallIsTruncatedStub(input)) {
+		throw new Error(TRUNCATED_WRITE_REJECTION);
+	}
+	return input as WriteToolInput;
+}
+
+/** `generate_v4.py` → stem generate.py version 4. `v4.py` is ignored. */
+export function versionedWriteIdentity(path: string): { stem: string; version: number } | undefined {
+	const base = path.replace(/\\/g, "/").split("/").pop() ?? "";
+	const match = base.match(/^(.*?)(?:_v|v)(\d+)(\.[A-Za-z0-9]+)$/i);
+	if (!match || !match[1]) return undefined;
+	return { stem: `${match[1].toLowerCase()}${match[3]!.toLowerCase()}`, version: Number(match[2]) };
 }
 
 type WriteHighlightCache = {
@@ -183,13 +216,18 @@ export function createWriteToolDefinition(
 	options?: WriteToolOptions,
 ): ToolDefinition<typeof writeSchema, undefined> {
 	const ops = options?.operations ?? defaultWriteOperations;
+	const rejectVersionedWriteLoops = options?.rejectVersionedWriteLoops !== false;
+	const versionedWrites = new Map<string, Set<number>>();
 	return {
 		name: "write",
 		label: "write",
-		description: "Write file; create/overwrite it and create parent directories.",
-		promptSnippet: "Create or overwrite files",
-		promptGuidelines: ["Use write only for new files/complete rewrites."],
+		description: "Create or fully overwrite a file (and parent directories). Prefer write over bash cat/heredoc/tee for file contents.",
+		promptSnippet: "Create or overwrite files with write (not bash)",
+		promptGuidelines: [
+			"Use write for new files or complete rewrites. Do not use bash cat/heredoc/tee to write file contents.",
+		],
 		parameters: writeSchema,
+		prepareArguments: prepareWriteArguments,
 		async execute(
 			_toolCallId,
 			{ path, content }: { path: string; content: string },
@@ -197,6 +235,18 @@ export function createWriteToolDefinition(
 			_onUpdate?,
 			_ctx?,
 		) {
+			if (rejectVersionedWriteLoops) {
+				const identity = versionedWriteIdentity(path);
+				if (identity) {
+					const seen = versionedWrites.get(identity.stem) ?? new Set<number>();
+					const next = new Set(seen);
+					next.add(identity.version);
+					if (next.size >= VERSIONED_WRITE_LOOP_LIMIT) {
+						throw new Error(VERSIONED_WRITE_LOOP_REJECTION);
+					}
+					versionedWrites.set(identity.stem, next);
+				}
+			}
 			const absolutePath = resolveToCwd(path, cwd);
 			const dir = dirname(absolutePath);
 			return withFileMutationQueue(absolutePath, async () => {

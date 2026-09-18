@@ -18,7 +18,9 @@ import {
 	createEditTool,
 	createFindTool,
 	createGrepTool,
+	createGrepToolDefinition,
 	createLsTool,
+	createLsToolDefinition,
 	createCodingTools,
 	createReadTool,
 	createWriteTool,
@@ -266,6 +268,37 @@ describe("Coding Agent Tools", () => {
 
 			expect(getTextOutput(result)).toContain("Successfully wrote");
 		});
+
+		it("rejects generate_vN copy loops after several versions", async () => {
+			const { VERSIONED_WRITE_LOOP_LIMIT, versionedWriteIdentity } = await import("../src/core/tools/write.ts");
+			expect(versionedWriteIdentity("generate_v4.py")).toEqual({ stem: "generate.py", version: 4 });
+			expect(versionedWriteIdentity("test_crop_v5.py")).toEqual({ stem: "test_crop.py", version: 5 });
+			expect(versionedWriteIdentity("pelican_cycling.svg")).toBeUndefined();
+
+			const writer = createWriteTool(testDir);
+			for (let n = 2; n < 2 + VERSIONED_WRITE_LOOP_LIMIT - 1; n++) {
+				await writer.execute(`write-v${n}`, { path: join(testDir, `generate_v${n}.py`), content: `print(${n})\n` });
+			}
+			await expect(
+				writer.execute("write-v-loop", {
+					path: join(testDir, `generate_v${2 + VERSIONED_WRITE_LOOP_LIMIT - 1}.py`),
+					content: "print('loop')\n",
+				}),
+			).rejects.toThrow(/versioned copies/);
+			await writer.execute("write-same-version", {
+				path: join(testDir, "generate_v2.py"),
+				content: "print('edit in place')\n",
+			});
+		});
+
+		it("rejects truncated write stubs that have no path or content", async () => {
+			const { prepareWriteArguments, writeCallIsTruncatedStub } = await import("../src/core/tools/write.ts");
+			expect(writeCallIsTruncatedStub({ _truncated: "Arguments truncated to save context window." })).toBe(true);
+			expect(writeCallIsTruncatedStub({ path: "ok.py", content: "print(1)\n" })).toBe(false);
+			expect(() =>
+				prepareWriteArguments({ _truncated: "Arguments truncated to save context window." }),
+			).toThrow(/truncated and has no path/);
+		});
 	});
 
 	describe("log tool", () => {
@@ -400,10 +433,14 @@ describe("Coding Agent Tools", () => {
 
 			expect(guidelines).toEqual([...BASH_GUIDELINES]);
 			expect(joined).toContain("read files with read");
+			expect(joined).toContain("search file contents with grep");
+			expect(joined).toContain("list directories with ls");
 			expect(joined).toContain("create or rewrite files with write");
 			expect(joined).toContain("precise edits with edit");
 			expect(joined).toContain("run programs, tests, and verification commands");
-			expect(bash.promptSnippet).toBe("Execute bash commands (ls, grep, find, etc.)");
+			expect(joined).toContain("Do not use cat/heredoc/tee to write file contents");
+			expect(bash.promptSnippet).toBe("Run programs, tests, and verification commands (not for writing files)");
+			expect(bash.description).toContain("Do not use cat/heredoc/tee to write files");
 			expect(joined).not.toContain("scratchpad");
 			expect(joined).not.toContain("REPL");
 			expect(joined).not.toContain("thinking channel");
@@ -415,6 +452,130 @@ describe("Coding Agent Tools", () => {
 			expect(joined).not.toMatch(/\bmust use (?:the )?grep\b/i);
 			expect(joined).not.toMatch(/\bmust use (?:the )?find\b/i);
 			expect(joined).not.toMatch(/\bmust use (?:the )?ls\b/i);
+		});
+
+		it("rejects cat/heredoc/tee file writes when write tools are available", async () => {
+			const { commandEmbedsFileWrite } = await import("../src/core/tools/bash.ts");
+			expect(commandEmbedsFileWrite("cat <<'EOF' > pelican.svg\n<svg/>\nEOF")).toBe(true);
+			expect(commandEmbedsFileWrite("cat << 'EOF' > generate_masterpiece.py\nprint(1)\nEOF")).toBe(true);
+			expect(commandEmbedsFileWrite("cat > out.svg <<EOF\n<svg/>\nEOF")).toBe(true);
+			expect(commandEmbedsFileWrite("tee art.html <<'EOF'\n<html/>\nEOF")).toBe(true);
+			expect(commandEmbedsFileWrite("cat <<EOF | tee pelican.svg\n<svg/>\nEOF")).toBe(true);
+			expect(commandEmbedsFileWrite("python3 -c 'print(1+1)'")).toBe(false);
+			expect(commandEmbedsFileWrite("python3 render.py")).toBe(false);
+			expect(commandEmbedsFileWrite("xmllint --noout pelican.svg")).toBe(false);
+			expect(commandEmbedsFileWrite("cat pelican.svg")).toBe(false);
+			expect(commandEmbedsFileWrite("npm test")).toBe(false);
+
+			const bash = createBashTool(testDir, { rejectEmbeddedFileWrites: true });
+			await expect(
+				bash.execute("bash-block-1", {
+					command: "cat <<'EOF' > blocked.svg\n<svg/>\nEOF",
+				}),
+			).rejects.toThrow(/Use the write tool/);
+
+			const allowed = createBashTool(testDir, { rejectEmbeddedFileWrites: true });
+			const result = await allowed.execute("bash-allow-1", { command: "printf ok" });
+			expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("ok") });
+
+			const withoutGuard = createBashTool(testDir);
+			const written = join(testDir, "unguarded.svg");
+			await withoutGuard.execute("bash-unguarded-1", {
+				command: `cat <<'EOF' > ${written}\n<svg/>\nEOF`,
+			});
+			expect(existsSync(written)).toBe(true);
+		});
+
+		it("rejects truncated Action-logged bash stubs instead of looping", async () => {
+			const { bashCallIsTruncatedStub, commandIsTruncatedActionStub, prepareBashArguments } = await import(
+				"../src/core/tools/bash.ts"
+			);
+			const stub = 'echo "[OK: Action logged - Action logged]"';
+			expect(commandIsTruncatedActionStub(stub)).toBe(true);
+			expect(commandIsTruncatedActionStub("python3 -c 'print(1+1)'")).toBe(false);
+			expect(commandIsTruncatedActionStub("echo hello")).toBe(false);
+			expect(
+				bashCallIsTruncatedStub({
+					command: stub,
+					_truncated: "Arguments truncated to save context window.",
+				}),
+			).toBe(true);
+			expect(
+				bashCallIsTruncatedStub({
+					command: "xmllint --noout pelican.svg",
+					_truncated: "Arguments truncated to save context window.",
+				}),
+			).toBe(true);
+			expect(bashCallIsTruncatedStub({ command: "xmllint --noout pelican.svg" })).toBe(false);
+
+			expect(() =>
+				prepareBashArguments({
+					command: stub,
+					_truncated: "Arguments truncated to save context window.",
+				}),
+			).toThrow(/truncated no-op/);
+
+			const bash = createBashTool(testDir);
+			await expect(bash.execute("bash-stub-1", { command: stub })).rejects.toThrow(/truncated no-op/);
+			const result = await bash.execute("bash-stub-allow", { command: "printf ok" });
+			expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("ok") });
+		});
+
+		it("rejects Chrome headless screenshots when Inspector browser tools are available", async () => {
+			const { commandUsesExternalBrowserPreview } = await import("../src/core/tools/bash.ts");
+			expect(
+				commandUsesExternalBrowserPreview(
+					'"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --screenshot=render_v4.png --window-size=1000,600 "file://$(pwd)/pelican_cycling.svg"',
+				),
+			).toBe(true);
+			expect(commandUsesExternalBrowserPreview("open -a Safari pelican_cycling.svg")).toBe(true);
+			expect(commandUsesExternalBrowserPreview("qlmanage -t pelican_cycling.svg")).toBe(true);
+			expect(commandUsesExternalBrowserPreview("which sips qlmanage ffmpeg")).toBe(false);
+			expect(commandUsesExternalBrowserPreview('ls -d /Applications/*Google\\ Chrome*')).toBe(false);
+			expect(commandUsesExternalBrowserPreview("python3 generate_v4.py")).toBe(false);
+			expect(commandUsesExternalBrowserPreview("npx playwright test")).toBe(false);
+
+			const bash = createBashTool(testDir, { rejectExternalBrowserPreview: true });
+			await expect(
+				bash.execute("bash-chrome-1", {
+					command:
+						'"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --screenshot=out.png "file://$(pwd)/pelican_cycling.svg"',
+				}),
+			).rejects.toThrow(/browser_navigate/);
+			const result = await bash.execute("bash-chrome-allow", { command: "python3 -c 'print(1)'" });
+			expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("1") });
+		});
+
+		it("rejects python3 -c file reads when read is available, but allows scripts and math", async () => {
+			const { commandUsesInlineFileRead } = await import("../src/core/tools/bash.ts");
+			expect(
+				commandUsesInlineFileRead(
+					"python3 -c \"\nwith open('generate_svg.py') as f:\n    text = f.read()\nidx = text.find('id=')\n\"",
+				),
+			).toBe(true);
+			expect(commandUsesInlineFileRead("python3 -c \"with open('pelican_cycling.svg') as f: print(f.read()[:80])\"")).toBe(
+				true,
+			);
+			expect(commandUsesInlineFileRead("python3 -c \"import math; print(math.hypot(3,4))\"")).toBe(false);
+			expect(
+				commandUsesInlineFileRead(
+					"python3 -c \"import xml.etree.ElementTree as ET; ET.parse('pelican_cycling.svg'); print('ok')\"",
+				),
+			).toBe(false);
+			expect(commandUsesInlineFileRead("python3 inspect_elements.py")).toBe(false);
+			expect(commandUsesInlineFileRead("python3 apply_fixes.py && python3 generate_svg.py")).toBe(false);
+
+			const bash = createBashTool(testDir, { rejectInlineFileReads: true });
+			writeFileSync(join(testDir, "inspect_elements.py"), "print('ok')\n");
+			await expect(
+				bash.execute("bash-inline-read", {
+					command: "python3 -c \"with open('inspect_elements.py') as f: print(f.read())\"",
+				}),
+			).rejects.toThrow(/Use the read tool/);
+			const ran = await bash.execute("bash-script-ok", { command: "python3 inspect_elements.py" });
+			expect(ran.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("ok") });
+			const math = await bash.execute("bash-math-ok", { command: "python3 -c 'print(1+1)'" });
+			expect(math.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("2") });
 		});
 	});
 
@@ -937,6 +1098,12 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("grep tool", () => {
+		it("prefers grep over bash for content search", () => {
+			const grep = createGrepToolDefinition(testDir);
+			expect(grep.promptGuidelines).toEqual(["Search file contents with grep, not bash. Do not use grep to list a directory; use ls."]);
+			expect(grep.capabilities).toEqual({ effect: "read", parallelSafe: true });
+		});
+
 		it("should include filename when searching a single file", async () => {
 			const testFile = join(testDir, "example.txt");
 			writeFileSync(testFile, "first line\nmatch line\nlast line");
@@ -1045,6 +1212,12 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("ls tool", () => {
+		it("prefers ls over bash or grep for directory listing", () => {
+			const ls = createLsToolDefinition(testDir);
+			expect(ls.promptGuidelines).toEqual(["List directories with ls, not bash or grep."]);
+			expect(ls.capabilities).toEqual({ effect: "read", parallelSafe: true });
+		});
+
 		it("should list dotfiles and directories", async () => {
 			writeFileSync(join(testDir, ".hidden-file"), "secret");
 			mkdirSync(join(testDir, ".hidden-dir"));

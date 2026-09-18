@@ -79,6 +79,8 @@ export interface PerformanceAdmission {
 	verificationCommands: string[];
 	sharedMutableState: boolean;
 	lanes: PerformanceAdmissionLane[];
+	/** Set when host coerced an artifact apply/docs/polish admission down to T0. */
+	tierCoercedFrom?: PerformanceTier;
 }
 
 export interface PerformanceRunState {
@@ -272,13 +274,42 @@ function normalizedAdmission(admission: PerformanceAdmission): PerformanceAdmiss
 			}
 		}
 	}
+
+	let tier = admission.tier;
+	let tierCoercedFrom = admission.tierCoercedFrom;
+	if (shouldCoerceArtifactAdmissionToT0(admission, lanes)) {
+		tierCoercedFrom = admission.tier;
+		tier = "T0";
+	}
+
 	return {
 		...admission,
+		tier,
+		...(tierCoercedFrom ? { tierCoercedFrom } : {}),
 		deliverables: cleanList(admission.deliverables, "deliverables"),
 		acceptanceCriteria: cleanList(admission.acceptanceCriteria, "acceptanceCriteria"),
 		verificationCommands: cleanList(admission.verificationCommands, "verificationCommands"),
 		lanes,
 	};
+}
+
+const ARTIFACT_T0_FRAMEWORKS = new Set(["apply", "docs", "polish"]);
+const ARTIFACT_PATH_EXT = /\.(svg|png|jpe?g|gif|webp|html?|pdf|mp4|webm)$/i;
+const ARTIFACT_TEXT_HINT = /\b(svg|png|jpe?g|gif|webp|image|html\s+page|illustration|diagram)\b/i;
+
+function looksLikeArtifactPath(value: string): boolean {
+	return ARTIFACT_PATH_EXT.test(value.trim());
+}
+
+function shouldCoerceArtifactAdmissionToT0(
+	admission: Pick<PerformanceAdmission, "tier" | "taskShape" | "deliverables">,
+	lanes: PerformanceAdmissionLane[],
+): boolean {
+	if (admission.tier === "T0" || admission.taskShape !== "bounded" || lanes.length !== 1) return false;
+	const lane = lanes[0]!;
+	if (!ARTIFACT_T0_FRAMEWORKS.has(lane.framework)) return false;
+	const texts = [...lane.ownedPaths, ...lane.deliverables, ...admission.deliverables, lane.objective];
+	return texts.some((text) => looksLikeArtifactPath(text) || ARTIFACT_TEXT_HINT.test(text));
 }
 
 function categoryForFramework(frameworkId: string): PerformanceRoadmapItem["category"] {
@@ -656,7 +687,7 @@ ${line(state, `FRONTIER ${state.frontier}`)}
 			`Deliverables: ${lane.deliverables.join(" | ")}`,
 			`Acceptance criteria: ${lane.acceptanceCriteria.join(" | ")}`,
 			`Verification commands: ${lane.verificationCommands.join(" | ")}`,
-			"Governance: stay within owned paths; write evidence under governance root/artifacts; submit the assigned performance_gate. Exit 0 without that gate is no_verdict.",
+			"Governance: stay within owned paths. Do not call performance_gate. Emit one ChildResult JSON line before exit; the host records gate evidence. Exit 0 without a valid ChildResult is invalid.",
 			`Assigned task: ${input.task}`,
 		].join("\n");
 		const context = [input.context, `Canonical mission is file-bound at ${pointer.path}; do not reinterpret or broaden admitted scope.`].filter(Boolean).join("\n");
@@ -1201,19 +1232,29 @@ ${line(state, "FRONTIER G2")}
 			? `Act as ${role === "root" ? "L0 Primary Coordinator" : `${role} L1 coordinator`}. Follow the admitted ${state.admission?.tier ?? "legacy"} route; dispatch only roles allowed by runtime.`
 			: (workerInstructions[role] ?? `You are the ${role} worker. Stay inside this role's legal hierarchy and admitted lane.`);
 		const includeFullFramework = coordinatorContext && !rootExecutesBoundedRoute;
+		const rootCompletion = [
+			"Before finishing any gate role in a coordinated wave, write a non-empty receipt under <governance root>/artifacts/ then call performance_gate with verdict pass|fail|blocked and evidence set to that relative path (for example artifacts/g2-receipt.md). Do not exit after only writing the receipt. Goal-check is independent and runs only after every roadmap item is complete. Governance artifacts are outside the target workspace and must not be added to its diff.",
+			"A REPAIR_REQUIRED response from performance_gate is a schema/content repair request, never a runtime outage or blocker: repair the canonical governance artifact and retry the same gate. Claim that subagent dispatch is unavailable only after a structured spawn_agent error or timed_out payload, and quote its errorCode/error; never infer runtime availability from a rejected gate or worker report.",
+		].join("\n");
+		const childCompletion = [
+			"Do not call performance_gate. The host records gate evidence from ChildResult.",
+			"Before exiting, emit exactly one ChildResult JSON line with status completed|failed|blocked|invalid. Exit 0 without that object is invalid.",
+			"Goal-check is independent and runs only after every roadmap item is complete. Governance artifacts are outside the target workspace and must not be added to its diff.",
+		].join("\n");
 		const protocol = [
 			"Performance run is active for the current user task.",
 			roleInstruction,
 			this.boundLaneId ? `Assigned lane: ${this.boundLaneId}; assigned gate: ${this.boundGate ?? "from canonical brief"}. This binding outranks the root run's global active-item display.` : "",
 			state.schemaVersion === 1 ? "Legacy G2 closing order remains mandatory: G2 author, then independent G2-review and G2-verify." : "The typed admission and generated ROADMAP are canonical. Scope changes require re-admission; workers must not rewrite lane ownership.",
 			includeFullFramework && framework ? `\n# Native execution protocol: ${framework.id}\n${framework.content.trim()}` : "",
-			"Before finishing any gate role in a coordinated wave, write a non-empty receipt under <governance root>/artifacts/ then call performance_gate with verdict pass|fail|blocked and evidence set to that relative path (for example artifacts/g2-receipt.md). Do not exit after only writing the receipt. Goal-check is independent and runs only after every roadmap item is complete. Governance artifacts are outside the target workspace and must not be added to its diff.",
-			"A REPAIR_REQUIRED response from performance_gate is a schema/content repair request, never a runtime outage or blocker: repair the canonical governance artifact and retry the same gate. Claim that subagent dispatch is unavailable only after a structured spawn_agent error or timed_out payload, and quote its errorCode/error; never infer runtime availability from a rejected gate or worker report.",
+			role === "root" ? rootCompletion : childCompletion,
 		].join("\n");
 		const runIdentity = [
 			`RUN-ID: ${state.runId}; RUN-NONCE: ${state.nonce}; budget: ${state.maxConcurrent}; governance root: ${state.governanceRoot}.`,
 			`Operator mode: ${state.attendance}; concurrency: ${state.concurrency}; agent selection: ${state.agentSelection}; effort capability: ${state.effortCapability}${state.maxReasoningEffort ? ` (max ${state.maxReasoningEffort})` : ""}.`,
-			"Live run state (frontier, active item, mission pointer, repair requests) is reported by every performance_gate and read_plan result. Trust the most recent one; call read_plan when you need it again.",
+			role === "root"
+				? "Live run state (frontier, active item, mission pointer, repair requests) is reported by every performance_gate and read_plan result. Trust the most recent one; call read_plan when you need it again."
+				: "Live run state is owned by the host. Do not call performance_gate. Emit ChildResult; call read_plan only if you need the latest frontier.",
 		].join("\n");
 		return [
 			{ id: "performance-protocol", content: protocol },

@@ -189,6 +189,122 @@ export interface BashToolOptions {
 	shellPath?: string;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
+	/**
+	 * When true (or when the callback returns true), reject cat/heredoc/tee
+	 * commands that embed file writes. Use when the write tool is active so
+	 * bash stays for running programs and verification, not editing.
+	 */
+	rejectEmbeddedFileWrites?: boolean | (() => boolean);
+	/**
+	 * When true (or when the callback returns true), reject Chrome/Safari/qlmanage
+	 * preview commands so Desktop Inspector browser_* tools are used instead.
+	 */
+	rejectExternalBrowserPreview?: boolean | (() => boolean);
+	/**
+	 * When true (or when the callback returns true), reject python3 -c / node -e
+	 * snippets that open workspace files. Use when the read tool is active.
+	 */
+	rejectInlineFileReads?: boolean | (() => boolean);
+}
+
+const HEREDOC_TOKEN = String.raw`<<-?\s*(?:'[^'\n]+'|"[^"\n]+"|\\?\w+)`;
+
+/**
+ * Detect shell patterns that write file contents via cat/tee + heredoc.
+ * Does not match plain reads (`cat file`), scripts (`python3 x.py`), or `python3 -c`.
+ */
+export function commandEmbedsFileWrite(command: string): boolean {
+	const text = command.trim();
+	if (!text) return false;
+	// cat > path <<EOF
+	if (new RegExp(String.raw`\bcat\s+>\s*\S+\s+${HEREDOC_TOKEN}`).test(text)) return true;
+	// cat [-flags] <<EOF > path
+	if (new RegExp(String.raw`\bcat(?:\s+-[A-Za-z]+)*\s+${HEREDOC_TOKEN}\s*>\s*\S+`).test(text)) return true;
+	// tee [-a] path <<EOF
+	if (new RegExp(String.raw`\btee(?:\s+-a)?\s+\S+\s+${HEREDOC_TOKEN}`).test(text)) return true;
+	// cat [-flags] <<EOF | tee [-a] path
+	if (new RegExp(String.raw`\bcat(?:\s+-[A-Za-z]+)*\s+${HEREDOC_TOKEN}[\s\S]*?\|\s*tee(?:\s+-a)?\s+\S+`).test(text)) return true;
+	return false;
+}
+
+function shouldRejectOption(option: boolean | (() => boolean) | undefined): boolean {
+	if (typeof option === "function") return option();
+	return option === true;
+}
+
+const EMBEDDED_FILE_WRITE_REJECTION =
+	"Use the write tool to create or overwrite files. Do not use cat/heredoc/tee to write file contents when write is available.";
+
+const EXTERNAL_BROWSER_PREVIEW_REJECTION =
+	"Use browser_navigate (and browser_snapshot/browser_screenshot) for local SVG/HTML preview. Do not launch Chrome/Safari/Edge --headless --screenshot, open -a, xdg-open, or qlmanage when browser_* tools are available.";
+
+const INLINE_FILE_READ_REJECTION =
+	"Use the read tool to inspect workspace files. Do not use python3 -c / node -e with open()/readFile to read or search file contents when read is available. python3 script.py and ET.parse checks are still allowed.";
+
+const INLINE_EVAL = /\b(?:python3?|pypy3?)\s+-c\b|\bnode\s+(?:-e|--eval)\b|\bruby\s+-e\b/;
+const INLINE_FILE_READ =
+	/\bopen\s*\(|\.read_text\s*\(|\.read_bytes\s*\(|\breadFileSync\s*\(|\bfs\.read(?:File)?\s*\(/;
+
+/**
+ * Detect python3 -c / node -e used as a substitute for read/grep.
+ * Allows `python3 file.py`, math-only -c, and ET.parse verification.
+ */
+export function commandUsesInlineFileRead(command: string): boolean {
+	const text = command.trim();
+	if (!text || !INLINE_EVAL.test(text)) return false;
+	return INLINE_FILE_READ.test(text);
+}
+
+/**
+ * Detect bash using an external browser as a substitute for Inspector browser_*.
+ * Allows listing apps (`ls /Applications/*Chrome*`) and real test runners.
+ */
+export function commandUsesExternalBrowserPreview(command: string): boolean {
+	const text = command.trim();
+	if (!text) return false;
+	if (/\bqlmanage\b/.test(text) && !/\bwhich\b/.test(text)) return true;
+	if (/\bopen\s+(-a\s+)?["']?(Google Chrome|Chromium|Safari|Microsoft Edge|Firefox)\b/i.test(text)) return true;
+	if (/\bxdg-open\b/.test(text) && /\.(svg|html?)(\s|$|["'])/i.test(text)) return true;
+	if (
+		/Google Chrome\.app|Chromium\.app|Microsoft Edge\.app|Safari\.app|Firefox\.app/i.test(text) &&
+		/--headless|--screenshot|file:\/\//i.test(text)
+	) {
+		return true;
+	}
+	if (/\b(google-chrome|chromium-browser|chromium|msedge)\b/i.test(text) && /--headless|--screenshot/i.test(text)) {
+		return true;
+	}
+	return false;
+}
+
+const TRUNCATED_ACTION_STUB_REJECTION =
+	"This bash call is a truncated no-op and did not run. Do not echo Action logged. If the previous arguments were truncated, use write for file contents, then run a real verification command.";
+
+/**
+ * Gemini/custom-anti sometimes replaces a large bash payload with
+ * `echo "[OK: Action logged - Action logged]"` plus `_truncated`.
+ * Executing that stub succeeds and the model loops.
+ */
+export function commandIsTruncatedActionStub(command: string): boolean {
+	const text = command.trim();
+	if (!text) return false;
+	if (/Action logged\s*[-:]\s*Action logged/i.test(text)) return true;
+	const firstLine = text.split("\n", 1)[0] ?? text;
+	return /^(?:echo|printf)\s+.*\[OK:\s*Action logged/i.test(firstLine) && text.length < 400;
+}
+
+export function bashCallIsTruncatedStub(args: unknown): boolean {
+	if (!args || typeof args !== "object") return false;
+	const record = args as Record<string, unknown>;
+	if (typeof record._truncated === "string" && record._truncated.trim().length > 0) return true;
+	return typeof record.command === "string" && commandIsTruncatedActionStub(record.command);
+}
+
+export function prepareBashArguments(input: unknown): BashToolInput {
+	if (bashCallIsTruncatedStub(input)) {
+		throw new Error(TRUNCATED_ACTION_STUB_REJECTION);
+	}
+	return input as BashToolInput;
 }
 
 const BASH_PREVIEW_LINES = 5;
@@ -310,7 +426,7 @@ function rebuildBashResultRenderComponent(
 
 /** Prefer dedicated file tools; do not steer progress narration. */
 export const BASH_GUIDELINES = [
-	"When read/write/edit are available: read files with read, create or rewrite files with write, make precise edits with edit; use bash only to run programs, tests, and verification commands.",
+	"When read/write/edit/grep/ls are available: read files with read, search file contents with grep, list directories with ls, create or rewrite files with write, make precise edits with edit; use bash only to run programs, tests, and verification commands. Do not use cat/heredoc/tee to write file contents.",
 ] as const;
 
 export function createBashToolDefinition(
@@ -320,13 +436,17 @@ export function createBashToolDefinition(
 	const ops = options?.operations ?? createLocalBashOperations({ shellPath: options?.shellPath });
 	const commandPrefix = options?.commandPrefix;
 	const spawnHook = options?.spawnHook;
+	const rejectEmbeddedFileWrites = options?.rejectEmbeddedFileWrites;
+	const rejectExternalBrowserPreview = options?.rejectExternalBrowserPreview;
+	const rejectInlineFileReads = options?.rejectInlineFileReads;
 	return {
 		name: "bash",
 		label: "bash",
-		description: `Run bash in cwd; return stdout+stderr. Tail truncates at ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first; full output goes to temp file. Optional seconds timeout (nested subagents default to ${DEFAULT_SUBAGENT_BASH_TIMEOUT_SECONDS}s).`,
-		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
+		description: `Run programs, tests, and verification commands in cwd; return stdout+stderr. Do not use cat/heredoc/tee to write files — use write/edit. Tail truncates at ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first; full output goes to temp file. Optional seconds timeout (nested subagents default to ${DEFAULT_SUBAGENT_BASH_TIMEOUT_SECONDS}s).`,
+		promptSnippet: "Run programs, tests, and verification commands (not for writing files)",
 		promptGuidelines: [...BASH_GUIDELINES],
 		parameters: bashSchema,
+		prepareArguments: prepareBashArguments,
 		async execute(
 			_toolCallId,
 			{ command, timeout }: { command: string; timeout?: number },
@@ -334,6 +454,18 @@ export function createBashToolDefinition(
 			onUpdate?,
 			_ctx?,
 		) {
+			if (commandIsTruncatedActionStub(command)) {
+				throw new Error(TRUNCATED_ACTION_STUB_REJECTION);
+			}
+			if (shouldRejectOption(rejectExternalBrowserPreview) && commandUsesExternalBrowserPreview(command)) {
+				throw new Error(EXTERNAL_BROWSER_PREVIEW_REJECTION);
+			}
+			if (shouldRejectOption(rejectInlineFileReads) && commandUsesInlineFileRead(command)) {
+				throw new Error(INLINE_FILE_READ_REJECTION);
+			}
+			if (shouldRejectOption(rejectEmbeddedFileWrites) && commandEmbedsFileWrite(command)) {
+				throw new Error(EMBEDDED_FILE_WRITE_REJECTION);
+			}
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
 			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
 			const output = new OutputAccumulator({ tempFilePrefix: "metis-bash" });

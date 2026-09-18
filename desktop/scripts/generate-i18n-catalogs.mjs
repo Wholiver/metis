@@ -14547,11 +14547,50 @@ const toolTitleTranslations = {
 	},
 };
 
+const commandGroupTranslations = {
+	"zh-TW": {
+		commandOne: "{count} 條命令",
+		commandOther: "{count} 條命令",
+	},
+	ja: {
+		commandOne: "{count} 件のコマンド",
+		commandOther: "{count} 件のコマンド",
+	},
+	ko: {
+		commandOne: "명령 {count}개",
+		commandOther: "명령 {count}개",
+	},
+	es: {
+		commandOne: "{count} comando",
+		commandOther: "{count} comandos",
+	},
+	fr: {
+		commandOne: "{count} commande",
+		commandOther: "{count} commandes",
+	},
+	de: {
+		commandOne: "{count} Befehl",
+		commandOther: "{count} Befehle",
+	},
+	pt: {
+		commandOne: "{count} comando",
+		commandOther: "{count} comandos",
+	},
+	ru: {
+		commandOne: "{count} команда",
+		commandOther: "{count} команд",
+	},
+	it: {
+		commandOne: "{count} comando",
+		commandOther: "{count} comandi",
+	},
+};
+
 const catalogs = { en: canonical.en, "zh-CN": canonical["zh-CN"] };
 for (const [locale, { source, target }] of Object.entries(localeTargets)) {
 	const existing = process.env.METIS_I18N_RETRANSLATE === "1" ? {} : (existingCatalogs[locale] || {});
 	const base = canonical[source];
-	const translated = { ...(staticTranslations[locale] || {}), ...(multiAgentTranslations[locale] || {}), ...(browserTranslations[locale] || {}), ...(toolTitleTranslations[locale] || {}) };
+	const translated = { ...(staticTranslations[locale] || {}), ...(multiAgentTranslations[locale] || {}), ...(browserTranslations[locale] || {}), ...(toolTitleTranslations[locale] || {}), ...(commandGroupTranslations[locale] || {}) };
 	const pending = Object.entries(base).filter(([key]) => !(key in existing) && !(key in translated) || refreshKeys.has(key) || key.startsWith("settingsMemory") || key.startsWith("reactSettings"));
 	if (pending.length > 0) {
 		const batches = [];
@@ -14569,6 +14608,7 @@ const promptBarTranslations = {
 		listeningPrompt: "正在聆聽…",
 		noMatchesFor: "未找到與「{query}」相符的結果",
 		promptAria: "提示詞",
+		copyPrompt: "複製提問",
 		startDictation: "開始聽寫",
 		stopDictation: "停止聽寫",
 		searchCommandsHint: "輸入以搜尋指令",
@@ -14580,6 +14620,7 @@ const promptBarTranslations = {
 		listeningPrompt: "聞き取り中…",
 		noMatchesFor: "「{query}」に一致する結果はありません",
 		promptAria: "プロンプト",
+		copyPrompt: "プロンプトをコピー",
 		startDictation: "音声入力を開始",
 		stopDictation: "音声入力を停止",
 		searchCommandsHint: "入力してコマンドを検索",
@@ -14591,6 +14632,7 @@ const promptBarTranslations = {
 		listeningPrompt: "듣는 중…",
 		noMatchesFor: "“{query}”에 일치하는 결과가 없습니다",
 		promptAria: "프롬프트",
+		copyPrompt: "프롬프트 복사",
 		startDictation: "음성 받아쓰기 시작",
 		stopDictation: "음성 받아쓰기 중지",
 		searchCommandsHint: "명령어 검색을 위해 입력",
@@ -14602,6 +14644,7 @@ const promptBarTranslations = {
 		listeningPrompt: "Escuchando…",
 		noMatchesFor: "No hay coincidencias para “{query}”",
 		promptAria: "Mensaje",
+		copyPrompt: "Copiar indicación",
 		startDictation: "Iniciar dictado",
 		stopDictation: "Detener dictado",
 		searchCommandsHint: "Escribe para buscar comandos",
@@ -14613,6 +14656,7 @@ const promptBarTranslations = {
 		listeningPrompt: "Écoute en cours…",
 		noMatchesFor: "Aucun résultat pour « {query} »",
 		promptAria: "Invite",
+		copyPrompt: "Copier l'invite",
 		startDictation: "Démarrer la dictée",
 		stopDictation: "Arrêter la dictée",
 		searchCommandsHint: "Tapez pour rechercher des commandes",
@@ -14624,6 +14668,7 @@ const promptBarTranslations = {
 		listeningPrompt: "Zuhören…",
 		noMatchesFor: "Keine Treffer für „{query}“",
 		promptAria: "Eingabe",
+		copyPrompt: "Prompt kopieren",
 		startDictation: "Diktat starten",
 		stopDictation: "Diktat stoppen",
 		searchCommandsHint: "Tippen, um Befehle zu suchen",
@@ -14635,6 +14680,7 @@ const promptBarTranslations = {
 		listeningPrompt: "Ouvindo…",
 		noMatchesFor: "Nenhum resultado para “{query}”",
 		promptAria: "Mensagem",
+		copyPrompt: "Copiar prompt",
 		startDictation: "Iniciar ditado",
 		stopDictation: "Parar ditado",
 		searchCommandsHint: "Digite para pesquisar comandos",
@@ -14646,6 +14692,7 @@ const promptBarTranslations = {
 		listeningPrompt: "Слушаю…",
 		noMatchesFor: "Нет совпадений для «{query}»",
 		promptAria: "Промпт",
+		copyPrompt: "Копировать запрос",
 		startDictation: "Начать диктовку",
 		stopDictation: "Остановить диктовку",
 		searchCommandsHint: "Введите для поиска команд",
@@ -14657,6 +14704,7 @@ const promptBarTranslations = {
 		listeningPrompt: "Ascolto in corso…",
 		noMatchesFor: "Nessun risultato per “{query}”",
 		promptAria: "Messaggio",
+		copyPrompt: "Copia prompt",
 		startDictation: "Avvia dettatura",
 		stopDictation: "Interrompi dettatura",
 		searchCommandsHint: "Digita per cercare comandi",
@@ -14667,7 +14715,7 @@ const promptBarTranslations = {
 
 	console.log(`${locale}: processed`);
 	catalogs[locale] = Object.fromEntries(Object.keys(canonical.en).map((key) => [key, translated[key] || existing[key] || canonical.en[key]]));
-	Object.assign(catalogs[locale], modelConfigTranslations[locale] || {}, localeOverrides[locale], promptBarTranslations[locale] || {}, toolTitleTranslations[locale] || {});
+	Object.assign(catalogs[locale], modelConfigTranslations[locale] || {}, localeOverrides[locale], promptBarTranslations[locale] || {}, toolTitleTranslations[locale] || {}, commandGroupTranslations[locale] || {});
 }
 
 assertCatalogs(catalogs);

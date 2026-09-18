@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   applyWorkingSessionIds,
+  mergeAssistantParts,
   reuseStableMessages,
   toMessage,
 } from '../desktop/src/hooks/useMetisServer';
@@ -92,5 +93,61 @@ describe('desktop chat performance helpers', () => {
     });
     expect(isToolCallFinished(part)).toBe(true);
     expect(toolStatus(part, true)).toBe('Completed');
+  });
+
+  it('reuses unchanged toolCall part identity across streaming snapshots', () => {
+    const first = {
+      type: 'toolCall' as const,
+      id: 'bash-1',
+      name: 'bash',
+      arguments: { command: 'ls' },
+      result: { content: 'ok' },
+    };
+    const later = {
+      type: 'toolCall' as const,
+      id: 'bash-1',
+      name: 'bash',
+      arguments: { command: 'ls' },
+      result: { content: 'ok' },
+    };
+    const incoming = [
+      { type: 'toolCall' as const, id: 'bash-1', name: 'bash', arguments: { command: 'ls' } },
+      { type: 'toolCall' as const, id: 'shot-2', name: 'browser_take_screenshot', arguments: { tabId: 'browser-3' } },
+    ];
+    const merged = mergeAssistantParts([first], incoming);
+    expect(merged[0]).toBe(first);
+    expect(merged[0]).not.toBe(later);
+    expect(merged.map((part) => part.id)).toEqual(['bash-1', 'shot-2']);
+  });
+
+  it('reuses every prior toolCall when a long computer-use turn appends one more tool', () => {
+    const previous = Array.from({ length: 40 }, (_, index) => ({
+      type: 'toolCall' as const,
+      id: `tool-${index}`,
+      name: index % 2 === 0 ? 'bash' : 'browser_take_screenshot',
+      arguments: index % 2 === 0
+        ? { command: `cat <<'EOF' > file-${index}.svg\n${'M'.repeat(4000)}\nEOF` }
+        : { tabId: 'browser-3' },
+      result: { content: index % 2 === 0 ? 'ok' : `snapshot-${'x'.repeat(8000)}` },
+    }));
+    const incoming = [
+      ...previous.map((part) => ({
+        ...part,
+        arguments: { ...part.arguments },
+        result: part.result ? { ...part.result } : undefined,
+      })),
+      {
+        type: 'toolCall' as const,
+        id: 'tool-new',
+        name: 'browser_navigate',
+        arguments: { url: 'file:///tmp/out.svg' },
+      },
+    ];
+    const merged = mergeAssistantParts(previous, incoming);
+    expect(merged).toHaveLength(41);
+    for (let index = 0; index < 40; index += 1) {
+      expect(merged[index]).toBe(previous[index]);
+    }
+    expect(merged[40]?.id).toBe('tool-new');
   });
 });

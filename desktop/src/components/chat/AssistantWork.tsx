@@ -5,6 +5,7 @@ import { MarkdownContent } from './MarkdownContent';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCard, ToolPart, isToolCallFinished } from './ToolCard';
 import { ContextToolGroup, isContextGroupTool } from './ContextToolGroup';
+import { CommandToolGroup, isCommandGroupTool } from './CommandToolGroup';
 
 interface AssistantWorkProps {
   items: AssistantContentPart[];
@@ -21,39 +22,52 @@ export function assistantWorkTitle(streaming: boolean, elapsedMs: number, durati
 }
 
 export type AssistantWorkRenderItem = AssistantContentPart | {
-  type: 'contextGroup';
+  type: 'contextGroup' | 'commandGroup';
   id: string;
   parts: ToolPart[];
 };
+
+function groupedToolKind(item: AssistantContentPart): 'contextGroup' | 'commandGroup' | null {
+  if (item.type !== 'toolCall') return null;
+  if (isContextGroupTool(item)) return 'contextGroup';
+  if (isCommandGroupTool(item)) return 'commandGroup';
+  return null;
+}
 
 export function groupAssistantWorkItems(items: AssistantContentPart[]): AssistantWorkRenderItem[] {
   // Skip thinking parts: only the live "思考中" shimmer is shown while streaming.
   const visible = items.filter((item) => (
     item.type !== 'thinking'
+    && (item.type !== 'text' || Boolean(item.text.trim()))
     && (item.type !== 'toolCall' || item.name !== 'update_plan')
   ));
   const grouped: AssistantWorkRenderItem[] = [];
-  let contextRun: ToolPart[] = [];
+  let run: { type: 'contextGroup' | 'commandGroup'; parts: ToolPart[] } | null = null;
 
-  const flushContext = () => {
-    if (contextRun.length === 0) return;
+  const flushRun = () => {
+    if (!run || run.parts.length === 0) return;
     grouped.push({
-      type: 'contextGroup',
-      id: `context:${contextRun[0].id}`,
-      parts: contextRun,
+      type: run.type,
+      id: `${run.type === 'contextGroup' ? 'context' : 'command'}:${run.parts[0].id}`,
+      parts: run.parts,
     });
-    contextRun = [];
+    run = null;
   };
 
   for (const item of visible) {
-    if (item.type === 'toolCall' && isContextGroupTool(item)) {
-      contextRun.push(item);
-      continue;
+    if (item.type === 'toolCall') {
+      const kind = groupedToolKind(item);
+      if (kind) {
+        if (run && run.type !== kind) flushRun();
+        if (!run) run = { type: kind, parts: [] };
+        run.parts.push(item);
+        continue;
+      }
     }
-    flushContext();
+    flushRun();
     grouped.push(item);
   }
-  flushContext();
+  flushRun();
   return grouped;
 }
 
@@ -88,7 +102,7 @@ const AssistantWorkComponent: React.FC<AssistantWorkProps> = ({
   const lastTool = [...renderItems]
     .reverse()
     .flatMap((item) => (
-      item.type === 'contextGroup'
+      item.type === 'contextGroup' || item.type === 'commandGroup'
         ? [...item.parts].reverse()
         : item.type === 'toolCall' ? [item] : []
     ))[0];
@@ -104,6 +118,15 @@ const AssistantWorkComponent: React.FC<AssistantWorkProps> = ({
     && lastContextGroup
     && lastContextGroup.parts.some((part) => !isToolCallFinished(part)),
   );
+  const lastCommandGroup = [...renderItems]
+    .reverse()
+    .find((item) => item.type === 'commandGroup');
+  const lastCommandGroupId = lastCommandGroup?.id;
+  const lastCommandGroupLive = Boolean(
+    streaming
+    && lastCommandGroup
+    && lastCommandGroup.parts.some((part) => !isToolCallFinished(part)),
+  );
 
   return (
     <section className="cot-container" data-assistant-work>
@@ -117,6 +140,14 @@ const AssistantWorkComponent: React.FC<AssistantWorkProps> = ({
                     parts={item.parts}
                     streaming={lastToolLive && item.parts.some((part) => part.id === lastToolId)}
                     busy={lastContextGroupLive && item.id === lastContextGroupId}
+                  />
+                );
+              } else if (item.type === 'commandGroup') {
+                contentNode = (
+                  <CommandToolGroup
+                    parts={item.parts}
+                    streaming={lastToolLive && item.parts.some((part) => part.id === lastToolId)}
+                    busy={lastCommandGroupLive && item.id === lastCommandGroupId}
                   />
                 );
               } else if (item.type === 'toolCall') {

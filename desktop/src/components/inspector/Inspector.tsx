@@ -40,6 +40,7 @@ interface InspectorProps {
   activeSessionId?: string | null;
   onToggleWideWidth?: () => void;
   isWideWidth?: boolean;
+  browserModelControlled?: boolean;
 }
 
 type ShortcutToken = 'ctrl' | 'shift' | 'alt' | 'meta' | string;
@@ -89,6 +90,7 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
   activeSessionId,
   onToggleWideWidth,
   isWideWidth = false,
+  browserModelControlled = false,
 }: InspectorProps, ref) => {
   const { t } = useI18n();
   const [planCopied, setPlanCopied] = useState(false);
@@ -364,6 +366,7 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
         <div id={`inspector-panel-${activeTab.id}`} role="tabpanel" aria-labelledby={`inspector-tab-${activeTab.id}`} className="flex min-h-0 flex-1 flex-col overflow-hidden no-drag" data-inspector-panel="browser">
           <InspectorBrowserPanel
             tab={activeTab}
+            modelControlled={browserModelControlled}
             onUpdateTab={onUpdateTab}
           />
         </div>

@@ -100,8 +100,10 @@ export function createLsToolDefinition(
 	return {
 		name: "ls",
 		label: "ls",
-		description: `List directory: alphabetical, directories end '/', dotfiles included. Truncates at ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first.`,
-		promptSnippet: "List directory contents",
+		description: `List directory: alphabetical, directories end '/', dotfiles included. Truncates at ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB, whichever first. Use ls to inspect a workspace, not bash or grep.`,
+		promptSnippet: "List directory contents (not bash/grep)",
+		promptGuidelines: ["List directories with ls, not bash or grep."],
+		capabilities: { effect: "read", parallelSafe: true },
 		parameters: lsSchema,
 		async execute(
 			_toolCallId,

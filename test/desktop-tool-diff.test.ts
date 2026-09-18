@@ -5,8 +5,11 @@ import {
   buildToolExpandedView,
   buildToolFileDiff,
   clipToolTranscript,
+  clipToolTriggerText,
   collectTurnFileDiffs,
   isFileMutationTool,
+  TOOL_TRIGGER_TEXT_LIMIT,
+  toolHasExpandableDetails,
 } from '../desktop/src/lib/tool-diff';
 import type { AssistantContentPart } from '../desktop/src/types';
 
@@ -71,7 +74,7 @@ describe('desktop tool file diff rendering', () => {
     const markdown = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/MarkdownContent.tsx'), 'utf8');
     const session = readFileSync(resolve(process.cwd(), 'desktop/src/styles/beautifului/opencode-session.css'), 'utf8');
 
-    expect(card).toContain("data-tool-kind={toolKindAttr(expandedView)}");
+    expect(card).toContain("data-tool-kind={toolKindAttr(part)}");
     expect(card).toContain('tool-details-flush');
     expect(card).toContain('flush');
     expect(card).toContain('bash-output');
@@ -152,5 +155,21 @@ describe('desktop tool file diff rendering', () => {
     expect(clipped.shownLines).toBeLessThanOrEqual(80);
     expect(clipped.text.split('\n')[0]).toBe('line-0');
     expect(clipToolTranscript('ok').truncated).toBe(false);
+  });
+
+  it('treats browser tool output as clipped pre text and skips expanded-view work while collapsed', () => {
+    const snapshot = Array.from({ length: 400 }, (_, index) => `  [${index}] button Submit`).join('\n');
+    const part = {
+      type: 'toolCall' as const,
+      id: 'shot-1',
+      name: 'browser_take_screenshot',
+      arguments: { tabId: 'browser-3' },
+      result: { content: snapshot },
+    };
+    expect(toolHasExpandableDetails(part)).toBe(true);
+    expect(buildToolExpandedView(part)).toMatchObject({ kind: 'output', format: 'pre' });
+    const trigger = clipToolTriggerText(`cat <<'EOF' > x.svg\n${'M'.repeat(200)}\nEOF`);
+    expect(trigger.length).toBeLessThanOrEqual(TOOL_TRIGGER_TEXT_LIMIT);
+    expect(trigger.endsWith('…')).toBe(true);
   });
 });

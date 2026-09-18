@@ -9,7 +9,7 @@ import type { InputEvent } from "../../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import { createTestResourceLoader } from "../utilities.ts";
-import { createHarness, getMessageText, type Harness } from "./harness.ts";
+import { createHarness, getAssistantTexts, getMessageText, type Harness } from "./harness.ts";
 
 function visibleSessionMessages(harness: Harness) {
 	return harness.session.messages.filter((message) => !(message.role === "custom" && message.customType === "workflow_context"));
@@ -83,6 +83,38 @@ describe("AgentSession prompt characterization", () => {
 		expect(harness.session.messages.some((message) => getMessageText(message).includes("requires a successful performance_admit"))).toBe(true);
 	});
 
+	it("blocks mutating browser tools until performance_admit succeeds", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		(harness.session as unknown as { _performanceAdmissionRequired: boolean })._performanceAdmissionRequired = true;
+		expect(await harness.session.agent.beforeToolCall?.({
+			toolCall: { id: "nav-1", name: "browser_navigate", arguments: { url: "file:///tmp/x.svg" } },
+			args: { url: "file:///tmp/x.svg" },
+		} as never)).toMatchObject({
+			block: true,
+			reason: expect.stringContaining("performance_admit"),
+		});
+		expect(await harness.session.agent.beforeToolCall?.({
+			toolCall: { id: "snap-1", name: "browser_snapshot", arguments: {} },
+			args: {},
+		} as never)).toBeUndefined();
+	});
+
+	it("warns when update_plan completes the checklist while a Performance run is active", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage(admissionCall(), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("update_plan", {
+				plan: [{ step: "Repair parser", status: "completed" }],
+			}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("checklist marked complete"),
+		]);
+		await harness.session.prompt("Repair the parser");
+		expect(harness.session.performanceRun?.status).toBe("active");
+		expect(JSON.stringify(harness.session.messages)).toContain("FALSE_COMPLETION_BLOCKED");
+	});
+
 	it("starts native Performance orchestration only after structured admission", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
@@ -97,6 +129,44 @@ describe("AgentSession prompt characterization", () => {
 		expect(existsSync(roadmap)).toBe(true);
 		expect(readFileSync(roadmap, "utf8")).toContain("Mission pointer:");
 		expect(harness.session.workflowPlan).toBeUndefined();
+	});
+
+	it("continues an active T0 apply run instead of accepting a false completion", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage(admissionCall({
+				tier: "T0",
+				taskShape: "bounded",
+				deliverables: ["pelican.svg"],
+				acceptanceCriteria: ["内置浏览器截图 shows a pelican on a bicycle"],
+				verificationCommands: ["browser_take_screenshot"],
+				lanes: [{
+					id: "pelican-svg",
+					objective: "Generate pelican.svg",
+					framework: "apply",
+					ownedPaths: ["pelican.svg"],
+					deliverables: ["pelican.svg"],
+					acceptanceCriteria: ["内置浏览器截图 shows a pelican on a bicycle"],
+					verificationCommands: ["browser_take_screenshot"],
+					dependsOn: [],
+				}],
+			}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("All steps done, the SVG is delivered."),
+			fauxAssistantMessage("Retrying G4 with a real screenshot."),
+			fauxAssistantMessage("Still repairing against G4."),
+			fauxAssistantMessage("Stopped after the host blocked false completion."),
+		]);
+
+		await harness.session.prompt("画一只鹈鹕骑自行车");
+
+		expect(harness.session.performanceRun).toMatchObject({ status: "active", frontier: "G4" });
+		expect(getAssistantTexts(harness)).toEqual(expect.arrayContaining([
+			"All steps done, the SVG is delivered.",
+			"Retrying G4 with a real screenshot.",
+			"Stopped after the host blocked false completion.",
+		]));
+		expect(harness.getPendingResponseCount()).toBe(0);
 	});
 
 	it("honors and strips native direct invocation controls", async () => {

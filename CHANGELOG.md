@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.3.1] - 2026-09-18
+
+### Packaged Desktop Fix & Tool Runtime Polish
+
+- 修复打包版 Desktop 启动崩溃：`main.cjs` 依赖的 `browser-host.cjs` 未打进 asar，打开应用报 `Cannot find module './browser-host.cjs'`。
+- SDK/会话默认工具补回 `grep` / `ls`；named 子智能体不再因性能运行环境误开 `performance_gate`。
+- `update_plan` 兼容 done/complete/in-progress 等状态别名；嵌套子智能体 bash 默认超时，避免无界命令卡住。
+- Desktop Inspector 在模型控制浏览器时显示 shine 边框；工具卡片、命令分组与会话标题（含 thinking 文本）更稳。
+
 ## [1.3.0] - 2026-09-17
 
 ### Reliable-headless Default, Desktop Browser & Tool UI Polish

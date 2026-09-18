@@ -1348,6 +1348,8 @@ function createWindow() {
 						const messageWidthMetrics = await mainWindow.webContents.executeJavaScript(`(() => {
 							const lane = document.querySelector('[data-message-lane]');
 							const assistant = document.querySelector('[data-message-role="assistant"]');
+							const userBubble = document.querySelector('[data-user-bubble]');
+							const userCopy = document.querySelector('[data-user-prompt-copy]');
 							const markdown = assistant?.querySelector('.markdown-content');
 							const composer = document.querySelector('[data-composer]');
 							const composerShell = document.querySelector('[data-composer-shell]');
@@ -1362,9 +1364,16 @@ function createWindow() {
 							const composerShellRect = composerShell?.getBoundingClientRect();
 							const messageScrollRect = messageScroll?.getBoundingClientRect();
 							const lastBlockRect = lastBlock?.getBoundingClientRect();
+							const userBubbleRect = userBubble?.getBoundingClientRect();
+							const userCopyRect = userCopy?.getBoundingClientRect();
 							return {
 								lane: rect(lane),
 								assistant: rect(assistant),
+								userBubble: rect(userBubble),
+								userCopy: rect(userCopy),
+								userCopyBelowBubble: Boolean(userBubbleRect && userCopyRect && userCopyRect.top >= userBubbleRect.bottom - 1),
+								userCopyRightAligned: Boolean(userBubbleRect && userCopyRect && Math.abs(userCopyRect.right - userBubbleRect.right) <= 8),
+								userCopyLabel: userCopy?.getAttribute('aria-label') || null,
 								markdown: rect(markdown),
 								composer: rect(composer),
 								allMatch: Boolean(laneRect && markdownRect && composerRect

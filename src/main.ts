@@ -18,7 +18,7 @@ import { createProjectTrustContext } from "./cli/project-trust.ts";
 import { selectSession } from "./cli/session-picker.ts";
 import { shouldRunFirstTimeSetup, showFirstTimeSetup, showStartupSelector } from "./cli/startup-ui.ts";
 import { CONFIG_DIR_NAME, ENV_SESSION_DIR, expandTildePath, getAgentDir, getPackageDir, VERSION } from "./config.ts";
-import { resolveAgentConfig } from "./core/agent-definition.ts";
+import { resolveAgentConfig, sessionToolsForNamedAgent } from "./core/agent-definition.ts";
 import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.ts";
 import {
 	type AgentSessionRuntimeDiagnostic,
@@ -785,9 +785,7 @@ export async function main(args: string[], options?: MainOptions) {
 				resourceLoader.getAppendSystemPrompt().unshift(agentPrompt);
 
 				if (resolvedConfig.tools) {
-					sessionOptions.tools = process.env.METIS_PERFORMANCE_RUN_ID
-						? [...new Set([...resolvedConfig.tools, "performance_gate"])]
-						: resolvedConfig.tools;
+					sessionOptions.tools = sessionToolsForNamedAgent(resolvedConfig.tools);
 				}
 
 				if (!parsed.model && resolvedConfig.model) {

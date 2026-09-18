@@ -17,7 +17,16 @@ import {
 } from 'lucide-react';
 import { AssistantContentPart } from '../../types';
 import { computeToolDiffStats } from '../../lib/turn-files';
-import { buildToolExpandedView, clipToolTranscript } from '../../lib/tool-diff';
+import {
+  buildToolExpandedView,
+  clipToolTranscript,
+  clipToolTriggerText,
+  isHeavyToolArgKey,
+  isShellTool,
+  TOOL_TRIGGER_ARG_LIMIT,
+  toolHasExpandableDetails,
+  toolKindHint,
+} from '../../lib/tool-diff';
 import { useI18n } from '../../i18n';
 import CodeBlock from '../primitives/CodeBlock';
 import { BasicTool } from './BasicTool';
@@ -219,11 +228,16 @@ export function toolTriggerFields(part: ToolPart, _status: ToolStatus): {
     }
   }
   const skip = new Set(labelKeys);
+  // Grep uses path as the collapsed subtitle (like read). Keep the search
+  // pattern visible in args instead of swallowing it with the other label keys.
+  if (part.name.toLowerCase() === 'grep' && subtitleKey !== 'pattern') {
+    skip.delete('pattern');
+  }
   const args = Object.entries(input)
-    .filter(([key]) => !skip.has(key))
+    .filter(([key]) => !skip.has(key) && !isHeavyToolArgKey(key))
     .flatMap(([key, value]) => {
       if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-        return [`${key}=${value}`];
+        return [`${key}=${clipToolTriggerText(String(value), TOOL_TRIGGER_ARG_LIMIT)}`];
       }
       return [];
     })
@@ -238,16 +252,14 @@ export function toolTriggerFields(part: ToolPart, _status: ToolStatus): {
     || subtitleKey === 'task'
     || subtitleKey === 'title';
   const subtitle = subtitleRaw
-    ? (keepRaw ? subtitleRaw : (fileName(subtitleRaw) || subtitleRaw))
+    ? clipToolTriggerText(keepRaw ? subtitleRaw : (fileName(subtitleRaw) || subtitleRaw))
     : undefined;
 
   return { title, subtitle, args: args.length ? args : undefined };
 }
 
-function toolKindAttr(view: ReturnType<typeof buildToolExpandedView>): string | undefined {
-  if (!view) return undefined;
-  if (view.kind === 'diff') return 'file-diff';
-  return view.kind;
+function toolKindAttr(part: ToolPart): string | undefined {
+  return toolKindHint(part);
 }
 
 const ToolTranscript = React.memo(function ToolTranscript({
@@ -261,7 +273,7 @@ const ToolTranscript = React.memo(function ToolTranscript({
 }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
-  const clipped = variant === 'bash' || variant === 'pre' ? clipToolTranscript(text) : null;
+  const clipped = variant === 'search' ? null : clipToolTranscript(text);
   const visible = clipped?.text ?? text;
   const handleCopy = async (event: React.MouseEvent) => {
     event.preventDefault();
@@ -320,9 +332,16 @@ const ToolTranscript = React.memo(function ToolTranscript({
             )}
           </>
         ) : (
-          <div data-slot="tool-transcript-markdown" data-i18n-skip="">
-            <MarkdownContent markdown={text} />
-          </div>
+          <>
+            <div data-slot="tool-transcript-markdown" data-i18n-skip="">
+              <MarkdownContent markdown={visible} />
+            </div>
+            {clipped?.truncated && (
+              <div data-slot="tool-transcript-truncated">
+                {t('toolOutputTruncated', { count: clipped.shownLines })}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -343,10 +362,14 @@ export const ToolCard = React.memo<{
   const targetAgent = args.agent ? String(args.agent) : '';
   const displayTask = String(args.task || args.title || 'Subagent task');
   const diffStats = computeToolDiffStats(part, status);
-  const expandedView = useMemo(() => (subagent ? null : buildToolExpandedView(part)), [part, subagent]);
   const detailsId = useId();
   const fields = toolTriggerFields(part, status);
   const titleKey = openCodeToolTitleKey(part.name);
+  const expandable = !subagent && toolHasExpandableDetails(part) && titleKey !== 'toolTitleFetch';
+  const expandedView = useMemo(
+    () => (expanded && expandable ? buildToolExpandedView(part) : null),
+    [expanded, expandable, part],
+  );
   const title = titleKey ? t(titleKey) : fields.title;
   const Icon = toolIcon(part.name);
 
@@ -370,8 +393,8 @@ export const ToolCard = React.memo<{
     );
   }
 
-  const hideDetails = !expandedView || titleKey === 'toolTitleFetch';
-  const showCommandSubtitle = !(expandedView?.kind === 'bash' && expanded);
+  const hideDetails = !expandable;
+  const showCommandSubtitle = !(isShellTool(part.name) && expanded);
 
   const action = (
     <>
@@ -391,14 +414,15 @@ export const ToolCard = React.memo<{
       data-part-type="toolCall"
       data-tool-name={part.name}
       data-tool-status={status}
-      data-tool-kind={toolKindAttr(expandedView)}
+      data-tool-kind={toolKindAttr(part)}
     >
       <BasicTool
         icon={Icon}
         status={running ? 'running' : status === 'Error' || status === 'Denied' ? 'error' : 'completed'}
-        allowOpenWhilePending={expandedView?.kind === 'bash'}
+        allowOpenWhilePending={isShellTool(part.name)}
         hideDetails={hideDetails}
-        defer={expandedView?.kind === 'bash' || expandedView?.kind === 'diff'}
+        hasDetails={expandable}
+        defer
         open={expanded}
         onOpenChange={setExpanded}
         trigger={{
@@ -408,7 +432,7 @@ export const ToolCard = React.memo<{
           action,
         }}
       >
-        {expandedView && !hideDetails ? (
+        {expanded && expandedView && !hideDetails ? (
           <div
             id={detailsId}
             className="tool-details-body tool-details-flush"

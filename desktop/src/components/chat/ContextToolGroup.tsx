@@ -1,13 +1,28 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { useI18n } from '../../i18n';
+import { clipToolTriggerText } from '../../lib/tool-diff';
 import { TextShimmer } from './TextShimmer';
 import { type ToolPart, toolStatus } from './ToolCard';
 
-const CONTEXT_GROUP_TOOLS = new Set(['read', 'glob', 'grep', 'list']);
+const CONTEXT_GROUP_TOOLS = new Set(['read', 'glob', 'grep', 'list', 'ls', 'find']);
+
+function toolName(part: ToolPart): string {
+  return part.name.toLowerCase();
+}
+
+export function isListContextTool(name: string): boolean {
+  const normalized = name.toLowerCase();
+  return normalized === 'list' || normalized === 'ls' || normalized.includes('list_dir');
+}
+
+export function isSearchContextTool(name: string): boolean {
+  return /^(glob|grep|find)$/.test(name.toLowerCase());
+}
 
 export function isContextGroupTool(part: ToolPart): boolean {
-  return CONTEXT_GROUP_TOOLS.has(part.name.toLowerCase());
+  const name = toolName(part);
+  return CONTEXT_GROUP_TOOLS.has(name) || name.includes('list_dir');
 }
 
 export type ContextToolSummary = {
@@ -18,9 +33,9 @@ export type ContextToolSummary = {
 
 export function contextToolSummary(parts: ToolPart[]): ContextToolSummary {
   return {
-    read: parts.filter((part) => part.name.toLowerCase() === 'read').length,
-    search: parts.filter((part) => /^(glob|grep)$/.test(part.name.toLowerCase())).length,
-    list: parts.filter((part) => part.name.toLowerCase() === 'list').length,
+    read: parts.filter((part) => toolName(part) === 'read').length,
+    search: parts.filter((part) => isSearchContextTool(part.name)).length,
+    list: parts.filter((part) => isListContextTool(part.name)).length,
   };
 }
 
@@ -53,12 +68,14 @@ export function contextToolTrigger(part: ToolPart, labels: {
   list: string;
   glob: string;
   grep: string;
+  find?: string;
 }): ContextToolTrigger {
   const input = inputRecord(part);
   const name = part.name.toLowerCase();
   const path = input.path ?? input.directory ?? '/';
   const filePath = input.filePath ?? input.file_path ?? input.path;
   const pattern = typeof input.pattern === 'string' ? input.pattern : undefined;
+  const globFilter = typeof input.glob === 'string' ? input.glob : undefined;
   const include = typeof input.include === 'string' ? input.include : undefined;
   const offset = typeof input.offset === 'number' ? input.offset : undefined;
   const limit = typeof input.limit === 'number' ? input.limit : undefined;
@@ -67,24 +84,25 @@ export function contextToolTrigger(part: ToolPart, labels: {
     const args: string[] = [];
     if (offset !== undefined) args.push(`offset=${offset}`);
     if (limit !== undefined) args.push(`limit=${limit}`);
-    return { title: labels.read, subtitle: basename(filePath), args };
+    return { title: labels.read, subtitle: clipToolTriggerText(basename(filePath)), args };
   }
-  if (name === 'list') {
+  if (isListContextTool(name)) {
     return { title: labels.list, subtitle: directoryLabel(path), args: [] };
   }
-  if (name === 'glob') {
+  if (name === 'glob' || name === 'find') {
     return {
-      title: labels.glob,
+      title: name === 'find' ? (labels.find || labels.glob) : labels.glob,
       subtitle: directoryLabel(path),
-      args: pattern ? [`pattern=${pattern}`] : [],
+      args: pattern ? [`pattern=${clipToolTriggerText(pattern, 48)}`] : [],
     };
   }
   return {
     title: labels.grep,
     subtitle: directoryLabel(path),
     args: [
-      ...(pattern ? [`pattern=${pattern}`] : []),
-      ...(include ? [`include=${include}`] : []),
+      ...(pattern ? [`pattern=${clipToolTriggerText(pattern, 48)}`] : []),
+      ...(globFilter ? [`glob=${clipToolTriggerText(globFilter, 48)}`] : []),
+      ...(include ? [`include=${clipToolTriggerText(include, 48)}`] : []),
     ],
   };
 }
@@ -138,6 +156,7 @@ export function ContextToolGroup({
     list: t('toolTitleList'),
     glob: t('toolTitleGlob'),
     grep: t('toolTitleGrep'),
+    find: t('toolTitleFind'),
   };
 
   const setOpen = (value: boolean) => {
@@ -182,6 +201,7 @@ export function ContextToolGroup({
       </button>
 
       <div className={`context-tool-group-collapse ${open ? 'open' : ''}`} aria-hidden={!open}>
+        {open ? (
         <div data-component="context-tool-group-list">
           {parts.map((part, index) => {
             const trigger = contextToolTrigger(part, labels);
@@ -202,7 +222,7 @@ export function ContextToolGroup({
                       <div data-slot="basic-tool-tool-info-structured">
                         <div data-slot="basic-tool-tool-info-main">
                           <span data-slot="basic-tool-tool-title" data-i18n-skip="">
-                            <TextShimmer text={trigger.title} active={running} />
+                            {running ? <TextShimmer text={trigger.title} active /> : trigger.title}
                           </span>
                           {trigger.subtitle && (
                             <span data-slot="basic-tool-tool-subtitle">{trigger.subtitle}</span>
@@ -219,6 +239,7 @@ export function ContextToolGroup({
             );
           })}
         </div>
+        ) : null}
       </div>
     </section>
   );

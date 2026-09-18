@@ -320,7 +320,8 @@
   opacity: 1;
 }
 
-[data-component="context-tool-group-list"] {
+[data-component="context-tool-group-list"],
+[data-component="command-tool-group-list"] {
   min-height: 0;
   padding: 0 0 0 12px;
   display: flex;
@@ -328,7 +329,8 @@
   gap: 4px;
 }
 
-[data-component="context-tool-group-list"] [data-slot="context-tool-group-item"] {
+[data-component="context-tool-group-list"] [data-slot="context-tool-group-item"],
+[data-component="command-tool-group-list"] .tool-card {
   min-width: 0;
   padding: 0;
 }

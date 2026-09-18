@@ -6,8 +6,12 @@ import {
   buildSubagentAssistantMessage,
   buildSubagentTaskMessage,
 } from '../desktop/src/components/chat/SubagentConversation';
-import { UserBubble } from '../desktop/src/components/chat/UserBubble';
+import { UserBubble, resolveUserPromptCopyText } from '../desktop/src/components/chat/UserBubble';
 import { composeAttachmentPayload } from '../desktop/src/lib/attachments';
+import {
+  PELICAN_BIKE_SVG_MODEL_PROMPT,
+  PELICAN_BIKE_SVG_USER_PROMPT,
+} from '../desktop/src/lib/prompt-rewrite';
 import type { SubagentItem } from '../desktop/src/lib/subagents';
 
 const requireDesktop = createRequire(resolve(process.cwd(), 'desktop/package.json'));
@@ -22,6 +26,8 @@ describe('desktop React user message bubble', () => {
     );
 
     expect(source).toContain('data-user-bubble=""');
+    expect(source).toContain('data-user-prompt-copy=""');
+    expect(source).toContain('data-user-prompt-copy-wrapper=""');
     expect(source).toContain('bg-surface');
     expect(source).toContain('border border-line');
     expect(source).toContain('rounded-[10px]');
@@ -76,6 +82,62 @@ describe('desktop React user message bubble', () => {
     expect(traditional).toContain('Generate an SVG / a pelican riding a bicycle');
     expect(traditional).not.toContain('第Generate');
     expect(traditional).not.toContain('項');
+  });
+
+  it('shows the original pelican SVG prompt after Desktop rewrites the model-facing text', () => {
+    const markup = renderToStaticMarkup(React.createElement(UserBubble, {
+      message: {
+        id: 'user-pelican',
+        role: 'user',
+        content: PELICAN_BIKE_SVG_MODEL_PROMPT,
+      },
+    }));
+    expect(markup).toContain(PELICAN_BIKE_SVG_USER_PROMPT);
+    expect(markup).not.toContain('使用内置浏览器实时检查和验收');
+    expect(resolveUserPromptCopyText({ content: PELICAN_BIKE_SVG_MODEL_PROMPT })).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
+  });
+
+  it('places a copy control under the prompt and copies visible text only', () => {
+    const attachment = {
+      id: 'att-1',
+      kind: 'text' as const,
+      name: 'notes.txt',
+      sizeText: '1 KB',
+    };
+    const payload = composeAttachmentPayload('请优化内存占用', [attachment]);
+    expect(resolveUserPromptCopyText({
+      content: payload.message,
+      attachments: [attachment],
+    })).toBe('请优化内存占用');
+
+    const withText = renderToStaticMarkup(React.createElement(UserBubble, {
+      message: {
+        id: 'user-copy',
+        role: 'user',
+        content: payload.message,
+        attachments: [attachment],
+      },
+    }));
+    expect(withText).toContain('data-user-prompt-copy=""');
+    expect(withText).toContain('data-user-prompt-copy-wrapper=""');
+    expect(withText.indexOf('data-user-bubble=""')).toBeLessThan(withText.indexOf('data-user-prompt-copy=""'));
+    expect(withText).toContain('aria-label="Copy prompt"');
+
+    const attachmentOnly = renderToStaticMarkup(React.createElement(UserBubble, {
+      message: {
+        id: 'user-copy-empty',
+        role: 'user',
+        content: '',
+        attachments: [attachment],
+      },
+    }));
+    expect(attachmentOnly).not.toContain('data-user-prompt-copy=""');
+    expect(resolveUserPromptCopyText({ content: '   ', attachments: [] })).toBe('');
+
+    const main = readFileSync(resolve(process.cwd(), 'desktop/main.cjs'), 'utf8');
+    expect(main).toContain('userCopyBelowBubble');
+    expect(main).toContain('userCopyRightAligned');
+    expect(main).toContain('[data-user-prompt-copy]');
   });
 
   it('routes subagent task bubbles through the shared UserBubble component', () => {

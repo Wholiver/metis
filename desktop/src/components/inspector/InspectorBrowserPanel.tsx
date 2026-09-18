@@ -21,6 +21,7 @@ import {
   getFallbackBrowserTitle,
 } from '../../lib/browser-url';
 import { useI18n } from '../../i18n';
+import { BROWSER_SHINE_COLORS, ShineBorder } from '../ui/shine-border';
 
 interface WebviewElement extends HTMLElement {
   src: string;
@@ -35,6 +36,9 @@ interface WebviewElement extends HTMLElement {
   getURL: () => string;
   getTitle: () => string;
   getWebContentsId?: () => number;
+  setZoomFactor?: (factor: number) => void;
+  setZoomLevel?: (level: number) => void;
+  setVisualZoomLevelLimits?: (minimumLevel: number, maximumLevel: number) => void;
 }
 
 declare global {
@@ -52,6 +56,7 @@ declare global {
 
 interface InspectorBrowserPanelProps {
   tab: InspectorTab;
+  modelControlled?: boolean;
   onUpdateTab: (
     tabId: string,
     patch: Partial<Pick<InspectorTab, 'browserUrl' | 'browserTitle' | 'browserFavicon' | 'browserCanGoBack' | 'browserCanGoForward' | 'browserIsLoading'>>,
@@ -60,6 +65,7 @@ interface InspectorBrowserPanelProps {
 
 export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
   tab,
+  modelControlled = false,
   onUpdateTab,
 }) => {
   const { t } = useI18n();
@@ -88,15 +94,19 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
     const url = normalizeBrowserInput(rawTarget);
     if (!url || url === 'about:blank') {
       onUpdateTab(tab.id, {
-        browserUrl: '',
+        browserUrl: 'about:blank',
         browserTitle: t('browser') || 'Browser',
         browserCanGoBack: false,
         browserCanGoForward: false,
-        browserIsLoading: false,
+        browserIsLoading: true,
       });
       setLoadError(null);
       if (webviewRef.current) {
-        webviewRef.current.src = 'about:blank';
+        try {
+          void webviewRef.current.loadURL('about:blank');
+        } catch {
+          webviewRef.current.src = 'about:blank';
+        }
       }
       return;
     }
@@ -315,7 +325,18 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
       }
     };
 
+    const lockViewInteractions = () => {
+      try {
+        webview.setVisualZoomLevelLimits?.(1, 1);
+        webview.setZoomFactor?.(1);
+        webview.setZoomLevel?.(0);
+      } catch {
+        // webview may not expose zoom APIs yet
+      }
+    };
+
     const onDomReady = () => {
+      lockViewInteractions();
       bindToHost();
     };
 
@@ -327,6 +348,7 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
     webview.addEventListener('did-navigate-in-page', onDidNavigate);
     webview.addEventListener('did-fail-load', onFailLoad);
     webview.addEventListener('dom-ready', onDomReady);
+    lockViewInteractions();
     bindToHost();
 
     return () => {
@@ -342,7 +364,20 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
   }, [currentUrl, onUpdateTab, tab.browserTitle, tab.id]);
 
   return (
-    <div className="flex flex-col h-full w-full min-h-0 min-w-0 bg-page select-text" data-browser-panel="">
+    <div
+      className="relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-page select-text"
+      data-browser-panel=""
+      data-browser-model-controlled={modelControlled ? 'true' : undefined}
+      aria-busy={modelControlled ? true : undefined}
+    >
+      {modelControlled ? (
+        <ShineBorder
+          borderWidth={2}
+          duration={10}
+          shineColor={[...BROWSER_SHINE_COLORS]}
+        />
+      ) : null}
+      <div className={`flex min-h-0 flex-1 flex-col ${modelControlled ? 'p-[2px]' : ''}`}>
       {/* Browser Toolbar — BeautifulUI & OpenCode styling */}
       <div className="flex items-center gap-1.5 px-2.5 h-[42px] border-b border-line bg-page shrink-0">
         {/* Navigation Buttons */}
@@ -446,8 +481,12 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
         </div>
       )}
 
-      {/* Main Viewport */}
-      <div className="relative flex-1 min-h-0 min-w-0 w-full bg-page overflow-hidden">
+      {/* Main Viewport — fixed scale; no pinch-zoom / content drag chrome */}
+      <div
+        className="relative flex-1 min-h-0 min-w-0 w-full bg-page overflow-hidden overscroll-none"
+        data-browser-viewport=""
+        style={{ touchAction: 'pan-x pan-y' }}
+      >
         {/* Load Error View */}
         {loadError && !isBlankUrl && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center bg-page/95 backdrop-blur-sm">
@@ -476,8 +515,10 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
           partition="persist:metis-browser"
           src={currentUrl || 'about:blank'}
           className="w-full h-full border-0 bg-transparent"
-          style={{ width: '100%', height: '100%' }}
+          style={{ width: '100%', height: '100%', touchAction: 'pan-x pan-y' }}
+          data-browser-webview=""
         />
+      </div>
       </div>
     </div>
   );

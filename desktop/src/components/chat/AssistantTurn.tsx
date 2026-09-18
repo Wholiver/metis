@@ -33,27 +33,7 @@ export function resolveAssistantFinalCopyText(
   messages: Message[],
   options: { streaming?: boolean; failureMessage?: Message } = {},
 ): string {
-  if (options.streaming) return '';
-  const failureMessage = options.failureMessage;
-  const entries = messages.flatMap((message) => (message.parts || fallbackParts(message)).map((part) => ({ message, part })));
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const part = entries[index].part;
-    if (
-      part.type === 'text'
-      && part.text.trim()
-      && !isSubagentLaunchNotice(part.text)
-      && (!failureMessage || part.text !== failureMessage.errorMessage)
-    ) {
-      return part.text.trim();
-    }
-  }
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (failureMessage && message === failureMessage) continue;
-    const text = message.content?.trim();
-    if (text && text !== failureMessage?.errorMessage) return text;
-  }
-  return '';
+  return resolveAssistantTurnLayout(messages, options).finalText;
 }
 
 function fallbackParts(message: Message): AssistantContentPart[] {
@@ -68,6 +48,73 @@ function fallbackParts(message: Message): AssistantContentPart[] {
   }
   if (message.content) parts.push({ type: 'text', id: `${message.id}-text`, text: message.content });
   return parts;
+}
+
+function isVisibleWorkText(part: AssistantContentPart, failureMessage?: Message): part is Extract<AssistantContentPart, { type: 'text' }> {
+  return part.type === 'text'
+    && Boolean(part.text.trim())
+    && !isSubagentLaunchNotice(part.text)
+    && (!failureMessage || part.text !== failureMessage.errorMessage);
+}
+
+export function resolveAssistantTurnLayout(
+  messages: Message[],
+  options: { streaming?: boolean; failureMessage?: Message } = {},
+): {
+  workItems: AssistantContentPart[];
+  finalText: string;
+  finalEntry?: { message: Message; part: Extract<AssistantContentPart, { type: 'text' }> };
+} {
+  const failureMessage = options.failureMessage;
+  const entries = messages.flatMap((message) => (message.parts || fallbackParts(message)).map((part) => ({ message, part })));
+  let finalEntryIndex = -1;
+  if (!options.streaming) {
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      if (isVisibleWorkText(entries[index].part, failureMessage)) {
+        finalEntryIndex = index;
+        break;
+      }
+    }
+  } else {
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const part = entries[index].part;
+      if (part.type === 'text' && /<proposed_plan>/i.test(part.text)) {
+        finalEntryIndex = index;
+        break;
+      }
+    }
+  }
+
+  const workItems = entries.flatMap(({ part }, index) => {
+    if (index === finalEntryIndex) return [];
+    if (part.type === 'text' && !part.text.trim()) return [];
+    if (part.type === 'text' && isSubagentLaunchNotice(part.text)) return [];
+    if (part.type === 'text' && failureMessage && part.text === failureMessage.errorMessage) return [];
+    return [part];
+  });
+
+  const finalEntry = finalEntryIndex >= 0 && entries[finalEntryIndex].part.type === 'text'
+    ? { message: entries[finalEntryIndex].message, part: entries[finalEntryIndex].part }
+    : undefined;
+
+  let finalText = '';
+  if (!options.streaming) {
+    if (finalEntry) {
+      finalText = finalEntry.part.text.trim();
+    } else {
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (failureMessage && message === failureMessage) continue;
+        const text = message.content?.trim();
+        if (text && text !== failureMessage?.errorMessage) {
+          finalText = text;
+          break;
+        }
+      }
+    }
+  }
+
+  return { workItems, finalText, finalEntry };
 }
 
 function timestampMs(value: string | number | undefined): number | undefined {
@@ -150,8 +197,8 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
     Boolean(m.errorMessage)
   )) : undefined;
   const errorText = failureMessage ? (failureMessage.errorMessage || failureMessage.content) : undefined;
-  const entries = messages.flatMap((message) => (message.parts || fallbackParts(message)).map((part) => ({ message, part })));
-  const copyText = resolveAssistantFinalCopyText(messages, { streaming, failureMessage });
+  const layout = resolveAssistantTurnLayout(messages, { streaming, failureMessage });
+  const copyText = layout.finalText;
   const footer = !streaming && (copyText || collaborationMode || model) ? (
     <AssistantTurnFooter
       copyText={copyText}
@@ -162,7 +209,7 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   const retryHandler = failureMessage && retryPrompt && onRetry
     ? () => onRetry(retryPrompt)
     : undefined;
-  const hasWork = streaming || isWaitingUserInput || entries.some(({ part }) => part.type === 'thinking' || part.type === 'toolCall');
+  const hasWork = streaming || isWaitingUserInput || layout.workItems.some((part) => part.type === 'thinking' || part.type === 'toolCall');
   if (!hasWork) {
     const nonFailureMessages = failureMessage
       ? messages.filter((m) => m !== failureMessage && m.content && m.content !== failureMessage.errorMessage)
@@ -191,39 +238,10 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
     );
   }
 
-  let finalEntryIndex = -1;
-  if (!streaming) {
-    for (let index = entries.length - 1; index >= 0; index -= 1) {
-      const part = entries[index].part;
-      if (
-        part.type === 'text'
-        && part.text.trim()
-        && !isSubagentLaunchNotice(part.text)
-        && (!failureMessage || part.text !== failureMessage.errorMessage)
-      ) {
-        finalEntryIndex = index;
-        break;
-      }
-    }
-  } else {
-    for (let index = entries.length - 1; index >= 0; index -= 1) {
-      const part = entries[index].part;
-      if (part.type === 'text' && /<proposed_plan>/i.test(part.text)) {
-        finalEntryIndex = index;
-        break;
-      }
-    }
-  }
-
-  const workItems = entries.flatMap(({ part }, index) => {
-    if (index === finalEntryIndex) return [];
-    if (part.type === 'text' && isSubagentLaunchNotice(part.text)) return [];
-    if (part.type === 'text' && failureMessage && part.text === failureMessage.errorMessage) return [];
-    return [part];
-  });
+  const workItems = layout.workItems;
   const workDuration = resolveCompletedWorkDurationMs(messages, workItems, startedAt, streaming);
-  const finalEntry = finalEntryIndex >= 0 ? entries[finalEntryIndex] : undefined;
-  const finalMessage = finalEntry && finalEntry.part.type === 'text'
+  const finalEntry = layout.finalEntry;
+  const finalMessage = finalEntry
     ? {
         ...finalEntry.message,
         content: finalEntry.part.text,

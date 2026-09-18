@@ -24,18 +24,17 @@ Do **not** use this skill for:
 
 1. Confirm `browser_*` tools are listed for this session. If they are missing, report that the Desktop browser host is unavailable; do not invent Playwright/Chrome automation and do not use system browsers as a fallback for "内置浏览器".
 2. Prefer this order:
-   - `browser_navigate` (opens/activates Inspector browser tab)
-   - `browser_snapshot` (accessibility / interactive tree with `ref`s)
-   - interact with `browser_click`, `browser_fill`, `browser_type`, `browser_press_key`, or `browser_scroll` using **current** `ref` values
-   - **snapshot again after every action** (refs are session-local and become stale)
-3. Prefer `browser_snapshot` over `browser_take_screenshot`. Screenshots are for visual confirmation only.
-4. After editing local app code, reload the page (`browser_navigate` to the same URL or press reload via tools) before claiming UI is fixed.
+   - `browser_navigate` (opens/activates Inspector browser tab). Wait for the tool result; it must report a real `url`/`title`, not a leftover `about:blank`.
+   - Visual SVG/HTML/artwork: `browser_take_screenshot` after navigate returns. Snapshot of a drawing is usually empty and is not visual proof.
+   - Interactive UI: `browser_snapshot` (accessibility / interactive tree with `ref`s), then `browser_click`, `browser_fill`, `browser_type`, `browser_press_key`, or `browser_scroll` using **current** `ref` values. Snapshot again after every action (refs are session-local and become stale).
+3. Prefer `browser_take_screenshot` when judging layout, color, animation, overlap, or SVG/HTML appearance. Prefer `browser_snapshot` only when you need refs to click or fill.
+4. After editing local app code or an SVG/HTML file, reload with `browser_navigate` to the same path before claiming the UI is fixed, then screenshot again.
 
 ## Local file / SVG / HTML preview
 
 - Pass a workspace-relative path (for example `pelican_bike.svg`), an absolute path, or a `file://` URL to `browser_navigate`.
 - Do **not** use bash `open` / Safari / Chrome for preview when the user asked for the built-in browser.
-- After navigate, optionally `browser_take_screenshot` if a visual check helps; still prefer snapshot when interacting.
+- After navigate, call `browser_take_screenshot` to verify the painted result. Do not treat a successful navigate or an accessibility snapshot as visual acceptance.
 
 ## Refs
 

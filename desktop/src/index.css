@@ -358,3 +358,27 @@ input,
     opacity: 1;
   }
 }
+
+/* Magic UI Shine Border — model-controlled Inspector browser frame */
+@keyframes shine {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  to {
+    background-position: 0% 0%;
+  }
+}
+
+[data-shine-border] {
+  animation: shine var(--duration, 14s) infinite linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-shine-border] {
+    animation: none;
+    background-position: 100% 0%;
+  }
+}

@@ -332,7 +332,14 @@ function resolveGovernedChildOutcome(args: {
 				outcome = childResult.status === "blocked" ? "blocked" : "fail";
 				error = childResult.summary;
 			} else {
-				outcome = "pass";
+				const failClosed = args.gateOutcome?.outcome;
+				if (failClosed === "fail" || failClosed === "blocked" || failClosed === "invalid_brief" || failClosed === "invalid") {
+					status = "error";
+					outcome = failClosed;
+					error = `Host fail-closed: completed ChildResult cannot override gate outcome ${failClosed}`;
+				} else {
+					outcome = "pass";
+				}
 			}
 		}
 	}

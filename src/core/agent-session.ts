@@ -332,6 +332,23 @@ function estimateMessagesTokens(messages: AgentMessage[]): number {
 
 /** Standard thinking levels */
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+
+/** Mutating tools that may not run until performance_admit succeeds for the current Build request. */
+const PERFORMANCE_ADMISSION_GATED_TOOLS = new Set([
+	"write",
+	"edit",
+	"bash",
+	"spawn_agent",
+	"update_plan",
+	"performance_gate",
+	"browser_navigate",
+	"browser_tabs",
+	"browser_click",
+	"browser_fill",
+	"browser_type",
+	"browser_press_key",
+	"browser_scroll",
+]);
 // ============================================================================
 // AgentSession Class
 // ============================================================================
@@ -540,8 +557,7 @@ export class AgentSession {
 					reason: `Tool ${toolCall.name} is unavailable in Plan mode because it may modify state.`,
 				};
 			}
-			if (this._performanceAdmissionRequired
-				&& ["write", "edit", "bash", "spawn_agent", "update_plan", "performance_gate"].includes(toolCall.name)) {
+			if (this._performanceAdmissionRequired && PERFORMANCE_ADMISSION_GATED_TOOLS.has(toolCall.name)) {
 				return {
 					block: true,
 					reason: `Tool ${toolCall.name} requires a successful performance_admit call for the current Build request.`,
@@ -3540,7 +3556,14 @@ export class AgentSession {
 				)
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					bash: {
+						commandPrefix: shellCommandPrefix,
+						shellPath,
+						rejectEmbeddedFileWrites: () => this.getActiveToolNames().includes("write"),
+						rejectExternalBrowserPreview: () =>
+							this.getActiveToolNames().some((name) => name.startsWith("browser_")),
+						rejectInlineFileReads: () => this.getActiveToolNames().includes("read"),
+					},
 					spawnAgent: {
 						getRuntimeContext: () => ({
 							rootRunId: process.env.METIS_ROOT_RUN_ID,
@@ -3629,6 +3652,12 @@ export class AgentSession {
 								phase: "active",
 							});
 						},
+						unfinishedRunWarning: () => {
+							if (this._performanceRuntime.state?.status === "active") {
+								return "FALSE_COMPLETION_BLOCKED: the Performance run is still active.";
+							}
+							return undefined;
+						},
 					},
 					performanceGate: {
 						runtime: () => this._performanceRuntime,
@@ -3710,6 +3739,8 @@ export class AgentSession {
 			? Object.keys(this._baseToolsOverride)
 			: [
 					"read",
+					"grep",
+					"ls",
 					"bash",
 					"edit",
 					"write",
@@ -3733,7 +3764,7 @@ export class AgentSession {
 			const bashDefinition = toolDefinitionRecord.bash;
 			if (bashDefinition) {
 				const guideline =
-					"When browser_* tools are available, never use bash `open`, `open -a Safari/Chrome`, `xdg-open`, or `qlmanage` to preview local HTML/SVG/pages — use browser_navigate (file path or file:// URL) instead.";
+					"When browser_* tools are available, never use bash `open`, `open -a Safari/Chrome`, Chrome/Chromium `--headless --screenshot`, `xdg-open`, or `qlmanage` to preview local HTML/SVG/pages — use browser_navigate (file path or file:// URL) instead.";
 				const existing = bashDefinition.promptGuidelines ?? [];
 				if (!existing.includes(guideline)) {
 					bashDefinition.promptGuidelines = [...existing, guideline];

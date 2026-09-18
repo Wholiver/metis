@@ -570,6 +570,22 @@ describe('desktop React session sidebar', () => {
     ]);
   });
 
+  it('keeps intermediate text when a later snapshot only appends tools', () => {
+    const previous = extractAssistantParts([
+      { type: 'text', id: 'status-1', text: 'Checking the SVG structure.' },
+      { type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'pelican.svg' } },
+    ]);
+    const incoming = extractAssistantParts([
+      { type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'pelican.svg' } },
+      { type: 'toolCall', id: 'grep-1', name: 'grep', arguments: { pattern: 'id=' } },
+    ]);
+    expect(mergeAssistantParts(previous, incoming).map((part) => ({ type: part.type, id: part.id }))).toEqual([
+      { type: 'text', id: 'status-1' },
+      { type: 'toolCall', id: 'read-1' },
+      { type: 'toolCall', id: 'grep-1' },
+    ]);
+  });
+
   it('correlates tool results into their archived Tool card parts', () => {
     const mapped = toMessages([
       { role: 'assistant', id: 'a-tool', content: [{ type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'a.ts' } }] },

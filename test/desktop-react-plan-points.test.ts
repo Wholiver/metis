@@ -123,6 +123,8 @@ describe('desktop React plan points inspector', () => {
     expect(hook).toContain('setWorkflowPlan(state.workflowPlan)');
     expect(hook).toContain("type === 'entry_appended'");
     expect(hook).toContain("['workflow_plan', 'workflow_plan_reset']");
+    expect(hook).toContain('workflowPlanFromCustomEntry');
+    expect(hook).toContain('setWorkflowPlan(nextPlan)');
     expect(hook).toContain('workflowPlan,');
   });
 
@@ -184,5 +186,34 @@ describe('desktop React plan points inspector', () => {
     expect(main).toContain('scrollsBeyondThree');
     expect(main).toContain('fourthClipped');
     expect(main).toContain('maxVisibleRows');
+  });
+});
+
+describe('desktop workflow plan SSE apply', () => {
+  it('applies checklist entries immediately and clears on reset', async () => {
+    const { workflowPlanFromCustomEntry } = await import('../desktop/src/lib/workflow-plan');
+    const applied = workflowPlanFromCustomEntry({
+      customType: 'workflow_plan',
+      timestamp: '2026-09-16T06:46:18.735Z',
+      data: {
+        explanation: 'next step',
+        plan: [
+          { step: 'Write SVG', status: 'completed' },
+          { step: 'Preview', status: 'in_progress' },
+        ],
+        phase: 'active',
+        updatedAt: '2026-09-16T06:50:00.000Z',
+      },
+    });
+    expect(applied).toMatchObject({
+      explanation: 'next step',
+      phase: 'active',
+      plan: [
+        { step: 'Write SVG', status: 'completed' },
+        { step: 'Preview', status: 'in_progress' },
+      ],
+    });
+    expect(workflowPlanFromCustomEntry({ customType: 'workflow_plan_reset' })).toBeNull();
+    expect(workflowPlanFromCustomEntry({ customType: 'performance_run' })).toBeUndefined();
   });
 });

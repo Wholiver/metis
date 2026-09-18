@@ -71,7 +71,9 @@ describe("instruction stack", () => {
 		expect(planPrompt).toContain("strictly forbid repetitive patterns such as '正在...', '我将...'");
 		expect(planPrompt).toContain("MUST call ask_user");
 		expect(planPrompt).toContain("Never present clarification questions as ordinary assistant text");
+		expect(planPrompt).toContain("Match user's language");
 		expect(buildPrompt).toContain("Primary Coordinator & Engineering Engine (Coordinator & Executor)");
+		expect(buildPrompt).toContain("Match user's language");
 		expect(buildPrompt).toContain("strictly forbid repetitive '正在...', '我将...'");
 		expect(buildPrompt).toContain("Read-only investigation may precede admission; mutating work may not");
 		expect(buildPrompt).toContain("Creating or generating files, SVG, images, pages, or other artifacts is mutating work");
@@ -82,8 +84,11 @@ describe("instruction stack", () => {
 	test("requires intermediate updates before tool execution in every mode", () => {
 		for (const collaborationMode of ["plan", "build", undefined] as const) {
 			const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode });
-			expect(prompt).toContain("First think briefly and emit one concise intermediate text update");
+			expect(prompt).toContain("same language as the user's latest message");
+			expect(prompt).toContain("First think briefly and emit one concise visible intermediate text update");
 			expect(prompt).toContain("before visible tool work begins");
+			expect(prompt).toContain("Never narrate one update per tool");
+			expect(prompt).toContain("Do not put that progress only in thinking");
 		}
 	});
 
@@ -108,9 +113,11 @@ describe("instruction stack", () => {
 		const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "build" });
 		expect(prompt).toContain("Authoritative Build admission policy");
 		expect(prompt).toContain("Conversational or read-only requests");
-		expect(prompt).toContain("call performance_admit before the first write, edit, bash, spawn_agent, update_plan, or performance_gate");
+		expect(prompt).toContain("call performance_admit before the first write, edit, bash, spawn_agent, update_plan, performance_gate, or mutating browser_* action");
 		expect(prompt).toContain("Never skip admission to finish faster");
 		expect(prompt).toContain("A first-draft write is not completion");
+		expect(prompt).toContain("Apply/T0 skips G0 and must close G4");
+		expect(prompt).toContain("Do not claim completion after a failed or mismatched performance_gate");
 		expect(prompt).toContain("Do not stop after the first plausible artifact");
 		expect(prompt.match(/authoritative Build admission policy/gi)).toHaveLength(2);
 	});
@@ -120,6 +127,7 @@ describe("instruction stack", () => {
 		expect(prompt).toContain("creates, edits, generates, or opens a file, image, SVG, page, script, or other workspace artifact is mutating Build work");
 		expect(prompt).toContain("Artifact and generation work (SVG, image, page, report, data file)");
 		expect(prompt).toContain("at least one repair pass if that check fails");
+		expect(prompt).toContain("Do not claim completion after a failed or mismatched performance_gate");
 		expect(prompt).not.toContain("Reliable-headless short loop");
 	});
 
@@ -147,7 +155,9 @@ describe("instruction stack", () => {
 			} });
 			const protocolBlock = runtime.contextBlocks().find((b) => b.id === "performance-protocol");
 			expect(protocolBlock?.content).toContain("root G4 executor for the admitted T0 bounded lane");
+			expect(protocolBlock?.content).toContain("call performance_gate");
 			expect(protocolBlock?.content).not.toContain("L1 FEATURE-SUPERVISOR");
+			expect(runtime.contextBlocks().find((b) => b.id === "performance-state")?.content).toContain("reported by every performance_gate");
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
 		}

@@ -22,6 +22,7 @@ describe('desktop React thinking block', () => {
     expect(work).toContain('<ThinkingBlock');
     expect(work).toContain('item.type !== \'thinking\'');
     expect(work).toContain('<ContextToolGroup');
+    expect(work).toContain('<CommandToolGroup');
     expect(work).not.toContain('data-assistant-work-status');
     expect(work).not.toContain('setTimeout(() => {\n        setRevealedCount');
     expect(thinking).toContain('data-thinking-block');

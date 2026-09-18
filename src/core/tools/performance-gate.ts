@@ -28,7 +28,7 @@ export function createPerformanceGateToolDefinition(options: PerformanceGateTool
 	return {
 		name: "performance_gate",
 		label: "Performance gate",
-		description: "Advance the active Performance run frontier with a role-bound verdict and governance artifact receipt.",
+		description: "Advance the active Performance run frontier with a role-bound verdict and governance artifact receipt. Apply/T0 skips G0 and must close G4. A failed or mismatched gate is not task success.",
 		promptSnippet: "Record a role-bound gate verdict with its artifact receipt path",
 		capabilities: { effect: "write", parallelSafe: false },
 		parameters: performanceGateSchema,

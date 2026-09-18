@@ -1,5 +1,5 @@
 /**
- * Built-in browser_* tools for Metis Desktop Inspector (snapshot-first).
+ * Built-in browser_* tools for Metis Desktop Inspector.
  * Registered only when a BrowserHostClient is available (Desktop METIS_BROWSER_HOST).
  */
 
@@ -9,7 +9,7 @@ import type { BrowserHostClient, BrowserHostResult } from "../browser-host.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const BROWSER_GUIDELINE =
-	"For Metis Desktop Inspector / 内置浏览器 preview and UI work, use browser_* tools after reading the metis-browser skill. Prefer browser_navigate for local SVG/HTML (path or file://). Never use bash open/Safari/Chrome/qlmanage as a substitute. Prefer snapshot over screenshot; refresh snapshot after every action.";
+	"For Metis Desktop Inspector / 内置浏览器 preview and UI work, use browser_* tools after reading the metis-browser skill. Prefer browser_navigate for local SVG/HTML (path or file://). Never use bash open/Safari/Chrome/qlmanage as a substitute. Prefer browser_take_screenshot for visual SVG/HTML/layout checks; prefer snapshot when you need refs to click or fill. Refresh snapshot after every interaction.";
 
 export interface BrowserToolOptions {
 	host: BrowserHostClient;
@@ -255,7 +255,7 @@ export function createBrowserToolDefinitions(options: BrowserToolOptions): ToolD
 		{
 			name: "browser_take_screenshot",
 			label: "Browser screenshot",
-			description: "Capture a screenshot of the Inspector browser. Prefer browser_snapshot for interaction.",
+			description: "Capture a screenshot of the Inspector browser. Prefer this for visual SVG/HTML/layout checks; prefer browser_snapshot when you need refs to click or fill.",
 			promptSnippet: "Screenshot Inspector browser",
 			promptGuidelines: [BROWSER_GUIDELINE],
 			capabilities: { effect: "read", parallelSafe: false },

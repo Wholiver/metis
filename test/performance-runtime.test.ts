@@ -207,6 +207,12 @@ describe("built-in Performance runtime", () => {
 			const protocol = runtime.contextBlocks().find((block) => block.id === "performance-protocol")?.content ?? "";
 			expect(protocol).toContain("G4 implementation worker");
 			expect(protocol).not.toContain("L1 FEATURE-SUPERVISOR");
+			expect(protocol).toContain("ChildResult");
+			expect(protocol).toContain("Do not call performance_gate");
+			expect(protocol).not.toContain("then call performance_gate");
+			const identity = runtime.contextBlocks().find((block) => block.id === "performance-state")?.content ?? "";
+			expect(identity).toContain("Do not call performance_gate");
+			expect(identity).not.toContain("reported by every performance_gate");
 		} finally {
 			if (previousRole === undefined) delete process.env.METIS_AGENT_NAME;
 			else process.env.METIS_AGENT_NAME = previousRole;
@@ -226,6 +232,8 @@ describe("built-in Performance runtime", () => {
 		expect(dispatch.task).toContain("Owned paths: src/core/parser.ts, test/parser.test.ts");
 		expect(dispatch.task).toContain("Acceptance criteria: Malformed input returns the documented error");
 		expect(dispatch.task).toContain("Verification commands: npm test -- parser");
+		expect(dispatch.task).toContain("Emit one ChildResult JSON line");
+		expect(dispatch.task).not.toContain("submit the assigned performance_gate");
 	});
 
 	it("rehydrates v2 admission state with mission binding intact", () => {
@@ -285,6 +293,51 @@ describe("built-in Performance runtime", () => {
 		expect(log).toContain("SKIP G5 reason=T0");
 		expect(log).toContain("SKIP G6 reason=T0");
 		expect(log).toContain("SKIP goal-check reason=T0");
+	});
+
+	it("coerces single-lane artifact apply admissions to T0 without changing backend-fix T1", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const svgState = runtime.admit({
+			kind: "admit",
+			mission: "Draw a pelican riding a bicycle",
+			workspaceRoot: "/workspace",
+			admission: {
+				...boundedAdmission,
+				tier: "T1",
+				deliverables: ["pelican_bicycle.svg"],
+				lanes: [{
+					...boundedAdmission.lanes[0],
+					id: "pelican-svg",
+					objective: "Generate an SVG of a pelican riding a bicycle",
+					framework: "apply",
+					ownedPaths: ["pelican_bicycle.svg"],
+					deliverables: ["pelican_bicycle.svg"],
+					acceptanceCriteria: ["SVG opens and shows pelican on bicycle"],
+					verificationCommands: ["xmllint --noout pelican_bicycle.svg"],
+				}],
+			},
+		});
+		expect(svgState.admission).toMatchObject({
+			tier: "T0",
+			taskShape: "bounded",
+			tierCoercedFrom: "T1",
+		});
+		expect(runtime.allowedSpawnRoles()).toEqual([]);
+
+		const fixDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(fixDir);
+		const fixRuntime = new PerformanceRuntime(fixDir);
+		const fixState = fixRuntime.admit({
+			kind: "admit",
+			mission: "Repair parser",
+			workspaceRoot: "/workspace",
+			admission: boundedAdmission,
+		});
+		expect(fixState.admission).toMatchObject({ tier: "T1", taskShape: "bounded" });
+		expect(fixState.admission?.tierCoercedFrom).toBeUndefined();
+		expect(fixRuntime.allowedSpawnRoles()).toEqual(["reviewer", "verifier", "fresh-verifier"]);
 	});
 
 	it("completes T1 after root G4 plus independent shared-workspace G5/G6", () => {
@@ -626,6 +679,7 @@ describe("built-in Performance runtime", () => {
 
 		await tool.execute("call-1", { gate: "G2", verdict: "pass", evidence: receipt(state, "scope") });
 		expect(runtime.state?.frontier).toBe("G2-assurance");
+		expect(runtime.state?.reports.some((report) => report.gate === "G2" && report.verdict === "pass")).toBe(true);
 		expect(() => runtime.recordGateReport({ gate: "G2-review", actor: "scope-1", role: "reviewer", verdict: "pass", evidence: receipt(state, "self-scope-review") })).toThrow("independent");
 		await expect(tool.execute("call-2", { gate: "G7", verdict: "pass", evidence: receipt(state, "wrong-gate") })).rejects.toThrow("Evidence is for G7");
 		expect(readFileSync(join(state.governanceRoot, "GATELOG.md"), "utf8")).toContain("FRONTIER G2-assurance");

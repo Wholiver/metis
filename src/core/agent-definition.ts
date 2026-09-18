@@ -389,6 +389,19 @@ function applyReliableHeadlessAgentProfile(config: ResolvedAgentConfig): Resolve
 	return { ...config, tools, systemPrompt };
 }
 
+/**
+ * Named-agent session allowlist after `resolveAgentConfig`.
+ * Spawn injects `METIS_PERFORMANCE_RUN_ID`; that must not restore `performance_gate`.
+ * The host records G0–G7 from ChildResult. Root sessions never use this helper.
+ */
+export function sessionToolsForNamedAgent(
+	resolvedTools: string[] | undefined,
+	_env: NodeJS.ProcessEnv = process.env,
+): string[] | undefined {
+	if (!resolvedTools) return undefined;
+	return resolvedTools.filter((tool) => tool !== "performance_gate");
+}
+
 function bindBuiltinPromptToNativeRuntime(agent: AgentDefinition): AgentDefinition {
 	return {
 		...agent,
