@@ -12,7 +12,7 @@
   <a href="https://github.com/Wholiver/metis/releases/latest"><img alt="最新 GitHub Release" src="https://img.shields.io/github/v/release/Wholiver/metis?label=release&amp;color=24292F" /></a>
   <a href="https://nodejs.org/"><img alt="Node.js 22.19.0 或更高版本" src="https://img.shields.io/badge/Node.js-%3E%3D22.19.0-339933?logo=nodedotjs&amp;logoColor=white" /></a>
   <a href="#许可证"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4C1" /></a>
-  <a href="https://www.orcarouter.ai/ref/ref_974aa3306181497b4cdc"><img alt="Powered by OrcaRouter" src="https://img.shields.io/badge/Powered_by-OrcaRouter-2563eb" /></a>
+  <a href="https://siliconflow.cn"><img alt="Powered by 硅基流动" src="https://img.shields.io/badge/Powered_by-%E7%A1%85%E5%9F%BA%E6%B5%81%E5%8A%A8-2563eb" /></a>
 </p>
 
 <p align="center">
@@ -20,11 +20,18 @@
 </p>
 
 <p align="center">
+  <a href="#合作伙伴">合作伙伴</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#基准评测与主流-agent-对比">基准评测与对比</a> ·
   <a href="#核心特性">核心特性</a> ·
   <a href="#文档">文档</a>
 </p>
+
+## 合作伙伴
+
+| 商标 | 合作方 | 链接 |
+| :---: | :--- | :--- |
+| <img src="docs/images/siliconflow-logo.png" alt="硅基流动" height="36" /> | **硅基流动（SiliconFlow）** — 领先的 AI 推理与模型服务平台，为 Metis 提供高速、OpenAI 兼容的模型推理能力。 | [siliconflow.cn](https://siliconflow.cn) |
 
 ## 快速开始
 

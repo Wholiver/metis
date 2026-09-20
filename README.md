@@ -12,7 +12,7 @@
   <a href="https://github.com/Wholiver/metis/releases/latest"><img alt="latest GitHub release" src="https://img.shields.io/github/v/release/Wholiver/metis?label=release&amp;color=24292F" /></a>
   <a href="https://nodejs.org/"><img alt="Node.js 22.19.0 or newer" src="https://img.shields.io/badge/Node.js-%3E%3D22.19.0-339933?logo=nodedotjs&amp;logoColor=white" /></a>
   <a href="#license"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4C1" /></a>
-  <a href="https://www.orcarouter.ai/ref/ref_974aa3306181497b4cdc"><img alt="Powered by OrcaRouter" src="https://img.shields.io/badge/Powered_by-OrcaRouter-2563eb" /></a>
+  <a href="https://siliconflow.cn"><img alt="Powered by 硅基流动" src="https://img.shields.io/badge/Powered_by-%E7%A1%85%E5%9F%BA%E6%B5%81%E5%8A%A8-2563eb" /></a>
 </p>
 
 <p align="center">
@@ -20,11 +20,18 @@
 </p>
 
 <p align="center">
+  <a href="#partners">Partners</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#benchmark--comparison">Benchmark & Comparison</a> ·
   <a href="#key-features">Key features</a> ·
   <a href="#documentation">Documentation</a>
 </p>
+
+## Partners
+
+| Logo | Partner | Link |
+| :---: | :--- | :--- |
+| <img src="docs/images/siliconflow-logo.png" alt="SiliconFlow" height="36" /> | **SiliconFlow (硅基流动)** — AI inference platform powering Metis model access with high-speed, OpenAI-compatible APIs. | [siliconflow.cn](https://siliconflow.cn) |
 
 ## Quick start
 
