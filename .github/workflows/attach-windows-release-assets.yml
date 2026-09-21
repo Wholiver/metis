@@ -1,0 +1,61 @@
+name: Attach Windows release assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Actions run ID that produced Windows artifacts
+        required: true
+      tag:
+        description: GitHub release tag (e.g. v1.3.2)
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download portable artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          name: metis-windows-x64-portable
+          path: portable
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          name: metis-windows-x64-installer
+          path: installer
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare checksum for installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -lah portable installer
+          exe="$(find installer -type f -name '*-setup.exe' | head -n 1)"
+          test -n "$exe"
+          if [[ ! -f "${exe}.sha256" ]]; then
+            (
+              cd "$(dirname "$exe")"
+              sha256sum "$(basename "$exe")" > "$(basename "$exe").sha256"
+            )
+          fi
+          ls -lah portable installer
+
+      - name: Upload assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(portable/* installer/*)
+          gh release upload "${{ inputs.tag }}" "${files[@]}" --clobber --repo "${{ github.repository }}"
+          gh release view "${{ inputs.tag }}" --repo "${{ github.repository }}" --json assets --jq '.assets[].name'
