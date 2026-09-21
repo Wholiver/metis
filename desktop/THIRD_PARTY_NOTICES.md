@@ -38,7 +38,7 @@ SOFTWARE.
 
 - Repository: https://github.com/anomalyco/opencode
 - Commit baseline: `486e8460b1401d1338a81c28cbfbf1b3fb1de2f1`
-- Local ports: `src/hooks/useAutoScroll.ts`, `src/lib/paced-text.ts`,
+- Local ports: `src/hooks/useAutoScroll.ts`,
   `src/components/chat/{BasicTool,TextShimmer,PacedMarkdown,ThinkingBlock,ContextToolGroup}.tsx`,
   `src/styles/beautifului/opencode-session.css`,
   `src/styles/beautifului/opencode-review.css`,
@@ -72,6 +72,19 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+## Streamdown
+
+- Package: `streamdown`, `@streamdown/cjk`
+- Source: https://github.com/vercel/streamdown
+- Used by: Desktop assistant answer streaming (`PacedMarkdown`)
+- License: Apache-2.0
+
+```
+Apache License
+Version 2.0, January 2004
+https://www.apache.org/licenses/LICENSE-2.0
 ```
 
 ## shadow-plugin

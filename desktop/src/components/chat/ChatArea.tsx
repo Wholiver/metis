@@ -184,7 +184,7 @@ export const ChatArea = React.memo<ChatAreaProps>(({
         />
       ) : (
         <MessageList
-          key={agent.id}
+          sessionId={agent.id}
           messages={messages}
           workspacePath={workspacePath}
           projectName={projectName}

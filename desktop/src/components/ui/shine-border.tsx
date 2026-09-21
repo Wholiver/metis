@@ -52,7 +52,7 @@ export function ShineBorder({
         ...style,
       } as React.CSSProperties}
       className={cn(
-        'pointer-events-none absolute inset-0 z-20 size-full rounded-[inherit] will-change-[background-position]',
+        'pointer-events-none absolute inset-0 z-20 size-full rounded-[inherit]',
         className,
       )}
       {...props}

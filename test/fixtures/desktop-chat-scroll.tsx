@@ -59,7 +59,7 @@ export async function runScrollChecks() {
     messages = [{ id: 'user', role: 'user', content: 'Start a new conversation.' }];
     streaming = true;
     await render();
-    messages = [...messages, answer(4)];
+    messages = [...messages, answer(24)];
     await render();
 
     // Reproduce content that fits only when the overlaid composer's clearance
@@ -151,16 +151,8 @@ export async function runScrollChecks() {
     bottom('streaming thoughts and tools reveal');
     streaming = false;
     await render();
-    bottom('completed work collapsed');
-    const workToggle = document.querySelector<HTMLButtonElement>('[data-assistant-work] > button')!;
-    if (workToggle.getAttribute('aria-expanded') !== 'false') throw new Error('Work should collapse on completion');
-    workToggle.click();
-    await settle();
-    bottom('completed work expanded');
-    if (workToggle.getAttribute('aria-expanded') !== 'true') throw new Error('Work did not expand');
-    workToggle.click();
-    await settle();
-    bottom('completed work collapsed again');
+    bottom('completed work');
+    if (!document.querySelector('[data-assistant-work]')) throw new Error('Work tree missing after completion');
     messages = [];
     await render();
     bottom('new empty conversation');

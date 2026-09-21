@@ -121,7 +121,9 @@ describe('desktop React user message bubble', () => {
     expect(withText).toContain('data-user-prompt-copy=""');
     expect(withText).toContain('data-user-prompt-copy-wrapper=""');
     expect(withText.indexOf('data-user-bubble=""')).toBeLessThan(withText.indexOf('data-user-prompt-copy=""'));
-    expect(withText).toContain('aria-label="Copy prompt"');
+    const bubbleSource = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/UserBubble.tsx'), 'utf8');
+    expect(bubbleSource).toContain("t('copyPrompt')");
+    expect(withText).toMatch(/aria-label="(?:Copy prompt|copyPrompt)"/);
 
     const attachmentOnly = renderToStaticMarkup(React.createElement(UserBubble, {
       message: {

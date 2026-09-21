@@ -57,10 +57,13 @@ describe('desktop React session sidebar', () => {
     expect(appSource).toContain('if (isConnected && !isLoadingSessions) void newConversation();');
     expect(mainSource).toContain('"X-Metis-Desktop": "1"');
     expect(selectConversation).toContain("await request<SessionState & { cancelled: boolean }>('/session/switch'");
-    expect(selectConversation).toContain('await loadMessages(targetSessionId, true)');
+    expect(selectConversation).toContain('loadMessages(targetSessionId, true');
+    expect(selectConversation).toContain('hadCachedView');
+    expect(selectConversation).toContain('rememberSessionMessages');
     expect(selectConversation).toContain('messagesCacheRef');
     expect(selectConversation).toContain('setIsLoadingMessages');
-    expect(selectConversation).toContain('suppressSessionChangedRef.current = true');
+    expect(source).toContain('beginPendingSessionView');
+    expect(source).toContain('suppressSessionChangedRef.current = true');
     expect(selectConversation).not.toContain('setIsLoadingSessions(true)');
     expect(source).toContain('isLoadingMessages');
     expect(appSource).toContain('isLoadingMessages');

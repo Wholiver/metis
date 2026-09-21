@@ -57,6 +57,24 @@ describe("Desktop custom Provider configuration", () => {
 		expect(saved[0]?.reasoning).toBe(true);
 	});
 
+	it("makes saved custom models available in the picker without an API key", async () => {
+		const created = await providerConfig.saveCustomProviderConfig(agentDir, {
+			name: "Local Llama",
+			baseUrl: "http://127.0.0.1:11434/v1",
+			modelIds: ["llama3"],
+			discoveredModels: [{ id: "llama3" }],
+		});
+
+		const models = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
+		expect(models.providers[created.provider as string].apiKey).toBeUndefined();
+
+		const registry = ModelRegistry.create(
+			AuthStorage.create(path.join(agentDir, "auth.json")),
+			path.join(agentDir, "models.json"),
+		);
+		expect(registry.getAvailable().some((model) => model.provider === created.provider && model.id === "llama3")).toBe(true);
+	});
+
 	it("edits selected models without requiring or persisting an API key", async () => {
 		const fetchImpl = vi.fn().mockResolvedValue({ ok: false });
 		const created = await providerConfig.saveCustomProviderConfig(agentDir, {
@@ -268,6 +286,45 @@ describe("Desktop custom Provider configuration", () => {
 			modelIds: ["m2"],
 			discoveredModels: [{ id: "m2" }],
 		}, { fetchImpl })).rejects.toThrow("customProviderIdTaken");
+	});
+
+	it("writes selected models under a built-in provider id when builtin is set", async () => {
+		const fetchImpl = vi.fn().mockResolvedValue({ ok: false });
+		const saved = await providerConfig.saveCustomProviderConfig(agentDir, {
+			builtin: true,
+			providerId: "siliconflow-cn",
+			name: "SiliconFlow (China)",
+			baseUrl: "https://api.siliconflow.cn/v1",
+			modelIds: ["deepseek-ai/DeepSeek-V4-Flash", "zai-org/GLM-5.2"],
+			discoveredModels: [
+				{ id: "deepseek-ai/DeepSeek-V4-Flash" },
+				{ id: "zai-org/GLM-5.2" },
+			],
+		}, { fetchImpl });
+
+		expect(saved.provider).toBe("siliconflow-cn");
+		expect(saved.modelIds).toEqual(["deepseek-ai/DeepSeek-V4-Flash", "zai-org/GLM-5.2"]);
+		const models = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
+		expect(models.providers["siliconflow-cn"].baseUrl).toBe("https://api.siliconflow.cn/v1");
+		expect(models.providers["siliconflow-cn"].api).toBeUndefined();
+		expect(models.providers["siliconflow-cn"].models.map((model: { id: string }) => model.id)).toEqual([
+			"deepseek-ai/DeepSeek-V4-Flash",
+			"zai-org/GLM-5.2",
+		]);
+		const listed = await providerConfig.listCustomProviderConfigs(agentDir);
+		expect(listed).toEqual([]);
+	});
+
+	it("does not coerce a non-custom id into custom-* without the builtin flag", async () => {
+		const fetchImpl = vi.fn().mockResolvedValue({ ok: false });
+		const saved = await providerConfig.saveCustomProviderConfig(agentDir, {
+			providerId: "openai",
+			name: "My OpenAI Proxy",
+			baseUrl: "https://proxy.example/v1",
+			modelIds: ["gpt-test"],
+			discoveredModels: [{ id: "gpt-test" }],
+		}, { fetchImpl });
+		expect(saved.provider).toBe("custom-openai");
 	});
 
 	it.each([

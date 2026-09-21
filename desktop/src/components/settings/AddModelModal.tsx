@@ -9,15 +9,18 @@ import ProviderIcon, { hasProviderBrandIcon } from '../providers/ProviderIcon';
 type AddModelModalProps = {
   open: boolean;
   providers: ProviderCatalogEntry[];
+  /** Known catalog models (may be empty until the provider is authenticated). */
+  knownModels?: Array<{ provider: string; id: string; name?: string }>;
   onClose: () => void;
   onSave: (config: {
     name: string;
-    baseUrl: string;
+    baseUrl?: string;
     apiKey?: string;
     providerId?: string;
     modelIds?: string[];
     models?: Array<{ id: string; name?: string }>;
     discoveredModels?: Array<{ id: string; name?: string }>;
+    builtin?: boolean;
   }) => Promise<void>;
   onApiKeyLogin: (providerId: string, apiKey: string) => Promise<void>;
   onOAuthLogin: (providerId: string) => Promise<void>;
@@ -26,7 +29,7 @@ type AddModelModalProps = {
 };
 
 type AuthMethod = 'api_key' | 'oauth';
-type WizardStep = 'pick' | 'connect' | 'custom-basics' | 'custom-models';
+type WizardStep = 'pick' | 'connect' | 'custom-basics' | 'custom-models' | 'builtin-models';
 type ModelRow = { id: string; name: string };
 
 const CUSTOM_PROVIDER_ID = '__custom__';
@@ -37,9 +40,26 @@ const POPULAR_PROVIDER_IDS = [
   'google',
   'openrouter',
   'deepseek',
+  'siliconflow-cn',
+  'siliconflow',
   'groq',
   'ollama',
 ] as const;
+
+/** Fallback endpoints when the Server catalog omits baseUrl (e.g. before auth). */
+const BUILTIN_DISCOVER_BASE_URLS: Record<string, string> = {
+  openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  deepseek: 'https://api.deepseek.com',
+  groq: 'https://api.groq.com/openai/v1',
+  siliconflow: 'https://api.siliconflow.com/v1',
+  'siliconflow-cn': 'https://api.siliconflow.cn/v1',
+  together: 'https://api.together.xyz/v1',
+  fireworks: 'https://api.fireworks.ai/inference/v1',
+  xai: 'https://api.x.ai/v1',
+  mistral: 'https://api.mistral.ai/v1',
+  cerebras: 'https://api.cerebras.ai/v1',
+};
 
 const controlClass =
   'h-9 w-full rounded-control border border-line-strong bg-field px-3 text-[13px] text-ink shadow-inset-field outline-none transition-shadow focus:ring-2 focus:ring-[color:var(--focus)] disabled:cursor-not-allowed disabled:opacity-50';
@@ -59,6 +79,7 @@ function normalizeProviderIdInput(raw: string): string {
 export function AddModelModal({
   open,
   providers,
+  knownModels = [],
   onClose,
   onSave,
   onApiKeyLogin,
@@ -159,6 +180,27 @@ export function AddModelModal({
     setError('');
     if (step === 'connect' || step === 'custom-basics') setStep('pick');
     else if (step === 'custom-models') setStep('custom-basics');
+    else if (step === 'builtin-models') setStep('connect');
+  };
+
+  const seedModelRowsForProvider = (providerId: string) => {
+    const known = knownModels
+      .filter((model) => model.provider === providerId)
+      .map((model) => ({ id: model.id, name: model.name || '' }))
+      .filter((model) => model.id);
+    setModelRows(known.length > 0 ? known : [emptyModelRow()]);
+  };
+
+  const continueBuiltinConnect = () => {
+    setError('');
+    if (!currentProvider) return;
+    const key = apiKey.trim();
+    if (!key) {
+      setError(translate('API Key is required'));
+      return;
+    }
+    seedModelRowsForProvider(currentProvider.id);
+    setStep('builtin-models');
   };
 
   const handleClose = () => {
@@ -195,13 +237,29 @@ export function AddModelModal({
     setModelRows((rows) => (rows.length <= 1 ? [emptyModelRow()] : rows.filter((_, rowIndex) => rowIndex !== index)));
   };
 
+  const discoverBaseUrl = () => {
+    if (step === 'custom-models') return customBaseUrl.trim();
+    if (step === 'builtin-models') {
+      const fromCatalog = String(currentProvider?.baseUrl || '').trim();
+      if (fromCatalog) return fromCatalog;
+      const fromFallback = currentProvider ? BUILTIN_DISCOVER_BASE_URLS[currentProvider.id] : undefined;
+      return fromFallback || '';
+    }
+    return '';
+  };
+
   const handleDiscoverModels = async () => {
     if (!onDiscoverModels) return;
+    const baseUrl = discoverBaseUrl();
+    if (!baseUrl) {
+      setError(translate('Base URL is required'));
+      return;
+    }
     setError('');
     setDiscovering(true);
     try {
       const results = await onDiscoverModels({
-        baseUrl: customBaseUrl.trim(),
+        baseUrl,
         apiKey: apiKey.trim() || undefined,
       });
       if (!Array.isArray(results) || results.length === 0) {
@@ -220,16 +278,44 @@ export function AddModelModal({
     }
   };
 
-  const handleConnect = async () => {
+  /** OAuth-only: authorize and close. API key providers continue to the models step. */
+  const handleOAuthConnect = async () => {
     if (!currentProvider) return;
     setError('');
     setSaving(true);
     try {
-      if (authMethod === 'oauth') {
-        await onOAuthLogin(currentProvider.id);
+      await onOAuthLogin(currentProvider.id);
+      onClose();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSubmitBuiltin = async () => {
+    if (!currentProvider) return;
+    setError('');
+    setSaving(true);
+    try {
+      const key = apiKey.trim();
+      if (!key) throw new Error(translate('API Key is required'));
+      const models = modelRows
+        .map((row) => ({ id: row.id.trim(), name: row.name.trim() || undefined }))
+        .filter((row) => row.id);
+      const baseUrl = String(currentProvider.baseUrl || BUILTIN_DISCOVER_BASE_URLS[currentProvider.id] || '').trim();
+      if (models.length > 0) {
+        await onSave({
+          name: currentProvider.name,
+          ...(baseUrl ? { baseUrl } : {}),
+          apiKey: key,
+          providerId: currentProvider.id,
+          modelIds: models.map((model) => model.id),
+          models,
+          discoveredModels: models,
+          builtin: true,
+        });
       } else {
-        const key = apiKey.trim();
-        if (!key) throw new Error(translate('API Key is required'));
         await onApiKeyLogin(currentProvider.id, key);
       }
       onClose();
@@ -275,7 +361,7 @@ export function AddModelModal({
   const title =
     step === 'pick'
       ? translate('Connect providers')
-      : step === 'connect'
+      : step === 'connect' || step === 'builtin-models'
         ? translate(`Connect ${currentProvider?.name || 'Provider'}`)
         : step === 'custom-basics'
           ? translate('Custom provider')
@@ -284,9 +370,100 @@ export function AddModelModal({
   const description =
     step === 'connect'
       ? translate(`Enter your ${currentProvider?.name || 'Provider'} API key to connect your account and use its models in Metis.`)
-      : step === 'custom-basics'
-        ? translate('Configure an OpenAI-compatible provider.')
-        : null;
+      : step === 'builtin-models'
+        ? translate('Discover models first, then add model IDs as needed')
+        : step === 'custom-basics'
+          ? translate('Configure an OpenAI-compatible provider.')
+          : null;
+
+  const renderModelsEditor = (options: { onSubmit: () => void; submitLabel: string }) => (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <label className="text-[12.5px] font-medium text-ink-2">{translate('API key')}</label>
+        <div className="relative flex items-center">
+          <input
+            type={showApiKey ? 'text' : 'password'}
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder={translate('API key')}
+            autoComplete="off"
+            className={`${controlClass} pr-10`}
+          />
+          <button
+            type="button"
+            onClick={() => setShowApiKey((value) => !value)}
+            className="absolute right-1 flex h-7 w-7 items-center justify-center text-ink-3 transition-colors hover:text-ink"
+            aria-label={showApiKey ? translate('Hide API key') : translate('Show API key')}
+          >
+            {showApiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        {step === 'custom-models' ? (
+          <p className="text-[12px] text-ink-3">{translate('Optional. Leave blank if you manage auth another way.')}</p>
+        ) : null}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-[12.5px] font-medium text-ink-2">{translate('Models')}</label>
+          {onDiscoverModels ? (
+            <Button
+              type="button"
+              variant="quiet"
+              size="xs"
+              data-discover-models=""
+              disabled={discovering || saving}
+              onClick={() => void handleDiscoverModels()}
+            >
+              {discovering ? <LoaderCircle className="h-3 w-3 animate-spin" /> : null}
+              <span>{translate('Discover models')}</span>
+            </Button>
+          ) : null}
+        </div>
+        <div className="space-y-2">
+          {modelRows.map((row, index) => (
+            <div key={`model-row-${index}`} className="flex items-center gap-2">
+              <input
+                value={row.id}
+                onChange={(event) => updateModelRow(index, { id: event.target.value })}
+                placeholder={translate('model-id')}
+                className={controlClass}
+              />
+              <input
+                value={row.name}
+                onChange={(event) => updateModelRow(index, { name: event.target.value })}
+                placeholder={translate('Display name')}
+                className={controlClass}
+              />
+              <button
+                type="button"
+                className={iconButtonClass}
+                onClick={() => removeModelRow(index)}
+                aria-label={translate('Delete')}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => setModelRows((rows) => [...rows, emptyModelRow()])}
+          className="inline-flex items-center gap-1.5 px-1 py-1 text-[12.5px] font-medium text-ink-2 transition-colors hover:text-ink"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span>{translate('Add model')}</span>
+        </button>
+      </div>
+
+      {error ? <div className="rounded-chip border border-red/30 bg-red-tint px-3 py-2 text-[12px] text-red">{error}</div> : null}
+
+      <Button type="button" variant="primary" size="sm" disabled={saving || discovering} onClick={options.onSubmit}>
+        {saving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
+        <span>{options.submitLabel}</span>
+      </Button>
+    </div>
+  );
 
   const renderProviderRow = (provider: ProviderCatalogEntry) => {
     const branded = hasProviderBrandIcon(provider.id);
@@ -473,7 +650,16 @@ export function AddModelModal({
 
               {error ? <div className="rounded-chip border border-red/30 bg-red-tint px-3 py-2 text-[12px] text-red">{error}</div> : null}
 
-              <Button type="button" variant="primary" size="sm" disabled={saving} onClick={() => void handleConnect()}>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                disabled={saving}
+                onClick={() => {
+                  if (authMethod === 'oauth') void handleOAuthConnect();
+                  else continueBuiltinConnect();
+                }}
+              >
                 {saving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
                 <span>{authMethod === 'oauth' ? translate('Sign in') : translate('Continue')}</span>
               </Button>
@@ -542,83 +728,17 @@ export function AddModelModal({
           ) : null}
 
           {step === 'custom-models' ? (
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[12.5px] font-medium text-ink-2">{translate('API key')}</label>
-                <div className="relative flex items-center">
-                  <input
-                    type={showApiKey ? 'text' : 'password'}
-                    value={apiKey}
-                    onChange={(event) => setApiKey(event.target.value)}
-                    placeholder={translate('API key')}
-                    autoComplete="off"
-                    className={`${controlClass} pr-10`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey((value) => !value)}
-                    className="absolute right-1 flex h-7 w-7 items-center justify-center text-ink-3 transition-colors hover:text-ink"
-                    aria-label={showApiKey ? translate('Hide API key') : translate('Show API key')}
-                  >
-                    {showApiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-                <p className="text-[12px] text-ink-3">{translate('Optional. Leave blank if you manage auth another way.')}</p>
-              </div>
+            renderModelsEditor({
+              onSubmit: () => void handleSubmitCustom(),
+              submitLabel: translate('Submit'),
+            })
+          ) : null}
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-[12.5px] font-medium text-ink-2">{translate('Models')}</label>
-                  {onDiscoverModels ? (
-                    <Button type="button" variant="quiet" size="xs" disabled={discovering || saving} onClick={() => void handleDiscoverModels()}>
-                      {discovering ? <LoaderCircle className="h-3 w-3 animate-spin" /> : null}
-                      <span>{translate('Discover models')}</span>
-                    </Button>
-                  ) : null}
-                </div>
-                <div className="space-y-2">
-                  {modelRows.map((row, index) => (
-                    <div key={`model-row-${index}`} className="flex items-center gap-2">
-                      <input
-                        value={row.id}
-                        onChange={(event) => updateModelRow(index, { id: event.target.value })}
-                        placeholder={translate('model-id')}
-                        className={controlClass}
-                      />
-                      <input
-                        value={row.name}
-                        onChange={(event) => updateModelRow(index, { name: event.target.value })}
-                        placeholder={translate('Display name')}
-                        className={controlClass}
-                      />
-                      <button
-                        type="button"
-                        className={iconButtonClass}
-                        onClick={() => removeModelRow(index)}
-                        aria-label={translate('Delete')}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setModelRows((rows) => [...rows, emptyModelRow()])}
-                  className="inline-flex items-center gap-1.5 px-1 py-1 text-[12.5px] font-medium text-ink-2 transition-colors hover:text-ink"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>{translate('Add model')}</span>
-                </button>
-              </div>
-
-              {error ? <div className="rounded-chip border border-red/30 bg-red-tint px-3 py-2 text-[12px] text-red">{error}</div> : null}
-
-              <Button type="button" variant="primary" size="sm" disabled={saving || discovering} onClick={() => void handleSubmitCustom()}>
-                {saving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
-                <span>{translate('Submit')}</span>
-              </Button>
-            </div>
+          {step === 'builtin-models' && currentProvider ? (
+            renderModelsEditor({
+              onSubmit: () => void handleSubmitBuiltin(),
+              submitLabel: translate('Submit'),
+            })
           ) : null}
         </div>
       </section>

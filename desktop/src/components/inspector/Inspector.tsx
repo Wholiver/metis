@@ -341,45 +341,94 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
         </div>
       </div>
 
-      {activeTab?.kind === 'plan' ? (
-        <div id={`inspector-panel-${activeTab.id}`} role="tabpanel" aria-labelledby={`inspector-tab-${activeTab.id}`} className="flex min-h-0 flex-1 flex-col overflow-hidden px-3.5 pb-3.5 pt-2 no-drag" data-inspector-panel="plan" data-plan-section="">
-          <InspectorPlanPanel
-            viewedProposalMarkdown={activeTab.viewedProposalMarkdown}
-            viewedProposalSessionId={activeTab.viewedProposalSessionId}
-            activeSessionId={activeSessionId}
-            workflowProposal={workflowProposal}
-            workflowPlan={workflowPlan}
-            planActionsEnabled={planActionsEnabled}
-            onProcessProposal={onProcessProposal}
-            onRefineProposal={onRefineProposal}
-            contentScrollRef={contentScrollRef}
-          />
-        </div>
-      ) : activeTab?.kind === 'subagents' ? (
-        <div ref={contentScrollRef} id={`inspector-panel-${activeTab.id}`} role="tabpanel" aria-labelledby={`inspector-tab-${activeTab.id}`} className="flex-1 overflow-y-auto px-3.5 pb-3.5 pt-2 no-drag" data-inspector-panel="subagents" data-subagents-section="">
-          <SubagentsList
-            subagents={subagents}
-            onSelect={(item) => onOpenSubagent?.(item.id)}
-          />
-        </div>
-      ) : activeTab?.kind === 'browser' ? (
-        <div id={`inspector-panel-${activeTab.id}`} role="tabpanel" aria-labelledby={`inspector-tab-${activeTab.id}`} className="flex min-h-0 flex-1 flex-col overflow-hidden no-drag" data-inspector-panel="browser">
-          <InspectorBrowserPanel
-            tab={activeTab}
-            modelControlled={browserModelControlled}
-            onUpdateTab={onUpdateTab}
-          />
-        </div>
-      ) : (
-        <div id={`inspector-panel-${activeTab?.id || 'files'}`} role="tabpanel" aria-labelledby={activeTab ? `inspector-tab-${activeTab.id}` : undefined} className="flex min-h-0 flex-1 flex-col overflow-hidden no-drag" data-inspector-panel="files" data-changed-files-section="" data-review-section="">
-          <ReviewPanel
-            sessionId={activeSessionId}
-            workspacePath={workspacePath}
-            toolParts={toolParts}
-            enabled
-          />
-        </div>
-      )}
+      {tabs.map((tab) => {
+        const selected = tab.id === activeTab?.id;
+        if (tab.kind === 'plan') {
+          return (
+            <div
+              key={tab.id}
+              id={`inspector-panel-${tab.id}`}
+              role="tabpanel"
+              aria-labelledby={`inspector-tab-${tab.id}`}
+              hidden={!selected}
+              className="flex min-h-0 flex-1 flex-col overflow-hidden px-3.5 pb-3.5 pt-2 no-drag"
+              data-inspector-panel="plan"
+              data-plan-section=""
+            >
+              <InspectorPlanPanel
+                viewedProposalMarkdown={tab.viewedProposalMarkdown}
+                viewedProposalSessionId={tab.viewedProposalSessionId}
+                activeSessionId={activeSessionId}
+                workflowProposal={workflowProposal}
+                workflowPlan={workflowPlan}
+                planActionsEnabled={planActionsEnabled}
+                onProcessProposal={onProcessProposal}
+                onRefineProposal={onRefineProposal}
+                contentScrollRef={selected ? contentScrollRef : undefined}
+              />
+            </div>
+          );
+        }
+        if (tab.kind === 'subagents') {
+          return (
+            <div
+              key={tab.id}
+              ref={selected ? contentScrollRef : undefined}
+              id={`inspector-panel-${tab.id}`}
+              role="tabpanel"
+              aria-labelledby={`inspector-tab-${tab.id}`}
+              hidden={!selected}
+              className="flex-1 overflow-y-auto px-3.5 pb-3.5 pt-2 no-drag"
+              data-inspector-panel="subagents"
+              data-subagents-section=""
+            >
+              <SubagentsList
+                subagents={subagents}
+                onSelect={(item) => onOpenSubagent?.(item.id)}
+              />
+            </div>
+          );
+        }
+        if (tab.kind === 'browser') {
+          return (
+            <div
+              key={tab.id}
+              id={`inspector-panel-${tab.id}`}
+              role="tabpanel"
+              aria-labelledby={`inspector-tab-${tab.id}`}
+              hidden={!selected}
+              className="flex min-h-0 flex-1 flex-col overflow-hidden no-drag"
+              data-inspector-panel="browser"
+            >
+              <InspectorBrowserPanel
+                tab={tab}
+                modelControlled={browserModelControlled}
+                onUpdateTab={onUpdateTab}
+              />
+            </div>
+          );
+        }
+        return (
+          <div
+            key={tab.id}
+            id={`inspector-panel-${tab.id}`}
+            role="tabpanel"
+            aria-labelledby={`inspector-tab-${tab.id}`}
+            hidden={!selected}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden no-drag"
+            data-inspector-panel="files"
+            data-changed-files-section=""
+            data-review-section=""
+          >
+            <ReviewPanel
+              sessionId={activeSessionId}
+              workspacePath={workspacePath}
+              toolParts={toolParts}
+              enabled
+            />
+          </div>
+        );
+      })}
     </aside>
   );
 }));

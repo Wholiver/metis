@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useRef } from 'react';
 import { AssistantContentPart, CollaborationMode, Message, ModelOption, PendingUserInput, WorkflowProposalState } from '../../types';
 import { estimateThinkingDurationMs } from '../../lib/thinking';
 import { AgentBubble } from './AgentBubble';
@@ -154,6 +154,19 @@ export function resolveCompletedWorkDurationMs(
   return thinkingItems.reduce((total, part) => total + (part.durationMs ?? estimateThinkingDurationMs(part.thinking)), 0);
 }
 
+function reuseStablePartList(
+  previous: AssistantContentPart[] | undefined,
+  next: AssistantContentPart[],
+): AssistantContentPart[] {
+  if (!previous) return next;
+  if (previous === next) return previous;
+  if (previous.length !== next.length) return next;
+  for (let index = 0; index < next.length; index += 1) {
+    if (previous[index] !== next[index]) return next;
+  }
+  return previous;
+}
+
 function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTurnProps): boolean {
   if (prev.streaming !== next.streaming) return false;
   if (prev.showProgress !== next.showProgress) return false;
@@ -178,7 +191,7 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
 
 const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   messages,
-  startedAt,
+  startedAt: _startedAt,
   streaming = false,
   showProgress = false,
   workflowProposal,
@@ -198,6 +211,21 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   )) : undefined;
   const errorText = failureMessage ? (failureMessage.errorMessage || failureMessage.content) : undefined;
   const layout = resolveAssistantTurnLayout(messages, { streaming, failureMessage });
+  const workItemsRef = useRef<AssistantContentPart[]>([]);
+  const workItems = reuseStablePartList(workItemsRef.current, layout.workItems);
+  workItemsRef.current = workItems;
+  const finalEntryMessage = layout.finalEntry?.message;
+  const finalEntryPart = layout.finalEntry?.part;
+  const finalMessage = useMemo((): Message | undefined => {
+    if (!finalEntryMessage || !finalEntryPart) return undefined;
+    return {
+      ...finalEntryMessage,
+      content: finalEntryPart.text,
+      thinking: undefined,
+      thinkingDurationMs: undefined,
+      parts: [finalEntryPart],
+    };
+  }, [finalEntryMessage, finalEntryPart]);
   const copyText = layout.finalText;
   const footer = !streaming && (copyText || collaborationMode || model) ? (
     <AssistantTurnFooter
@@ -209,7 +237,7 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   const retryHandler = failureMessage && retryPrompt && onRetry
     ? () => onRetry(retryPrompt)
     : undefined;
-  const hasWork = streaming || isWaitingUserInput || layout.workItems.some((part) => part.type === 'thinking' || part.type === 'toolCall');
+  const hasWork = streaming || isWaitingUserInput || workItems.some((part) => part.type === 'thinking' || part.type === 'toolCall');
   if (!hasWork) {
     const nonFailureMessages = failureMessage
       ? messages.filter((m) => m !== failureMessage && m.content && m.content !== failureMessage.errorMessage)
@@ -238,25 +266,11 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
     );
   }
 
-  const workItems = layout.workItems;
-  const workDuration = resolveCompletedWorkDurationMs(messages, workItems, startedAt, streaming);
-  const finalEntry = layout.finalEntry;
-  const finalMessage = finalEntry
-    ? {
-        ...finalEntry.message,
-        content: finalEntry.part.text,
-        thinking: undefined,
-        thinkingDurationMs: undefined,
-        parts: [finalEntry.part],
-      }
-    : undefined;
-
   return (
     <div className="assistant-turn-segment w-full min-w-0 max-w-full" data-assistant-turn>
       <AssistantWork
         items={workItems}
         streaming={streaming}
-        durationMs={workDuration}
         onOpenSubagent={onOpenSubagent}
       />
       {finalMessage && (

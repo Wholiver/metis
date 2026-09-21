@@ -1,6 +1,6 @@
 {
 	"name": "@wholiver_hu/metis",
-	"version": "1.3.1",
+	"version": "1.3.2",
 	"description": "A terminal-first coding agent that helps models search, remember, execute, and verify more reliably",
 	"type": "module",
 	"metisConfig": {
@@ -24,7 +24,13 @@
 	"files": [
 		"dist",
 		"docs",
+		"!docs/terminalbench-autoprompt-final-diagnosis.md",
 		"adapters",
+		"!adapters/harbor_tb",
+		"!adapters/harbor_tb/**",
+		"!**/__pycache__",
+		"!**/__pycache__/**",
+		"!**/*.pyc",
 		"examples",
 		"containerization.md",
 		"CHANGELOG.md",

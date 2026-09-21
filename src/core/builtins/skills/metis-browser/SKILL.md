@@ -23,12 +23,13 @@ Do **not** use this skill for:
 ## Required workflow
 
 1. Confirm `browser_*` tools are listed for this session. If they are missing, report that the Desktop browser host is unavailable; do not invent Playwright/Chrome automation and do not use system browsers as a fallback for "内置浏览器".
-2. Prefer this order:
+2. In Build mode, `browser_snapshot` and `browser_take_screenshot` are readable and may run before admission. `browser_navigate`, mutating `browser_tabs` (`new`/`select`), `browser_click`, `browser_fill`, `browser_type`, `browser_press_key`, and `browser_scroll` are mutating: when `performance_admit` is available, admit first. Do not always `browser_navigate` first with no admit. `browser_tabs` `list` is readable.
+3. After admission (or when the tools are already allowed), prefer this order:
    - `browser_navigate` (opens/activates Inspector browser tab). Wait for the tool result; it must report a real `url`/`title`, not a leftover `about:blank`.
    - Visual SVG/HTML/artwork: `browser_take_screenshot` after navigate returns. Snapshot of a drawing is usually empty and is not visual proof.
    - Interactive UI: `browser_snapshot` (accessibility / interactive tree with `ref`s), then `browser_click`, `browser_fill`, `browser_type`, `browser_press_key`, or `browser_scroll` using **current** `ref` values. Snapshot again after every action (refs are session-local and become stale).
-3. Prefer `browser_take_screenshot` when judging layout, color, animation, overlap, or SVG/HTML appearance. Prefer `browser_snapshot` only when you need refs to click or fill.
-4. After editing local app code or an SVG/HTML file, reload with `browser_navigate` to the same path before claiming the UI is fixed, then screenshot again.
+4. Prefer `browser_take_screenshot` when judging layout, color, animation, overlap, or SVG/HTML appearance. Prefer `browser_snapshot` only when you need refs to click or fill.
+5. After editing local app code or an SVG/HTML file, reload with `browser_navigate` to the same path before claiming the UI is fixed, then screenshot again.
 
 ## Local file / SVG / HTML preview
 

@@ -1136,6 +1136,8 @@ describe("ModelRegistry", () => {
 			expect(registry.getProviderDisplayName("orcarouter")).toBe("OrcaRouter");
 			expect(registry.getProviderDisplayName("github-copilot")).toBe("GitHub Copilot");
 			expect(registry.getProviderDisplayName("zai")).toBe("ZAI Coding Plan (Global)");
+			expect(registry.getProviderDisplayName("siliconflow")).toBe("SiliconFlow");
+			expect(registry.getProviderDisplayName("siliconflow-cn")).toBe("SiliconFlow (China)");
 			expect(registry.getProviderDisplayName("unknown-provider")).toBe("unknown-provider");
 
 			registry.registerProvider("named-provider", {
@@ -1890,6 +1892,40 @@ describe("ModelRegistry", () => {
 						process.env[envVarName] = originalEnv;
 					}
 				}
+			});
+
+			test("getAvailable includes custom models.json providers that omit apiKey", async () => {
+				writeRawModelsJson({
+					"custom-local": {
+						name: "Local",
+						baseUrl: "http://127.0.0.1:11434/v1",
+						api: "openai-completions",
+						models: [{ id: "llama3" }],
+					},
+					ollama: {
+						baseUrl: "http://127.0.0.1:11434/v1",
+						api: "openai-completions",
+						models: [{ id: "qwen2.5" }],
+					},
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				const available = registry.getAvailable();
+
+				expect(available.some((model) => model.provider === "custom-local" && model.id === "llama3")).toBe(true);
+				expect(available.some((model) => model.provider === "ollama" && model.id === "qwen2.5")).toBe(true);
+				expect(registry.getProviderAuthStatus("custom-local")).toEqual({
+					configured: true,
+					source: "models_json_key",
+				});
+
+				const localModel = registry.find("custom-local", "llama3");
+				expect(localModel).toBeDefined();
+				expect(registry.hasConfiguredAuth(localModel!)).toBe(true);
+				await expect(registry.getApiKeyAndHeaders(localModel!)).resolves.toMatchObject({
+					ok: true,
+					apiKey: "local",
+				});
 			});
 
 			test("provider auth status reports command apiKey values from models.json without executing them", () => {

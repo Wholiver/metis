@@ -67,6 +67,6 @@ describe('desktop React Ask interface', () => {
     expect(hook).toContain("request<SessionState & { cancelled: boolean }>('/session/switch'");
     expect(hook).toContain('switchResult.pendingUserInput !== undefined');
     expect(hook).toContain('setPendingUserInput(switchResult.pendingUserInput)');
-    expect(hook).toContain('loadMessages(targetSessionId, true)');
+    expect(hook).toContain('loadMessages(targetSessionId, true, switchResult)');
   });
 });

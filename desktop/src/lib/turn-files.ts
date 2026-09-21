@@ -52,8 +52,14 @@ function asToolArguments(value: unknown): ToolArguments | undefined {
 
 function lineCount(value: unknown): number {
   if (typeof value !== 'string' || value.length === 0) return 0;
-  const normalized = value.replace(/\r\n/g, '\n');
-  return normalized.split('\n').length - (normalized.endsWith('\n') ? 1 : 0);
+  let count = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code === 10) count += 1;
+    else if (code === 13 && value.charCodeAt(index + 1) !== 10) count += 1;
+  }
+  const last = value.charCodeAt(value.length - 1);
+  return last === 10 || last === 13 ? count : count + 1;
 }
 
 function editStats(args: ToolArguments): Pick<TurnFileChange, 'additions' | 'deletions'> {

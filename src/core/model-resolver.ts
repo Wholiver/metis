@@ -11,7 +11,7 @@ import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 
 /** Default model IDs for each known provider */
-export const defaultModelPerProvider: Record<KnownProvider, string> = {
+export const defaultModelPerProvider: Record<KnownProvider | "siliconflow" | "siliconflow-cn", string> = {
 	"amazon-bedrock": "us.anthropic.claude-opus-4-6-v1",
 	cohere: "command-r-plus-08-2024",
 	"ant-ling": "Ring-2.6-1T",
@@ -53,6 +53,8 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	"xiaomi-token-plan-cn": "mimo-v2.5-pro",
 	"xiaomi-token-plan-ams": "mimo-v2.5-pro",
 	"xiaomi-token-plan-sgp": "mimo-v2.5-pro",
+	siliconflow: "deepseek-ai/DeepSeek-V4-Flash",
+	"siliconflow-cn": "deepseek-ai/DeepSeek-V4-Flash",
 };
 
 export interface ScopedModel {

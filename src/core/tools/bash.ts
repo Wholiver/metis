@@ -236,7 +236,7 @@ const EMBEDDED_FILE_WRITE_REJECTION =
 	"Use the write tool to create or overwrite files. Do not use cat/heredoc/tee to write file contents when write is available.";
 
 const EXTERNAL_BROWSER_PREVIEW_REJECTION =
-	"Use browser_navigate (and browser_snapshot/browser_screenshot) for local SVG/HTML preview. Do not launch Chrome/Safari/Edge --headless --screenshot, open -a, xdg-open, or qlmanage when browser_* tools are available.";
+	"Use browser_navigate after performance_admit for local SVG/HTML preview. browser_snapshot and browser_screenshot are readable. Do not launch Chrome/Safari/Edge --headless --screenshot, open -a, xdg-open, or qlmanage when browser_* tools are available.";
 
 const INLINE_FILE_READ_REJECTION =
 	"Use the read tool to inspect workspace files. Do not use python3 -c / node -e with open()/readFile to read or search file contents when read is available. python3 script.py and ET.parse checks are still allowed.";

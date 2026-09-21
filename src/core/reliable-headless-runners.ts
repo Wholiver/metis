@@ -2,8 +2,9 @@
  * Shared reliable-headless turn runner for print / TUI / server.
  * Runtime is always reliable-headless. Controller short-loop runs when a
  * compiled contract already has instruction-owned oracle evidence (chat-aware),
- * or always under strict headless policy (print/adapters). Ambient bundled-public
- * checks alone do not force chat-aware Controller entry.
+ * or always under strict headless policy (print/adapters with taskPaths).
+ * Ambient bundled-public checks alone do not force chat-aware Controller entry.
+ * Plan is the scoped exception: never host-verify.
  */
 
 import type { ImageContent } from "@earendil-works/metis-ai";
@@ -39,8 +40,35 @@ export interface ReliableSessionLike {
 	prompt: (text: string, opts?: { images?: ImageContent[] }) => Promise<unknown>;
 	getActiveToolDefinition: (name: string) => import("./extensions/types.ts").ToolDefinition | undefined;
 	performanceRun?: { status?: string; frontier?: string } | null;
+	/** Plan mode must keep the original read-only prompt path; never host-verify. */
+	collaborationMode?: string;
 	/** Optional: latest assistant text / stopReason collection for outcomes. */
 	collectAssistantOutcome?: () => AgentRunOutcome;
+}
+
+/** Adapters/headless oracles set task path env or explicit taskPaths. */
+export function hasTaskPathHints(taskPaths?: TaskPaths, env: NodeJS.ProcessEnv = process.env): boolean {
+	return Boolean(
+		taskPaths?.input
+			|| taskPaths?.output
+			|| taskPaths?.software
+			|| env.METIS_TASK_INPUT?.trim()
+			|| env.METIS_TASK_OUTPUT?.trim()
+			|| env.METIS_TASK_SOFTWARE?.trim(),
+	);
+}
+
+/**
+ * Designed cutover: print/TUI/Desktop default chat-aware; Harbor/ALE/TB with
+ * task path hints take strict named-child Controller.
+ */
+export function resolveReliableTurnPolicy(args: {
+	requested?: ReliableTurnPolicy;
+	taskPaths?: TaskPaths;
+	env?: NodeJS.ProcessEnv;
+}): ReliableTurnPolicy {
+	if (args.requested) return args.requested;
+	return hasTaskPathHints(args.taskPaths, args.env) ? "strict" : "chat-aware";
 }
 
 export interface RunReliableTurnOptions {
@@ -50,8 +78,8 @@ export interface RunReliableTurnOptions {
 	taskPaths?: TaskPaths;
 	signal?: AbortSignal;
 	/**
-	 * strict: always Controller (solver + fail-closed) — print/json/adapters.
-	 * chat-aware: Controller only when compile already has instruction-owned oracle; else conversational prompt.
+	 * strict: always Controller (solver + named-child short-loop) — adapters with taskPaths.
+	 * chat-aware: root prompt; Controller verify when the instruction owns an oracle; no child short-loop.
 	 */
 	policy: ReliableTurnPolicy;
 	/** Images for the first conversational/root prompt only. */
@@ -68,6 +96,33 @@ export interface RunReliableTurnOptions {
 	) => Promise<HostNamedChildExecuteResult>;
 	/** Injected ExecutionResult (tests). */
 	executionResult?: ExecutionResult;
+	/** Plan is the designed scoped exception: never host-verify. */
+	collaborationMode?: string;
+}
+
+async function promptOnce(
+	session: ReliableSessionLike,
+	text: string,
+	images?: ImageContent[],
+): Promise<void> {
+	if (images) {
+		await session.prompt(text, { images });
+		return;
+	}
+	await session.prompt(text);
+}
+
+/** Original user→session.prompt loop: do not double-send joined instruction + follow-ups. */
+async function promptOriginalWorkflow(options: RunReliableTurnOptions): Promise<void> {
+	if (options.rootPromptText) {
+		await promptOnce(options.session, options.rootPromptText, options.images);
+	}
+	for (const message of options.followUpMessages ?? []) {
+		await promptOnce(options.session, message);
+	}
+	if (!options.rootPromptText && (options.followUpMessages?.length ?? 0) === 0 && options.instruction.trim()) {
+		await promptOnce(options.session, options.instruction, options.images);
+	}
 }
 
 function failingOrPassingFromOutcome(outcome: AgentRunOutcome, contract = EMPTY_TASK_CONTRACT): ExecutionResult {
@@ -118,25 +173,31 @@ export function buildReliableControllerDeps(args: {
 	rootPromptText?: string;
 	images?: ImageContent[];
 	followUpMessages?: string[];
+	/** Only strict/adapter turns may replace the root tool loop with named children. */
+	attachHostNamedChildren?: boolean;
+	/** Ambient package.json `npm test` must not run after ordinary chat. */
+	includeBundledPublicChecks?: boolean;
 }): TaskExecutionControllerDeps {
 	const collectedChildResults: ChildResult[] = [];
-	const namedRunners = createHostNamedChildRunners({
-		cwd: args.cwd,
-		execute: args.hostNamedChildExecute,
-		getSpawnTool: () => args.session.getActiveToolDefinition("spawn_agent"),
-		onChildResult: (result) => {
-			collectedChildResults.push(result);
-		},
-	});
+	const namedRunners = args.attachHostNamedChildren
+		? createHostNamedChildRunners({
+				cwd: args.cwd,
+				execute: args.hostNamedChildExecute,
+				getSpawnTool: () => args.session.getActiveToolDefinition("spawn_agent"),
+				onChildResult: (result) => {
+					collectedChildResults.push(result);
+				},
+			})
+		: {};
 
 	return {
 		runAgent: async () => {
 			const text = args.rootPromptText ?? "";
 			if (text) {
-				await args.session.prompt(text, args.images ? { images: args.images } : undefined);
+				await promptOnce(args.session, text, args.images);
 			}
 			for (const message of args.followUpMessages ?? []) {
-				await args.session.prompt(message);
+				await promptOnce(args.session, message);
 			}
 			return args.collectAssistantOutcome();
 		},
@@ -157,6 +218,7 @@ export function buildReliableControllerDeps(args: {
 		runImplementer: namedRunners.runImplementer,
 		runVerifier: namedRunners.runVerifier,
 		runContractSolver: namedRunners.runContractSolver,
+		includeBundledPublicChecks: args.includeBundledPublicChecks ?? true,
 		getPerformanceSnapshot: () =>
 			args.session.performanceRun
 				? {
@@ -171,6 +233,7 @@ export function buildReliableControllerDeps(args: {
 				cwd: request.cwd,
 				taskPaths: request.taskPaths,
 				priorEvidenceHash,
+				includeBundledPublicChecks: args.includeBundledPublicChecks ?? true,
 			});
 			return verified.completion;
 		},
@@ -200,20 +263,17 @@ export async function runReliableTurn(options: RunReliableTurnOptions): Promise<
 		taskPaths: options.taskPaths,
 	});
 
+	const collaborationMode = options.collaborationMode ?? options.session.collaborationMode;
 	const useController =
-		options.policy === "strict" || contractHasInstructionOwnedOracle(compiled);
+		collaborationMode !== "plan"
+		&& (options.policy === "strict" || contractHasInstructionOwnedOracle(compiled));
 
 	if (!useController) {
-		const text = options.rootPromptText ?? options.instruction;
-		if (text) {
-			await options.session.prompt(text, options.images ? { images: options.images } : undefined);
-		}
-		for (const message of options.followUpMessages ?? []) {
-			await options.session.prompt(message);
-		}
+		await promptOriginalWorkflow(options);
 		return failingOrPassingFromOutcome(options.collectAssistantOutcome(), compiled);
 	}
 
+	const strict = options.policy === "strict";
 	const deps = buildReliableControllerDeps({
 		session: options.session,
 		cwd: options.cwd,
@@ -223,6 +283,8 @@ export async function runReliableTurn(options: RunReliableTurnOptions): Promise<
 		rootPromptText: options.rootPromptText ?? options.instruction,
 		images: options.images,
 		followUpMessages: options.followUpMessages,
+		attachHostNamedChildren: strict,
+		includeBundledPublicChecks: strict,
 	});
 
 	return createTaskExecutionController(deps).execute(

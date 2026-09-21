@@ -784,9 +784,8 @@ export async function main(args: string[], options?: MainOptions) {
 				}
 				resourceLoader.getAppendSystemPrompt().unshift(agentPrompt);
 
-				if (resolvedConfig.tools) {
-					sessionOptions.tools = sessionToolsForNamedAgent(resolvedConfig.tools);
-				}
+				sessionOptions.namedAgentSession = true;
+				sessionOptions.tools = sessionToolsForNamedAgent(resolvedConfig.tools ?? sessionOptions.tools);
 
 				if (!parsed.model && resolvedConfig.model) {
 					const resolved = resolveCliModel({
@@ -841,6 +840,7 @@ export async function main(args: string[], options?: MainOptions) {
 			excludeTools: sessionOptions.excludeTools,
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
+			namedAgentSession: sessionOptions.namedAgentSession,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {

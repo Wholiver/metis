@@ -8,8 +8,10 @@ import {
   clipToolTriggerText,
   collectTurnFileDiffs,
   isFileMutationTool,
+  TOOL_DIFF_ROW_LIMIT,
   TOOL_TRIGGER_TEXT_LIMIT,
   toolHasExpandableDetails,
+  toolResultText,
 } from '../desktop/src/lib/tool-diff';
 import type { AssistantContentPart } from '../desktop/src/types';
 
@@ -90,6 +92,8 @@ describe('desktop tool file diff rendering', () => {
     expect(session).toContain('[data-component="exa-tool-output"]');
     expect(session).toContain('.basic-tool-content[data-defer="true"]');
     expect(session).toContain('[data-slot="tool-transcript-truncated"]');
+    expect(session).toContain('contain-intrinsic-size: auto 24px');
+    expect(code).toContain('HIGHLIGHT_CHAR_LIMIT');
   });
 
   it('keeps write/edit expansions as flush diffs', () => {
@@ -155,6 +159,35 @@ describe('desktop tool file diff rendering', () => {
     expect(clipped.shownLines).toBeLessThanOrEqual(80);
     expect(clipped.text.split('\n')[0]).toBe('line-0');
     expect(clipToolTranscript('ok').truncated).toBe(false);
+  });
+
+  it('clips expanded write diffs without shrinking the review-turn aggregation', () => {
+    const lines = Array.from({ length: 200 }, (_, index) => `line-${index}`);
+    const part = tool('w-huge', 'write', {
+      path: 'desktop/src/huge.ts',
+      content: `${lines.join('\n')}\n`,
+    });
+    const view = buildToolExpandedView(part);
+    expect(view?.kind).toBe('diff');
+    if (view?.kind === 'diff') {
+      expect(view.truncated).toBe(true);
+      expect(view.rows).toHaveLength(TOOL_DIFF_ROW_LIMIT);
+    }
+    expect(buildToolFileDiff(part)?.rows.length).toBeGreaterThan(TOOL_DIFF_ROW_LIMIT);
+    expect(collectTurnFileDiffs([part])[0]?.rows.length).toBeGreaterThan(TOOL_DIFF_ROW_LIMIT);
+  });
+
+  it('skips pretty-print for huge JSON tool results', () => {
+    const payload = { blob: 'x'.repeat(9_000) };
+    const text = toolResultText({
+      type: 'toolCall',
+      id: 'json-1',
+      name: 'query_memory_db',
+      arguments: { query: 'x' },
+      result: { content: payload as unknown as string },
+    });
+    expect(text.includes('\n')).toBe(false);
+    expect(text.length).toBeGreaterThan(8_000);
   });
 
   it('treats browser tool output as clipped pre text and skips expanded-view work while collapsed', () => {

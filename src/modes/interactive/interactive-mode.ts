@@ -1019,8 +1019,8 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Host-owned reliable turn: Controller when contract has independent oracle;
-	 * otherwise conversational prompt under reliable runtime. Never process.exit on task_failed.
+	 * Host-owned reliable turn: chat-aware Controller when the instruction owns an oracle;
+	 * otherwise conversational prompt. Never process.exit on task_failed.
 	 */
 	private async promptReliableTurn(args: {
 		text: string;
@@ -1031,14 +1031,16 @@ export class InteractiveMode {
 		const instruction = buildContractInstruction(args.text || undefined, args.followUpMessages ?? []);
 		const result = await runReliableTurn({
 			session: {
-				prompt: (text, opts) => this.session.prompt(text, opts),
+				prompt: (text, opts) => (opts ? this.session.prompt(text, opts) : this.session.prompt(text)),
 				getActiveToolDefinition: (name) => this.session.getActiveToolDefinition(name),
 				performanceRun: this.session.performanceRun,
+				collaborationMode: this.session.collaborationMode,
 			},
 			instruction,
 			cwd: this.sessionManager.getCwd(),
 			taskPaths: this.options.taskPaths,
 			policy: "chat-aware",
+			collaborationMode: this.session.collaborationMode,
 			images: args.images,
 			rootPromptText: args.text || undefined,
 			followUpMessages: args.followUpMessages,

@@ -22,7 +22,7 @@ interface ChatHeaderProps {
   onNavigateBreadcrumb?: (depth: number) => void;
 }
 
-export const ChatHeader: React.FC<ChatHeaderProps> = ({
+export const ChatHeader = React.memo<ChatHeaderProps>(({
   agent,
   isSidebarOpen = true,
   isInspectorOpen = true,
@@ -138,4 +138,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
       </div>
     </div>
   );
-};
+});
+
+ChatHeader.displayName = 'ChatHeader';

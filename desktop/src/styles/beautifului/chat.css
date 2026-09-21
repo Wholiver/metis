@@ -127,7 +127,7 @@
   font-size: var(--body-copy-size);
   font-weight: var(--body-copy-weight);
   line-height: var(--body-copy-line-height);
-  text-wrap: pretty;
+  text-wrap: wrap;
 }
 
 .dark .thinking-header .thinking-summary, .dark .thinking-scroll .cot-thinking-markdown { color: #94a3b8; }
@@ -154,6 +154,7 @@
   background: linear-gradient(90deg, rgb(226 232 240 / 60%) 25%, rgb(203 213 225 / 85%) 50%, rgb(226 232 240 / 60%) 75%);
   background-size: 200% 100%;
   animation: thinking-skeleton-shimmer 1.8s ease-in-out infinite;
+  contain: paint;
 }
 
 .dark .thinking-skeleton-line {
@@ -174,7 +175,7 @@
   font-size: var(--body-copy-size);
   font-weight: var(--body-copy-weight);
   line-height: var(--body-copy-line-height);
-  text-wrap: pretty;
+  text-wrap: wrap;
 }
 
 .turn-final-response.after-expanded-work { margin-top: var(--work-final-gap); }
@@ -268,6 +269,7 @@
   padding: 0 4px 6px 0;
   overflow-x: hidden;
   overflow-y: auto;
+  overflow-anchor: none;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   box-sizing: border-box;

@@ -59,7 +59,6 @@
   animation-timing-function: linear;
   animation-fill-mode: both;
   animation-delay: calc(var(--text-shimmer-step) * var(--text-shimmer-index) * -1);
-  will-change: background-position;
 }
 
 @keyframes text-shimmer-sweep {
@@ -120,7 +119,6 @@
 }
 
 [data-component="tool-trigger"] {
-  content-visibility: auto;
   width: 100%;
   display: flex;
   align-items: center;
@@ -333,6 +331,8 @@
 [data-component="command-tool-group-list"] .tool-card {
   min-width: 0;
   padding: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 24px;
 }
 
 [data-component="context-tool-group-list"] [data-component="tool-trigger"] {
@@ -401,6 +401,8 @@
   max-height: 240px;
   overflow-x: hidden;
   overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -414,6 +416,10 @@
 
 [data-component="text-part"] [data-slot="text-part-body"] {
   margin-top: 0;
+}
+
+[data-workflow-plan-card] {
+  contain: content;
 }
 
 .tool-card {
@@ -532,6 +538,8 @@
   max-height: 240px;
   overflow-y: auto;
   overflow-x: hidden;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
   scrollbar-width: none;
 }
 

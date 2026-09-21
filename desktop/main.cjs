@@ -15,6 +15,7 @@ const {
 	persistMetisServer,
 	restoreMetisServer,
 } = require("./server-connection.cjs");
+const { createSseIpcBridge } = require("./sse-ipc-bridge.cjs");
 const desktopI18n = require("./i18n.cjs");
 const { createBrowserHostController } = require("./browser-host.cjs");
 const { WorkspaceCreateError, createWorkspaceDirectory } = require("./workspace-create.cjs");
@@ -2491,25 +2492,34 @@ async function streamMetisEvents() {
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = "";
-			while (!controller.signal.aborted) {
-				const { done, value } = await reader.read();
-				if (done) throw new Error(nativeText("sseClosed"));
-				buffer += decoder.decode(value, { stream: true });
-				let boundary;
-				while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-					const frame = buffer.slice(0, boundary);
-					buffer = buffer.slice(boundary + 2);
-					const cleanFrame = frame.replace(/\r/g, "");
-					const data = cleanFrame
-						.split("\n")
-						.filter((line) => line.startsWith("data:"))
-						.map((line) => line.slice(5).trimStart())
-						.join("\n");
-					if (!data) continue;
-					try {
-						mainWindow?.webContents.send("metis:event", JSON.parse(data));
-					} catch {}
+			const bridge = createSseIpcBridge({
+				send: (data) => {
+					if (controller.signal.aborted) return;
+					mainWindow?.webContents.send("metis:event", data);
+				},
+			});
+			try {
+				while (!controller.signal.aborted) {
+					const { done, value } = await reader.read();
+					if (done) throw new Error(nativeText("sseClosed"));
+					buffer += decoder.decode(value, { stream: true });
+					let boundary;
+					while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+						const frame = buffer.slice(0, boundary);
+						buffer = buffer.slice(boundary + 2);
+						const cleanFrame = frame.replace(/\r/g, "");
+						const data = cleanFrame
+							.split("\n")
+							.filter((line) => line.startsWith("data:"))
+							.map((line) => line.slice(5).trimStart())
+							.join("\n");
+						if (!data) continue;
+						bridge.push(data);
+					}
 				}
+			} finally {
+				bridge.flush();
+				bridge.dispose();
 			}
 		} catch (error) {
 			if (controller.signal.aborted) break;

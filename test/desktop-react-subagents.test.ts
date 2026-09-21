@@ -684,7 +684,7 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(hook).toContain('messagesSessionId,');
     expect(hook).toContain('messagesCacheRef');
     expect(hook).toContain('setMessages([])');
-    expect(hook).toContain("setMessagesSessionId('')");
+    expect(hook).toContain('setMessagesSessionId(agentId)');
     expect(hook).toContain('setIsLoadingMessages');
 
     expect(app).toContain('messagesSessionId,');

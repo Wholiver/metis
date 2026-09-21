@@ -74,12 +74,28 @@ metis
 | Kimi For Coding | `KIMI_API_KEY` | `kimi-coding` |
 | MiniMax | `MINIMAX_API_KEY` | `minimax` |
 | MiniMax (China) | `MINIMAX_CN_API_KEY` | `minimax-cn` |
+| SiliconFlow | `SILICONFLOW_API_KEY` | `siliconflow` |
+| SiliconFlow (China) | `SILICONFLOW_CN_API_KEY` | `siliconflow-cn` |
 | Xiaomi MiMo | `XIAOMI_API_KEY` | `xiaomi` |
 | Xiaomi MiMo Token Plan (China) | `XIAOMI_TOKEN_PLAN_CN_API_KEY` | `xiaomi-token-plan-cn` |
 | Xiaomi MiMo Token Plan (Amsterdam) | `XIAOMI_TOKEN_PLAN_AMS_API_KEY` | `xiaomi-token-plan-ams` |
 | Xiaomi MiMo Token Plan (Singapore) | `XIAOMI_TOKEN_PLAN_SGP_API_KEY` | `xiaomi-token-plan-sgp` |
 
-Reference for environment variables and `auth.json` keys: [`const envMap`](https://github.com/earendil-works/metis/blob/main/packages/ai/src/env-api-keys.ts) in [`packages/ai/src/env-api-keys.ts`](https://github.com/earendil-works/metis/blob/main/packages/ai/src/env-api-keys.ts).
+Reference for environment variables and `auth.json` keys: [`const envMap`](https://github.com/earendil-works/metis/blob/main/packages/ai/src/env-api-keys.ts) in [`packages/ai/src/env-api-keys.ts`](https://github.com/earendil-works/metis/blob/main/packages/ai/src/env-api-keys.ts). SiliconFlow (China / International) keys are defined in [`src/core/providers/siliconflow.ts`](../src/core/providers/siliconflow.ts).
+
+SiliconFlow runs two independent platforms. Keys, accounts, and model catalogs do not interoperate:
+
+```bash
+# International — https://api.siliconflow.com/v1
+export SILICONFLOW_API_KEY=sk-...
+metis --provider siliconflow --model deepseek-ai/DeepSeek-V4-Flash
+
+# China — https://api.siliconflow.cn/v1
+export SILICONFLOW_CN_API_KEY=sk-...
+metis --provider siliconflow-cn --model deepseek-ai/DeepSeek-V4-Flash
+```
+
+See [Use SiliconFlow in Metis](use-siliconcloud-in-metis.md) for Desktop, TUI, and CLI setup.
 
 #### Auth File
 
@@ -96,6 +112,8 @@ Store credentials in `~/.metis/agent/auth.json`:
   "opencode": { "type": "api_key", "key": "..." },
   "opencode-go": { "type": "api_key", "key": "..." },
   "together": { "type": "api_key", "key": "..." },
+  "siliconflow": { "type": "api_key", "key": "sk-..." },
+  "siliconflow-cn": { "type": "api_key", "key": "sk-..." },
   "xiaomi": { "type": "api_key", "key": "..." },
   "xiaomi-token-plan-cn":  { "type": "api_key", "key": "..." },
   "xiaomi-token-plan-ams": { "type": "api_key", "key": "..." },

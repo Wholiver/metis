@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { buildInstructionStack, buildSystemPrompt, compileInstructionStack, instructionStackHash } from "../src/core/system-prompt.ts";
 import { BUILTIN_COORDINATOR } from "../src/core/agent-definition.ts";
-import { SPAWN_AGENT_GUIDANCE } from "../src/core/tools/spawn_agent.ts";
+import { SPAWN_AGENT_GUIDANCE, spawnAgentSchema } from "../src/core/tools/spawn_agent.ts";
 import { PerformanceRuntime } from "../src/core/performance-runtime.ts";
 
 describe("instruction stack", () => {
@@ -68,6 +68,10 @@ describe("instruction stack", () => {
 		expect(planPrompt).toContain("Chief Planning Architect (Planner)");
 		expect(planPrompt).toContain("<proposed_plan>");
 		expect(planPrompt).toContain("Do not edit files, run mutating tools, or call update_plan");
+		expect(planPrompt).toContain("No performance_admit, no performance_gate, no spawn fleet");
+		expect(planPrompt).not.toContain("Authoritative Build admission policy");
+		expect(planPrompt).not.toContain("call performance_admit before the first write");
+		expect(planPrompt).toContain("four-step plan");
 		expect(planPrompt).toContain("strictly forbid repetitive patterns such as '正在...', '我将...'");
 		expect(planPrompt).toContain("MUST call ask_user");
 		expect(planPrompt).toContain("Never present clarification questions as ordinary assistant text");
@@ -84,11 +88,14 @@ describe("instruction stack", () => {
 	test("requires intermediate updates before tool execution in every mode", () => {
 		for (const collaborationMode of ["plan", "build", undefined] as const) {
 			const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode });
-			expect(prompt).toContain("same language as the user's latest message");
-			expect(prompt).toContain("First think briefly and emit one concise visible intermediate text update");
-			expect(prompt).toContain("before visible tool work begins");
+			expect(prompt).toContain("user's latest-message language");
+			expect(prompt).toContain("Default is silence between tools");
+			expect(prompt).toContain("never emit because a tool result arrived");
+			expect(prompt).toContain("what you found or what is wrong, and what you will do next");
+			expect(prompt).toContain("emit zero visible text while exploring");
 			expect(prompt).toContain("Never narrate one update per tool");
-			expect(prompt).toContain("Do not put that progress only in thinking");
+			expect(prompt).toContain("Do not put a required update only in thinking");
+			expect(prompt.indexOf("Default is silence between tools")).toBeLessThan(prompt.indexOf("what you found or what is wrong"));
 		}
 	});
 
@@ -109,6 +116,25 @@ describe("instruction stack", () => {
 		expect(buildInstructionStack({ cwd: "/workspace", memoryOverview: "   \n  " }).memoryOverview).toBeUndefined();
 	});
 
+	test("named children get a ChildResult worker contract instead of the root Build closed loop", () => {
+		const childPrompt = buildSystemPrompt({
+			cwd: "/workspace",
+			collaborationMode: "build",
+			namedAgentSession: true,
+		});
+		expect(childPrompt).toContain("ChildResult");
+		expect(childPrompt).toContain("Do not call performance_admit or performance_gate");
+		expect(childPrompt).not.toContain("Authoritative Build admission policy");
+		expect(childPrompt).not.toContain("L0–L4");
+		expect(childPrompt).not.toContain("L0→L4");
+		expect(childPrompt).not.toContain("FEATURE-SUPERVISOR");
+		expect(childPrompt).not.toContain("admit first, then implement");
+		const gateDescription = JSON.stringify(spawnAgentSchema.properties.gate);
+		expect(gateDescription).not.toMatch(/must submit/i);
+		expect(gateDescription).toContain("ChildResult");
+		expect(gateDescription).toContain("must not call performance_gate");
+	});
+
 	test("uses one authoritative structured Build admission policy", () => {
 		const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode: "build" });
 		expect(prompt).toContain("Authoritative Build admission policy");
@@ -116,7 +142,7 @@ describe("instruction stack", () => {
 		expect(prompt).toContain("call performance_admit before the first write, edit, bash, spawn_agent, update_plan, performance_gate, or mutating browser_* action");
 		expect(prompt).toContain("Never skip admission to finish faster");
 		expect(prompt).toContain("A first-draft write is not completion");
-		expect(prompt).toContain("Apply/T0 skips G0 and must close G4");
+		expect(prompt).toContain("Apply/T0 skips G0; close G4 only after independent verification evidence");
 		expect(prompt).toContain("Do not claim completion after a failed or mismatched performance_gate");
 		expect(prompt).toContain("Do not stop after the first plausible artifact");
 		expect(prompt.match(/authoritative Build admission policy/gi)).toHaveLength(2);
@@ -143,6 +169,7 @@ describe("instruction stack", () => {
 		// spawn_agent tool guidance negative constraint
 		expect(SPAWN_AGENT_GUIDANCE).toContain("T0 forbids spawn_agent");
 		expect(SPAWN_AGENT_GUIDANCE).toContain("T1 keeps implementation on root and permits only fresh reviewer/verifier assurance");
+		expect(JSON.stringify(spawnAgentSchema)).not.toMatch(/must submit/i);
 
 		// performance runtime emits admitted route, not pre-admission triage prose
 		const tempDir = mkdtempSync(join(tmpdir(), "metis-prompt-test-"));

@@ -6,7 +6,24 @@ import LoadingState from '../primitives/LoadingState';
 import { useI18n } from '../../i18n';
 import { useAutoScroll } from '../../hooks/useAutoScroll';
 
+/**
+ * Scroll-follow fingerprint for missed layout when tools/thinking appear.
+ * Text-token length is intentionally omitted — ResizeObserver covers token growth.
+ */
+export function messageListContentEpoch(messages: Message[], isStreaming: boolean): string {
+  const last = messages[messages.length - 1];
+  if (!last) return `0:::${isStreaming ? 1 : 0}`;
+  const lastTool = [...(last.parts || [])].reverse().find((part) => part.type === 'toolCall');
+  const thinkLen = last.thinking ? 1 : 0;
+  const partsCount = last.parts?.length ?? 0;
+  const toolState = lastTool && lastTool.type === 'toolCall'
+    ? `${lastTool.id}:${lastTool.progress?.state ?? ''}:${lastTool.result ? 1 : 0}`
+    : '';
+  return `${messages.length}:${last.id}:${partsCount}:${thinkLen}:${toolState}:${isStreaming ? 1 : 0}`;
+}
+
 interface MessageListProps {
+  sessionId?: string;
   messages: Message[];
   workspacePath?: string;
   projectName?: string;
@@ -24,6 +41,7 @@ interface MessageListProps {
 }
 
 export const MessageList = React.memo<MessageListProps>(({
+  sessionId,
   messages,
   workspacePath,
   projectName,
@@ -73,9 +91,9 @@ export const MessageList = React.memo<MessageListProps>(({
   );
   const latestUserId = latestUserMessage?.id;
   const latestUserTimestamp = latestUserMessage?.serverTimestamp;
-  const lastMessage = messages[messages.length - 1];
-  const contentEpoch = `${messages.length}:${lastMessage?.id ?? ''}:${typeof lastMessage?.content === 'string' ? lastMessage.content.length : 0}:${isStreaming ? 1 : 0}`;
   const previousUserIdRef = useRef(latestUserId);
+  const previousSessionIdRef = useRef(sessionId);
+  const scrollFollowEpoch = messageListContentEpoch(messages, isStreaming);
 
   const bindScroll = useCallback((el: HTMLDivElement | null) => {
     setScrollElement(el);
@@ -86,14 +104,21 @@ export const MessageList = React.memo<MessageListProps>(({
   }, [setContentElement]);
 
   useLayoutEffect(() => {
+    if (sessionId !== previousSessionIdRef.current) {
+      previousSessionIdRef.current = sessionId;
+      previousUserIdRef.current = latestUserId;
+      resume();
+      return;
+    }
     if (latestUserId !== previousUserIdRef.current) {
       previousUserIdRef.current = latestUserId;
       resume();
       return;
     }
-    // Content growth follows only while the user has not scrolled away.
+    // Follow newly appended messages, tool start/end, and loading transitions.
+    // Token growth is handled by ResizeObserver in useAutoScroll.
     scrollToBottom();
-  }, [latestUserId, isLoading, contentEpoch, resume, scrollToBottom]);
+  }, [sessionId, latestUserId, scrollFollowEpoch, isLoading, resume, scrollToBottom]);
 
   const visibleTimeDivider = timeDivider || messages.find((message) => message.time)?.time;
   const renderGroups = useMemo(() => {

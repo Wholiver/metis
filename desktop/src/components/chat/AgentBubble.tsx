@@ -2,7 +2,6 @@ import React from 'react';
 import { Message, WorkflowProposalState } from '../../types';
 import { extractProposedPlan } from '../../lib/plan-preview';
 import { FileCard } from './FileCard';
-import { MarkdownContent } from './MarkdownContent';
 import { PlanPreview } from './PlanPreview';
 import { PacedMarkdown } from './PacedMarkdown';
 import StreamingText from '../primitives/StreamingText';
@@ -53,7 +52,7 @@ export const AgentBubble = React.memo<AgentBubbleProps>(({
                   onOpenPlan={onOpenPlan}
                 />
                 {proposedPlan.after && (
-                  <MarkdownContent markdown={proposedPlan.after} className="mt-2" />
+                  <PacedMarkdown text={proposedPlan.after} streaming={streaming} className="mt-2" />
                 )}
               </>
             ) : (

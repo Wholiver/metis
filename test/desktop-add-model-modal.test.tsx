@@ -43,6 +43,23 @@ describe('Desktop add-model provider catalog', () => {
     expect(markup).not.toContain('PROVIDER_PRESETS');
   });
 
+  it('keeps OAuth as a direct sign-in path and adds a models step for API key builtins', async () => {
+    const source = await import('node:fs').then((fs) =>
+      fs.readFileSync(new URL('../desktop/src/components/settings/AddModelModal.tsx', import.meta.url), 'utf8')
+    );
+    expect(source).toContain("'builtin-models'");
+    expect(source).toContain('continueBuiltinConnect');
+    expect(source).toContain('handleSubmitBuiltin');
+    expect(source).toContain('handleOAuthConnect');
+    expect(source).toContain('builtin: true');
+    expect(source).toContain("authMethod === 'oauth'");
+    expect(source).toContain('data-discover-models');
+    expect(source).toContain('BUILTIN_DISCOVER_BASE_URLS');
+    expect(source).toContain('Discover models');
+    // OAuth must not be redirected through the models wizard.
+    expect(source).toMatch(/if \(authMethod === 'oauth'\) void handleOAuthConnect\(\);\s*else continueBuiltinConnect\(\);/);
+  });
+
   it('renders brand icons for known providers and fallbacks for unknown/custom', () => {
     const markup = renderToStaticMarkup(React.createElement(
       AddModelModal,
@@ -84,6 +101,9 @@ describe('ProviderIcon', () => {
     expect(hasProviderBrandIcon('moonshotai-cn')).toBe(true);
     expect(hasProviderBrandIcon('github-copilot')).toBe(true);
     expect(hasProviderBrandIcon('google-vertex')).toBe(true);
+    expect(hasProviderBrandIcon('siliconflow')).toBe(true);
+    expect(hasProviderBrandIcon('siliconflow-cn')).toBe(true);
+    expect(hasProviderBrandIcon('siliconcloud')).toBe(true);
     expect(hasProviderBrandIcon('mystery-lab')).toBe(false);
     expect(hasProviderBrandIcon('__custom__')).toBe(false);
     expect(hasProviderBrandIcon('custom-foo')).toBe(false);
@@ -96,6 +116,11 @@ describe('ProviderIcon', () => {
     const fireworks = renderToStaticMarkup(React.createElement(ProviderIcon, { providerId: 'fireworks' }));
     expect(fireworks).toContain('data-provider-icon="fireworks"');
     expect(fireworks).toContain('<svg');
+
+    const siliconflow = renderToStaticMarkup(React.createElement(ProviderIcon, { providerId: 'siliconflow-cn' }));
+    expect(siliconflow).toContain('data-provider-icon="siliconflow-cn"');
+    expect(siliconflow).toContain('SiliconCloud');
+    expect(siliconflow).toContain('currentColor');
 
     const custom = renderToStaticMarkup(React.createElement(ProviderIcon, { providerId: '__custom__' }));
     expect(custom).toContain('data-provider-icon="__custom__"');

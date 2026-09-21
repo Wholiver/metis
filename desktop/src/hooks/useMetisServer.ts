@@ -106,6 +106,7 @@ type MetisEvent = {
   partialResult?: unknown;
   result?: unknown;
   isError?: boolean;
+  session?: SessionState;
 };
 
 const EMPTY_AGENT: Agent = {
@@ -580,12 +581,25 @@ function partsContentEqual(previous?: AssistantContentPart[], incoming?: Assista
       if (Boolean(left.result?.isError) !== Boolean(right.result?.isError)) return false;
       if (left.progress?.state !== right.progress?.state) return false;
       if (left.progress?.durationMs !== right.progress?.durationMs) return false;
+      if (left.progress?.startedAt !== right.progress?.startedAt) return false;
+      if (left.progress?.completedAt !== right.progress?.completedAt) return false;
       if (JSON.stringify(left.arguments ?? null) !== JSON.stringify(right.arguments ?? null)) return false;
       continue;
     }
     return false;
   }
   return true;
+}
+
+function attachmentsIdentityEqual(previous?: Message['attachments'], incoming?: Message['attachments']): boolean {
+  if (previous === incoming) return true;
+  if ((previous?.length ?? 0) !== (incoming?.length ?? 0)) return false;
+  if (!previous || !incoming) return true;
+  return previous.every((item, index) => (
+    item.id === incoming[index]?.id
+    && item.previewUrl === incoming[index]?.previewUrl
+    && item.path === incoming[index]?.path
+  ));
 }
 
 function messagesContentEqual(previous: Message, incoming: Message): boolean {
@@ -601,10 +615,16 @@ function messagesContentEqual(previous: Message, incoming: Message): boolean {
     && previous.serverTimestamp === incoming.serverTimestamp
     && previous.optimistic === incoming.optimistic
     && previous.time === incoming.time
+    && previous.file?.url === incoming.file?.url
+    && (previous.tags || []).join('\0') === (incoming.tags || []).join('\0')
     && (previous.usage?.totalTokens ?? 0) === (incoming.usage?.totalTokens ?? 0)
     && (previous.usage?.cost ?? 0) === (incoming.usage?.cost ?? 0)
+    && (previous.usage?.input ?? 0) === (incoming.usage?.input ?? 0)
+    && (previous.usage?.output ?? 0) === (incoming.usage?.output ?? 0)
+    && (previous.usage?.cacheRead ?? 0) === (incoming.usage?.cacheRead ?? 0)
+    && (previous.usage?.cacheWrite ?? 0) === (incoming.usage?.cacheWrite ?? 0)
     && partsContentEqual(previous.parts, incoming.parts)
-    && (previous.attachments?.length ?? 0) === (incoming.attachments?.length ?? 0);
+    && attachmentsIdentityEqual(previous.attachments, incoming.attachments);
 }
 
 /** Reuse prior message object identity when snapshot content is unchanged. */
@@ -623,6 +643,76 @@ export function reuseStableMessages(previous: Message[], next: Message[]): Messa
     return incoming;
   });
   return unchanged && previous.every((message, index) => message === reused[index]) ? previous : reused;
+}
+
+/** True when live streaming content is longer than a lagging snapshot of the same message. */
+export function messageIsStrictlyAhead(live: Message, snapshot: Message): boolean {
+  if (live.role !== snapshot.role) return false;
+  if ((live.content?.length ?? 0) > (snapshot.content?.length ?? 0)) return true;
+  if ((live.thinking?.length ?? 0) > (snapshot.thinking?.length ?? 0)) return true;
+  const liveParts = live.parts || [];
+  const snapshotParts = snapshot.parts || [];
+  if (liveParts.length > snapshotParts.length) return true;
+  const limit = Math.min(liveParts.length, snapshotParts.length);
+  for (let index = 0; index < limit; index += 1) {
+    const left = liveParts[index];
+    const right = snapshotParts[index];
+    if (left.type !== right.type || left.id !== right.id) continue;
+    if (left.type === 'text' && right.type === 'text' && left.text.length > right.text.length) return true;
+    if (left.type === 'thinking' && right.type === 'thinking' && left.thinking.length > right.thinking.length) return true;
+    if (left.type === 'toolCall' && right.type === 'toolCall') {
+      if ((left.result?.content?.length ?? 0) > (right.result?.content?.length ?? 0)) return true;
+    }
+  }
+  return false;
+}
+
+function mergeSnapshotMetadata(live: Message, snapshot: Message): Message {
+  const patch: Partial<Message> = {};
+  if (snapshot.usage && (!live.usage || (snapshot.usage.totalTokens || 0) > (live.usage.totalTokens || 0))) {
+    patch.usage = snapshot.usage;
+  }
+  if (snapshot.completedAt !== undefined && live.completedAt === undefined) patch.completedAt = snapshot.completedAt;
+  if (snapshot.stopReason && !live.stopReason) patch.stopReason = snapshot.stopReason;
+  if (snapshot.errorMessage && !live.errorMessage) patch.errorMessage = snapshot.errorMessage;
+  if (live.streaming && snapshot.streaming === false) patch.streaming = false;
+  if (Object.keys(patch).length === 0) return live;
+  return { ...live, ...patch };
+}
+
+/**
+ * Keep in-flight SSE/rAF content when a snapshot is shorter or older.
+ * Still accepts snapshot metadata (usage, completion) and trailing live messages.
+ */
+export function adoptSnapshotWithoutRegressing(live: Message[], snapshot: Message[]): Message[] {
+  if (live.length === 0) return snapshot;
+  if (snapshot.length === 0) return live;
+  const liveById = new Map(live.map((message) => [message.id, message]));
+  const snapshotIds = new Set(snapshot.map((message) => message.id));
+  const snapshotHasUser = snapshot.some((message) => message.role === 'user');
+  const merged = snapshot.map((incoming) => {
+    const prior = liveById.get(incoming.id);
+    if (!prior) return incoming;
+    return messageIsStrictlyAhead(prior, incoming) ? mergeSnapshotMetadata(prior, incoming) : incoming;
+  });
+  const extra = live.filter((message) => {
+    if (snapshotIds.has(message.id)) return false;
+    if (message.optimistic && snapshotHasUser) return false;
+    return true;
+  });
+  const combined = extra.length > 0 ? [...merged, ...extra] : merged;
+  return reuseStableMessages(live, combined);
+}
+
+export function isPlaceholderSessionName(name?: string): boolean {
+  const value = name?.trim() || '';
+  return !value || value === 'New conversation' || value.startsWith('New conversation ·');
+}
+
+export function sessionNameFromPrompt(prompt: string): string {
+  const line = prompt.trim().split(/\r?\n/, 1)[0] || '';
+  if (!line) return '';
+  return line.length > 48 ? `${line.slice(0, 47).trimEnd()}…` : line;
 }
 
 /** Keep the same Set reference when membership does not change. */
@@ -645,6 +735,131 @@ export function applyWorkingSessionIds(
     }
   }
   return changed ? next : current;
+}
+
+export type SessionViewExtras = {
+  workflowPlan?: WorkflowPlanState;
+  workflowProposal?: WorkflowProposalState;
+  pendingUserInput?: PendingUserInput;
+  collaborationMode?: CollaborationMode;
+  model?: ModelOption;
+  thinkingLevel?: string;
+  thinkingLevels?: string[];
+  thinkingOptions?: ThinkingOption[];
+  supportsThinking?: boolean;
+  contextUsage?: ContextUsage;
+  isStreaming?: boolean;
+  isCompacting?: boolean;
+};
+
+/** In-flight new-chat / project-switch shells that must not be written into the transcript cache. */
+export const PROJECT_SWITCH_PENDING_ID = '__project_switch__';
+export const NEW_CONVERSATION_PENDING_PREFIX = 'new-conversation:';
+
+export function isTransientSessionId(sessionId?: string): boolean {
+  if (!sessionId) return true;
+  return sessionId === PROJECT_SWITCH_PENDING_ID || sessionId.startsWith(NEW_CONVERSATION_PENDING_PREFIX);
+}
+
+export function pickPreferredProjectSession(
+  agents: readonly Agent[],
+  lastSessionId?: string,
+): Agent | undefined {
+  if (lastSessionId) {
+    const match = agents.find((agent) => agent.id === lastSessionId);
+    if (match) return match;
+  }
+  return agents[0];
+}
+
+/** Transcript cache must be keyed by the session the messages belong to — never the in-flight switch target. */
+export function rememberSessionMessages(
+  cache: Map<string, Message[]>,
+  sessionId: string | undefined,
+  messages: Message[],
+): void {
+  if (!sessionId || isTransientSessionId(sessionId)) return;
+  cache.set(sessionId, messages);
+}
+
+export type PendingStreamToolUpdate = {
+  kind: 'update' | 'end';
+  partialResult?: unknown;
+  result?: unknown;
+  isError?: boolean;
+};
+
+export type PendingStreamBatch = {
+  sessionId: string;
+  message?: { raw: unknown; streaming: boolean };
+  tools: Map<string, PendingStreamToolUpdate>;
+};
+
+/** Trailing timeout so the last coalesced SSE frame still flushes if rAF is paused. */
+export const STREAM_FLUSH_FALLBACK_MS = 32;
+
+/** Keep a completed tool_execution_end; never let an older partial overwrite it in the same batch. */
+export function queuePendingToolUpdate(
+  batch: PendingStreamBatch,
+  toolCallId: string,
+  update: PendingStreamToolUpdate,
+): void {
+  if (!toolCallId) return;
+  const existing = batch.tools.get(toolCallId);
+  if (existing?.kind === 'end' && update.kind === 'update') return;
+  batch.tools.set(toolCallId, update);
+}
+
+/** Main may send SSE envelopes as JSON strings to avoid nested IPC structured clones. */
+export function parseMetisIpcEvent(payload: unknown): MetisEvent | undefined {
+  if (payload == null) return undefined;
+  if (typeof payload === 'string') {
+    try {
+      const parsed = JSON.parse(payload) as unknown;
+      return parsed && typeof parsed === 'object' ? parsed as MetisEvent : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return typeof payload === 'object' ? payload as MetisEvent : undefined;
+}
+
+function sameTokenBreakdown(previous: TokenBreakdown | undefined, next: TokenBreakdown): TokenBreakdown {
+  if (
+    previous
+    && previous.input === next.input
+    && previous.output === next.output
+    && previous.cacheRead === next.cacheRead
+    && previous.cacheWrite === next.cacheWrite
+    && previous.total === next.total
+    && previous.contextWindow === next.contextWindow
+    && previous.percent === next.percent
+  ) {
+    return previous;
+  }
+  return next;
+}
+
+/** Apply one rAF-coalesced stream batch, dropping it after a session switch. */
+export function applyStreamBatch(
+  messages: Message[],
+  batch: PendingStreamBatch,
+  activeSessionId: string,
+): Message[] {
+  if (batch.sessionId && activeSessionId && batch.sessionId !== activeSessionId) {
+    return messages;
+  }
+  let next = messages;
+  if (batch.message) {
+    const message = toMessage(batch.message.raw, Date.now(), batch.message.streaming);
+    if (message) next = upsertConversationMessage(next, message);
+  }
+  for (const [toolCallId, update] of batch.tools) {
+    next = update.kind === 'end'
+      ? applyToolExecutionEnd(next, toolCallId, update.result, Boolean(update.isError))
+      : applyToolExecutionUpdate(next, toolCallId, update.partialResult);
+  }
+  return next;
 }
 
 export function toMessages(
@@ -710,7 +925,16 @@ export function mergeAssistantParts(
         );
         if (keepResult || sameResult) {
           const nextProgress = replacement.progress ?? part.progress;
-          merged.push(nextProgress === part.progress ? part : { ...part, progress: nextProgress });
+          const argsChanged = JSON.stringify(part.arguments ?? null) !== JSON.stringify(replacement.arguments ?? null);
+          if (!argsChanged && nextProgress === part.progress) {
+            merged.push(part);
+          } else {
+            merged.push({
+              ...part,
+              ...(argsChanged ? { arguments: replacement.arguments } : {}),
+              ...(nextProgress !== part.progress ? { progress: nextProgress } : {}),
+            });
+          }
         } else {
           merged.push(replacement.result || !part.result
             ? replacement
@@ -740,6 +964,12 @@ export function mergeAssistantParts(
   for (const part of incoming) {
     if (!seen.has(part.id)) merged.push(part);
   }
+  if (
+    merged.length === previous.length
+    && merged.every((part, index) => part === previous[index])
+  ) {
+    return previous;
+  }
   return merged;
 }
 
@@ -754,9 +984,8 @@ export function upsertConversationMessage(messages: Message[], incoming: Message
     index = messages.findIndex((message) => message.role === 'user' && message.optimistic);
   }
   if (index === -1) return [...messages, incoming];
-  const next = [...messages];
-  const previous = next[index];
-  next[index] = incoming.role === 'assistant'
+  const previous = messages[index];
+  const merged = incoming.role === 'assistant'
     ? {
         ...incoming,
         ...(!incoming.thinking && previous.thinking ? { thinking: previous.thinking } : {}),
@@ -773,6 +1002,9 @@ export function upsertConversationMessage(messages: Message[], incoming: Message
           ? { attachments: previous.attachments }
           : {}),
       };
+  if (messagesContentEqual(previous, merged)) return messages;
+  const next = [...messages];
+  next[index] = merged;
   return next;
 }
 
@@ -818,6 +1050,9 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const agentsRef = useRef<Agent[]>([]);
   const projectAgentsByPathRef = useRef<Record<string, Agent[]>>({});
   const messagesCacheRef = useRef(new Map<string, Message[]>());
+  const sessionExtrasCacheRef = useRef(new Map<string, SessionViewExtras>());
+  const messagesSessionIdRef = useRef('');
+  const sessionExtrasLiveRef = useRef<SessionViewExtras>({});
   const loadVersionRef = useRef(0);
   const messageLoadVersionRef = useRef(0);
   const refreshTimerRef = useRef<number>();
@@ -827,7 +1062,54 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const extensionUiResponsePendingRef = useRef(false);
   const switchVersionRef = useRef(0);
   const pendingSwitchAgentIdRef = useRef<string | null>(null);
+  const lastSessionByProjectRef = useRef(new Map<string, string>());
+  const lastActivatedProjectPathRef = useRef('');
+  const sessionMutationRef = useRef(Promise.resolve());
+  const creatingSessionRef = useRef<Promise<boolean> | null>(null);
   const suppressSessionChangedRef = useRef(false);
+  const streamingRef = useRef(false);
+  const pendingStreamRef = useRef<PendingStreamBatch | null>(null);
+  const streamRafRef = useRef<number | null>(null);
+  const streamTimeoutRef = useRef<number | null>(null);
+  const flushPendingStreamRef = useRef<() => void>(() => {});
+
+  const clearStreamTimers = () => {
+    if (streamRafRef.current !== null) {
+      window.cancelAnimationFrame(streamRafRef.current);
+      streamRafRef.current = null;
+    }
+    if (streamTimeoutRef.current !== null) {
+      window.clearTimeout(streamTimeoutRef.current);
+      streamTimeoutRef.current = null;
+    }
+  };
+
+  const clearPendingStream = () => {
+    clearStreamTimers();
+    pendingStreamRef.current = null;
+  };
+
+  const assignStreaming = (value: boolean) => {
+    if (streamingRef.current === value) return;
+    streamingRef.current = value;
+    setIsStreaming(value);
+  };
+
+  messagesSessionIdRef.current = messagesSessionId;
+  sessionExtrasLiveRef.current = {
+    workflowPlan,
+    workflowProposal,
+    pendingUserInput,
+    collaborationMode,
+    model: activeModel,
+    thinkingLevel,
+    thinkingLevels,
+    thinkingOptions,
+    supportsThinking,
+    contextUsage,
+    isStreaming,
+    isCompacting,
+  };
 
   useEffect(() => {
     activeProjectRef.current = activeProject;
@@ -842,10 +1124,9 @@ export function useMetisServer(activeProject?: ProjectItem) {
   }, [projectAgentsByPath]);
 
   useEffect(() => {
-    const sessionId = activeSessionIdRef.current || messagesSessionId;
-    if (!sessionId) return;
-    messagesCacheRef.current.set(sessionId, messages);
-  }, [messages, messagesSessionId]);
+    if (isLoadingMessages) return;
+    rememberSessionMessages(messagesCacheRef.current, messagesSessionId, messages);
+  }, [isLoadingMessages, messages, messagesSessionId]);
 
   const rememberProjectAgents = useCallback((projectPath: string, nextAgents: Agent[]) => {
     setProjectAgentsByPath((current) => {
@@ -879,14 +1160,19 @@ export function useMetisServer(activeProject?: ProjectItem) {
     return response.data as T;
   }, []);
 
-  const loadMessages = useCallback(async (expectedSessionId?: string, force = false) => {
+  const loadMessages = useCallback(async (expectedSessionId?: string, force = false, knownState?: SessionState) => {
     const version = ++messageLoadVersionRef.current;
     const [state, result, memoryRes] = await Promise.all([
-      request<SessionState>('/session'),
+      knownState ? Promise.resolve(knownState) : request<SessionState>('/session'),
       request<SessionMessagesResponse>('/session/messages'),
       request<MemoryState>('/memory').catch(() => undefined),
     ]);
     if (version !== messageLoadVersionRef.current) return;
+    if (
+      pendingSwitchAgentIdRef.current
+      && pendingSwitchAgentIdRef.current !== state.sessionId
+      && pendingSwitchAgentIdRef.current !== expectedSessionId
+    ) return;
     if (expectedSessionId && state.sessionId !== expectedSessionId && state.sessionFile !== expectedSessionId) {
       const matchesAgent = agentsRef.current.some((agent) => (
         (agent.id === expectedSessionId || agent.sessionPath === expectedSessionId) &&
@@ -924,12 +1210,16 @@ export function useMetisServer(activeProject?: ProjectItem) {
       if (lastAssistant >= 0) nextMessages[lastAssistant] = { ...nextMessages[lastAssistant], streaming: true };
     }
     setMessages((current) => {
-      const optimisticUser = current.find((msg) => msg.role === 'user' && msg.optimistic);
+      const sameSession = Boolean(state.sessionId) && messagesSessionIdRef.current === state.sessionId;
+      const live = sameSession ? current : [];
+      const optimisticUser = live.find((msg) => msg.role === 'user' && msg.optimistic);
       const withOptimistic = optimisticUser && !nextMessages.some((msg) => msg.role === 'user')
         ? [optimisticUser, ...nextMessages]
         : nextMessages;
-      const reused = reuseStableMessages(current, withOptimistic);
-      if (state.sessionId) messagesCacheRef.current.set(state.sessionId, reused);
+      const reused = sameSession
+        ? adoptSnapshotWithoutRegressing(live, withOptimistic)
+        : withOptimistic;
+      rememberSessionMessages(messagesCacheRef.current, state.sessionId, reused);
       return reused;
     });
     setMessagesSessionId(state.sessionId || '');
@@ -952,7 +1242,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     }
     const nextStreaming = Boolean(state.isStreaming);
     const nextCompacting = Boolean(state.isCompacting);
-    setIsStreaming(nextStreaming);
+    assignStreaming(nextStreaming);
     setIsCompacting(nextCompacting);
     const loadedSessionId = state.sessionId || expectedSessionId || '';
     if (loadedSessionId) {
@@ -972,9 +1262,26 @@ export function useMetisServer(activeProject?: ProjectItem) {
     setThinkingLevels(Array.isArray(state.thinkingLevels) ? state.thinkingLevels : []);
     setThinkingOptions(Array.isArray(state.thinkingOptions) ? state.thinkingOptions : (state.thinkingLevels || []).map((id) => ({ id, label: id, value: id })));
     setSupportsThinking(Boolean(state.supportsThinking));
-    if (state.sessionId) setActiveAgentId(state.sessionId);
+    if (state.sessionId) {
+      setActiveAgentId(state.sessionId);
+      sessionExtrasCacheRef.current.set(state.sessionId, {
+        workflowPlan: state.workflowPlan,
+        workflowProposal: state.workflowProposal,
+        pendingUserInput: state.pendingUserInput,
+        collaborationMode: state.collaborationMode || 'build',
+        model: state.model,
+        thinkingLevel: state.thinkingLevel || '',
+        thinkingLevels: Array.isArray(state.thinkingLevels) ? state.thinkingLevels : [],
+        thinkingOptions: Array.isArray(state.thinkingOptions) ? state.thinkingOptions : (state.thinkingLevels || []).map((id) => ({ id, label: id, value: id })),
+        supportsThinking: Boolean(state.supportsThinking),
+        contextUsage: state.contextUsage,
+        isStreaming: nextStreaming,
+        isCompacting: nextCompacting,
+      });
+    }
   }, [request]);
 
+  const tokenBreakdownRef = useRef<TokenBreakdown>();
   const tokenBreakdown = useMemo<TokenBreakdown | undefined>(() => {
     const contextWindow = contextUsage?.contextWindow || 256_000;
     let latestUsage: MessageUsage | undefined;
@@ -991,7 +1298,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     const total = contextUsage?.tokens ?? (input + output + cacheRead + cacheWrite);
     const percent = contextUsage?.percent ?? (contextWindow > 0 ? (total / contextWindow) * 100 : null);
 
-    return {
+    const next = {
       input,
       output,
       cacheRead,
@@ -1000,11 +1307,25 @@ export function useMetisServer(activeProject?: ProjectItem) {
       contextWindow,
       percent,
     };
+    const reused = sameTokenBreakdown(tokenBreakdownRef.current, next);
+    tokenBreakdownRef.current = reused;
+    return reused;
   }, [messages, contextUsage]);
 
-  const loadProject = useCallback(async (project: ProjectItem, switchWhenNeeded = true) => {
+  const loadProject = useCallback(async (
+    project: ProjectItem,
+    switchWhenNeeded = true,
+    preferredSessionId?: string,
+  ) => {
+    const pending = pendingSwitchAgentIdRef.current;
+    const ownsNavigation = Boolean(
+      (preferredSessionId && pending === preferredSessionId)
+      || pending === PROJECT_SWITCH_PENDING_ID,
+    );
+    if (pending && !ownsNavigation) switchWhenNeeded = false;
     const version = ++loadVersionRef.current;
-    setIsLoadingSessions(true);
+    const hasCachedList = Boolean(projectAgentsByPathRef.current[project.path]?.length);
+    if (!hasCachedList) setIsLoadingSessions(true);
     setSessionError('');
     try {
       const result = await request<SessionListResponse>(`/sessions?cwd=${encodeURIComponent(project.path)}`, 'GET', undefined, 60_000);
@@ -1012,9 +1333,13 @@ export function useMetisServer(activeProject?: ProjectItem) {
       if (version !== loadVersionRef.current) return;
 
       let state = await request<SessionState>('/session');
+      const preferredPath = preferredSessionId
+        ? result.sessions.find((session) => session.id === preferredSessionId)?.path
+        : undefined;
       const current = result.sessions.find((session) => session.path === state.sessionFile);
-      if (switchWhenNeeded && (!pathsEqual(state.cwd, project.path) || !current)) {
-        const destination = result.sessions[0]?.path;
+      const preferredMismatch = Boolean(preferredPath && state.sessionFile !== preferredPath);
+      if (switchWhenNeeded && (!pathsEqual(state.cwd, project.path) || !current || preferredMismatch)) {
+        const destination = preferredPath || result.sessions[0]?.path;
         if (destination) {
           await request('/session/switch', 'POST', { sessionPath: destination });
         } else {
@@ -1028,18 +1353,36 @@ export function useMetisServer(activeProject?: ProjectItem) {
       setAgents(nextAgents);
       rememberProjectAgents(project.path, nextAgents);
 
+      if (pendingSwitchAgentIdRef.current && !ownsNavigation) return;
+
       const isCurrentProjectSession = Boolean(state.sessionId && nextAgents.some((agent) => agent.id === state.sessionId));
-      if (isCurrentProjectSession) {
-        activeSessionIdRef.current = state.sessionId || '';
-        setActiveAgentId(state.sessionId || nextAgents[0]?.id || '');
-        await loadMessages(state.sessionId || undefined);
-      } else {
-        const preservedId = nextAgents.some((agent) => agent.id === activeSessionIdRef.current)
-          ? activeSessionIdRef.current
-          : (nextAgents[0]?.id || '');
-        activeSessionIdRef.current = preservedId;
-        setActiveAgentId(preservedId);
-        await loadMessages(preservedId || undefined);
+      const nextSessionId = preferredSessionId && nextAgents.some((agent) => agent.id === preferredSessionId)
+        ? preferredSessionId
+        : isCurrentProjectSession
+          ? (state.sessionId || nextAgents[0]?.id || '')
+          : (nextAgents.some((agent) => agent.id === activeSessionIdRef.current)
+            ? activeSessionIdRef.current
+            : (nextAgents[0]?.id || ''));
+      const alreadyShowing = Boolean(
+        nextSessionId
+        && (nextSessionId === messagesSessionIdRef.current || nextSessionId === activeSessionIdRef.current)
+      );
+      const hadCachedView = Boolean(nextSessionId && messagesCacheRef.current.has(nextSessionId));
+      activeSessionIdRef.current = nextSessionId;
+      setActiveAgentId(nextSessionId);
+      if (nextSessionId && !isTransientSessionId(nextSessionId)) {
+        lastSessionByProjectRef.current.set(project.path, nextSessionId);
+        messagesSessionIdRef.current = nextSessionId;
+      }
+      if (ownsNavigation && nextSessionId && pendingSwitchAgentIdRef.current === PROJECT_SWITCH_PENDING_ID) {
+        pendingSwitchAgentIdRef.current = nextSessionId;
+      }
+      if (ownsNavigation) {
+        const snapshot = loadMessages(nextSessionId || undefined, true, state);
+        if (!hadCachedView) await snapshot;
+        else void snapshot;
+      } else if (!alreadyShowing) {
+        await loadMessages(nextSessionId || undefined);
       }
     } catch (error) {
       if (version !== loadVersionRef.current) return;
@@ -1072,8 +1415,12 @@ export function useMetisServer(activeProject?: ProjectItem) {
       if (response?.ok === false) throw responseError(response, 'Unable to connect to the Metis Server');
       setIsConnected(true);
       const project = activeProjectRef.current;
-      if (project) await loadProject(project, true);
-      else await loadMessages(activeSessionIdRef.current || undefined);
+      if (options) {
+        if (project) await loadProject(project, true);
+        else await loadMessages(activeSessionIdRef.current || undefined);
+      } else if (!project) {
+        await loadMessages(activeSessionIdRef.current || undefined);
+      }
       return true;
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : String(error));
@@ -1130,32 +1477,32 @@ export function useMetisServer(activeProject?: ProjectItem) {
       }, 80);
     };
 
-    let pendingMessageUpdate: Message | null = null;
-    let updateRafId: number | null = null;
-
-    const flushPendingUpdate = () => {
-      if (updateRafId !== null) {
-        window.cancelAnimationFrame(updateRafId);
-        updateRafId = null;
-      }
-      if (pendingMessageUpdate) {
-        const msg = pendingMessageUpdate;
-        pendingMessageUpdate = null;
-        setMessages((current) => upsertConversationMessage(current, msg));
-      }
+    const flushPendingStream = () => {
+      clearStreamTimers();
+      const pending = pendingStreamRef.current;
+      pendingStreamRef.current = null;
+      if (!pending) return;
+      setMessages((current) => applyStreamBatch(current, pending, activeSessionIdRef.current));
     };
+    flushPendingStreamRef.current = flushPendingStream;
 
-    const scheduleMessageUpdate = (message: Message) => {
-      pendingMessageUpdate = message;
-      if (updateRafId === null) {
-        updateRafId = window.requestAnimationFrame(() => {
-          updateRafId = null;
-          if (pendingMessageUpdate) {
-            const msg = pendingMessageUpdate;
-            pendingMessageUpdate = null;
-            setMessages((current) => upsertConversationMessage(current, msg));
-          }
+    const scheduleStreamBatch = (mutate: (pending: PendingStreamBatch) => void) => {
+      const sessionId = activeSessionIdRef.current;
+      if (!pendingStreamRef.current || pendingStreamRef.current.sessionId !== sessionId) {
+        pendingStreamRef.current = { sessionId, tools: new Map() };
+      }
+      mutate(pendingStreamRef.current);
+      if (streamRafRef.current === null) {
+        streamRafRef.current = window.requestAnimationFrame(() => {
+          streamRafRef.current = null;
+          flushPendingStream();
         });
+      }
+      if (streamTimeoutRef.current === null) {
+        streamTimeoutRef.current = window.setTimeout(() => {
+          streamTimeoutRef.current = null;
+          flushPendingStream();
+        }, STREAM_FLUSH_FALLBACK_MS);
       }
     };
 
@@ -1180,7 +1527,9 @@ export function useMetisServer(activeProject?: ProjectItem) {
       setWorkingSessionIds((current) => applyWorkingSessionIds(current, ids, working));
     };
 
-    const unsubscribeEvent = desktop.metis.onEvent((event: MetisEvent) => {
+    const unsubscribeEvent = desktop.metis.onEvent((payload: unknown) => {
+      const event = parseMetisIpcEvent(payload);
+      if (!event) return;
       const type = event?.type || '';
       // Track per-session working state before acceptsEvent filters other sessions.
       if (['message_start', 'message_update', 'agent_start', 'turn_start', 'tool_execution_start', 'tool_execution_end', 'tool_execution_update'].includes(type)) {
@@ -1189,7 +1538,8 @@ export function useMetisServer(activeProject?: ProjectItem) {
         markSessionsWorking(event, false);
       }
       if (!acceptsEvent(event)) return;
-      if (['server.connected', 'message_start', 'message_update', 'message_end', 'agent_start', 'turn_start', 'tool_execution_start', 'tool_execution_end', 'user_input_request', 'session_info_changed'].includes(type)) {
+      if (type !== 'message_update' && type !== 'tool_execution_update'
+        && ['server.connected', 'message_start', 'message_end', 'agent_start', 'turn_start', 'tool_execution_start', 'tool_execution_end', 'user_input_request', 'session_info_changed'].includes(type)) {
         setSessionError('');
       }
       if (type === 'extension_ui_request') {
@@ -1226,46 +1576,45 @@ export function useMetisServer(activeProject?: ProjectItem) {
       }
       if (type === 'message_start' || type === 'message_update' || type === 'message_end') {
         const isEnd = type === 'message_end';
-        const message = toMessage(event.message, Date.now(), !isEnd);
-        if (message) {
-          if (isEnd) {
-            flushPendingUpdate();
-            setMessages((current) => upsertConversationMessage(current, message));
-          } else {
-            scheduleMessageUpdate(message);
-          }
+        if (isEnd) {
+          flushPendingStream();
+          const message = toMessage(event.message, Date.now(), false);
+          if (message) setMessages((current) => upsertConversationMessage(current, message));
+        } else {
+          scheduleStreamBatch((pending) => {
+            pending.message = { raw: event.message, streaming: true };
+          });
         }
-        if (!isEnd) {
-          setIsStreaming(true);
-        }
+        if (!isEnd) assignStreaming(true);
         // Streaming updates stay incremental — full snapshot only on agent_end / switch / explicit refresh.
         return;
       }
       if (type === 'tool_execution_update') {
-        setIsStreaming(true);
+        assignStreaming(true);
         const toolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : '';
         if (toolCallId) {
-          setMessages((current) => applyToolExecutionUpdate(current, toolCallId, event.partialResult));
+          scheduleStreamBatch((pending) => {
+            queuePendingToolUpdate(pending, toolCallId, { kind: 'update', partialResult: event.partialResult });
+          });
         }
         return;
       }
       if (type === 'tool_execution_end') {
-        setIsStreaming(true);
+        assignStreaming(true);
         const toolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : '';
         if (toolCallId) {
+          flushPendingStream();
           setMessages((current) => applyToolExecutionEnd(current, toolCallId, event.result, Boolean(event.isError)));
         }
         return;
       }
       if (['agent_start', 'turn_start', 'tool_execution_start'].includes(type)) {
-        setIsStreaming(true);
+        assignStreaming(true);
         return;
       }
       if (type === 'agent_end') {
-        flushPendingUpdate();
-        if (!event.willRetry) {
-          setIsStreaming(false);
-        }
+        flushPendingStream();
+        if (!event.willRetry) assignStreaming(false);
         reconcileCurrentSession();
         const project = activeProjectRef.current;
         if (project) void loadProject(project, false);
@@ -1314,9 +1663,8 @@ export function useMetisServer(activeProject?: ProjectItem) {
             });
           }
         }
-        const project = activeProjectRef.current;
-        if (project) void loadProject(project, false);
-        void refreshModels();
+        if (type === 'session_info_changed' && event.session) void refreshModels();
+        return;
       }
       if (type === 'memory_state_changed' && event.state) {
         const nextMemoryState = event.state as MemoryState;
@@ -1354,10 +1702,11 @@ export function useMetisServer(activeProject?: ProjectItem) {
       }
     });
     const unsubscribeDisconnect = desktop.metis.onDisconnect(() => {
-      flushPendingUpdate();
+      flushPendingStream();
       setIsConnected(false);
-      setIsStreaming(false);
+      assignStreaming(false);
       setWorkingSessionIds(new Set());
+      lastActivatedProjectPathRef.current = '';
     });
     const unsubscribeServerReady = desktop.metis.onServerReady?.(() => {
       void connect();
@@ -1365,21 +1714,13 @@ export function useMetisServer(activeProject?: ProjectItem) {
 
     return () => {
       disposed = true;
-      if (updateRafId !== null) {
-        window.cancelAnimationFrame(updateRafId);
-        updateRafId = null;
-      }
-      pendingMessageUpdate = null;
+      clearPendingStream();
       window.clearTimeout(refreshTimerRef.current);
       unsubscribeEvent?.();
       unsubscribeDisconnect?.();
       unsubscribeServerReady?.();
     };
   }, [connectServer, loadProject, request]);
-
-  useEffect(() => {
-    if (isConnected && activeProject) void loadProject(activeProject);
-  }, [activeProject, isConnected, loadProject]);
 
   const refreshModels = useCallback(async () => {
     try {
@@ -1408,64 +1749,120 @@ export function useMetisServer(activeProject?: ProjectItem) {
     void refreshModels();
   }, [isConnected, refreshModels]);
 
+  const applySessionExtras = (extras: SessionViewExtras | undefined) => {
+    setWorkflowPlan(extras?.workflowPlan);
+    setWorkflowProposal(extras?.workflowProposal);
+    setPendingUserInput(extras?.pendingUserInput);
+    if (extras?.collaborationMode) setCollaborationMode(extras.collaborationMode);
+    if (extras) setActiveModel(extras.model);
+    if (extras?.thinkingLevel !== undefined) setThinkingLevel(extras.thinkingLevel);
+    if (extras?.thinkingLevels) setThinkingLevels(extras.thinkingLevels);
+    if (extras?.thinkingOptions) setThinkingOptions(extras.thinkingOptions);
+    if (extras?.supportsThinking !== undefined) setSupportsThinking(extras.supportsThinking);
+    if (extras) setContextUsage(extras.contextUsage);
+    assignStreaming(Boolean(extras?.isStreaming));
+    setIsCompacting(Boolean(extras?.isCompacting));
+  };
+
+  const enqueueSessionMutation = <T,>(task: () => Promise<T>) => {
+    const run = sessionMutationRef.current.then(task, task);
+    sessionMutationRef.current = run.then(() => undefined, () => undefined);
+    return run;
+  };
+
+  const beginPendingSessionView = (agentId: string, mode: 'cached' | 'empty' | 'loading'): boolean => {
+    const outgoingId = messagesSessionIdRef.current;
+    if (outgoingId && !isTransientSessionId(outgoingId)) {
+      sessionExtrasCacheRef.current.set(outgoingId, sessionExtrasLiveRef.current);
+      const previousPath = activeProjectRef.current?.path;
+      if (previousPath) lastSessionByProjectRef.current.set(previousPath, outgoingId);
+    }
+    pendingSwitchAgentIdRef.current = agentId;
+    suppressSessionChangedRef.current = true;
+    messageLoadVersionRef.current += 1;
+    clearPendingStream();
+    setActiveAgentId(agentId);
+    activeSessionIdRef.current = agentId;
+    const useCached = mode === 'cached' && messagesCacheRef.current.has(agentId);
+    const cachedMessages = useCached ? messagesCacheRef.current.get(agentId) : undefined;
+    const cachedExtras = useCached ? sessionExtrasCacheRef.current.get(agentId) : undefined;
+    if (useCached && cachedMessages) {
+      setMessages(cachedMessages);
+      messagesSessionIdRef.current = agentId;
+      setMessagesSessionId(agentId);
+      applySessionExtras(cachedExtras);
+      setIsLoadingMessages(false);
+      return true;
+    }
+    setMessages([]);
+    messagesSessionIdRef.current = agentId;
+    setMessagesSessionId(agentId);
+    applySessionExtras(undefined);
+    setIsLoadingMessages(mode === 'loading');
+    return false;
+  };
+
   const selectConversation = useCallback(async (agentId: string) => {
     const agent = findCachedAgent(agentId);
     if (!agent?.sessionPath) return;
     if (agentId === activeSessionIdRef.current || agentId === pendingSwitchAgentIdRef.current) return;
     const previousAgentId = activeSessionIdRef.current;
-    pendingSwitchAgentIdRef.current = agentId;
-    suppressSessionChangedRef.current = true;
-    setActiveAgentId(agentId);
+    const hadCachedView = beginPendingSessionView(agentId, messagesCacheRef.current.has(agentId) ? 'cached' : 'loading');
     const cachedMessages = messagesCacheRef.current.get(agentId);
-    if (cachedMessages) {
-      setMessages(cachedMessages);
-      setMessagesSessionId(agentId);
-      setIsLoadingMessages(false);
-    } else {
-      setMessages([]);
-      setMessagesSessionId('');
-      setIsLoadingMessages(true);
-    }
-    setWorkflowPlan(undefined);
-    setWorkflowProposal(undefined);
-    setPendingUserInput(undefined);
+    const cachedExtras = sessionExtrasCacheRef.current.get(agentId);
+    if (agent.projectPath) lastActivatedProjectPathRef.current = agent.projectPath;
     setSessionError('');
     const currentSwitchVersion = ++switchVersionRef.current;
     try {
-      const switchResult = await request<SessionState & { cancelled: boolean }>('/session/switch', 'POST', { sessionPath: agent.sessionPath });
-      if (currentSwitchVersion !== switchVersionRef.current) return;
-      pendingSwitchAgentIdRef.current = null;
-      messageLoadVersionRef.current += 1;
-      const targetSessionId = switchResult.sessionId || agentId;
-      activeSessionIdRef.current = targetSessionId;
-      setActiveAgentId(targetSessionId);
-      if (switchResult.pendingUserInput !== undefined) {
-        setPendingUserInput(switchResult.pendingUserInput);
-      } else {
-        setPendingUserInput(undefined);
-      }
-      if (switchResult.collaborationMode) {
-        setCollaborationMode(switchResult.collaborationMode);
-      }
-      if (switchResult.workflowPlan !== undefined) {
-        setWorkflowPlan(switchResult.workflowPlan);
-      }
-      if (switchResult.workflowProposal !== undefined) {
-        setWorkflowProposal(switchResult.workflowProposal);
-      }
-      if (switchResult.model) {
-        setActiveModel(switchResult.model);
-      }
-      await loadMessages(targetSessionId, true);
+      await enqueueSessionMutation(async () => {
+        if (currentSwitchVersion !== switchVersionRef.current) return;
+        const switchResult = await request<SessionState & { cancelled: boolean }>('/session/switch', 'POST', { sessionPath: agent.sessionPath });
+        if (currentSwitchVersion !== switchVersionRef.current) return;
+        pendingSwitchAgentIdRef.current = null;
+        const targetSessionId = switchResult.sessionId || agentId;
+        activeSessionIdRef.current = targetSessionId;
+        messagesSessionIdRef.current = targetSessionId;
+        setActiveAgentId(targetSessionId);
+        if (targetSessionId !== agentId && cachedMessages) {
+          rememberSessionMessages(messagesCacheRef.current, targetSessionId, cachedMessages);
+          if (cachedExtras) sessionExtrasCacheRef.current.set(targetSessionId, cachedExtras);
+        }
+        setMessagesSessionId(targetSessionId);
+        if (switchResult.pendingUserInput !== undefined) {
+          setPendingUserInput(switchResult.pendingUserInput);
+        } else if (!hadCachedView) {
+          setPendingUserInput(undefined);
+        }
+        if (switchResult.collaborationMode) {
+          setCollaborationMode(switchResult.collaborationMode);
+        }
+        if (switchResult.workflowPlan !== undefined) {
+          setWorkflowPlan(switchResult.workflowPlan);
+        }
+        if (switchResult.workflowProposal !== undefined) {
+          setWorkflowProposal(switchResult.workflowProposal);
+        }
+        if (switchResult.model) {
+          setActiveModel(switchResult.model);
+        }
+        assignStreaming(Boolean(switchResult.isStreaming));
+        setIsCompacting(Boolean(switchResult.isCompacting));
+        const snapshot = loadMessages(targetSessionId, true, switchResult);
+        if (!hadCachedView) await snapshot;
+        else void snapshot;
+      });
     } catch (error) {
       if (currentSwitchVersion === switchVersionRef.current) {
         pendingSwitchAgentIdRef.current = null;
+        activeSessionIdRef.current = previousAgentId;
         setActiveAgentId(previousAgentId);
         setSessionError(error instanceof Error ? error.message : String(error));
         const previousCached = previousAgentId ? messagesCacheRef.current.get(previousAgentId) : undefined;
         if (previousCached) {
           setMessages(previousCached);
+          messagesSessionIdRef.current = previousAgentId;
           setMessagesSessionId(previousAgentId);
+          applySessionExtras(sessionExtrasCacheRef.current.get(previousAgentId));
         }
         if (previousAgentId) void loadMessages(previousAgentId, true);
       }
@@ -1481,30 +1878,185 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const newConversation = useCallback(async () => {
     const project = activeProjectRef.current;
     if (!project) return false;
-    setIsLoadingSessions(true);
+    if (creatingSessionRef.current) return creatingSessionRef.current;
+
+    const optimisticId = `${NEW_CONVERSATION_PENDING_PREFIX}${Date.now()}`;
+    const currentSwitchVersion = ++switchVersionRef.current;
     setSessionError('');
-    suppressSessionChangedRef.current = true;
-    try {
-      const state = await request<SessionState>('/session/new', 'POST', { cwd: project.path, collaborationMode: 'build' });
-      activeSessionIdRef.current = state.sessionId || '';
-      setActiveAgentId(state.sessionId || '');
-      setMessages([]);
-      setMessagesSessionId(state.sessionId || '');
-      setWorkflowPlan(undefined);
-      setWorkflowProposal(undefined);
-      setPendingUserInput(undefined);
-      await loadProject(project, false);
-      return true;
-    } catch (error) {
-      setSessionError(error instanceof Error ? error.message : String(error));
-      setIsLoadingSessions(false);
-      return false;
-    } finally {
-      suppressSessionChangedRef.current = false;
+    beginPendingSessionView(optimisticId, 'empty');
+    const placeholder: Agent = {
+      ...EMPTY_AGENT,
+      id: optimisticId,
+      name: 'New conversation',
+      projectPath: project.path,
+    };
+    const withPlaceholder = [placeholder, ...agentsRef.current.filter((agent) => agent.id !== optimisticId)];
+    setAgents(withPlaceholder);
+    rememberProjectAgents(project.path, withPlaceholder);
+
+    const created = (async () => {
+      try {
+        const ok = await enqueueSessionMutation(async () => {
+          if (currentSwitchVersion !== switchVersionRef.current) return false;
+          const state = await request<SessionState>('/session/new', 'POST', { cwd: project.path, collaborationMode: 'build' });
+          if (currentSwitchVersion !== switchVersionRef.current) return false;
+          const realId = state.sessionId || '';
+          const realAgent: Agent = {
+            ...EMPTY_AGENT,
+            id: realId,
+            name: state.sessionName?.trim() || 'New conversation',
+            sessionPath: state.sessionFile,
+            projectPath: project.path,
+          };
+          pendingSwitchAgentIdRef.current = realId;
+          activeSessionIdRef.current = realId;
+          messagesSessionIdRef.current = realId;
+          setActiveAgentId(realId);
+          setMessagesSessionId(realId);
+          setMessages([]);
+          rememberSessionMessages(messagesCacheRef.current, realId, []);
+          if (realId) lastSessionByProjectRef.current.set(project.path, realId);
+          const withReal = [realAgent, ...agentsRef.current.filter((agent) => (
+            agent.id !== optimisticId && agent.id !== realId
+          ))];
+          setAgents(withReal);
+          rememberProjectAgents(project.path, withReal);
+          applySessionExtras({
+            collaborationMode: state.collaborationMode || 'build',
+            model: state.model,
+            thinkingLevel: state.thinkingLevel || '',
+            thinkingLevels: Array.isArray(state.thinkingLevels) ? state.thinkingLevels : [],
+            thinkingOptions: Array.isArray(state.thinkingOptions)
+              ? state.thinkingOptions
+              : (state.thinkingLevels || []).map((id) => ({ id, label: id, value: id })),
+            supportsThinking: Boolean(state.supportsThinking),
+            workflowPlan: state.workflowPlan,
+            workflowProposal: state.workflowProposal,
+            pendingUserInput: state.pendingUserInput,
+            contextUsage: state.contextUsage,
+            isStreaming: Boolean(state.isStreaming),
+            isCompacting: Boolean(state.isCompacting),
+          });
+          void loadProject(project, false);
+          return true;
+        });
+        return ok === true;
+      } catch (error) {
+        if (currentSwitchVersion === switchVersionRef.current) {
+          setSessionError(error instanceof Error ? error.message : String(error));
+        }
+        return false;
+      } finally {
+        if (creatingSessionRef.current === created) creatingSessionRef.current = null;
+        if (currentSwitchVersion === switchVersionRef.current) {
+          pendingSwitchAgentIdRef.current = null;
+          suppressSessionChangedRef.current = false;
+          setIsLoadingMessages(false);
+        }
+      }
+    })();
+
+    creatingSessionRef.current = created;
+    return created;
+  }, [loadProject, rememberProjectAgents, request]);
+
+  const selectProject = useCallback(async (project: ProjectItem) => {
+    if (!project?.path) return;
+    const previousPath = activeProjectRef.current?.path;
+    const previousSession = messagesSessionIdRef.current || activeSessionIdRef.current;
+    if (
+      previousPath
+      && previousSession
+      && previousPath !== project.path
+      && !isTransientSessionId(previousSession)
+    ) {
+      lastSessionByProjectRef.current.set(previousPath, previousSession);
     }
-  }, [loadProject, request]);
+
+    let cachedAgents = projectAgentsByPathRef.current[project.path] || [];
+    if (cachedAgents.length === 0) {
+      for (const [key, list] of Object.entries(projectAgentsByPathRef.current)) {
+        if (pathsEqual(key, project.path) && list.length) {
+          cachedAgents = list;
+          break;
+        }
+      }
+    }
+    const lastId = lastSessionByProjectRef.current.get(project.path);
+    const preferred = pickPreferredProjectSession(cachedAgents, lastId);
+
+    if (
+      lastActivatedProjectPathRef.current === project.path
+      && preferred
+      && (preferred.id === activeSessionIdRef.current || preferred.id === messagesSessionIdRef.current)
+      && !pendingSwitchAgentIdRef.current
+    ) {
+      return;
+    }
+
+    lastActivatedProjectPathRef.current = project.path;
+    const currentSwitchVersion = ++switchVersionRef.current;
+    setSessionError('');
+
+    if (preferred) {
+      beginPendingSessionView(
+        preferred.id,
+        messagesCacheRef.current.has(preferred.id) ? 'cached' : 'loading',
+      );
+      if (cachedAgents.length) setAgents(cachedAgents);
+      lastSessionByProjectRef.current.set(project.path, preferred.id);
+      try {
+        await loadProject(project, true, preferred.id);
+        if (currentSwitchVersion !== switchVersionRef.current) return;
+      } catch (error) {
+        if (currentSwitchVersion === switchVersionRef.current) {
+          setSessionError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        if (currentSwitchVersion === switchVersionRef.current) {
+          pendingSwitchAgentIdRef.current = null;
+          suppressSessionChangedRef.current = false;
+          setIsLoadingMessages(false);
+        }
+      }
+      return;
+    }
+
+    beginPendingSessionView(PROJECT_SWITCH_PENDING_ID, 'loading');
+    try {
+      await loadProject(project, true);
+      if (currentSwitchVersion !== switchVersionRef.current) return;
+    } catch (error) {
+      if (currentSwitchVersion === switchVersionRef.current) {
+        setSessionError(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      if (currentSwitchVersion === switchVersionRef.current) {
+        pendingSwitchAgentIdRef.current = null;
+        suppressSessionChangedRef.current = false;
+        setIsLoadingMessages(false);
+      }
+    }
+  }, [loadProject]);
+
+  const activeProjectPath = activeProject?.path;
+  useEffect(() => {
+    if (!isConnected || !activeProjectPath) return;
+    if (pendingSwitchAgentIdRef.current) return;
+    if (lastActivatedProjectPathRef.current === activeProjectPath) return;
+    const project = activeProjectRef.current;
+    if (!project) return;
+    void selectProject(project);
+  }, [activeProjectPath, isConnected, selectProject]);
 
   const sendMessage = useCallback(async (text: string, options: SendMessageOptions = {}) => {
+    if (
+      creatingSessionRef.current
+      && pendingSwitchAgentIdRef.current?.startsWith(NEW_CONVERSATION_PENDING_PREFIX)
+    ) {
+      const created = await creatingSessionRef.current;
+      if (!created) return false;
+    }
     const wireMessage = rewritePromptForModel(cleanPastedText(text));
     const userText = revealPromptForDisplay(cleanPastedText(options.displayText ?? text));
     const optimistic: Message = {
@@ -1515,18 +2067,30 @@ export function useMetisServer(activeProject?: ProjectItem) {
       ...(options.attachments?.length ? { attachments: options.attachments } : {}),
     };
     setMessages((current) => [...current, optimistic]);
-    setIsStreaming(true);
+    assignStreaming(true);
     const activeId = activeSessionIdRef.current;
     if (activeId) {
       setWorkingSessionIds((current) => applyWorkingSessionIds(current, [activeId], true));
     }
     const promptText = userText.trim();
     if (promptText && activeId) {
-      setAgents((current) => current.map((agent) => (
-        agent.id === activeId
-          ? { ...agent, subtitle: promptText }
-          : agent
-      )));
+      const previewName = sessionNameFromPrompt(promptText);
+      const patchAgent = (agent: Agent): Agent => {
+        if (agent.id !== activeId) return agent;
+        const nextName = previewName && isPlaceholderSessionName(agent.name) ? previewName : agent.name;
+        if (agent.subtitle === promptText && agent.name === nextName) return agent;
+        return { ...agent, subtitle: promptText, name: nextName };
+      };
+      setAgents((current) => current.map(patchAgent));
+      const projectPath = activeProjectRef.current?.path;
+      if (projectPath) {
+        setProjectAgentsByPath((current) => {
+          const list = current[projectPath];
+          if (!list) return current;
+          const next = list.map(patchAgent);
+          return next.every((item, index) => item === list[index]) ? current : { ...current, [projectPath]: next };
+        });
+      }
     }
     try {
       await request('/session/prompt', 'POST', {
@@ -1539,7 +2103,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     } catch (error) {
       setMessages((current) => current.filter((message) => message.id !== optimistic.id));
       setSessionError(error instanceof Error ? error.message : String(error));
-      setIsStreaming(false);
+      assignStreaming(false);
       if (activeId) {
         setWorkingSessionIds((current) => applyWorkingSessionIds(current, [activeId], false));
       }
@@ -1665,7 +2229,12 @@ export function useMetisServer(activeProject?: ProjectItem) {
   }, [request]);
 
   const abortTurn = useCallback(async () => {
-    setIsStreaming(false);
+    flushPendingStreamRef.current();
+    assignStreaming(false);
+    const activeId = activeSessionIdRef.current;
+    if (activeId) {
+      setWorkingSessionIds((current) => applyWorkingSessionIds(current, [activeId], false));
+    }
     return await request<{ success?: boolean }>('/session/abort', 'POST');
   }, [request]);
 
@@ -1749,6 +2318,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     removeConversation,
     connectServer,
     selectConversation,
+    selectProject,
     newConversation,
     processProposal,
     refineProposal,

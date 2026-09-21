@@ -44,7 +44,7 @@ export interface WriteToolOptions {
 export const VERSIONED_WRITE_LOOP_LIMIT = 4;
 
 const VERSIONED_WRITE_LOOP_REJECTION =
-	"Stop creating versioned copies (generate_vN.py). Edit the existing generator or the deliverable, preview with browser_navigate when browser_* is available, then record G4.";
+	"Stop creating versioned copies (generate_vN.py). Edit the existing generator or the deliverable, preview with browser_navigate when browser_* is available, then independently verify and repair if the check fails. Do not treat a first draft as G4 success.";
 
 const TRUNCATED_WRITE_REJECTION =
 	"This write call was truncated and has no path/content. Do not retry a _truncated stub. Call write again with the full path and file contents, or edit the existing file.";

@@ -1,9 +1,16 @@
 # Browser workflow
 
+## Admission (Build)
+
+- `browser_snapshot` and `browser_take_screenshot` are readable and may run before admission.
+- `browser_tabs` with `action: "list"` is readable. `browser_tabs` `new`/`select` can open a URL and require `performance_admit` first, same as navigate/click/fill.
+- `browser_navigate`, `browser_click`, `browser_fill`, `browser_type`, `browser_press_key`, and `browser_scroll` require `performance_admit` first when Build mutating tools are gated.
+- Do not always `browser_navigate` first with no admit.
+
 ## Happy path
 
 1. `browser_tabs` with `action: "list"` if you need current tabs.
-2. `browser_navigate` with the target URL (`newTab: true` only when a separate tab is required). Wait until the result reports the loaded `url`/`title` (not leftover `about:blank`).
+2. After admission when required, `browser_navigate` with the target URL (`newTab: true` only when a separate tab is required). Wait until the result reports the loaded `url`/`title` (not leftover `about:blank`).
 3. Visual SVG/HTML/artwork: `browser_take_screenshot` next. Interactive UI: `browser_snapshot`, then choose an element `ref`.
 4. Call one interaction tool (`browser_click`, `browser_fill`, `browser_type`, `browser_press_key`, `browser_scroll`).
 5. Call `browser_snapshot` again before the next interaction. After a visual edit, re-navigate and screenshot again.

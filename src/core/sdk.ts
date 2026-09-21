@@ -5,6 +5,7 @@ import { clampThinkingLevel, type Message, type Model, streamSimple } from "@ear
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
+import { sessionToolsForNamedAgent } from "./agent-definition.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
@@ -268,6 +269,8 @@ export interface CreateAgentSessionOptions {
 	askUserHandler?: AskUserHandler;
 	/** Native Performance startup policy. Interactive hosts use attended; SDK defaults unattended. */
 	performanceAttendance?: PerformanceAttendance;
+	/** Named `--agent` child session: strip performance_gate and use the ChildResult worker contract. */
+	namedAgentSession?: boolean;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
@@ -483,12 +486,19 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// Legacy memory/log bookkeeping tools remain explicit-only. query_memory_db is
 	// active so the model can retrieve durable knowledge on demand in any host.
 	const defaultActiveToolNames: ToolName[] = ["read", "grep", "ls", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "video", "update_plan", "ask_user", "read_plan", "performance_admit", "performance_gate", "query_memory_db"];
+	const namedAgentSession = Boolean(options.namedAgentSession);
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
-	const initialActiveToolNames: string[] = (
+	let initialActiveToolNames: string[] = (
 		options.tools ? [...options.tools] : options.noTools ? [] : defaultActiveToolNames
 	).filter((name) => !excludedToolNameSet?.has(name));
+	if (namedAgentSession) {
+		initialActiveToolNames = (options.noTools && !options.tools
+			? []
+			: sessionToolsForNamedAgent(options.tools)
+		).filter((name) => !excludedToolNameSet?.has(name));
+	}
 
 	let agent: Agent;
 
@@ -663,6 +673,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		customTools: options.customTools,
 		modelRegistry,
 		collaborationMode,
+		namedAgentSession,
 		initialActiveToolNames,
 		allowedToolNames,
 		excludedToolNames,

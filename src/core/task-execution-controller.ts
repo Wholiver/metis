@@ -27,7 +27,7 @@ import {
 	buildContractSolverPrompt,
 	parseAndValidateSolverProposal,
 } from "./task-contract.ts";
-import { verifyTaskContract } from "./task-verifier.ts";
+import { hashWorkspaceSnapshot, verifyTaskContract } from "./task-verifier.ts";
 import { probeWorkspace } from "./workspace-probe.ts";
 import { planExecution } from "./execution-policy.ts";
 import { buildImplementerBrief } from "./host-named-child-runner.ts";
@@ -72,6 +72,8 @@ export interface TaskExecutionControllerDeps {
 	/** Optional: collect latest ChildResult events from spawn_agent for gate evidence. */
 	getChildResults?: () => ChildResult[];
 	maxRepairAttempts?: number;
+	/** When false, skip ambient bundled-public checks (chat-aware original workflow). */
+	includeBundledPublicChecks?: boolean;
 }
 
 export interface TaskExecutionController {
@@ -430,23 +432,18 @@ async function evaluateHostGate(args: {
 
 	if (deps.evaluateCompletion) {
 		const completion = await deps.evaluateCompletion({ request, contract, outcome, performance, priorEvidenceHash });
-		const verified = await verifyTaskContract({
-			contract,
-			cwd: request.cwd,
-			taskPaths: request.taskPaths,
-			priorEvidenceHash,
-		});
-		// Prefer host evaluateCompletion decision, but always use real workspace evidence hash.
+		const evidenceHash = hashWorkspaceSnapshot(request.cwd, request.taskPaths, contract);
+		// Prefer host evaluateCompletion decision; hash workspace without re-running oracles.
 		return {
 			completion,
-			evidenceHash: verified.evidenceHash,
+			evidenceHash,
 			fingerprint: completion.passed
 				? undefined
 				: normalizeFailureFingerprint({
 						checkId: String(completion.reasons[0]?.code ?? "CHECK_FAILED"),
 						exitCode: 1,
 						errorSummary: completion.reasons[0]?.message ?? "Verification failed",
-						artifactHash: verified.evidenceHash,
+						artifactHash: evidenceHash,
 					}),
 		};
 	}
@@ -456,6 +453,7 @@ async function evaluateHostGate(args: {
 		cwd: request.cwd,
 		taskPaths: request.taskPaths,
 		priorEvidenceHash,
+		includeBundledPublicChecks: deps.includeBundledPublicChecks ?? true,
 	});
 	return {
 		completion: verified.completion,

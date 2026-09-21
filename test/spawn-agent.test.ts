@@ -84,6 +84,12 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(SPAWN_AGENT_GUIDANCE).toContain("Delegate a specific task to a specialized named agent");
 		expect(SPAWN_AGENT_GUIDANCE).toContain("snapshot of the parent workspace");
 		expect(SPAWN_AGENT_GUIDANCE).toContain("retained after successful completion");
+		expect(SPAWN_AGENT_GUIDANCE).toContain("Children emit one ChildResult JSON line");
+		expect(SPAWN_AGENT_GUIDANCE).toContain("must not call performance_gate");
+		expect(SPAWN_AGENT_GUIDANCE).not.toMatch(/must submit/i);
+		const gateDescription = JSON.stringify(spawnAgentSchema.properties.gate);
+		expect(gateDescription).not.toMatch(/must submit/i);
+		expect(gateDescription).toContain("ChildResult");
 	});
 
 	it("separates process success from a blocked governed gate outcome", async () => {
@@ -244,7 +250,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			undefined as never,
 		);
 
-		await new Promise((r) => setTimeout(r, 20));
+		await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
 
 		expect(spawnMock).toHaveBeenCalledTimes(1);
 		const spawnCallArgs = spawnMock.mock.calls[0];
@@ -349,7 +355,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			undefined as never,
 		);
 
-		await new Promise((r) => setTimeout(r, 20));
+		await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
 
 		const argsPassed = spawnMock.mock.calls[0][1] as string[];
 		expect(argsPassed).toContain("--depth");
@@ -441,7 +447,9 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		const initialPayload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
 		writeAsyncChildResult(tempDir, "review done");
 		mockChild.emit("exit", 0, null);
-		await new Promise((resolve) => setTimeout(resolve, 1_100));
+		await vi.waitFor(() => {
+			expect(releases).toEqual([initialPayload.agentId]);
+		}, { timeout: 3_000 });
 
 		expect(statuses).toEqual([[initialPayload.agentId, true], [initialPayload.agentId, false]]);
 		expect(releases).toEqual([initialPayload.agentId]);
@@ -522,7 +530,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			undefined as never,
 		);
 
-		await new Promise((r) => setTimeout(r, 20));
+		await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
 		expect(updates.some((text) => /"status": "started"/.test(text) && /scoper/.test(text))).toBe(true);
 
 		mockChild.stdout.emit("data", Buffer.from(`scope ready\n${childResultLine("scope ready")}`));
@@ -548,7 +556,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			() => {},
 			undefined as never,
 		);
-		await new Promise((resolve) => setTimeout(resolve, 20));
+		await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
 
 		mockChild.stdout.emit("data", Buffer.from(`nested work complete\n${childResultLine("nested work complete")}`));
 		mockChild.emit("exit", 0, null);
@@ -580,7 +588,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			() => {},
 			undefined as never,
 		);
-		await new Promise((resolve) => setTimeout(resolve, 20));
+		await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
 		mockChild.stdout.emit("data", Buffer.from(childResultLine("lease released")));
 		mockChild.emit("close", 0);
 
@@ -609,7 +617,7 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			() => {},
 			undefined as never,
 		);
-		await new Promise((resolve) => setTimeout(resolve, 20));
+		await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
 		const spawnCwd = spawnMock.mock.calls[0][2].cwd as string;
 		// Reliable-headless keeps mutating children on shared cwd; do not delete it on cancel.
 		expect(spawnCwd).toBe(tempDir);

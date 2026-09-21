@@ -8,10 +8,13 @@
 @import "./styles/beautifului/chat.css";
 @import "./styles/beautifului/opencode-session.css";
 @import "./styles/beautifului/opencode-review.css";
+@import "streamdown/styles.css";
 
 /* Tailwind v4 content roots for the Desktop Vite app */
 @source "./**/*.{js,ts,jsx,tsx}";
 @source "../index.html";
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/cjk/dist/*.js";
 
 /* ── Inter (OpenCode V2-aligned) ─────────────────────────── */
 @font-face {
@@ -374,6 +377,7 @@ input,
 
 [data-shine-border] {
   animation: shine var(--duration, 14s) infinite linear;
+  contain: paint;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -381,4 +385,46 @@ input,
     animation: none;
     background-position: 100% 0%;
   }
+
+  [data-sd-animate],
+  [data-sd-animate-marker]::marker {
+    animation: none;
+    filter: none;
+  }
+}
+
+/* ── Chat compositor isolation ─────────────────────────────
+ * Streaming markdown grows the message lane every token. These rules keep
+ * that work from dirtying the sidebar/inspector, avoid overflow-anchor
+ * fights with JS auto-scroll, and skip layout-heavy wrapping on live copy.
+ * Visual design stays the same: headings still use text-wrap: balance. */
+[data-purpose="main-chat"] {
+  isolation: isolate;
+  text-rendering: auto;
+}
+
+[data-purpose="main-chat"] [data-message-scroll],
+[data-subagent-conversation][data-message-scroll] {
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  text-rendering: auto;
+  contain: layout;
+}
+
+[data-purpose="main-chat"] [data-message-lane],
+[data-subagent-conversation] [data-message-lane] {
+  contain: layout;
+}
+
+[data-purpose="main-chat"] p,
+[data-purpose="main-chat"] .markdown-content,
+[data-purpose="main-chat"] .markdown-content p,
+[data-purpose="main-chat"] .cot-thinking-markdown,
+[data-purpose="main-chat"] .cot-text,
+[data-purpose="main-chat"] [data-user-bubble] {
+  text-wrap: wrap;
+}
+
+[data-composer-fade-mask] {
+  contain: paint;
 }

@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	createBrowserHostFromEnv,
@@ -79,7 +80,13 @@ describe("metis-browser skill + browser host tools", () => {
 		expect(body).toMatch(/open -a Safari|Safari\/Chrome|qlmanage/);
 		expect(body).toContain("browser_take_screenshot");
 		expect(body).toMatch(/Prefer `browser_take_screenshot`/);
+		expect(body).toContain("performance_admit");
+		expect(body).toContain("Do not always `browser_navigate` first");
 		expect(skill!.description.toLowerCase()).toContain("svg");
+		const workflow = readFileSync(join(skill!.baseDir, "references/workflow.md"), "utf8");
+		expect(workflow).toContain("browser_snapshot");
+		expect(workflow).toContain("require `performance_admit`");
+		expect(workflow).toContain("Do not always `browser_navigate` first");
 	});
 
 	it("http browser host client posts commands with token", async () => {

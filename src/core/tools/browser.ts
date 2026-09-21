@@ -9,7 +9,7 @@ import type { BrowserHostClient, BrowserHostResult } from "../browser-host.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const BROWSER_GUIDELINE =
-	"For Metis Desktop Inspector / 内置浏览器 preview and UI work, use browser_* tools after reading the metis-browser skill. Prefer browser_navigate for local SVG/HTML (path or file://). Never use bash open/Safari/Chrome/qlmanage as a substitute. Prefer browser_take_screenshot for visual SVG/HTML/layout checks; prefer snapshot when you need refs to click or fill. Refresh snapshot after every interaction.";
+	"For Metis Desktop Inspector / 内置浏览器 preview and UI work, use browser_* tools after reading the metis-browser skill. Mutating browser_* (navigate, tabs new/select, click, fill, type, press, scroll) run after performance_admit in Build. browser_snapshot and browser_take_screenshot are readable and may run before admit. Never use bash open/Safari/Chrome/qlmanage as a substitute. Prefer screenshot for visual SVG/HTML/layout checks; prefer snapshot when you need refs to click or fill. Refresh snapshot after every interaction.";
 
 export interface BrowserToolOptions {
 	host: BrowserHostClient;

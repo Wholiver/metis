@@ -34,6 +34,8 @@ describe("performance_admit tool", () => {
 		expect(JSON.stringify(performanceAdmitSchema)).not.toContain('"anyOf"');
 		expect(createPerformanceAdmitToolDefinition().promptGuidelines?.[0]).toContain("README");
 		expect(createPerformanceAdmitToolDefinition().promptGuidelines?.[0]).toContain("Do not grep");
+		expect(createPerformanceAdmitToolDefinition().promptGuidelines?.[0]).toContain("independent check");
+		expect(createPerformanceAdmitToolDefinition().promptGuidelines?.[0]).not.toContain("after admit, write the file");
 	});
 
 	it("returns compact live routing context from the admission seam", async () => {

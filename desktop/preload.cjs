@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		disconnect: () => ipcRenderer.invoke("metis:disconnect"),
 		request: (request) => ipcRenderer.invoke("metis:request", request),
 		onEvent: (listener) => {
+			// Payloads may be JSON strings (cheaper IPC clone than nested objects).
 			const handler = (_event, payload) => listener(payload);
 			ipcRenderer.on("metis:event", handler);
 			return () => ipcRenderer.removeListener("metis:event", handler);

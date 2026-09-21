@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fauxAssistantMessage } from "@earendil-works/metis-ai";
-import { generateFallbackSessionName, sanitizeGeneratedSessionName, sessionNameTextFromAssistantContent } from "../src/core/session-name-generator.ts";
+import { generateFallbackSessionName, sanitizeGeneratedSessionName, sessionNameCompletionModel, sessionNameTextFromAssistantContent } from "../src/core/session-name-generator.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
 describe("automatic session names", () => {
@@ -10,13 +10,14 @@ describe("automatic session names", () => {
 		while (harnesses.length > 0) harnesses.pop()?.cleanup();
 	});
 
-	it("starts title generation alongside the first turn using only the first user prompt", async () => {
+	it("generates a title with the selected model before the first chat request", async () => {
 		const harness = await createHarness({ autoSessionName: true });
 		harnesses.push(harness);
+		const order: string[] = [];
 		let finishMainResponse: ((message: ReturnType<typeof fauxAssistantMessage>) => void) | undefined;
-		let titleRequestStarted = false;
 		harness.setResponses([
 			(context, options) => {
+				expect(harness.session.isStreaming).toBe(false);
 				expect(options).toMatchObject({ maxTokens: 1024 });
 				expect(options).not.toHaveProperty("temperature");
 				expect(options).not.toHaveProperty("reasoning");
@@ -28,18 +29,22 @@ describe("automatic session names", () => {
 						text: "<user_prompt>\n修复 Dream 指示器的对齐问题\n</user_prompt>\n\nGenerate title.",
 					},
 				]);
-				titleRequestStarted = true;
+				order.push("title");
 				return fauxAssistantMessage("**修复 Dream 指示器**");
 			},
-			async () =>
-				await new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => {
+			async () => {
+				order.push("chat");
+				expect(harness.session.sessionName).toBe("修复 Dream 指示器");
+				return await new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => {
 					finishMainResponse = resolve;
-				}),
+				});
+			},
 		]);
 
 		const prompt = harness.session.prompt("修复 Dream 指示器的对齐问题");
-		await vi.waitFor(() => expect(titleRequestStarted).toBe(true));
+		await vi.waitFor(() => expect(order).toEqual(["title", "chat"]));
 		expect(harness.session.isStreaming).toBe(true);
+		expect(harness.session.sessionName).toBe("修复 Dream 指示器");
 		finishMainResponse?.(fauxAssistantMessage("模型输出不应进入标题请求"));
 		await prompt;
 		await harness.session.ensureSessionName();
@@ -52,17 +57,24 @@ describe("automatic session names", () => {
 		]);
 	});
 
-	it("falls back to the user request when title generation fails", async () => {
+	it("falls back to the user request when title generation fails, then starts the chat", async () => {
 		const harness = await createHarness({ autoSessionName: true });
 		harnesses.push(harness);
+		let chatStarted = false;
 		harness.setResponses([
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: "title provider failed" }),
-			fauxAssistantMessage("完成"),
+			() => {
+				expect(harness.session.sessionName).toBe("执行任务");
+				expect(harness.session.isGeneratingSessionName).toBe(false);
+				chatStarted = true;
+				return fauxAssistantMessage("完成");
+			},
 		]);
 
 		await harness.session.prompt("执行任务");
 		await harness.session.ensureSessionName();
 
+		expect(chatStarted).toBe(true);
 		expect(harness.session.isGeneratingSessionName).toBe(false);
 		expect(harness.session.sessionName).toBe("执行任务");
 		expect(harness.session.sessionNameError).toBeUndefined();
@@ -92,14 +104,23 @@ describe("automatic session names", () => {
 		]);
 	});
 
-	it("falls back when a custom model returns no title text", async () => {
+	it("falls back when a custom model returns no title text, then starts the chat", async () => {
 		const harness = await createHarness({ autoSessionName: true });
 		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage(""), fauxAssistantMessage("完成")]);
+		let chatStarted = false;
+		harness.setResponses([
+			fauxAssistantMessage(""),
+			() => {
+				expect(harness.session.sessionName).toBe("分析自定义模型标题");
+				chatStarted = true;
+				return fauxAssistantMessage("完成");
+			},
+		]);
 
 		await harness.session.prompt("分析自定义模型标题");
 		await harness.session.ensureSessionName();
 
+		expect(chatStarted).toBe(true);
 		expect(harness.session.sessionName).toBe("分析自定义模型标题");
 		expect(harness.eventsOfType("session_name_generation").map((event) => event.status)).toEqual([
 			"started",
@@ -157,6 +178,68 @@ describe("automatic session names", () => {
 
 		expect(harness.session.sessionName).toBeUndefined();
 		expect(harness.getPendingResponseCount()).toBe(1);
+	});
+});
+
+describe("sessionNameCompletionModel", () => {
+	const base = {
+		id: "grok-4.6",
+		name: "grok-4.6",
+		provider: "custom-cursor",
+		reasoning: true,
+		input: ["text"] as ("text" | "image")[],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 256000,
+		maxTokens: 16384,
+	};
+
+	it("uses max_tokens and disables developer role for Cursor-style OpenAI-compatible proxies", () => {
+		const model = sessionNameCompletionModel({
+			...base,
+			api: "openai-completions",
+			baseUrl: "http://127.0.0.1:8787/v1",
+			compat: { supportsDeveloperRole: true, maxTokensField: "max_completion_tokens" },
+		});
+		expect(model.reasoning).toBe(false);
+		expect(model.compat).toMatchObject({
+			supportsDeveloperRole: false,
+			supportsReasoningEffort: false,
+			maxTokensField: "max_tokens",
+			supportsStore: false,
+			supportsUsageInStreaming: false,
+		});
+	});
+
+	it("does not rewrite Anthropic or other native APIs beyond disabling reasoning", () => {
+		const model = sessionNameCompletionModel({
+			...base,
+			id: "claude-sonnet-4-6",
+			name: "claude-sonnet-4-6",
+			provider: "anthropic",
+			api: "anthropic-messages",
+			baseUrl: "https://api.anthropic.com",
+			compat: { supportsTemperature: true },
+		});
+		expect(model.reasoning).toBe(false);
+		expect(model.compat).toEqual({ supportsTemperature: true });
+	});
+
+	it("keeps official OpenAI hosts on native completion token fields", () => {
+		const model = sessionNameCompletionModel({
+			...base,
+			id: "gpt-5.4",
+			name: "gpt-5.4",
+			provider: "openai",
+			api: "openai-completions",
+			baseUrl: "https://api.openai.com/v1",
+			compat: { maxTokensField: "max_completion_tokens", supportsDeveloperRole: true },
+		});
+		expect(model.reasoning).toBe(false);
+		expect(model.compat).toMatchObject({
+			supportsDeveloperRole: false,
+			maxTokensField: "max_completion_tokens",
+		});
+		expect(model.compat).not.toHaveProperty("supportsStore", false);
 	});
 });
 

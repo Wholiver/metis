@@ -1,44 +1,34 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  TEXT_RENDER_IMMEDIATE,
-  TEXT_RENDER_PACE_MS,
-  createPacedTextController,
-  nextPacedEnd,
-} from '../desktop/src/lib/paced-text';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
 
-describe('paced text (OpenCode port)', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
-  it('snaps paced ends near punctuation', () => {
-    const text = 'Hello world. Next';
-    expect(nextPacedEnd(text, 0)).toBeGreaterThan(0);
-    expect(nextPacedEnd(text, 0)).toBeLessThanOrEqual(text.length);
-  });
+describe('streamed assistant markdown (Streamdown)', () => {
+  it('reveals live answers with Vercel Streamdown and keeps settled replies on static markdown', () => {
+    const paced = source('desktop/src/components/chat/PacedMarkdown.tsx');
+    const markdown = source('desktop/src/components/chat/MarkdownContent.tsx');
+    const bubble = source('desktop/src/components/chat/AgentBubble.tsx');
+    const css = source('desktop/src/index.css');
 
-  it('syncs immediately when not live', () => {
-    const shown: string[] = [];
-    const controller = createPacedTextController((value) => shown.push(value));
-    controller.sync('abcdef'.repeat(200), false);
-    expect(shown.at(-1)).toBe('abcdef'.repeat(200));
-    controller.dispose();
-  });
+    expect(paced).toContain("import('streamdown')");
+    expect(paced).toContain("import('@streamdown/cjk')");
+    expect(paced).toContain('React.lazy');
+    expect(paced).toContain('StreamdownBoundary');
+    expect(paced).toContain('<MarkdownContent markdown={text}');
+    expect(paced).toContain('isAnimating');
+    expect(paced).toContain("animation: 'blurIn'");
+    expect(paced).toContain("sep: 'word'");
+    expect(paced).toContain('prefers-reduced-motion');
+    expect(paced).not.toContain('createPacedTextController');
+    expect(paced).not.toMatch(/^import .* from 'streamdown'/m);
 
-  it('coalesces live drips to the pace interval instead of every token', () => {
-    vi.useFakeTimers();
-    const shown: string[] = [];
-    const controller = createPacedTextController((value) => shown.push(value));
-    const base = 'x'.repeat(40);
-    controller.sync(base, true);
-    expect(shown).toEqual([]);
-    vi.advanceTimersByTime(TEXT_RENDER_PACE_MS);
-    expect(shown.at(-1)).toBe(base);
+    expect(markdown).not.toContain('createPacedTextController');
+    expect(markdown).not.toContain('../../lib/paced-text');
 
-    controller.sync(base + 'y'.repeat(TEXT_RENDER_IMMEDIATE), true);
-    expect(shown.at(-1)).toBe(base);
-    vi.advanceTimersByTime(TEXT_RENDER_PACE_MS);
-    expect(shown.at(-1)).toBe(base + 'y'.repeat(TEXT_RENDER_IMMEDIATE));
-    controller.dispose();
+    expect(bubble).toContain('<PacedMarkdown text={message.content} streaming={streaming} />');
+    expect(css).toContain('@import "streamdown/styles.css"');
+    expect(css).toContain('@source "../node_modules/streamdown/dist/*.js"');
+    expect(css).toContain('[data-sd-animate]');
   });
 });

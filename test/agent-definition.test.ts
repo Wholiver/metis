@@ -270,7 +270,9 @@ describe("AgentRegistry (Feat 7)", () => {
 		expect(xml).toContain("<available_agents>");
 		expect(xml).toContain("<name>coordinator</name>");
 		expect(xml).toContain("<name>planner</name>");
-		expect(xml).toContain("<tools>read, write, bash, edit, grep, find, ls, performance_gate</tools>");
+		expect(xml).toContain("<tools>read, write, bash, edit, grep, find, ls</tools>");
+		expect(xml).toContain("<completion>ChildResult</completion>");
+		expect(xml).not.toContain("performance_gate");
 		expect(xml).toContain("</available_agents>");
 	});
 });
@@ -456,11 +458,72 @@ describe("named child performance_gate ownership", () => {
 		expect(sessionToolsForNamedAgent(["read", "performance_gate"], { METIS_PERFORMANCE_RUN_ID: "perf-001" })).toEqual(["read"]);
 	});
 
+	it("omits performance_gate, performance_admit, and spawn_agent when a named session has no tools allowlist", () => {
+		const fallback = sessionToolsForNamedAgent(undefined, { METIS_PERFORMANCE_RUN_ID: "perf-001" });
+		expect(fallback).not.toContain("performance_gate");
+		expect(fallback).not.toContain("performance_admit");
+		expect(fallback).not.toContain("spawn_agent");
+		expect(fallback.length).toBeGreaterThan(0);
+	});
+
+	it("gives coordinators ChildResult completion language after stripping performance_gate", () => {
+		const resolved = resolveAgentConfig({ agent: BUILTIN_COORDINATOR });
+		expect(resolved.tools ?? []).not.toContain("performance_gate");
+		expect(resolved.tools ?? []).toContain("spawn_agent");
+		expect(resolved.systemPrompt).toContain("ChildResult");
+		expect(resolved.systemPrompt).toContain("Dispatch only runtime-allowed roles");
+		expect(resolved.systemPrompt).not.toContain("Do not spawn nested workers");
+		expect(resolved.systemPrompt).not.toContain("call the `performance_gate` tool");
+	});
+
+	it("stops teaching implementers to spawn L4 fleets or treat COMPLETE as success", () => {
+		const resolved = resolveAgentConfig({ agent: BUILTIN_IMPLEMENTER });
+		expect(resolved.systemPrompt).not.toMatch(/spawn registered `\*` L4/);
+		expect(resolved.systemPrompt).not.toContain("append the DISPATCH row to GATELOG.md");
+		expect(resolved.systemPrompt).toContain("ChildResult status");
+		expect(resolved.systemPrompt).toContain("COMPLETE text is not success");
+	});
+
+	it("resolved implementer, framework-generator, and researcher prompts report ChildResult without dispatcher identity", () => {
+		const rewriteSource = fs.readFileSync(new URL("../src/core/agent-definition.ts", import.meta.url), "utf8");
+		expect(rewriteSource).toContain('replaceAll("your dispatcher"');
+		expect(rewriteSource).toContain('replaceAll("Report a tight result to the dispatcher"');
+		for (const name of ["implementer", "framework-generator", "researcher"] as const) {
+			const agent = name === "implementer"
+				? BUILTIN_IMPLEMENTER
+				: BUILTIN_AGENTS.find((item) => item.name === name);
+			expect(agent, name).toBeDefined();
+			const resolved = resolveAgentConfig({ agent: agent! });
+			expect(resolved.systemPrompt.toLowerCase(), name).not.toContain("your dispatcher");
+			expect(resolved.systemPrompt, name).toContain("ChildResult");
+			expect(resolved.systemPrompt, name).toContain("host/root");
+		}
+	});
+
+	it("resolved scribe prompt reports ChildResult to host without dispatcher identity", () => {
+		const agent = BUILTIN_AGENTS.find((item) => item.name === "scribe");
+		expect(agent).toBeDefined();
+		const resolved = resolveAgentConfig({ agent: agent! });
+		expect(resolved.systemPrompt.toLowerCase()).not.toContain("dispatcher");
+		expect(resolved.systemPrompt).toContain("ChildResult");
+		expect(resolved.systemPrompt).toMatch(/\bhost\b/i);
+		expect(resolved.systemPrompt).not.toContain("Report a tight result to the dispatcher");
+	});
+
+	it("stops teaching planners to append GATELOG DISPATCH rows via bash", () => {
+		const resolved = resolveAgentConfig({ agent: BUILTIN_PLANNER });
+		expect(resolved.systemPrompt).not.toContain("append the exact `DISPATCH");
+		expect(resolved.systemPrompt).not.toMatch(/append the exact `DISPATCH <FID> wave=<W>` row to `GATELOG\.md`/);
+		expect(resolved.systemPrompt).toContain("Do not append GATELOG.md rows");
+	});
+
 	it("keeps main.ts from re-adding performance_gate to named children", () => {
 		const mainSource = fs.readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
 		expect(mainSource).toContain("sessionToolsForNamedAgent");
+		expect(mainSource).toContain("namedAgentSession");
 		expect(mainSource).not.toMatch(/\[\.\.\.resolvedConfig\.tools,\s*["']performance_gate["']\]/);
 		expect(mainSource).not.toMatch(/METIS_PERFORMANCE_RUN_ID[\s\S]{0,240}performance_gate/);
+		expect(mainSource).toMatch(/sessionToolsForNamedAgent\(resolvedConfig\.tools \?\? sessionOptions\.tools\)/);
 	});
 });
 

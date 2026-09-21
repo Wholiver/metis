@@ -146,6 +146,8 @@ export function toolResultText(part: ToolPart): string {
   if (typeof content === 'string') return content;
   if (content == null) return '';
   try {
+    const compact = JSON.stringify(content);
+    if (compact.length > TOOL_TRANSCRIPT_CHAR_LIMIT) return compact;
     return JSON.stringify(content, null, 2);
   } catch {
     return String(content);
@@ -189,7 +191,7 @@ export function buildToolFileDiff(part: ToolPart, options: TurnFileChangeOptions
 }
 
 export type ToolExpandedView =
-  | { kind: 'diff'; filename: string; path?: string; rows: DiffRow[] }
+  | { kind: 'diff'; filename: string; path?: string; rows: DiffRow[]; truncated?: boolean }
   | { kind: 'bash'; command: string; text: string }
   | { kind: 'output'; text: string; format: 'markdown' | 'pre' | 'search'; links?: string[] };
 
@@ -213,6 +215,7 @@ function stripAnsi(value: string): string {
 /** Keep expanded shell/pre output cheap to layout; copy still uses the full string. */
 export const TOOL_TRANSCRIPT_LINE_LIMIT = 80;
 export const TOOL_TRANSCRIPT_CHAR_LIMIT = 8_000;
+export const TOOL_DIFF_ROW_LIMIT = 80;
 export const TOOL_TRIGGER_TEXT_LIMIT = 96;
 export const TOOL_TRIGGER_ARG_LIMIT = 48;
 
@@ -347,11 +350,13 @@ export function buildToolExpandedView(
 
   const fileDiff = buildToolFileDiff(part, options);
   if (fileDiff && fileDiff.rows.length > 0) {
+    const truncated = fileDiff.rows.length > TOOL_DIFF_ROW_LIMIT;
     return {
       kind: 'diff',
       filename: fileDiff.filename,
       path: fileDiff.path,
-      rows: fileDiff.rows,
+      rows: truncated ? fileDiff.rows.slice(0, TOOL_DIFF_ROW_LIMIT) : fileDiff.rows,
+      ...(truncated ? { truncated: true } : {}),
     };
   }
 

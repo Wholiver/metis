@@ -1,6 +1,6 @@
 {
 	"name": "metis-desktop",
-	"version": "1.3.1",
+	"version": "1.3.2",
 	"private": true,
 	"description": "Electron desktop shell for Metis",
 	"type": "module",
@@ -33,6 +33,7 @@
 	},
 	"dependencies": {
 		"@lobehub/icons-static-svg": "^1.95.0",
+		"@streamdown/cjk": "^1.0.3",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"dompurify": "^3.2.4",
@@ -42,6 +43,7 @@
 		"react": "^18.3.1",
 		"react-dom": "^18.3.1",
 		"shadow-plugin": "^2.1.0",
+		"streamdown": "^2.6.0",
 		"tailwind-merge": "^3.0.1"
 	}
 }

@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { isShellTool } from '../../lib/tool-diff';
 import { TextShimmer } from './TextShimmer';
-import { ToolCard, type ToolPart, toolStatus } from './ToolCard';
+import { ToolCard, type ToolPart, toolStatus, areToolPartRefsEqual } from './ToolCard';
 
 export function isCommandGroupTool(part: ToolPart): boolean {
   return isShellTool(part.name);
@@ -13,7 +13,7 @@ function countLabel(count: number, one: string, other: string): string {
   return (count === 1 ? one : other).replace('{count}', String(count));
 }
 
-export function CommandToolGroup({
+export const CommandToolGroup = React.memo(function CommandToolGroup({
   parts,
   streaming = false,
   busy,
@@ -92,4 +92,10 @@ export function CommandToolGroup({
       </div>
     </section>
   );
-}
+}, (prev, next) => (
+  prev.streaming === next.streaming
+  && prev.busy === next.busy
+  && prev.open === next.open
+  && prev.onOpenChange === next.onOpenChange
+  && areToolPartRefsEqual(prev.parts, next.parts)
+));

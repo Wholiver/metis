@@ -19,6 +19,7 @@ import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { getAgentDir } from "../config.ts";
 import { normalizePath } from "../utils/paths.ts";
+import { findBundledEnvKeys, getBundledEnvApiKey } from "./providers/siliconflow.ts";
 import { resolveConfigValue } from "./resolve-config-value.ts";
 
 export type ApiKeyCredential = {
@@ -355,7 +356,7 @@ export class AuthStorage {
 	hasAuth(provider: string): boolean {
 		if (this.runtimeOverrides.has(provider)) return true;
 		if (this.data[provider]) return true;
-		if (getEnvApiKey(provider)) return true;
+		if (getEnvApiKey(provider) || getBundledEnvApiKey(provider)) return true;
 		return false;
 	}
 
@@ -371,7 +372,7 @@ export class AuthStorage {
 			return { configured: false, source: "runtime", label: "--api-key" };
 		}
 
-		const envKeys = findEnvKeys(provider);
+		const envKeys = findEnvKeys(provider) ?? findBundledEnvKeys(provider);
 		if (envKeys?.[0]) {
 			return { configured: false, source: "environment", label: envKeys[0] };
 		}
@@ -524,7 +525,7 @@ export class AuthStorage {
 		if (options.includeFallback === false) return undefined;
 
 		// Fall back to environment variable
-		const envKey = getEnvApiKey(providerId);
+		const envKey = getEnvApiKey(providerId) ?? getBundledEnvApiKey(providerId);
 		if (envKey) return envKey;
 
 		return undefined;

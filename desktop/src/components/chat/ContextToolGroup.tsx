@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { clipToolTriggerText } from '../../lib/tool-diff';
 import { TextShimmer } from './TextShimmer';
-import { type ToolPart, toolStatus } from './ToolCard';
+import { type ToolPart, toolStatus, areToolPartRefsEqual } from './ToolCard';
 
 const CONTEXT_GROUP_TOOLS = new Set(['read', 'glob', 'grep', 'list', 'ls', 'find']);
 
@@ -115,7 +115,7 @@ function countLabel(
   return (count === 1 ? one : other).replace('{count}', String(count));
 }
 
-export function ContextToolGroup({
+export const ContextToolGroup = React.memo(function ContextToolGroup({
   parts,
   streaming = false,
   busy,
@@ -243,4 +243,10 @@ export function ContextToolGroup({
       </div>
     </section>
   );
-}
+}, (prev, next) => (
+  prev.streaming === next.streaming
+  && prev.busy === next.busy
+  && prev.open === next.open
+  && prev.onOpenChange === next.onOpenChange
+  && areToolPartRefsEqual(prev.parts, next.parts)
+));

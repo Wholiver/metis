@@ -33,6 +33,9 @@ describe('desktop pelican SVG prompt rewrite', () => {
     expect(revealPromptForDisplay(PELICAN_BIKE_SVG_MODEL_PROMPT)).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
     expect(revealPromptForDisplay(`  ${PELICAN_BIKE_SVG_MODEL_PROMPT}  `)).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
     expect(revealPromptForDisplay(PELICAN_BIKE_SVG_USER_PROMPT)).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
+    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('does not skip performance_admit');
+    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).not.toContain('named-child dispatch');
+    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('root-owned zero spawn');
   });
 
   it('keeps the short prompt in the user bubble after the model rewrite', () => {
@@ -50,6 +53,22 @@ describe('desktop pelican SVG prompt rewrite', () => {
   it('tells the model to write SVG directly and skip Python generation', () => {
     expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('不要用 Python');
     expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('只交付一个可独立打开的 .svg');
+  });
+
+  it('forbids silhouette intersections anywhere in the drawing', () => {
+    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('不该相交的轮廓不要互相切开');
+    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('整幅每一处都检查，不限于某一对零件');
+    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).not.toContain('挡泥板应在轮胎外侧绕过');
+  });
+
+  it('forbids see-through solids and limbs being pierced by what they hold', () => {
+    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('实体默认不透明');
+    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('不能让车把从翅膀中间穿过');
+  });
+
+  it('forbids connectors being drawn through another part\'s interior', () => {
+    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('不要画进另一件的内部平面');
+    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('不要一条管子横贴在轮面上把辐条盖住或切断');
   });
 
   it('sends the rewritten prompt on the Desktop prompt request path', () => {

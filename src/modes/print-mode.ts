@@ -10,7 +10,7 @@ import {
 	resolveTaskPathsFromEnv,
 } from "../core/task-execution-controller.ts";
 import { buildContractInstruction } from "../core/task-contract.ts";
-import { runReliableTurn } from "../core/reliable-headless-runners.ts";
+import { resolveReliableTurnPolicy, runReliableTurn } from "../core/reliable-headless-runners.ts";
 import type {
 	HostNamedChildExecuteInput,
 	HostNamedChildExecuteResult,
@@ -244,14 +244,16 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 		const executionResult = await runReliableTurn({
 			session: {
-				prompt: (text, opts) => session.prompt(text, opts),
+				prompt: (text, opts) => (opts ? session.prompt(text, opts) : session.prompt(text)),
 				getActiveToolDefinition: (name) => session.getActiveToolDefinition(name),
 				performanceRun: session.performanceRun,
+				collaborationMode: session.collaborationMode,
 			},
 			instruction: buildContractInstruction(initialMessage, messages),
 			cwd,
 			taskPaths,
-			policy: "strict",
+			policy: resolveReliableTurnPolicy({ taskPaths }),
+			collaborationMode: session.collaborationMode,
 			images: initialImages,
 			rootPromptText: initialMessage,
 			followUpMessages: messages,
@@ -263,6 +265,9 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 		finalAnswerText = executionResult.finalText;
 		exitCode = mapExecutionStatusToExitCode(executionResult.status);
+		if (executionResult.status !== "completed" && executionResult.failure?.message) {
+			console.error(executionResult.failure.message);
+		}
 		traceCollector.recordExecution({
 			profile: "reliable-headless",
 			model: session.model?.id,

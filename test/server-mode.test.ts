@@ -329,6 +329,17 @@ describe("server mode", () => {
 			}),
 			expect.objectContaining({ id: "anthropic", authMethods: ["api_key", "oauth"] }),
 			expect.objectContaining({ id: "github-copilot", authMethods: ["api_key", "oauth"] }),
+			expect.objectContaining({
+				id: "siliconflow-cn",
+				name: "SiliconFlow (China)",
+				baseUrl: "https://api.siliconflow.cn/v1",
+				authMethods: ["api_key"],
+			}),
+			expect.objectContaining({
+				id: "siliconflow",
+				baseUrl: "https://api.siliconflow.com/v1",
+				authMethods: ["api_key"],
+			}),
 		]));
 
 		const modelResponse = await fetch(`${handle.address.url}/session/model`, {
@@ -740,13 +751,15 @@ describe("server mode", () => {
 		expect(existsSync(otherPath)).toBe(false);
 	});
 
-	test("starts title generation before dispatching the first Desktop prompt", async () => {
+	test("awaits title generation before dispatching the first Desktop prompt", async () => {
 		const fixture = createRuntimeFixture();
 		fixture.session.sessionName = undefined as unknown as string;
 		fixture.session.messages = [];
 		const order: string[] = [];
 		fixture.session.ensureSessionName.mockImplementation(async (options?: { prompt?: string }) => {
-			order.push(`title:${options?.prompt}`);
+			order.push(`title-start:${options?.prompt}`);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			order.push(`title-done:${options?.prompt}`);
 			return undefined;
 		});
 		fixture.session.prompt.mockImplementation(async (_message, options) => {
@@ -763,7 +776,7 @@ describe("server mode", () => {
 
 		expect(response.status).toBe(202);
 		expect(fixture.session.ensureSessionName).toHaveBeenCalledWith({ prompt: "首个用户 prompt" });
-		expect(order).toEqual(["title:首个用户 prompt", "prompt"]);
+		expect(order).toEqual(["title-start:首个用户 prompt", "title-done:首个用户 prompt", "prompt"]);
 	});
 
 	test("returns Dream migration guidance without generating a title", async () => {

@@ -266,6 +266,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [language, setLanguagePreference] = useState('auto');
   const [languageOptions, setLanguageOptions] = useState<LanguageOption[]>(fallbackLanguageOptions);
   const [deletingArchivedId, setDeletingArchivedId] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
   const translate = (value: string) => translateExact(value, language);
 
   const desktop = (window as any).metisDesktop;
@@ -280,7 +281,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const credentialProviders = Array.isArray(credentialInfo.providers) ? credentialInfo.providers : [];
 
   const load = async () => {
-    setLoading(true); setError('');
+    if (!hasLoadedRef.current) setLoading(true);
+    setError('');
     try {
       const [nextAppInfo, nextWorkspace, nextProviders, nextConnection] = await Promise.all([
         desktop?.appInfo?.() || Promise.resolve({}),
@@ -317,7 +319,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
         ? nextLanguage.options.filter((item: unknown): item is LanguageOption => Boolean(item && typeof (item as LanguageOption).code === 'string' && typeof (item as LanguageOption).nativeName === 'string'))
         : languageOptions);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setLoading(false); }
+    finally {
+      hasLoadedRef.current = true;
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -425,12 +430,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   const handleSaveCustomModel = async (config: {
     name: string;
-    baseUrl: string;
+    baseUrl?: string;
     apiKey?: string;
     providerId?: string;
     modelIds?: string[];
     models?: Array<{ id: string; name?: string }>;
     discoveredModels?: Array<{ id: string; name?: string }>;
+    builtin?: boolean;
   }) => {
     await run(async () => {
       const saved = await requireDesktop<{ provider?: string }>(
@@ -441,7 +447,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
       if (config.apiKey?.trim() && saved?.provider) {
         await command(`/login ${saved.provider} ${config.apiKey.trim()}`);
       }
-    }, translate('modelSavedSuccess') || 'Custom model saved successfully.');
+    }, config.builtin
+      ? (translate('API key saved.') || 'API key saved.')
+      : (translate('modelSavedSuccess') || 'Custom model saved successfully.'));
   };
 
   const refreshProviderState = async () => {
@@ -630,6 +638,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       <AddModelModal
         open={showAddModal}
         providers={props.providerCatalog}
+        knownModels={props.models}
         onClose={() => setShowAddModal(false)}
         onSave={handleSaveCustomModel}
         onApiKeyLogin={handleApiKeyLogin}
@@ -1084,7 +1093,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/30 p-5 backdrop-blur-[3px]" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="settings-title" className="flex h-[min(680px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] overflow-hidden rounded-window bg-surface shadow-overlay">
+      <section role="dialog" aria-modal="true" aria-labelledby="settings-title" className="flex h-[min(680px,calc(100dvh-40px))] w-[min(920px,calc(100vw-40px))] overflow-hidden rounded-window bg-surface shadow-overlay">
         <aside className="flex w-[230px] shrink-0 flex-col border-r border-line bg-canvas px-3 pb-3 pt-6 sm:pt-7 select-none">
           <div className="mb-3.5 px-1 flex items-center h-6">
             <h1 id="settings-title" className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-ink leading-6">Settings</h1>
@@ -1147,7 +1156,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
           <header
             className={`flex shrink-0 items-center justify-between px-6 pt-6 pb-3.5 sm:px-7 sm:pt-7 sm:pb-3.5 transition-[border-color,box-shadow,background-color] duration-150 z-10 ${
               isScrolled
-                ? 'border-b border-line bg-surface/85 backdrop-blur-[6px] shadow-hairline'
+                ? 'border-b border-line bg-surface shadow-hairline'
                 : 'border-b border-transparent bg-transparent'
             }`}
           >

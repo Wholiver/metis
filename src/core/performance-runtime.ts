@@ -8,7 +8,7 @@ import {
 	performanceItemGatePolicy,
 	type PerformanceRoadmapItem,
 } from "./performance-roadmap.ts";
-import { getPerformanceFramework } from "./performance-frameworks.ts";
+import { frameworkProtocolForPrompt, getPerformanceFramework } from "./performance-frameworks.ts";
 import { isHostDispatchActive } from "./host-dispatch.ts";
 
 /**
@@ -197,8 +197,11 @@ const KNOWN_ROLES = new Set(["coordinator", ...L1_ROLES, ...L2_ROLES, ...L3_ROLE
 const TIER_ROLES: Record<PerformanceTier, ReadonlySet<string>> = {
 	T0: new Set(),
 	T1: new Set(["reviewer", "verifier", "fresh-verifier"]),
+	// T2 serial implementer lanes; G1 planner is product-required for plan-design / design forks.
 	T2: new Set(["planner", "implementer", "reviewer", "verifier", "fresh-verifier", "juror", "goal-checker", "depth-prober"]),
-	T3: KNOWN_ROLES,
+	// T3 root/coordinator spawns admitted implementer lanes only, plus post-integration
+	// assurance (existing G5/G6 + T3 convergence sweeper). No planner/juror/L0–L4 fleet.
+	T3: new Set(["implementer", "reviewer", "verifier", "fresh-verifier", "sweeper"]),
 };
 const STRICT_TDD_FRAMEWORKS = new Set(["backend-build", "backend-fix", "backend-implement", "frontend-build", "frontend-fix", "frontend-implement"]);
 
@@ -208,6 +211,55 @@ function hash(value: string): string {
 
 function now(): string {
 	return new Date().toISOString();
+}
+
+const RECEIPT_PASS_VALUE = String.raw`(?:0|pass|green|"0"|"pass"|"green")`;
+const RECEIPT_TRUTH_VALUE = String.raw`(?:true|pass|yes|"true"|"pass"|"yes")`;
+const RECEIPT_EMPTY_FINDINGS = String.raw`(?:0|none|\[\s*\]|"0"|"none")`;
+const RECEIPT_END_TO_END = String.raw`(?:pass|green|true|"pass"|"green"|"true")`;
+const RECEIPT_HELP =
+	"JSON keys are accepted. Include the required fields as YAML `key: value` or JSON `\"key\": ...`. Pass tokens: `exitCode: 0`, `testStatus: pass`, or for browser/screenshot checks `visualStatus: pass`.";
+
+function receiptKeyPattern(key: string, valuePattern: string): RegExp {
+	const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(String.raw`(?:\b|"|')${escaped}(?:\b|"|')\s*:\s*${valuePattern}`, "i");
+}
+
+function receiptHasKey(content: string, key: string): boolean {
+	return receiptKeyPattern(key, String.raw`\S+`).test(content);
+}
+
+function receiptHasValue(content: string, keys: readonly string[], valuePattern: string): boolean {
+	return keys.some((key) => receiptKeyPattern(key, valuePattern).test(content));
+}
+
+function receiptHasPassToken(content: string, keys: readonly string[]): boolean {
+	return receiptHasValue(content, keys, RECEIPT_PASS_VALUE);
+}
+
+function receiptHasTruthToken(content: string, keys: readonly string[]): boolean {
+	return receiptHasValue(content, keys, RECEIPT_TRUTH_VALUE);
+}
+
+function receiptCoveragePercent(content: string): number | undefined {
+	const match = content.match(/(?:\b|"|')coverage(?:\b|"|')[^\d]*(\d+(?:\.\d+)?)\s*%?/i);
+	return match ? Number(match[1]) : undefined;
+}
+
+function verificationLooksVisual(commands: string | readonly string[] | undefined): boolean {
+	const blob = typeof commands === "string" ? commands : (commands ?? []).join("\n");
+	return /browser|screenshot|visual|inspect|preview|视觉|截图|预览/i.test(blob);
+}
+
+function receiptHasIndependentPass(content: string, visual: boolean): boolean {
+	if (receiptHasPassToken(content, ["exitCode", "testStatus"])) return true;
+	if (/\breturn[\s_-]*code\s*[:=]?\s*0\b/i.test(content)) return true;
+	if (/\bexited?(?:\s+with)?(?:\s+code)?\s+0\b/i.test(content)) return true;
+	if (!visual) return false;
+	if (receiptHasPassToken(content, ["visualStatus"])) return true;
+	const mentionsVisualCheck = /browser_take_screenshot|browser_navigate|内置浏览器|视觉检查|截图验收|\bscreenshot\b/i.test(content);
+	const mentionsPass = /(?:\bpass(?:ed|ing)?\b|\bgreen\b|通过|合格)/i.test(content);
+	return mentionsVisualCheck && mentionsPass;
 }
 
 function normalizedAdmission(admission: PerformanceAdmission): PerformanceAdmission {
@@ -498,6 +550,9 @@ export function validatePerformanceSpawn(
 		return { valid: false, message: `Performance L2 cannot dispatch ${request.childRole}.` };
 	}
 	if (request.parentRole === "implementer") {
+		if (state.admission && (state.admission.tier === "T2" || state.admission.tier === "T3")) {
+			return { valid: false, message: `Performance ${state.admission.tier} implementer must not fan out; emit ChildResult.` };
+		}
 		return L4_ROLES.has(request.childRole)
 			? { valid: true }
 			: { valid: false, message: "Only an L3 implementer may fan out, and only to an L4 terminal leaf." };
@@ -1073,7 +1128,7 @@ ${line(state, "FRONTIER G2")}
 		this.log(`VERDICT ${report.gate} ${report.verdict} actor=${report.actor} role=${report.role} evidence=${JSON.stringify(report.evidence)}`);
 		if (report.gate === "G4" && report.verdict === "pass" && state.admission?.tier === "T0") {
 			this.log("SKIP G5 reason=T0 root-owned bounded execution");
-			this.log("SKIP G6 reason=T0 verification captured in root G4 evidence");
+			this.log("SKIP G6 reason=T0 independent verification already recorded in root G4 evidence");
 			this.log("SKIP G7 reason=T0 route has no juror");
 			this.completeActiveItem();
 			this.log("SKIP goal-check reason=T0 mission acceptance captured in root G4 evidence");
@@ -1126,13 +1181,19 @@ ${line(state, "FRONTIER G2")}
 	}
 
 	validateSpawn(parentRole: string, childRole: string, liveAgents: number): PerformanceSpawnDecision {
-		if (!this.stateValue) return { valid: true };
+		if (!this.stateValue) {
+			if (isHostDispatchActive()) return { valid: true };
+			return { valid: false, message: "Performance spawn requires an active run." };
+		}
 		return validatePerformanceSpawn({ parentRole, childRole, liveAgents, hostDispatch: isHostDispatchActive() }, this.stateValue);
 	}
 
 	/** Atomically reserve a process slot shared by every child in this run. */
 	reserveSpawn(parentRole: string, childRole: string, childAgentId: string, laneId?: string): PerformanceSpawnDecision {
-		if (!this.stateValue) return { valid: true };
+		if (!this.stateValue) {
+			if (isHostDispatchActive()) return { valid: true };
+			return { valid: false, message: "Performance spawn requires an active run." };
+		}
 		return this.withStateLock(() => {
 			const latest = this.readFromDirectory(this.stateValue!.governanceRoot);
 			if (!latest) return { valid: false, message: "Performance run is unavailable." };
@@ -1229,8 +1290,8 @@ ${line(state, "FRONTIER G2")}
 		const roleInstruction = rootExecutesBoundedRoute
 			? `Act as root G4 executor for the admitted ${state.admission!.tier} bounded lane. Implement and verify directly; do not delegate implementation.${state.admission!.tier === "T1" ? " After G4, dispatch only fresh G5 reviewer and G6 verifier against this integrated cwd." : ""}`
 			: coordinatorContext
-			? `Act as ${role === "root" ? "L0 Primary Coordinator" : `${role} L1 coordinator`}. Follow the admitted ${state.admission?.tier ?? "legacy"} route; dispatch only roles allowed by runtime.`
-			: (workerInstructions[role] ?? `You are the ${role} worker. Stay inside this role's legal hierarchy and admitted lane.`);
+			? `Act as ${role === "root" ? "root coordinator" : `${role} coordinator`}. Follow the admitted ${state.admission?.tier ?? "legacy"} route; T2 serializes implementer lanes in shared cwd; T3 spawns only admitted disjoint implementer lanes. Host owns gates; children emit ChildResult. Do not build an L0–L4 fleet.`
+			: (workerInstructions[role] ?? `You are the ${role} worker. Stay inside this admitted lane and emit ChildResult; do not call performance_gate.`);
 		const includeFullFramework = coordinatorContext && !rootExecutesBoundedRoute;
 		const rootCompletion = [
 			"Before finishing any gate role in a coordinated wave, write a non-empty receipt under <governance root>/artifacts/ then call performance_gate with verdict pass|fail|blocked and evidence set to that relative path (for example artifacts/g2-receipt.md). Do not exit after only writing the receipt. Goal-check is independent and runs only after every roadmap item is complete. Governance artifacts are outside the target workspace and must not be added to its diff.",
@@ -1246,7 +1307,7 @@ ${line(state, "FRONTIER G2")}
 			roleInstruction,
 			this.boundLaneId ? `Assigned lane: ${this.boundLaneId}; assigned gate: ${this.boundGate ?? "from canonical brief"}. This binding outranks the root run's global active-item display.` : "",
 			state.schemaVersion === 1 ? "Legacy G2 closing order remains mandatory: G2 author, then independent G2-review and G2-verify." : "The typed admission and generated ROADMAP are canonical. Scope changes require re-admission; workers must not rewrite lane ownership.",
-			includeFullFramework && framework ? `\n# Native execution protocol: ${framework.id}\n${framework.content.trim()}` : "",
+			includeFullFramework && framework ? `\n${frameworkProtocolForPrompt(framework)}` : "",
 			role === "root" ? rootCompletion : childCompletion,
 		].join("\n");
 		const runIdentity = [
@@ -1278,7 +1339,7 @@ ${line(state, "FRONTIER G2")}
 			`MISSION POINTER: ${pointer.path}; SHA-256: ${pointer.sha256}; bytes: ${pointer.bytes}.`,
 			state.repairRequired ? `REPAIR REQUIRED at ${state.repairRequired.gate}: ${state.repairRequired.message}` : "",
 			activeItem
-				? `Active item ${activeItem.id}: ${activeItem.category}/${activeItem.tag}/${activeItem.tier}/${activeItem.framework}. ${itemPolicy!.requiresCharacterization ? "G0 characterization is required before planning or implementation." : "No G0 characterization."} ${itemPolicy!.requiresPlan ? "G1 is required." : "G1 is skipped."} ${itemPolicy!.requiresDepthLock ? "G3.5 depth-lock follows G1." : "No G3.5 depth-lock."} ${activeItem.framework === "apply" ? "Apply admission requires an exact change specification and uses G4/G5/G6 only." : ""} ${itemPolicy!.requiredJurors ? `G7 requires ${itemPolicy!.requiredJurors} independent juror(s).` : "G7 is skipped for this framework/tier."}`
+				? `Active item ${activeItem.id}: ${activeItem.category}/${activeItem.tag}/${activeItem.tier}/${activeItem.framework}. ${itemPolicy!.requiresCharacterization ? "G0 characterization is required before planning or implementation." : "No G0 characterization."} ${itemPolicy!.requiresPlan ? "G1 is required." : "G1 is skipped."} ${itemPolicy!.requiresDepthLock ? "G3.5 depth-lock follows G1." : "No G3.5 depth-lock."} ${state.admission?.tier === "T0" ? `T0: close G4 only after independent evidence in the G4 receipt. Include changedFiles, testCommand, testOutput, and a pass token. ${RECEIPT_HELP} Do not skip verify. Do not dispatch G5/G6 workers.` : activeItem.framework === "apply" ? "Apply admission requires an exact change specification. Close G4 after independent evidence." : ""} ${itemPolicy!.requiredJurors ? `G7 requires ${itemPolicy!.requiredJurors} independent juror(s).` : "G7 is skipped for this framework/tier."}`
 				: "No item is active until G2 assurance accepts the structured roadmap.",
 			this.requiresConvergenceSweep() ? "After the final T3 item, dispatch one fresh sweeper. A passing sweep is required before goal-check; named findings reopen scope rather than being silently downgraded." : "",
 		]
@@ -1314,60 +1375,77 @@ ${line(state, "FRONTIER G2")}
 		return readFileSync(resolve(state.governanceRoot, path), "utf8");
 	}
 
+	private itemVerificationIsVisual(item: PerformanceRoadmapItem): boolean {
+		const admission = this.stateValue?.admission;
+		return verificationLooksVisual(admission?.verificationCommands)
+			|| verificationLooksVisual(item.verificationCommands)
+			|| Boolean(admission?.lanes.some((lane) => lane.id === item.id && verificationLooksVisual(lane.verificationCommands)));
+	}
+
 	private assertVerificationEvidence(item: PerformanceRoadmapItem, receipt: string): void {
 		const content = this.evidenceContent(receipt);
-		if (!/\b(?:testCommand|verificationCommand)\b\s*:\s*\S+/i.test(content)) {
-			throw new Error(`G6 verification for ROADMAP.md item ${item.id} requires the real testCommand it ran.`);
+		if (!receiptHasKey(content, "testCommand") && !receiptHasKey(content, "verificationCommand")) {
+			throw new Error(`G6 verification for ROADMAP.md item ${item.id} requires the real testCommand it ran. ${RECEIPT_HELP}`);
 		}
-		if (!/\b(?:exitCode|testStatus)\b\s*:\s*(?:0|pass|green)/i.test(content)) {
-			throw new Error(`G6 verification for ROADMAP.md item ${item.id} requires a passing test exitCode.`);
+		const visual = this.itemVerificationIsVisual(item);
+		if (!receiptHasIndependentPass(content, visual)) {
+			throw new Error(`G6 verification for ROADMAP.md item ${item.id} requires a passing test exitCode (or visualStatus: pass for browser/screenshot checks). ${RECEIPT_HELP}`);
 		}
-		if (!/\btestOutput\b\s*:\s*\S+/i.test(content)) {
-			throw new Error(`G6 verification for ROADMAP.md item ${item.id} requires captured real testOutput.`);
+		if (!receiptHasKey(content, "testOutput")) {
+			throw new Error(`G6 verification for ROADMAP.md item ${item.id} requires captured real testOutput. ${RECEIPT_HELP}`);
 		}
 		if (STRICT_TDD_FRAMEWORKS.has(item.framework)) {
-			const coverage = content.match(/\bcoverage\b[^\d]*(\d+(?:\.\d+)?)\s*%/i);
-			if (!coverage || Number(coverage[1]) < 95) {
+			const coverage = receiptCoveragePercent(content);
+			if (coverage === undefined || coverage < 95) {
 				throw new Error(`G6 verification for ROADMAP.md item ${item.id} requires measured coverage >=95%.`);
 			}
 		}
-		if (!/\bpreExistingRegressions\b\s*:\s*\S+/i.test(content)) {
-			throw new Error(`G6 verification for ROADMAP.md item ${item.id} must record and isolate preExistingRegressions.`);
+		if (!receiptHasKey(content, "preExistingRegressions")) {
+			throw new Error(`G6 verification for ROADMAP.md item ${item.id} must record and isolate preExistingRegressions. ${RECEIPT_HELP}`);
 		}
-		if (performanceItemGatePolicy(item).requiresDepthLock && (!/\breproWasRed\b\s*:\s*(?:true|pass|yes)/i.test(content) || !/\breproNowGreen\b\s*:\s*(?:true|pass|yes)/i.test(content))) {
-			throw new Error(`Debug G6 verification for ROADMAP.md item ${item.id} requires reproWasRed and reproNowGreen proof.`);
+		if (performanceItemGatePolicy(item).requiresDepthLock && (!receiptHasTruthToken(content, ["reproWasRed"]) || !receiptHasTruthToken(content, ["reproNowGreen"]))) {
+			throw new Error(`Debug G6 verification for ROADMAP.md item ${item.id} requires reproWasRed and reproNowGreen proof. ${RECEIPT_HELP}`);
 		}
 	}
 
 	private assertImplementationEvidence(item: PerformanceRoadmapItem, receipt: string): void {
 		const content = this.evidenceContent(receipt);
-		if (!/\bchangedFiles\b\s*:\s*\S+/i.test(content)) {
-			throw new Error(`G4 implementation for ROADMAP.md item ${item.id} requires changedFiles evidence.`);
+		if (!receiptHasKey(content, "changedFiles")) {
+			throw new Error(`G4 implementation for ROADMAP.md item ${item.id} requires changedFiles evidence (YAML \`changedFiles: path\` or JSON \`"changedFiles": [...]\`).`);
 		}
-		if (!/\btestCommand\b\s*:\s*\S+/i.test(content) || !/\btestOutput\b\s*:\s*\S+/i.test(content)) {
-			throw new Error(`G4 implementation for ROADMAP.md item ${item.id} requires a real testCommand and testOutput.`);
+		if (!receiptHasKey(content, "testCommand") || !receiptHasKey(content, "testOutput")) {
+			throw new Error(`G4 implementation for ROADMAP.md item ${item.id} requires a real testCommand and testOutput. ${RECEIPT_HELP}`);
+		}
+		if (this.stateValue?.admission?.tier === "T0") {
+			if (!receiptHasIndependentPass(content, this.itemVerificationIsVisual(item))) {
+				throw new Error(`T0 G4 for ROADMAP.md item ${item.id} requires independent verification evidence, not a first-draft write. Include changedFiles, testCommand, testOutput, and a pass token. ${RECEIPT_HELP}`);
+			}
 		}
 		if (STRICT_TDD_FRAMEWORKS.has(item.framework)) {
-			if (!/\bredTestOutput\b\s*:\s*\S+/i.test(content) || !/\bgreenTestOutput\b\s*:\s*\S+/i.test(content)) {
-				throw new Error(`G4 implementation for ROADMAP.md item ${item.id} requires real TDD redTestOutput and greenTestOutput.`);
+			if (!receiptHasKey(content, "redTestOutput") || !receiptHasKey(content, "greenTestOutput")) {
+				throw new Error(`G4 implementation for ROADMAP.md item ${item.id} requires real TDD redTestOutput and greenTestOutput. ${RECEIPT_HELP}`);
 			}
-			if (!/\breproWasRed\b\s*:\s*(?:true|pass|yes)/i.test(content) || !/\breproNowGreen\b\s*:\s*(?:true|pass|yes)/i.test(content)) {
-				throw new Error(`G4 implementation for ROADMAP.md item ${item.id} requires reproWasRed and reproNowGreen proof.`);
+			if (!receiptHasTruthToken(content, ["reproWasRed"]) || !receiptHasTruthToken(content, ["reproNowGreen"])) {
+				throw new Error(`G4 implementation for ROADMAP.md item ${item.id} requires reproWasRed and reproNowGreen proof. ${RECEIPT_HELP}`);
 			}
 		}
 	}
 
 	private assertCharacterizationEvidence(item: PerformanceRoadmapItem, receipt: string): void {
 		const content = this.evidenceContent(receipt);
-		if (!/\bcharacterizationTests\b\s*:\s*\S+/i.test(content) || !/\btestCommand\b\s*:\s*\S+/i.test(content) || !/\btestOutput\b\s*:\s*\S+/i.test(content)) {
-			throw new Error(`G0 characterization for ROADMAP.md item ${item.id} requires characterizationTests, testCommand, and passing testOutput.`);
+		if (!receiptHasKey(content, "characterizationTests") || !receiptHasKey(content, "testCommand") || !receiptHasKey(content, "testOutput")) {
+			throw new Error(`G0 characterization for ROADMAP.md item ${item.id} requires characterizationTests, testCommand, and passing testOutput. ${RECEIPT_HELP}`);
 		}
 	}
 
 	private assertGoalEvidence(receipt: string): void {
 		const content = this.evidenceContent(receipt);
-		if (!/\bopenFindings\b\s*:\s*(?:0|none|\[\s*\])/i.test(content)) throw new Error("Goal check requires evidence of zero openFindings.");
-		if (!/\bendToEnd\b\s*:\s*(?:pass|green|true)/i.test(content)) throw new Error("Goal check requires a passing real endToEnd exercise.");
+		if (!receiptHasValue(content, ["openFindings"], RECEIPT_EMPTY_FINDINGS)) {
+			throw new Error(`Goal check requires evidence of zero openFindings. ${RECEIPT_HELP}`);
+		}
+		if (!receiptHasValue(content, ["endToEnd"], RECEIPT_END_TO_END)) {
+			throw new Error(`Goal check requires a passing real endToEnd exercise. ${RECEIPT_HELP}`);
+		}
 	}
 
 	private roadmapContent(): string {

@@ -18,6 +18,7 @@ import type {
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
 import { resolveModelScope } from "../../core/model-resolver.ts";
+import { BUNDLED_SILICONFLOW_PROVIDERS } from "../../core/providers/siliconflow.ts";
 import { deleteSessionFile } from "../../core/session-files.ts";
 import { SessionManager } from "../../core/session-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
@@ -459,6 +460,7 @@ export async function startServerMode(
 			return sendJson(response, 200, { tree: session.sessionManager.getTree(), leafId: session.sessionManager.getLeafId() });
 		}
 		if (method === "GET" && url.pathname === "/config/providers") {
+			const allModels = session.modelRegistry.getAll();
 			const models = (await session.modelRegistry.getAvailable()).map((model) => ({
 				...model,
 				thinkingLevels: getSupportedThinkingLevels(model),
@@ -466,23 +468,53 @@ export async function startServerMode(
 			}));
 			const oauthProviders = session.modelRegistry.authStorage.getOAuthProviders?.() ?? [];
 			const oauthById = new Map(oauthProviders.map((provider: any) => [provider.id, provider]));
-			const registeredProviderIds = new Set(session.modelRegistry.getAll().map((model: any) => model.provider));
+			const registeredProviderIds = new Set(allModels.map((model: any) => model.provider));
+			const baseUrlByProvider = new Map<string, string>();
+			for (const model of allModels) {
+				if (typeof model.baseUrl === "string" && model.baseUrl.trim() && !baseUrlByProvider.has(model.provider)) {
+					baseUrlByProvider.set(model.provider, model.baseUrl.trim());
+				}
+			}
+			for (const bundled of BUNDLED_SILICONFLOW_PROVIDERS) {
+				if (!baseUrlByProvider.has(bundled.id)) baseUrlByProvider.set(bundled.id, bundled.baseUrl);
+			}
+			const resolveBaseUrl = (providerId: string, fallback?: string) => {
+				const baseUrl = fallback?.trim() || baseUrlByProvider.get(providerId);
+				return baseUrl ? { baseUrl } : {};
+			};
 			const providerCatalog = builtinProviders().map((provider) => ({
 				id: provider.id,
 				name: provider.name,
-				...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}),
+				...resolveBaseUrl(provider.id, provider.baseUrl),
 				authMethods: [
 					...(provider.auth?.apiKey ? ["api_key" as const] : []),
 					...(provider.auth?.oauth || oauthById.has(provider.id) ? ["oauth" as const] : []),
 				],
 			}));
 			const catalogIds = new Set(providerCatalog.map((provider) => provider.id));
+			for (const bundled of BUNDLED_SILICONFLOW_PROVIDERS) {
+				if (catalogIds.has(bundled.id)) {
+					const entry = providerCatalog.find((provider) => provider.id === bundled.id);
+					if (entry && !(entry as { baseUrl?: string }).baseUrl) {
+						(entry as { baseUrl?: string }).baseUrl = bundled.baseUrl;
+					}
+					continue;
+				}
+				providerCatalog.push({
+					id: bundled.id,
+					name: bundled.name,
+					baseUrl: bundled.baseUrl,
+					authMethods: ["api_key"],
+				});
+				catalogIds.add(bundled.id);
+			}
 			for (const providerId of new Set([...registeredProviderIds, ...oauthById.keys()])) {
 				if (catalogIds.has(providerId)) continue;
 				const oauthProvider: any = oauthById.get(providerId);
 				providerCatalog.push({
 					id: providerId,
 					name: oauthProvider?.name ?? session.modelRegistry.getProviderDisplayName?.(providerId) ?? providerId,
+					...resolveBaseUrl(providerId),
 					authMethods: oauthProvider ? ["oauth"] : ["api_key"],
 				});
 			}
@@ -1137,9 +1169,13 @@ export async function startServerMode(
 		const isFirstUserPrompt = !promptSession.messages.some((message: any) => message.role === "user");
 		const isContentPrompt = !body.message.trimStart().startsWith("/");
 		if (!promptSession.sessionName && isFirstUserPrompt && isContentPrompt && typeof sessionWithAutoName.ensureSessionName === "function") {
-			// Desktop must start naming as soon as its first prompt is submitted. AgentSession.prompt()
-			// also requests naming later in preflight; the shared in-flight promise deduplicates it.
-			void sessionWithAutoName.ensureSessionName({ prompt: body.message });
+			// Desktop sidebar updates from session_info_changed. Finish the selected
+			// model's title before dispatching the chat so the stream cannot race it.
+			try {
+				await sessionWithAutoName.ensureSessionName({ prompt: body.message });
+			} catch {
+				// Fallback title is applied inside ensureSessionName; still start chat.
+			}
 		}
 
 		const collectAssistantOutcome = () => {
@@ -1218,11 +1254,13 @@ export async function startServerMode(
 						}),
 					getActiveToolDefinition: (name) => promptSession.getActiveToolDefinition(name),
 					performanceRun: promptSession.performanceRun,
+					collaborationMode: promptSession.collaborationMode,
 				},
 				instruction: body.message,
 				cwd: promptSession.sessionManager.getCwd(),
 				taskPaths: resolveTaskPathsFromEnv(),
 				policy: "chat-aware",
+				collaborationMode: promptSession.collaborationMode,
 				images: normalizeImageContents(body.images),
 				rootPromptText: body.message,
 				collectAssistantOutcome,

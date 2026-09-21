@@ -8,6 +8,8 @@ import {
 	validatePerformanceSpawn,
 } from "../src/core/performance-runtime.ts";
 import { createPerformanceGateToolDefinition } from "../src/core/tools/performance-gate.ts";
+import { frameworkProtocolForPrompt, getPerformanceFramework, listPerformanceFrameworks, sanitizeFrameworkFleetProse } from "../src/core/performance-frameworks.ts";
+import { runAsHostDispatch } from "../src/core/host-dispatch.ts";
 
 describe("built-in Performance runtime", () => {
 	const roots: string[] = [];
@@ -25,6 +27,7 @@ describe("built-in Performance runtime", () => {
 		dependencies: string;
 		ownedBoundaries: string;
 		launchGroup: string;
+		verificationCommands: string;
 		requiresDetailedPlan: boolean;
 		detailedPlanReason: string;
 	}>;
@@ -47,7 +50,7 @@ describe("built-in Performance runtime", () => {
 - Acceptance criteria: valid observable behavior
 - Unhappy paths: malformed input returns a typed failure
 - Tests-first steps: add a red regression test
-- Verification commands: npm test -- ${item.id ?? `item-${index + 1}`}
+- Verification commands: ${item.verificationCommands ?? `npm test -- ${item.id ?? `item-${index + 1}`}`}
 - Exact change specification: ${item.exactChangeSpecification ?? "rename parser flag in the named files"}
 - requiresDetailedPlan: ${item.requiresDetailedPlan ?? false}
 - Detailed plan reason: ${item.detailedPlanReason ?? (item.requiresDetailedPlan ? "unresolved architecture fork" : "not required")}
@@ -219,6 +222,54 @@ describe("built-in Performance runtime", () => {
 		}
 	});
 
+	it("T3 admits only implementer lanes plus assurance roles, not L1/manager fleets", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({
+			kind: "admit",
+			mission: "T3 lanes",
+			workspaceRoot: "/workspace",
+			admission: {
+				...boundedAdmission,
+				tier: "T3",
+				taskShape: "parallel",
+				lanes: [
+					{ ...boundedAdmission.lanes[0], id: "left", framework: "backend-implement" as const, ownedPaths: ["src/left.ts"] },
+					{ ...boundedAdmission.lanes[0], id: "right", framework: "backend-implement" as const, ownedPaths: ["src/right.ts"] },
+				],
+			},
+		});
+		expect(validatePerformanceSpawn({ parentRole: "root", childRole: "implementer", liveAgents: 0 }, state).valid).toBe(true);
+		expect(validatePerformanceSpawn({ parentRole: "root", childRole: "reviewer", liveAgents: 0 }, state).valid).toBe(true);
+		expect(validatePerformanceSpawn({ parentRole: "root", childRole: "sweeper", liveAgents: 0 }, state).valid).toBe(true);
+		expect(validatePerformanceSpawn({ parentRole: "root", childRole: "planner", liveAgents: 0 }, state)).toMatchObject({
+			valid: false,
+			message: expect.stringContaining("does not permit planner"),
+		});
+		expect(validatePerformanceSpawn({ parentRole: "coordinator", childRole: "planner", liveAgents: 0 }, state)).toMatchObject({
+			valid: false,
+			message: expect.stringContaining("does not permit planner"),
+		});
+		expect(() => runtime.prepareSpawn({ agent: "planner", task: "design left", laneId: "left" })).toThrow(/does not permit planner/);
+		expect(validatePerformanceSpawn({ parentRole: "root", childRole: "manager", liveAgents: 0 }, state)).toMatchObject({
+			valid: false,
+			message: expect.stringContaining("T3"),
+		});
+		expect(validatePerformanceSpawn({ parentRole: "root", childRole: "scope-coordinator", liveAgents: 0 }, state)).toMatchObject({
+			valid: false,
+			message: expect.stringContaining("T3"),
+		});
+		expect(validatePerformanceSpawn({ parentRole: "implementer", childRole: "reviewer", liveAgents: 0 }, state)).toMatchObject({
+			valid: false,
+			message: expect.stringContaining("fan out"),
+		});
+		expect(validatePerformanceSpawn({ parentRole: "implementer", childRole: "juror", liveAgents: 0 }, state)).toMatchObject({
+			valid: false,
+			message: expect.stringContaining("does not permit juror"),
+		});
+	});
+
 	it("builds a complete shared-cwd T1 child brief from the admitted lane", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
 		roots.push(agentDir);
@@ -279,6 +330,173 @@ describe("built-in Performance runtime", () => {
 		expect(() => runtime.admit({ kind: "admit", mission: "Forbidden frontier", workspaceRoot: "/workspace", admission: planAdmission })).toThrow("backtrack to G2 or G1");
 	});
 
+	it("injects a short T2 root/child contract instead of an L0–L4 fleet", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		runtime.admit({
+			kind: "admit",
+			mission: "Build sequential backend",
+			workspaceRoot: "/workspace",
+			admission: {
+				tier: "T2",
+				taskShape: "sequential-complex",
+				deliverables: ["parser"],
+				acceptanceCriteria: ["tests pass"],
+				verificationCommands: ["npm test"],
+				sharedMutableState: false,
+				lanes: [{
+					id: "parser",
+					objective: "implement parser",
+					framework: "backend-implement",
+					ownedPaths: ["src/parser.ts"],
+					deliverables: ["parser"],
+					acceptanceCriteria: ["tests pass"],
+					verificationCommands: ["npm test"],
+					dependsOn: [],
+				}],
+			},
+		});
+		const protocol = runtime.contextBlocks().find((block) => block.id === "performance-protocol")?.content ?? "";
+		expect(protocol).toContain("Native execution protocol: backend-implement");
+		expect(protocol).toContain("T2: serial implementer lanes in shared cwd");
+		expect(protocol).toContain("Children emit ChildResult");
+		expect(protocol).not.toContain("L1 FEATURE-SUPERVISOR");
+		expect(protocol).not.toContain("L0 spawned you");
+		expect(protocol).not.toContain("NEVER yielding to the user");
+		expect(protocol).not.toContain("You never edit or run code yourself");
+	});
+
+	it("strips fleet identity from every native protocol, including unsanitized source", () => {
+		const fleetTokens = [
+			"FEATURE-SUPERVISOR",
+			"You are the PARENT",
+			"L2→L3",
+			"your dispatcher",
+			"never sideways",
+			"NEVER yielding",
+			"L0 spawned",
+			"L1 FEATURE",
+			"Dispatch a worker",
+			"Dispatch a FRESH",
+		];
+		const backendFix = getPerformanceFramework("backend-fix");
+		expect(backendFix).toBeDefined();
+		expect(frameworkProtocolForPrompt(backendFix!)).not.toContain("Dispatch a worker");
+		expect(frameworkProtocolForPrompt(backendFix!)).not.toContain("Dispatch a FRESH");
+		expect(backendFix!.content).not.toContain("Dispatch a FRESH");
+		expect(frameworkProtocolForPrompt(backendFix!)).toContain("ChildResult verifier");
+		const frameworks = listPerformanceFrameworks();
+		expect(frameworks.length).toBeGreaterThanOrEqual(16);
+		for (const framework of frameworks) {
+			const protocol = frameworkProtocolForPrompt(framework);
+			const sanitized = sanitizeFrameworkFleetProse(framework.content);
+			for (const text of [framework.content, sanitized, protocol]) {
+				for (const token of fleetTokens) {
+					expect(text, `${framework.id} leftover ${token}`).not.toContain(token);
+				}
+				expect(text, `${framework.id} leftover Layer flow`).not.toContain("## Layer flow");
+				expect(text, `${framework.id} leftover dispatcher`).not.toContain("dispatcher");
+				expect(text, `${framework.id} leftover NEVER-yielding`).not.toContain("NEVER-yielding");
+			}
+			expect(protocol).toContain("Root/child contract");
+			expect(protocol).toContain("ChildResult");
+			expect(protocol).toMatch(/owned paths|owned files/i);
+			expect(sanitized).toBe(framework.content);
+		}
+
+		const t2Dir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(t2Dir);
+		const t2 = new PerformanceRuntime(t2Dir);
+		t2.admit({
+			kind: "admit",
+			mission: "T2 protocol scan",
+			workspaceRoot: "/workspace",
+			admission: {
+				tier: "T2",
+				taskShape: "sequential-complex",
+				deliverables: ["parser"],
+				acceptanceCriteria: ["tests pass"],
+				verificationCommands: ["npm test"],
+				sharedMutableState: false,
+				lanes: [{
+					id: "parser",
+					objective: "implement parser",
+					framework: "backend-implement",
+					ownedPaths: ["src/parser.ts"],
+					deliverables: ["parser"],
+					acceptanceCriteria: ["tests pass"],
+					verificationCommands: ["npm test"],
+					dependsOn: [],
+				}],
+			},
+		});
+		const t3Dir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(t3Dir);
+		const t3 = new PerformanceRuntime(t3Dir);
+		t3.admit({
+			kind: "admit",
+			mission: "T3 protocol scan",
+			workspaceRoot: "/workspace",
+			admission: {
+				tier: "T3",
+				taskShape: "parallel",
+				deliverables: ["left", "right"],
+				acceptanceCriteria: ["tests pass"],
+				verificationCommands: ["npm test"],
+				sharedMutableState: false,
+				lanes: [
+					{
+						id: "left",
+						objective: "left lane",
+						framework: "backend-implement",
+						ownedPaths: ["src/left.ts"],
+						deliverables: ["left"],
+						acceptanceCriteria: ["tests pass"],
+						verificationCommands: ["npm test"],
+						dependsOn: [],
+					},
+					{
+						id: "right",
+						objective: "right lane",
+						framework: "frontend-implement",
+						ownedPaths: ["src/right.ts"],
+						deliverables: ["right"],
+						acceptanceCriteria: ["tests pass"],
+						verificationCommands: ["npm test"],
+						dependsOn: [],
+					},
+				],
+			},
+		});
+		for (const [label, runtime] of [["T2", t2], ["T3", t3]] as const) {
+			for (const block of runtime.contextBlocks()) {
+				for (const token of fleetTokens) {
+					expect(block.content, `${label} ${block.id} leftover ${token}`).not.toContain(token);
+				}
+			}
+		}
+
+		expect(readFileSync(join(process.cwd(), "src/core/progress-narration.ts"), "utf8")).not.toContain("named-child dispatch");
+		expect(readFileSync(join(process.cwd(), "desktop/src/lib/prompt-rewrite.ts"), "utf8")).not.toContain("named-child dispatch");
+	});
+
+	it("fail-closes spawn without an active run unless hostDispatch", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		expect(runtime.validateSpawn("coordinator", "implementer", 0)).toMatchObject({
+			valid: false,
+			message: expect.stringContaining("active run"),
+		});
+		expect(runtime.reserveSpawn("coordinator", "implementer", "child-1")).toMatchObject({
+			valid: false,
+			message: expect.stringContaining("active run"),
+		});
+		expect(runAsHostDispatch(() => runtime.validateSpawn("coordinator", "implementer", 0))).toEqual({ valid: true });
+		expect(runAsHostDispatch(() => runtime.reserveSpawn("coordinator", "implementer", "host-1"))).toEqual({ valid: true });
+	});
+
 	it("completes T0 at root with explicit assurance skips and zero spawn", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
 		roots.push(agentDir);
@@ -287,6 +505,9 @@ describe("built-in Performance runtime", () => {
 			...boundedAdmission, tier: "T0", lanes: [{ ...boundedAdmission.lanes[0], framework: "apply", objective: "Rename --old to --new" }],
 		} });
 		expect(runtime.allowedSpawnRoles()).toEqual([]);
+		expect(runtime.liveStateSummary()).toContain("close G4 only after independent evidence");
+		expect(runtime.liveStateSummary()).not.toContain("G4/G5/G6 only");
+		expect(runtime.liveStateSummary()).toContain("Do not dispatch G5/G6 workers");
 		runtime.recordGateReport({ gate: "G4", actor: "root", role: "root", verdict: "pass", evidence: receipt(state, "t0-apply") });
 		expect(runtime.state).toMatchObject({ status: "completed", frontier: "complete", completedItemIds: ["parser-fix"] });
 		const log = readFileSync(join(state.governanceRoot, "GATELOG.md"), "utf8");
@@ -370,6 +591,8 @@ describe("built-in Performance runtime", () => {
 		expect(runtime.context()).toContain(`RUN-NONCE: ${state.nonce}`);
 		expect(runtime.context()).toContain("SHA-256:");
 		expect(runtime.context()).toContain("Native execution protocol: plan-scope");
+		expect(runtime.context()).not.toContain("L1 FEATURE-SUPERVISOR");
+		expect(runtime.context()).not.toContain("NEVER yielding to the user");
 		expect(runtime.context()).toContain("REPAIR_REQUIRED");
 		expect(runtime.context()).toContain("structured spawn_agent error");
 
@@ -878,6 +1101,100 @@ describe("built-in Performance runtime", () => {
 		expect(runtime.state?.frontier).toBe("G4-assurance");
 	});
 
+	it("rejects T0 G4 pass without independent verification evidence", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({ kind: "admit", mission: "Rename exact option", workspaceRoot: "/workspace", admission: {
+			...boundedAdmission, tier: "T0", lanes: [{ ...boundedAdmission.lanes[0], framework: "apply", objective: "Rename --old to --new" }],
+		} });
+		const weak = join(state.governanceRoot, "artifacts", "t0-draft.md");
+		writeFileSync(weak, "# draft\n- changedFiles: src/core/parser.ts\n- testCommand: npm test -- parser\n- testOutput: 1 passed\n", "utf8");
+		expect(() => runtime.recordGateReport({ gate: "G4", actor: "root", role: "root", verdict: "pass", evidence: "artifacts/t0-draft.md" })).toThrow(/independent verification[\s\S]*exitCode: 0/);
+	});
+
+	it("accepts JSON T0 G4 receipts with changedFiles arrays and exitCode", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({ kind: "admit", mission: "Rename exact option", workspaceRoot: "/workspace", admission: {
+			...boundedAdmission, tier: "T0", lanes: [{ ...boundedAdmission.lanes[0], framework: "apply", objective: "Rename --old to --new" }],
+		} });
+		writeFileSync(join(state.governanceRoot, "artifacts", "t0-json.json"), JSON.stringify({
+			gate: "G4",
+			itemId: "parser-fix",
+			verdict: "pass",
+			changedFiles: ["src/core/parser.ts"],
+			testCommand: "npm test -- parser",
+			testOutput: "1 passed",
+			exitCode: 0,
+		}, null, 2), "utf8");
+		runtime.recordGateReport({ gate: "G4", actor: "root", role: "root", verdict: "pass", evidence: "artifacts/t0-json.json" });
+		expect(runtime.state).toMatchObject({ status: "completed", frontier: "complete" });
+	});
+
+	it("accepts visual T0 G4 receipts that record a browser or screenshot pass", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({
+			kind: "admit",
+			mission: "Hand-write a pelican SVG",
+			workspaceRoot: "/workspace",
+			admission: {
+				tier: "T0",
+				taskShape: "bounded",
+				deliverables: ["pelican-bicycle.svg"],
+				acceptanceCriteria: ["Visual browser inspection passes"],
+				verificationCommands: ["内置浏览器视觉检查与截图验收"],
+				sharedMutableState: false,
+				lanes: [{
+					id: "pelican-svg-lane",
+					objective: "Hand-write pelican SVG",
+					framework: "apply",
+					ownedPaths: ["pelican-bicycle.svg"],
+					deliverables: ["pelican-bicycle.svg"],
+					acceptanceCriteria: ["Visual browser inspection passes"],
+					verificationCommands: ["内置浏览器视觉检查与截图验收"],
+					dependsOn: [],
+				}],
+			},
+		});
+		writeFileSync(join(state.governanceRoot, "artifacts", "t0-svg-verification.txt"), [
+			"pelican-bicycle.svg verification passed.",
+			"",
+			"changedFiles:",
+			"- pelican-bicycle.svg",
+			"",
+			"testCommand:",
+			"内置浏览器视觉检查与截图验收",
+			"",
+			"testOutput:",
+			"通过内置浏览器检查验证合格，动静双态截图均已通过",
+			"",
+		].join("\n"), "utf8");
+		runtime.recordGateReport({ gate: "G4", actor: "root", role: "root", verdict: "pass", evidence: "artifacts/t0-svg-verification.txt" });
+		expect(runtime.state).toMatchObject({ status: "completed", frontier: "complete", completedItemIds: ["pelican-svg-lane"] });
+	});
+
+	it("accepts T0 G4 receipts that record returncode 0 from an independent command", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({ kind: "admit", mission: "Rename exact option", workspaceRoot: "/workspace", admission: {
+			...boundedAdmission, tier: "T0", lanes: [{ ...boundedAdmission.lanes[0], framework: "apply", objective: "Rename --old to --new" }],
+		} });
+		writeFileSync(join(state.governanceRoot, "artifacts", "t0-xmllint.md"), [
+			"changedFiles:",
+			"- src/core/parser.ts",
+			"testCommand: xmllint --noout src/core/parser.ts",
+			"testOutput:",
+			"xmllint --noout src/core/parser.ts passed with returncode 0",
+		].join("\n"), "utf8");
+		runtime.recordGateReport({ gate: "G4", actor: "root", role: "root", verdict: "pass", evidence: "artifacts/t0-xmllint.md" });
+		expect(runtime.state).toMatchObject({ status: "completed", frontier: "complete" });
+	});
+
 	it("requires refactor characterization evidence before reshape work", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
 		roots.push(agentDir);
@@ -888,6 +1205,86 @@ describe("built-in Performance runtime", () => {
 		const evidence = join(state.governanceRoot, "artifacts", "weak-characterization.md");
 		writeFileSync(evidence, "# characterization\n- testCommand: npm test -- parser\n- testOutput: 1 passed\n", "utf8");
 		expect(() => runtime.recordGateReport({ gate: "G0", actor: "implementer-1", role: "implementer", verdict: "pass", evidence: "artifacts/weak-characterization.md" })).toThrow("characterizationTests");
+	});
+
+	it("accepts JSON receipts for G0, G4 TDD, G6, and goal-check fields", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.start({ kind: "start", mission: "Restructure then verify parser" });
+		writeRoadmap(state, [{ id: "reshape", framework: "refactor", tier: "T1" }]);
+		passScope(runtime, state);
+
+		writeFileSync(join(state.governanceRoot, "artifacts", "g0.json"), JSON.stringify({
+			characterizationTests: ["test/parser.test.ts"],
+			testCommand: "npm test -- parser",
+			testOutput: "4 passed",
+		}, null, 2), "utf8");
+		runtime.recordGateReport({ gate: "G0", actor: "implementer-1", role: "implementer", verdict: "pass", evidence: "artifacts/g0.json" });
+		expect(runtime.state?.frontier).toBe("G4");
+
+		writeFileSync(join(state.governanceRoot, "artifacts", "g4.json"), JSON.stringify({
+			changedFiles: ["src/core/parser.ts"],
+			testCommand: "npm test -- parser",
+			testOutput: "4 passed",
+			redTestOutput: "expected characterization failure",
+			greenTestOutput: "4 passed",
+			reproWasRed: true,
+			reproNowGreen: true,
+			exitCode: 0,
+		}, null, 2), "utf8");
+		runtime.recordGateReport({ gate: "G4", actor: "implementer-1", role: "implementer", verdict: "pass", evidence: "artifacts/g4.json" });
+		runtime.recordGateReport({ gate: "G5", actor: "reviewer-1", role: "reviewer", verdict: "pass", evidence: receipt(state, "review") });
+
+		writeFileSync(join(state.governanceRoot, "artifacts", "g6.json"), JSON.stringify({
+			testCommand: "npm test -- parser",
+			testOutput: "4 passed",
+			exitCode: 0,
+			coverage: 100,
+			preExistingRegressions: 0,
+		}, null, 2), "utf8");
+		runtime.recordGateReport({ gate: "G6", actor: "verifier-1", role: "verifier", verdict: "pass", evidence: "artifacts/g6.json" });
+		expect(runtime.state?.frontier).toBe("goal-check");
+
+		writeFileSync(join(state.governanceRoot, "artifacts", "goal.json"), JSON.stringify({
+			openFindings: [],
+			endToEnd: "pass",
+		}, null, 2), "utf8");
+		runtime.recordGateReport({ gate: "goal-check", actor: "goal-checker-1", role: "goal-checker", verdict: "pass", evidence: "artifacts/goal.json" });
+		expect(runtime.state?.status).toBe("completed");
+	});
+
+	it("accepts visual G6 receipts without inventing a process exitCode", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.start({ kind: "start", mission: "Polish rendered SVG preview" });
+		writeRoadmap(state, [{
+			id: "svg-polish",
+			category: "frontend",
+			tag: "polish",
+			framework: "polish",
+			tier: "T1",
+			verificationCommands: "内置浏览器视觉检查与截图验收",
+		}]);
+		passScope(runtime, state);
+		writeFileSync(join(state.governanceRoot, "artifacts", "g4-apply.md"), [
+			"changedFiles:",
+			"- pelican-bicycle.svg",
+			"testCommand: 内置浏览器视觉检查与截图验收",
+			"testOutput: browser screenshots reviewed",
+			"visualStatus: pass",
+		].join("\n"), "utf8");
+		runtime.recordGateReport({ gate: "G4", actor: "implementer-1", role: "implementer", verdict: "pass", evidence: "artifacts/g4-apply.md" });
+		runtime.recordGateReport({ gate: "G5", actor: "reviewer-1", role: "reviewer", verdict: "pass", evidence: receipt(state, "review") });
+		writeFileSync(join(state.governanceRoot, "artifacts", "g6-visual.md"), [
+			"testCommand: 内置浏览器视觉检查与截图验收",
+			"testOutput: 通过内置浏览器检查验证合格",
+			"visualStatus: pass",
+			"preExistingRegressions: 0",
+		].join("\n"), "utf8");
+		runtime.recordGateReport({ gate: "G6", actor: "verifier-1", role: "verifier", verdict: "pass", evidence: "artifacts/g6-visual.md" });
+		expect(runtime.state?.frontier).toBe("goal-check");
 	});
 
 	it("accepts model-paraphrased ROADMAP item headings and category aliases for G2", () => {

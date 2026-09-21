@@ -32,6 +32,11 @@ import { normalizePath } from "../utils/paths.ts";
 import type { AuthStatus, AuthStorage } from "./auth-storage.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.ts";
 import {
+	BUNDLED_SILICONFLOW_PROVIDERS,
+	getBundledProvider,
+	getBundledSiliconFlowModels,
+} from "./providers/siliconflow.ts";
+import {
 	clearConfigValueCache,
 	getConfigValueEnvVarNames,
 	isCommandConfigValue,
@@ -664,6 +669,17 @@ function applyModelOverride(model: Model<Api>, override: ModelOverride): Model<A
 export const clearApiKeyCache = clearConfigValueCache;
 
 /**
+ * OpenAI-compatible clients require some apiKey string even when the server
+ * ignores Authorization (Ollama, vLLM, LM Studio). Used for models.json
+ * providers that omit apiKey instead of forcing users to store a dummy value.
+ */
+const KEYLESS_CUSTOM_PROVIDER_API_KEY = "local";
+
+function catalogProviderIds(): Set<string> {
+	return new Set([...getProviders(), ...BUNDLED_SILICONFLOW_PROVIDERS.map((provider) => provider.id)]);
+}
+
+/**
  * Model registry - loads and manages models, resolves API keys via AuthStorage.
  */
 export class ModelRegistry {
@@ -672,6 +688,7 @@ export class ModelRegistry {
 	private modelRequestHeaders: Map<string, Record<string, string>> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
 	private providerDisplayNames: Map<string, string> = new Map();
+	private keylessCustomProviders: Set<string> = new Set();
 	private loadError: string | undefined = undefined;
 	readonly authStorage: AuthStorage;
 	private modelsJsonPath: string | undefined;
@@ -701,6 +718,7 @@ export class ModelRegistry {
 		this.providerRequestConfigs.clear();
 		this.modelRequestHeaders.clear();
 		this.providerDisplayNames.clear();
+		this.keylessCustomProviders.clear();
 		this.loadError = undefined;
 
 		// Ensure dynamic API/OAuth registrations are rebuilt from current provider state.
@@ -735,6 +753,7 @@ export class ModelRegistry {
 			// Keep built-in models even if custom models failed to load
 		}
 
+		this.ensureBundledProviderAuth();
 		const builtInModels = this.loadBuiltInModels(overrides, modelOverrides);
 		let combined = this.mergeCustomModels(builtInModels, customModels);
 
@@ -800,7 +819,47 @@ export class ModelRegistry {
 			}
 		}
 
+		models.push(...this.loadBundledSiliconFlowModels(overrides, modelOverrides));
 		return models;
+	}
+
+	private ensureBundledProviderAuth(): void {
+		for (const provider of BUNDLED_SILICONFLOW_PROVIDERS) {
+			if (!this.providerRequestConfigs.has(provider.id)) {
+				this.storeProviderRequestConfig(provider.id, { apiKey: provider.apiKey });
+			}
+			if (!this.providerDisplayNames.has(provider.id)) {
+				this.providerDisplayNames.set(provider.id, provider.name);
+			}
+		}
+	}
+
+	private loadBundledSiliconFlowModels(
+		overrides: Map<string, ProviderOverride>,
+		modelOverrides: Map<string, Map<string, ModelOverride>>,
+	): Model<Api>[] {
+		return getBundledSiliconFlowModels().map((bundled) => {
+			const providerOverride = overrides.get(bundled.provider);
+			const thinking = resolveThinkingCapabilities({
+				modelId: bundled.id,
+				api: bundled.api,
+				baseUrl: providerOverride?.baseUrl ?? bundled.baseUrl,
+				isCustomProvider: true,
+				modelCompat: bundled.compat,
+				providerCompat: providerOverride?.compat,
+			});
+			let model: Model<Api> = {
+				...bundled,
+				baseUrl: providerOverride?.baseUrl ?? bundled.baseUrl,
+				reasoning: thinking.reasoning,
+				thinkingLevelMap: thinking.thinkingLevelMap,
+				thinkingOptions: thinking.thinkingOptions,
+				compat: mergeCompat(thinking.compat, bundled.compat),
+			};
+			const modelOverride = modelOverrides.get(bundled.provider)?.get(bundled.id);
+			if (modelOverride) model = applyModelOverride(model, modelOverride);
+			return model;
+		});
 	}
 
 	/** Merge custom models into built-in list by provider+id (custom wins on conflicts). */
@@ -842,6 +901,7 @@ export class ModelRegistry {
 
 			const overrides = new Map<string, ProviderOverride>();
 			const modelOverrides = new Map<string, Map<string, ModelOverride>>();
+			const builtInProviders = catalogProviderIds();
 
 			for (const [providerName, providerConfig] of Object.entries(config.providers)) {
 				if (providerConfig.name) {
@@ -856,6 +916,13 @@ export class ModelRegistry {
 				}
 
 				this.storeProviderRequestConfig(providerName, providerConfig);
+				if (
+					!builtInProviders.has(providerName)
+					&& (providerConfig.models?.length ?? 0) > 0
+					&& !providerConfig.apiKey
+				) {
+					this.keylessCustomProviders.add(providerName);
+				}
 
 				if (providerConfig.modelOverrides) {
 					modelOverrides.set(providerName, new Map(Object.entries(providerConfig.modelOverrides)));
@@ -877,7 +944,7 @@ export class ModelRegistry {
 	}
 
 	private validateConfig(config: ModelsConfig): void {
-		const builtInProviders = new Set<string>(getProviders());
+		const builtInProviders = catalogProviderIds();
 
 		for (const [providerName, providerConfig] of Object.entries(config.providers)) {
 			const isBuiltIn = builtInProviders.has(providerName);
@@ -925,13 +992,19 @@ export class ModelRegistry {
 
 	private parseModels(config: ModelsConfig): Model<Api>[] {
 		const models: Model<Api>[] = [];
-		const builtInProviders = new Set<string>(getProviders());
+		const builtInProviders = catalogProviderIds();
 
 		// Cache built-in defaults (api, baseUrl) per provider, extracted from first model.
 		const builtInDefaultsCache = new Map<string, { api: string; baseUrl: string }>();
 		const getBuiltInDefaults = (providerName: string): { api: string; baseUrl: string } | undefined => {
 			if (!builtInProviders.has(providerName)) return undefined;
 			if (builtInDefaultsCache.has(providerName)) return builtInDefaultsCache.get(providerName);
+			const bundled = getBundledProvider(providerName);
+			if (bundled) {
+				const defaults = { api: bundled.api, baseUrl: bundled.baseUrl };
+				builtInDefaultsCache.set(providerName, defaults);
+				return defaults;
+			}
 			const builtIn = getModels(providerName as KnownProvider) as Model<Api>[];
 			if (builtIn.length === 0) return undefined;
 			const defaults = { api: builtIn[0].api, baseUrl: builtIn[0].baseUrl };
@@ -1004,7 +1077,9 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * Get only models that have auth configured.
+	 * Get models that can appear in the model picker.
+	 * Built-in providers still require auth. Custom models.json providers
+	 * without apiKey are treated as keyless local endpoints.
 	 * This is a fast check that doesn't refresh OAuth tokens.
 	 */
 	getAvailable(): Model<Api>[] {
@@ -1019,14 +1094,14 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * Get API key for a model.
+	 * Whether a model can be selected. Custom models.json providers that omit
+	 * apiKey are keyless (Ollama/vLLM/LM Studio) and count as configured.
 	 */
 	hasConfiguredAuth(model: Model<Api>): boolean {
+		if (this.authStorage.hasAuth(model.provider)) return true;
 		const providerApiKey = this.providerRequestConfigs.get(model.provider)?.apiKey;
-		return (
-			this.authStorage.hasAuth(model.provider) ||
-			(providerApiKey !== undefined && isConfigValueConfigured(providerApiKey))
-		);
+		if (providerApiKey !== undefined) return isConfigValueConfigured(providerApiKey);
+		return this.keylessCustomProviders.has(model.provider);
 	}
 
 	private getModelRequestKey(provider: string, modelId: string): string {
@@ -1077,7 +1152,9 @@ export class ModelRegistry {
 							`API key for provider "${model.provider}"`,
 							providerEnv,
 						)
-					: undefined);
+					: this.keylessCustomProviders.has(model.provider)
+						? KEYLESS_CUSTOM_PROVIDER_API_KEY
+						: undefined);
 
 			const providerHeaders = resolveHeadersOrThrow(
 				providerConfig?.headers,
@@ -1128,6 +1205,9 @@ export class ModelRegistry {
 
 		const providerApiKey = this.providerRequestConfigs.get(provider)?.apiKey;
 		if (!providerApiKey) {
+			if (this.keylessCustomProviders.has(provider)) {
+				return { configured: true, source: "models_json_key" };
+			}
 			return authStatus;
 		}
 
@@ -1172,9 +1252,13 @@ export class ModelRegistry {
 		}
 
 		const providerApiKey = this.providerRequestConfigs.get(provider)?.apiKey;
-		return providerApiKey
-			? resolveConfigValueUncached(providerApiKey, this.authStorage.getProviderEnv(provider))
-			: undefined;
+		if (providerApiKey) {
+			return resolveConfigValueUncached(providerApiKey, this.authStorage.getProviderEnv(provider));
+		}
+		if (this.keylessCustomProviders.has(provider)) {
+			return KEYLESS_CUSTOM_PROVIDER_API_KEY;
+		}
+		return undefined;
 	}
 
 	/**
@@ -1281,7 +1365,7 @@ export class ModelRegistry {
 
 		this.storeProviderRequestConfig(providerName, config);
 
-		const builtInProviders = new Set<string>(getProviders());
+		const builtInProviders = catalogProviderIds();
 		const isCustomProvider = isCustomProviderId(providerName) || !builtInProviders.has(providerName);
 
 		if (config.models && config.models.length > 0) {

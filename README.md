@@ -104,7 +104,7 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 | --- | --- |
 | Install, authenticate, and start | [Quickstart](docs/quickstart.md) |
 | Commands and terminal UI | [Using Metis](docs/usage.md) · [TUI](docs/tui.md) |
-| Providers and custom models | [Providers](docs/providers.md) · [Custom models](docs/models.md) · [Custom providers](docs/custom-provider.md) |
+| Providers and custom models | [Providers](docs/providers.md) · [Use SiliconFlow in Metis](docs/use-siliconcloud-in-metis.md) · [Custom models](docs/models.md) · [Custom providers](docs/custom-provider.md) |
 | Multi-Agent System | [Named Agents & Delegation](docs/agents.md) |
 | Benchmark & Evaluation | [TerminalBench & Harbor](docs/terminalbench.md) |
 | Sessions and compaction | [Sessions](docs/sessions.md) · [Compaction](docs/compaction.md) |

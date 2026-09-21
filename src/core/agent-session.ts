@@ -105,6 +105,8 @@ import {
 	type InstructionSourceSummary,
 	type InstructionStack,
 } from "./system-prompt.ts";
+import { isHostDispatchActive } from "./host-dispatch.ts";
+import { formatProgressNudge, resolveProgressNudge } from "./progress-narration.ts";
 import { getGlobalSpawnGuard } from "./spawn-guard.ts";
 import { isGitRepositoryRoot } from "./worktree.ts";
 import { SharedMutatingOwnerRegistry, isMutatingChildRole, isReliableHeadlessProfile } from "./workspace-probe.ts";
@@ -252,6 +254,8 @@ export interface AgentSessionConfig {
 	autoSessionName?: boolean;
 	/** Build permits all configured tools; Plan exposes read-only tools only. */
 	collaborationMode?: CollaborationMode;
+	/** Named `--agent` / spawned child: ChildResult worker contract, no root Build closed-loop overlay. */
+	namedAgentSession?: boolean;
 	/** Host-provided interactive bridge for built-in ask_user. */
 	askUserHandler?: AskUserHandler;
 	/** Whether native Performance prompts may ask the operator for run knobs. */
@@ -349,6 +353,14 @@ const PERFORMANCE_ADMISSION_GATED_TOOLS = new Set([
 	"browser_press_key",
 	"browser_scroll",
 ]);
+
+function isPerformanceAdmissionGatedTool(name: string, args: unknown): boolean {
+	if (name === "browser_tabs") {
+		const action = args && typeof args === "object" && "action" in args ? String((args as { action?: unknown }).action ?? "") : "";
+		return action !== "list";
+	}
+	return PERFORMANCE_ADMISSION_GATED_TOOLS.has(name);
+}
 // ============================================================================
 // AgentSession Class
 // ============================================================================
@@ -440,6 +452,7 @@ export class AgentSession {
 	private _pendingPerformanceMission?: string;
 	private _pendingPerformanceInvocation?: ReturnType<AgentSession["_parsePerformanceInvocation"]>;
 	private _collaborationMode: CollaborationMode = "build";
+	private _namedAgentSession = false;
 	/** Configured Build tool set. Plan mode derives a read-only view without replacing it. */
 	private _buildToolNames: string[] | undefined;
 
@@ -466,6 +479,7 @@ export class AgentSession {
 		this._modelRegistry = config.modelRegistry;
 		this._autoSessionName = config.autoSessionName ?? false;
 		this._collaborationMode = config.collaborationMode ?? "build";
+		this._namedAgentSession = Boolean(config.namedAgentSession);
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
@@ -557,7 +571,7 @@ export class AgentSession {
 					reason: `Tool ${toolCall.name} is unavailable in Plan mode because it may modify state.`,
 				};
 			}
-			if (this._performanceAdmissionRequired && PERFORMANCE_ADMISSION_GATED_TOOLS.has(toolCall.name)) {
+			if (this._performanceAdmissionRequired && isPerformanceAdmissionGatedTool(toolCall.name, args)) {
 				return {
 					block: true,
 					reason: `Tool ${toolCall.name} requires a successful performance_admit call for the current Build request.`,
@@ -684,6 +698,20 @@ export class AgentSession {
 			const previousSnapshot = await previousPrepareNextTurnWithContext?.(turn, signal);
 			const previousContext = previousSnapshot?.context ?? turn.context;
 			const messages = previousContext.messages;
+			if (!this._namedAgentSession) {
+				const nudge = resolveProgressNudge(messages, turn.toolResults ?? []);
+				if (nudge) {
+					const nudgeMessage = {
+						role: "custom" as const,
+						customType: "workflow_context",
+						content: formatProgressNudge(nudge),
+						display: false,
+						timestamp: Date.now(),
+					};
+					messages.push(nudgeMessage);
+					this.agent.state.messages.push(nudgeMessage);
+				}
+			}
 			const baseInstructions = this._activeRunInstructionStack ?? this._instructionStack;
 			const instructions: InstructionStack = {
 				...baseInstructions,
@@ -1837,6 +1865,7 @@ export class AgentSession {
 			toolSnippets,
 			promptGuidelines,
 			collaborationMode: this._collaborationMode,
+			namedAgentSession: this._namedAgentSession,
 			memoryOverview,
 		};
 		this._instructionStack = buildInstructionStack(this._baseSystemPromptOptions);
@@ -2091,19 +2120,21 @@ export class AgentSession {
 			}
 			// Plan mode is read-only. Build mode records a pending mission but does not
 			// open governance until the model submits a typed admission contract.
+			// Inspect expanded skill/template text, not the raw `/skillname` prefix.
+			// Named children skip root admit; METIS_PERFORMANCE_RUN_ID must not skip it.
 			if (
 				this._collaborationMode === "build"
-				&& currentText.trim()
-				&& !currentText.trimStart().startsWith("/")
-				&& !process.env.METIS_PERFORMANCE_RUN_ID
+				&& expandedText.trim()
+				&& !expandedText.trimStart().startsWith("/")
+				&& !this._namedAgentSession
 			) {
-				const directInvocation = this._parsePerformanceInvocation(proposalForExecution?.markdown ?? currentText);
+				const directInvocation = this._parsePerformanceInvocation(proposalForExecution?.markdown ?? expandedText);
 				const mission = directInvocation.mission;
 				if (!mission) throw new Error("Performance task is empty after removing runtime directives.");
 				const activeTools = new Set(this.getActiveToolNames());
 				const hasNativePerformanceGate = this.getAllTools().some((tool) => tool.name === "performance_gate");
 				const hasNativePerformanceAdmit = this.getAllTools().some((tool) => tool.name === "performance_admit");
-				const requestsNativeBuild = ["write", "edit", "bash", "spawn_agent"].some((tool) => activeTools.has(tool));
+				const requestsNativeBuild = ["write", "edit", "bash", "spawn_agent", "browser_navigate", "browser_tabs", "browser_click", "browser_fill", "browser_type", "browser_press_key", "browser_scroll"].some((tool) => activeTools.has(tool));
 				if (hasNativePerformanceGate && requestsNativeBuild && !activeTools.has("performance_gate")) {
 					throw new Error("Performance control capability is disabled; direct Build cannot start without performance_gate.");
 				}
@@ -2214,7 +2245,15 @@ export class AgentSession {
 		this._appendWorkflowCheckpoint("prompt_accepted");
 		const isFirstUserPrompt = !this.messages.some((message) => message.role === "user");
 		if (isFirstUserPrompt) {
-			void this.ensureSessionName({ prompt: text });
+			// Title uses the currently selected model only. Await it before the chat
+			// turn so exclusive backends (e.g. a local cursor-agent subprocess) are
+			// not killed by a parallel completeSimple. Failure already falls back to
+			// the user prompt and must not block the chat request.
+			try {
+				await this.ensureSessionName({ prompt: text });
+			} catch {
+				// ensureSessionName applies a fallback title; continue to the chat turn.
+			}
 		}
 		try {
 			await this._runAgentPrompt(messages);
@@ -3622,6 +3661,9 @@ export class AgentSession {
 							return merged;
 						},
 						validateSpawn: (input, runtime, childAgentId) => {
+							if (this._namedAgentSession && !isHostDispatchActive()) {
+								return "Named workers must not spawn nested agents.";
+							}
 							const decision = this._performanceRuntime.reserveSpawn(
 								runtime?.currentAgentName ?? "root",
 								input.agent,
@@ -3764,7 +3806,7 @@ export class AgentSession {
 			const bashDefinition = toolDefinitionRecord.bash;
 			if (bashDefinition) {
 				const guideline =
-					"When browser_* tools are available, never use bash `open`, `open -a Safari/Chrome`, Chrome/Chromium `--headless --screenshot`, `xdg-open`, or `qlmanage` to preview local HTML/SVG/pages — use browser_navigate (file path or file:// URL) instead.";
+					"When browser_* tools are available, never use bash `open`, `open -a Safari/Chrome`, Chrome/Chromium `--headless --screenshot`, `xdg-open`, or `qlmanage` to preview local HTML/SVG/pages — use browser_* tools instead. Mutating navigate/tabs/click/fill still require performance_admit in Build; snapshot and screenshot are readable.";
 				const existing = bashDefinition.promptGuidelines ?? [];
 				if (!existing.includes(guideline)) {
 					bashDefinition.promptGuidelines = [...existing, guideline];
@@ -4053,7 +4095,9 @@ export class AgentSession {
 	}
 
 	/**
-	 * Ensure the session has a display name. If none is set, generate an AI summary title asynchronously.
+	 * Ensure the session has a display name. If none is set, generate an AI summary
+	 * title with the currently selected model. The first-turn prompt path awaits
+	 * this before starting the chat request.
 	 */
 	async ensureSessionName(
 		options: { prompt?: string; signal?: AbortSignal; timeoutMs?: number } = {},

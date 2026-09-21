@@ -104,7 +104,7 @@ git diff | metis -p "审查这个 diff"
 | --- | --- |
 | 安装、认证与首次运行 | [快速入门](docs/quickstart.md) |
 | 命令与终端界面 | [使用 Metis](docs/usage.md) · [TUI](docs/tui.md) |
-| Provider 与自定义模型 | [Providers](docs/providers.md) · [Custom models](docs/models.md) · [Custom providers](docs/custom-provider.md) |
+| Provider 与自定义模型 | [Providers](docs/providers.md) · [在 Metis 中使用 SiliconFlow](docs/use-siliconcloud-in-metis.md) · [Custom models](docs/models.md) · [Custom providers](docs/custom-provider.md) |
 | 具名多智能体体系 | [多智能体与递归委派](docs/agents.md) |
 | 基准评测与无头模式 | [TerminalBench 与 Harbor 适配](docs/terminalbench.md) |
 | 会话与上下文压缩 | [Sessions](docs/sessions.md) · [Compaction](docs/compaction.md) |

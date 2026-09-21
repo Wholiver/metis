@@ -26,6 +26,7 @@ import openai from '@lobehub/icons-static-svg/icons/openai.svg?raw';
 import opencode from '@lobehub/icons-static-svg/icons/opencode.svg?raw';
 import openrouter from '@lobehub/icons-static-svg/icons/openrouter.svg?raw';
 import qwen from '@lobehub/icons-static-svg/icons/qwen.svg?raw';
+import siliconcloud from '@lobehub/icons-static-svg/icons/siliconcloud.svg?raw';
 import together from '@lobehub/icons-static-svg/icons/together.svg?raw';
 import vercel from '@lobehub/icons-static-svg/icons/vercel.svg?raw';
 import xai from '@lobehub/icons-static-svg/icons/xai.svg?raw';
@@ -84,6 +85,8 @@ const BRAND_ICON_SVG: Record<string, string> = {
   'xiaomi-token-plan-cn': xiaomi,
   'xiaomi-token-plan-ams': xiaomi,
   'xiaomi-token-plan-sgp': xiaomi,
+  siliconflow: siliconcloud,
+  'siliconflow-cn': siliconcloud,
 };
 
 const BRAND_ALIASES: Record<string, string> = {
@@ -102,6 +105,8 @@ const BRAND_ALIASES: Record<string, string> = {
   huggingfacehub: 'huggingface',
   hf: 'huggingface',
   qwen: 'qwen-token-plan',
+  siliconcloud: 'siliconflow',
+  'siliconflow-en': 'siliconflow',
 };
 
 function resolveBrandId(providerId: string): string | null {

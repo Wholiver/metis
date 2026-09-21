@@ -4,10 +4,17 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
-### Cursor SDK Provider
+## [1.3.2] - 2026-09-21
 
-- Replace Antigravity OAuth with a built-in Cursor SDK provider: choose Cursor in `/login` and paste a Cursor SDK API key (or set `CURSOR_API_KEY`) to use `cursor/*` models.
-- Load Pi packages compatibly: recognize a `package.json` `pi` manifest and resolve `@earendil-works/pi-*` to the corresponding Metis packages.
+### SiliconFlow Providers, Streamdown Chat & Desktop Streaming Polish
+
+- Add built-in SiliconFlow providers for the two independent platforms: `siliconflow` (`https://api.siliconflow.com/v1`) and `siliconflow-cn` (`https://api.siliconflow.cn/v1`).
+- Custom providers saved without an API key now appear in the Desktop/TUI model list (keyless local servers such as Ollama, vLLM, and LM Studio).
+- Stream assistant markdown with Vercel Streamdown (word-level `blurIn`) instead of the custom paced-text drip, so tokens fade in instead of arriving in chunks.
+- Coalesce high-frequency Server SSE frames in the Desktop main process before IPC (`sse-ipc-bridge`), reducing main/renderer stalls during fast token streams.
+- Generate the first-turn session title with the currently selected model and wait for it to finish (or fall back) before starting the chat request, so exclusive local agent backends are not killed by a parallel title stream.
+- Title requests to OpenAI-compatible reverse proxies (including Cursor Local API) send `max_tokens` instead of `max_completion_tokens`, and skip `developer` / `store` / `stream_options` fields those gateways reject.
+- Milestone-based progress narration nudges keep intermediate status text tied to real phase changes instead of one line per exploratory tool call.
 
 ## [1.3.1] - 2026-09-18
 

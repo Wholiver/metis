@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import { memo, useCallback, useState, type ReactNode } from "react";
 import { cn } from "../../lib/utils";
 
 export type CodePiece = { text: string; change?: "add" | "del" };
@@ -23,8 +23,10 @@ type Row = DiffRow;
 const HATCH = "repeating-linear-gradient(45deg, var(--red) 0, var(--red) 1.5px, transparent 1.5px, transparent 3px)";
 const KEYWORDS = new Set(["import", "from", "export", "default", "async", "function", "const", "let", "var", "await", "return", "if", "else", "for", "while", "new", "throw", "try", "catch", "null", "true", "false", "undefined"]);
 const TOKEN = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`[^`]*`|\b\d+(?:\.\d+)?\b|\b(?:import|from|export|default|async|function|const|let|var|await|return|if|else|for|while|new|throw|try|catch|null|true|false|undefined)\b|[A-Za-z_$][\w$]*(?=\s*\())/g;
+const HIGHLIGHT_CHAR_LIMIT = 220;
 
 function highlight(text: string): ReactNode[] {
+  if (text.length > HIGHLIGHT_CHAR_LIMIT) return [text];
   const nodes: ReactNode[] = [];
   let last = 0;
   let k = 0;
@@ -95,7 +97,7 @@ export type CodeBlockProps = {
   flush?: boolean;
 };
 
-export default function CodeBlock({
+export default memo(function CodeBlock({
   variant = "Code",
   lines = [],
   code,
@@ -212,4 +214,4 @@ export default function CodeBlock({
       {body}
     </div>
   );
-}
+});

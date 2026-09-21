@@ -90,10 +90,10 @@ describe('desktop assistant error card and error preservation', () => {
     );
 
     expect(source).toContain('import { AssistantErrorCard } from \'./AssistantErrorCard\'');
-    expect(source).toContain('onRetry?: () => void;');
+    expect(source).toContain('onRetry?: (promptText: string) => void;');
     expect(source).toContain('failureMessage');
     expect(source).toContain('<AssistantErrorCard');
-    expect(source).toContain('onRetry={onRetry}');
+    expect(source).toContain('onRetry={retryHandler}');
   });
 
   it('verifies MessageList tracks user prompt text and passes onRetry to AssistantTurn', () => {
@@ -104,7 +104,8 @@ describe('desktop assistant error card and error preservation', () => {
 
     expect(source).toContain('promptText?: string');
     expect(source).toContain('latestUserPrompt');
-    expect(source).toContain('onRetry={group.promptText && onSendMessage ? () => onSendMessage(group.promptText!) : undefined}');
+    expect(source).toContain('retryPrompt={group.promptText}');
+    expect(source).toContain('onRetry={group.promptText ? handleRetry : undefined}');
   });
 
   it('contains assistant error translations in both en and zh-CN catalogs', () => {

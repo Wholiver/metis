@@ -43,6 +43,11 @@ export interface VerifyTaskOptions {
 	};
 	/** When true (default), missing runnable oracle fails closed. */
 	failClosed?: boolean;
+	/**
+	 * When false, skip ambient bundled-public checks (e.g. repo package.json `npm test`)
+	 * so ordinary chat/TUI turns are not hijacked by the workspace's own test script.
+	 */
+	includeBundledPublicChecks?: boolean;
 	signal?: AbortSignal;
 }
 
@@ -167,12 +172,18 @@ function isSemanticOracle(oracle: ConstraintOracle | undefined, constraintId: st
 	return oracle.type === "file-contains" || oracle.type === "valid-json" || oracle.type === "line-count" || oracle.type === "command";
 }
 
+function runnableChecks(contract: TaskContract, includeBundledPublicChecks: boolean): TaskContract["checks"] {
+	return includeBundledPublicChecks
+		? contract.checks
+		: contract.checks.filter((check) => check.authority !== "bundled-public");
+}
+
 function hasRunnableOracle(
 	contract: TaskContract,
-	options: Pick<VerifyTaskOptions, "numericExpectations" | "serviceTargets" | "independentVerifierEvidence">,
+	options: Pick<VerifyTaskOptions, "numericExpectations" | "serviceTargets" | "independentVerifierEvidence" | "includeBundledPublicChecks">,
 ): boolean {
 	if (options.independentVerifierEvidence) return true;
-	if (contract.checks.length > 0) return true;
+	if (runnableChecks(contract, options.includeBundledPublicChecks ?? true).length > 0) return true;
 	if (options.numericExpectations && Object.keys(options.numericExpectations).length > 0) return true;
 	if (options.serviceTargets && options.serviceTargets.length > 0) return true;
 	if (contract.kind === "service-config") return true;
@@ -407,6 +418,7 @@ export async function verifyTaskContract(options: VerifyTaskOptions): Promise<Ve
 		serviceTargets,
 		independentVerifierEvidence,
 		failClosed: failClosedFlag = true,
+		includeBundledPublicChecks = true,
 		signal,
 	} = options;
 	const constraints: ConstraintResult[] = [];
@@ -540,7 +552,7 @@ export async function verifyTaskContract(options: VerifyTaskOptions): Promise<Ve
 	}
 
 	let checksPassed = true;
-	for (const check of contract.checks) {
+	for (const check of runnableChecks(contract, includeBundledPublicChecks)) {
 		const result = await runCommand(check.command, check.cwd || cwd, check.timeoutMs, signal);
 		const passed = result.exitCode === 0;
 		if (!passed) checksPassed = false;
@@ -663,7 +675,7 @@ export async function verifyTaskContract(options: VerifyTaskOptions): Promise<Ve
 
 	const unresolvedFindings = failures.length + contract.unresolved.length;
 
-	if (failClosedFlag && !hasRunnableOracle(contract, { numericExpectations, serviceTargets, independentVerifierEvidence })) {
+	if (failClosedFlag && !hasRunnableOracle(contract, { numericExpectations, serviceTargets, independentVerifierEvidence, includeBundledPublicChecks })) {
 		constraints.push({
 			id: "evidence-sufficiency",
 			passed: false,

@@ -76,7 +76,7 @@ export function createPerformanceAdmitToolDefinition(
 		capabilities: { effect: "write", parallelSafe: false },
 		parameters: performanceAdmitSchema,
 		promptGuidelines: [
-			"Do not grep, read, or query memory/session logs to discover performance_admit values. taskShape is bounded, sequential-complex, or parallel. framework is a native id such as docs, apply, polish, or backend-fix. Creating a README is T0 + bounded + one docs lane; after admit, write the file.",
+			"Do not grep, read, or query memory/session logs to discover performance_admit values. taskShape is bounded, sequential-complex, or parallel. framework is a native id such as docs, apply, polish, or backend-fix. Creating a README is T0 + bounded + one docs lane; after admit still independent check + repair, then G4 — a first-draft write is not done.",
 		],
 		executionMode: "sequential",
 		execute: async (_id, input) => {

@@ -150,10 +150,32 @@ export function DesktopI18nProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
+    let raf = 0;
+    const observer = new MutationObserver(() => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        observer.disconnect();
+        translateDocument(preference);
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: localizableAttributes,
+        });
+      });
+    });
     translateDocument(preference);
-    const observer = new MutationObserver(() => translateDocument(preference));
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: localizableAttributes });
-    return () => observer.disconnect();
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: localizableAttributes,
+    });
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
   }, [preference]);
 
   return <>{children}</>;

@@ -4,8 +4,8 @@ import { extractProposedPlan } from '../../lib/plan-preview';
 import { computeToolDiffStats } from '../../lib/turn-files';
 import { useI18n } from '../../i18n';
 import { formatToolDisplayName, toolStatus, type ToolPart } from './ToolCard';
-import { MarkdownContent } from './MarkdownContent';
 import { PlanPreview } from './PlanPreview';
+import { PacedMarkdown } from './PacedMarkdown';
 import MetisStreamingText from '../primitives/StreamingText';
 import {
   AgentWorkflow,
@@ -188,12 +188,16 @@ export const AgentResponse = React.memo<AgentResponseProps>(({
             <MetisStreamingText streaming={messageStreaming} fill>
               {proposedPlan ? (
                 <>
-                  {proposedPlan.before && <MarkdownContent markdown={proposedPlan.before} className="mb-2" />}
+                  {proposedPlan.before && (
+                    <PacedMarkdown text={proposedPlan.before} streaming={messageStreaming} className="mb-2" />
+                  )}
                   <PlanPreview markdown={proposedPlan.plan} partial={proposedPlan.partial} current={current} onOpenPlan={onOpenPlan} />
-                  {proposedPlan.after && <MarkdownContent markdown={proposedPlan.after} className="mt-2" />}
+                  {proposedPlan.after && (
+                    <PacedMarkdown text={proposedPlan.after} streaming={messageStreaming} className="mt-2" />
+                  )}
                 </>
               ) : (
-                <MarkdownContent markdown={message.content} />
+                <PacedMarkdown text={message.content} streaming={messageStreaming} />
               )}
             </MetisStreamingText>
           </div>

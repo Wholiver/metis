@@ -207,6 +207,59 @@ describe("Performance Mode Engine & Fidelity", () => {
 		expect(sessionAgents.some((a) => a.name === "arbiter")).toBe(true);
 	});
 
+	test("named sessions without a tools allowlist still omit performance_gate", async () => {
+		const previous = process.env.METIS_AGENT_NAME;
+		process.env.METIS_AGENT_NAME = "custom-writer";
+		try {
+			const { session } = await createAgentSession({
+				cwd: process.cwd(),
+				agentDir: process.cwd(),
+				sessionManager: SessionManager.inMemory(),
+				namedAgentSession: true,
+			});
+			expect(session.getActiveToolNames()).not.toContain("performance_gate");
+			expect(session.getActiveToolNames()).not.toContain("performance_admit");
+			expect(session.getActiveToolNames()).not.toContain("spawn_agent");
+			expect(session.systemPrompt).toContain("ChildResult");
+			expect(session.systemPrompt).not.toContain("Authoritative Build admission policy");
+			expect(session.systemPrompt).not.toContain("L0→L4");
+			expect(session.systemPrompt).not.toContain("FEATURE-SUPERVISOR");
+		} finally {
+			if (previous === undefined) delete process.env.METIS_AGENT_NAME;
+			else process.env.METIS_AGENT_NAME = previous;
+		}
+	});
+
+	test("named coordinator with spawn_agent cannot nest spawn without an active run", async () => {
+		const previous = process.env.METIS_AGENT_NAME;
+		process.env.METIS_AGENT_NAME = "coordinator";
+		try {
+			const { session } = await createAgentSession({
+				cwd: process.cwd(),
+				agentDir: process.cwd(),
+				sessionManager: SessionManager.inMemory(),
+				namedAgentSession: true,
+				tools: ["spawn_agent", "read"],
+			});
+			expect(session.getActiveToolNames()).toContain("spawn_agent");
+			expect(session.getActiveToolNames()).not.toContain("performance_gate");
+			const spawn = session.getActiveToolDefinition("spawn_agent");
+			expect(spawn).toBeDefined();
+			const result = await spawn!.execute(
+				"nested-1",
+				{ agent: "implementer", task: "build lane" },
+				new AbortController().signal,
+				() => {},
+				undefined as never,
+			);
+			const text = result.content[0] && "text" in result.content[0] ? String(result.content[0].text) : "";
+			expect(text).toMatch(/Named workers must not spawn nested agents|active run/);
+		} finally {
+			if (previous === undefined) delete process.env.METIS_AGENT_NAME;
+			else process.env.METIS_AGENT_NAME = previous;
+		}
+	});
+
 	test("subagent blocked verdict prevents completion until parent starts a repair dispatch", () => {
 		const tempDir = fs.mkdtempSync(path.join(tmpdir(), "metis-perf-test-"));
 		try {

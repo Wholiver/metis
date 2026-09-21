@@ -9,6 +9,45 @@ export const DEFAULT_SESSION_NAME_TIMEOUT_MS = 15_000;
 export const SESSION_NAME_SYSTEM_PROMPT =
 	"Title user's first prompt in its language: normally 2–6 words; title only—no quotes, Markdown, extension, explanation.";
 export const SESSION_NAME_USER_SUFFIX = "Generate title.";
+const OFFICIAL_OPENAI_COMPLETIONS_HOSTS =
+	/(?:^|\.)(?:openai\.com|azure\.com|cognitiveservices\.azure\.com|openai\.azure\.com)$/i;
+
+/**
+ * Title calls are short OpenAI-compatible completions. Chat turns often omit
+ * maxTokens, so they never send `max_completion_tokens`. Cursor reverse proxies
+ * and other OpenAI-compatible gateways commonly reject that newer field, the
+ * `developer` role, `store`, and `stream_options`. Keep official OpenAI hosts
+ * on their native defaults.
+ */
+export function sessionNameCompletionModel(model: Model<any>): Model<any> {
+	if (model.api !== "openai-completions") {
+		return { ...model, reasoning: false };
+	}
+
+	let host = "";
+	try {
+		host = new URL(model.baseUrl).hostname;
+	} catch {
+		host = "";
+	}
+
+	return {
+		...model,
+		reasoning: false,
+		compat: {
+			...model.compat,
+			supportsDeveloperRole: false,
+			supportsReasoningEffort: false,
+			...(OFFICIAL_OPENAI_COMPLETIONS_HOSTS.test(host)
+				? {}
+				: {
+						maxTokensField: "max_tokens" as const,
+						supportsStore: false,
+						supportsUsageInStreaming: false,
+					}),
+		},
+	};
+}
 
 export interface GenerateSessionNameOptions {
 	model: Model<any>;
@@ -119,7 +158,7 @@ export async function generateSessionName(options: GenerateSessionNameOptions): 
 
 		response = await Promise.race([
 			completeSimple(
-				options.model,
+				sessionNameCompletionModel(options.model),
 				{
 					systemPrompt: SESSION_NAME_SYSTEM_PROMPT,
 					messages: [

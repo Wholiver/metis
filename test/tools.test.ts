@@ -541,7 +541,9 @@ describe("Coding Agent Tools", () => {
 					command:
 						'"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --screenshot=out.png "file://$(pwd)/pelican_cycling.svg"',
 				}),
-			).rejects.toThrow(/browser_navigate/);
+			).rejects.toThrow(
+				/Use browser_navigate after performance_admit for local SVG\/HTML preview\. browser_snapshot and browser_screenshot are readable/,
+			);
 			const result = await bash.execute("bash-chrome-allow", { command: "python3 -c 'print(1)'" });
 			expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("1") });
 		});

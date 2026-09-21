@@ -34,6 +34,8 @@ describe('desktop React workflow plan card', () => {
     expect(card).toContain('font-semibold text-ink');
     expect(card).toContain('aria-expanded={expanded}');
     expect(card).toContain("gridTemplateRows: expanded ? '1fr' : '0fr'");
+    expect(card).toContain('planRevision');
+    expect(card).not.toContain('plan.map((item) => `${item.status}:${item.step}`)');
     expect(card).not.toContain('transition-all');
 
     expect(composer).toContain("import { WorkflowPlanCard } from './WorkflowPlanCard'");

@@ -38,7 +38,8 @@ describe('desktop React plan points inspector', () => {
     expect(inspector).not.toContain('data-inspector-hub-item');
     expect(inspector).not.toContain('ShortcutPill');
     expect(inspector).not.toContain('data-inspector-panel-menu');
-    expect(inspector).not.toContain('<Plus');
+    expect(inspector).toContain('data-new-browser-tab');
+    expect(inspector).toContain('<Plus className="h-3.5 w-3.5 stroke-[2]" />');
     expect(inspector).toContain('isPinnedInspectorTab');
     expect(inspector).toContain('data-inspector-tab-pinned');
     expect(inspector).toContain('{!pinned && (');
@@ -66,8 +67,9 @@ describe('desktop React plan points inspector', () => {
     expect(inspector).toContain('data-plan-points-title');
     expect(inspector).toContain('<InspectorPlanPanel');
     expect(inspector).toContain('workflowProposal={workflowProposal}');
-    expect(inspector).toContain('viewedProposalMarkdown={activeTab.viewedProposalMarkdown}');
-    expect(inspector).toContain('viewedProposalSessionId={activeTab.viewedProposalSessionId}');
+    expect(inspector).toContain('viewedProposalMarkdown={tab.viewedProposalMarkdown}');
+    expect(inspector).toContain('viewedProposalSessionId={tab.viewedProposalSessionId}');
+    expect(inspector).toContain('hidden={!selected}');
     expect(inspector).toContain('activeSessionId={activeSessionId}');
     expect(inspector).not.toContain('<PlanPoints points={workflowPlan?.plan || []} />');
     expect(inspector).not.toContain('ScreenPreviewCard');
@@ -163,7 +165,7 @@ describe('desktop React plan points inspector', () => {
     expect(panel).toContain('bg-gradient-to-b from-page');
     expect(panel).not.toContain('className="relative min-w-0 rounded-card');
     expect(panel).not.toContain('rounded-[10px] px-3.5 py-3');
-    expect(source('desktop/src/components/inspector/Inspector.tsx')).toContain('contentScrollRef={contentScrollRef}');
+    expect(source('desktop/src/components/inspector/Inspector.tsx')).toContain('contentScrollRef={selected ? contentScrollRef : undefined}');
     expect(source('desktop/src/components/inspector/Inspector.tsx')).toContain('overflow-hidden px-3.5 pb-3.5 pt-2');
     expect(main).toContain('METIS_DESKTOP_CAPTURE_PLAN_POINTS');
     expect(main).toContain('METIS_DESKTOP_CAPTURE_PLAN_POINTS_EMPTY');

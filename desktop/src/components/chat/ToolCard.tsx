@@ -55,6 +55,32 @@ export function isToolCallFinished(part: ToolPart): boolean {
   return status === 'Completed' || status === 'Error' || status === 'Denied';
 }
 
+export function areToolPartRefsEqual(prev: readonly ToolPart[], next: readonly ToolPart[]): boolean {
+  if (prev === next) return true;
+  if (prev.length !== next.length) return false;
+  for (let index = 0; index < prev.length; index += 1) {
+    if (prev[index] !== next[index]) return false;
+  }
+  return true;
+}
+
+function areToolCardPropsEqual(
+  prev: { part: ToolPart; streaming?: boolean; onOpenSubagent?: (partId: string) => void },
+  next: { part: ToolPart; streaming?: boolean; onOpenSubagent?: (partId: string) => void },
+): boolean {
+  if (prev.streaming !== next.streaming) return false;
+  if (prev.onOpenSubagent !== next.onOpenSubagent) return false;
+  const prevPart = prev.part;
+  const nextPart = next.part;
+  if (prevPart === nextPart) return true;
+  return prevPart.id === nextPart.id
+    && prevPart.name === nextPart.name
+    && prevPart.arguments === nextPart.arguments
+    && prevPart.result === nextPart.result
+    && prevPart.progress?.state === nextPart.progress?.state
+    && prevPart.progress?.jobId === nextPart.progress?.jobId;
+}
+
 export function formatToolDisplayName(toolName: string, status: ToolStatus, args: unknown): string {
   const name = toolName.toLowerCase();
   const values = args && typeof args === 'object' ? args as Record<string, unknown> : {};
@@ -352,7 +378,7 @@ export const ToolCard = React.memo<{
   part: ToolPart;
   streaming?: boolean;
   onOpenSubagent?: (partId: string) => void;
-}>(({ part, streaming = false, onOpenSubagent }) => {
+}>(function ToolCard({ part, streaming = false, onOpenSubagent }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const status = toolStatus(part, streaming);
@@ -447,6 +473,11 @@ export const ToolCard = React.memo<{
                   diff={expandedView.rows}
                   code={expandedView.rows.map((row) => row.pieces.map((piece) => piece.text).join('')).join('\n')}
                 />
+                {expandedView.truncated && (
+                  <div data-slot="tool-transcript-truncated">
+                    {t('toolOutputTruncated', { count: expandedView.rows.length })}
+                  </div>
+                )}
               </div>
             ) : expandedView.kind === 'bash' ? (
               <ToolTranscript variant="bash" text={expandedView.text} />
@@ -462,6 +493,6 @@ export const ToolCard = React.memo<{
       </BasicTool>
     </div>
   );
-});
+}, areToolCardPropsEqual);
 
 ToolCard.displayName = 'ToolCard';

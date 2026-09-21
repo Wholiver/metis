@@ -95,7 +95,29 @@ describe("AgentSession prompt characterization", () => {
 			reason: expect.stringContaining("performance_admit"),
 		});
 		expect(await harness.session.agent.beforeToolCall?.({
+			toolCall: { id: "tabs-new-1", name: "browser_tabs", arguments: { action: "new", url: "file:///tmp/x.svg" } },
+			args: { action: "new", url: "file:///tmp/x.svg" },
+		} as never)).toMatchObject({
+			block: true,
+			reason: expect.stringContaining("performance_admit"),
+		});
+		expect(await harness.session.agent.beforeToolCall?.({
+			toolCall: { id: "tabs-select-1", name: "browser_tabs", arguments: { action: "select", tabId: "t1" } },
+			args: { action: "select", tabId: "t1" },
+		} as never)).toMatchObject({
+			block: true,
+			reason: expect.stringContaining("performance_admit"),
+		});
+		expect(await harness.session.agent.beforeToolCall?.({
+			toolCall: { id: "tabs-list-1", name: "browser_tabs", arguments: { action: "list" } },
+			args: { action: "list" },
+		} as never)).toBeUndefined();
+		expect(await harness.session.agent.beforeToolCall?.({
 			toolCall: { id: "snap-1", name: "browser_snapshot", arguments: {} },
+			args: {},
+		} as never)).toBeUndefined();
+		expect(await harness.session.agent.beforeToolCall?.({
+			toolCall: { id: "shot-1", name: "browser_take_screenshot", arguments: {} },
 			args: {},
 		} as never)).toBeUndefined();
 	});
@@ -131,7 +153,7 @@ describe("AgentSession prompt characterization", () => {
 		expect(harness.session.workflowPlan).toBeUndefined();
 	});
 
-	it("continues an active T0 apply run instead of accepting a false completion", async () => {
+	it("keeps an active T0 apply run instead of accepting a false completion", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 		harness.setResponses([
@@ -153,18 +175,14 @@ describe("AgentSession prompt characterization", () => {
 				}],
 			}), { stopReason: "toolUse" }),
 			fauxAssistantMessage("All steps done, the SVG is delivered."),
-			fauxAssistantMessage("Retrying G4 with a real screenshot."),
-			fauxAssistantMessage("Still repairing against G4."),
-			fauxAssistantMessage("Stopped after the host blocked false completion."),
 		]);
 
 		await harness.session.prompt("画一只鹈鹕骑自行车");
 
+		// First-draft text does not close the run. Host auto-continue is not implemented.
 		expect(harness.session.performanceRun).toMatchObject({ status: "active", frontier: "G4" });
 		expect(getAssistantTexts(harness)).toEqual(expect.arrayContaining([
 			"All steps done, the SVG is delivered.",
-			"Retrying G4 with a real screenshot.",
-			"Stopped after the host blocked false completion.",
 		]));
 		expect(harness.getPendingResponseCount()).toBe(0);
 	});
@@ -527,6 +545,46 @@ describe("AgentSession prompt characterization", () => {
 		expect(expandedPrompt).toContain("explain this");
 	});
 
+	it("requires admit for skill-expanded mutating prompts instead of skipping on the /skill prefix", async () => {
+		const tempDir = join(tmpdir(), `metis-skill-admit-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(tempDir, { recursive: true });
+		tempDirs.push(tempDir);
+		const skillPath = join(tempDir, "write-file.md");
+		writeFileSync(skillPath, "# Write File\n\nCreate the requested file in the workspace.");
+		const resourceLoader = {
+			...createTestResourceLoader(),
+			getSkills: () => ({
+				skills: [
+					{
+						name: "write-file",
+						description: "Write a file",
+						filePath: skillPath,
+						disableModelInvocation: false,
+						baseDir: tempDir,
+						sourceInfo: createSyntheticSourceInfo(skillPath, {
+							source: "local",
+							scope: "project",
+							origin: "top-level",
+							baseDir: tempDir,
+						}),
+					},
+				],
+				diagnostics: [],
+			}),
+		};
+		const harness = await createHarness({ resourceLoader });
+		harnesses.push(harness);
+		const target = join(harness.tempDir, "skill-mutated.txt");
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("write", { path: target, content: "must not exist" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("blocked"),
+		]);
+		await harness.session.prompt("/skill:write-file Create a file named skill-mutated.txt");
+		expect(existsSync(target)).toBe(false);
+		expect(harness.session.performanceRun).toBeUndefined();
+		expect(harness.session.messages.some((message) => getMessageText(message).includes("requires a successful performance_admit"))).toBe(true);
+	});
+
 	it("expands prompt templates before sending the prompt", async () => {
 		const template: PromptTemplate = {
 			name: "review",
@@ -730,5 +788,59 @@ describe("AgentSession prompt characterization", () => {
 		await expect(harness.session.prompt("hi")).rejects.toThrow(
 			`No API key found for ${harness.getModel().provider}.`,
 		);
+	});
+
+	it("does not inject a progress nudge after explore-only tools", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage([
+				{ type: "text", text: "先看目录。" },
+				fauxToolCall("ls", { path: "." }),
+			], { stopReason: "toolUse" }),
+			fauxAssistantMessage("看完了。"),
+		]);
+		await harness.session.prompt("看看当前工作区");
+		const nudges = harness.session.agent.state.messages.filter(
+			(message) => message.role === "custom" && message.customType === "workflow_context",
+		);
+		expect(nudges.some((message) => typeof message.content === "string" && message.content.includes("Visible progress update"))).toBe(false);
+		expect(visibleSessionMessages(harness).some((message) => message.role === "custom")).toBe(false);
+	});
+
+	it("injects a required progress nudge after performance_admit", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage(admissionCall(), { stopReason: "toolUse" }),
+			fauxAssistantMessage("开始实现。"),
+		]);
+		await harness.session.prompt("Create a README");
+		const nudges = harness.session.agent.state.messages.filter(
+			(message) => message.role === "custom" && message.customType === "workflow_context",
+		);
+		expect(nudges.some((message) => typeof message.content === "string" && message.content.includes("required: admission"))).toBe(true);
+	});
+
+	it("includes the admission nudge in the next provider convertToLlm payload", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		const payloads: string[] = [];
+		const original = harness.session.agent.convertToLlm.bind(harness.session.agent);
+		harness.session.agent.convertToLlm = (messages) => {
+			const converted = original(messages);
+			payloads.push(JSON.stringify(converted));
+			return converted;
+		};
+		harness.setResponses([
+			fauxAssistantMessage(admissionCall(), { stopReason: "toolUse" }),
+			fauxAssistantMessage("开始实现。"),
+		]);
+		await harness.session.prompt("Create a README");
+		expect(payloads.length).toBeGreaterThanOrEqual(2);
+		expect(payloads[0]).not.toContain("Visible progress update");
+		expect(payloads[1]).toContain("Visible progress update");
+		expect(payloads[1]).toContain("required: admission");
+		expect(payloads[1]).toContain("one-off milestone");
 	});
 });

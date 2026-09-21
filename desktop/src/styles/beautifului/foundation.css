@@ -430,7 +430,7 @@ a:focus-visible .animated-underline::after {
 }
 
 .home-reveal {
-  will-change: opacity, transform, filter;
+  will-change: opacity, transform;
 }
 
 /* The sidebar is one persistent 224px tree clipped by a 52px shell.

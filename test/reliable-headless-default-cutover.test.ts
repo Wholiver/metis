@@ -9,7 +9,7 @@ import {
 	isExecutionProfile,
 } from "../src/core/execution-types.ts";
 import { resolveExecutionProfile } from "../src/core/task-execution-controller.ts";
-import { runReliableTurn } from "../src/core/reliable-headless-runners.ts";
+import { resolveReliableTurnPolicy, runReliableTurn } from "../src/core/reliable-headless-runners.ts";
 import { parseArgs } from "../src/cli/args.ts";
 
 const tempDirs: string[] = [];
@@ -33,7 +33,7 @@ describe("reliable-headless is the sole product profile", () => {
 		expect(process.env.METIS_EXECUTION_PROFILE).toBe("reliable-headless");
 	});
 
-	it("chat-aware policy conversational-passes without oracle; strict fail-closes or verifies", async () => {
+	it("chat-aware policy conversational-passes without oracle; original root loop for instruction-owned oracles", async () => {
 		const cwd = mkdtempSync(join(tmpdir(), "metis-reliable-default-"));
 		tempDirs.push(cwd);
 		mkdirSync(join(cwd, "output"), { recursive: true });
@@ -68,9 +68,7 @@ describe("reliable-headless is the sole product profile", () => {
 		expect(prompts).toContain("你好，随便聊聊天气");
 		expect(chat.attempts.every((a) => a.role === "root")).toBe(true);
 
-		// Drop ambient checks so the short-loop still owns via implementer (not mechanical root).
-		rmSync(join(cwd, "package.json"));
-
+		prompts.length = 0;
 		const task = await runReliableTurn({
 			session,
 			instruction: "Create output/a.txt containing FINAL",
@@ -82,10 +80,127 @@ describe("reliable-headless is the sole product profile", () => {
 				finalText: "done",
 				stopReason: "stop",
 			}),
-			// No active spawn_agent → named-child fails; controller still runs because oracle exists.
+		});
+		expect(task.status).toBe("completed");
+		expect(prompts).toEqual(["Create output/a.txt containing FINAL"]);
+		expect(task.attempts.every((a) => a.role === "root")).toBe(true);
+		expect(task.failure).toBeUndefined();
+	});
+
+	it("chat-aware fail-closes when instruction-owned oracle evidence is missing", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "metis-reliable-oracle-miss-"));
+		tempDirs.push(cwd);
+		mkdirSync(join(cwd, "output"), { recursive: true });
+		const session = {
+			prompt: vi.fn(async () => {}),
+			getActiveToolDefinition: () => undefined,
+			performanceRun: undefined,
+		};
+		const result = await runReliableTurn({
+			session,
+			instruction: "Create output/a.txt containing FINAL",
+			cwd,
+			taskPaths: { output: join(cwd, "output") },
+			policy: "chat-aware",
+			rootPromptText: "Create output/a.txt containing FINAL",
+			collectAssistantOutcome: () => ({
+				finalText: "I'll write that next.",
+				stopReason: "stop",
+			}),
+		});
+		expect(result.status).toBe("task_failed");
+		expect(result.failure).toBeDefined();
+		expect(session.prompt).toHaveBeenCalledWith("Create output/a.txt containing FINAL");
+		expect(result.attempts.some((a) => a.role === "root")).toBe(true);
+	});
+
+	it("chat-aware prompts follow-ups once without duplicating the joined instruction", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "metis-reliable-followup-"));
+		tempDirs.push(cwd);
+		const session = {
+			prompt: vi.fn(async () => {}),
+			getActiveToolDefinition: () => undefined,
+			performanceRun: undefined,
+		};
+		const result = await runReliableTurn({
+			session,
+			instruction: "hello",
+			cwd,
+			policy: "chat-aware",
+			followUpMessages: ["hello"],
+			collectAssistantOutcome: () => ({
+				finalText: "hi",
+				stopReason: "stop",
+			}),
+		});
+		expect(result.status).toBe("completed");
+		expect(session.prompt).toHaveBeenCalledTimes(1);
+		expect(session.prompt).toHaveBeenCalledWith("hello");
+	});
+
+	it("Plan mode never enters Controller even when instruction looks like an artifact oracle", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "metis-reliable-plan-"));
+		tempDirs.push(cwd);
+		const prompts: string[] = [];
+		const session = {
+			prompt: vi.fn(async (text: string) => {
+				prompts.push(text);
+			}),
+			getActiveToolDefinition: () => undefined,
+			performanceRun: undefined,
+			collaborationMode: "plan",
+		};
+		const result = await runReliableTurn({
+			session,
+			instruction: "Plan how we should Create output/a.txt containing FINAL",
+			cwd,
+			policy: "strict",
+			collaborationMode: "plan",
+			rootPromptText: "Plan how we should Create output/a.txt containing FINAL",
+			collectAssistantOutcome: () => ({
+				finalText: "<proposed_plan>write the file later</proposed_plan>",
+				stopReason: "stop",
+			}),
+		});
+		expect(result.status).toBe("completed");
+		expect(prompts).toEqual(["Plan how we should Create output/a.txt containing FINAL"]);
+		expect(result.attempts.every((a) => a.role === "root")).toBe(true);
+	});
+
+	it("strict policy still uses named-child short-loop and fail-closes without spawn_agent", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "metis-reliable-strict-"));
+		tempDirs.push(cwd);
+		mkdirSync(join(cwd, "output"), { recursive: true });
+		writeFileSync(join(cwd, "output", "a.txt"), "FINAL\n");
+		const prompts: string[] = [];
+		const session = {
+			prompt: vi.fn(async (text: string) => {
+				prompts.push(text);
+			}),
+			getActiveToolDefinition: () => undefined,
+			performanceRun: undefined,
+		};
+		const task = await runReliableTurn({
+			session,
+			instruction: "Create output/a.txt containing FINAL",
+			cwd,
+			taskPaths: { output: join(cwd, "output") },
+			policy: "strict",
+			rootPromptText: "Create output/a.txt containing FINAL",
+			collectAssistantOutcome: () => ({
+				finalText: "done",
+				stopReason: "stop",
+			}),
 		});
 		expect(task.status).toBe("task_failed");
 		expect(task.failure?.message).toMatch(/HOST_NAMED_CHILD_NO_SPAWN|spawn_agent/i);
+		expect(prompts).toEqual([]);
+	});
+
+	it("resolveReliableTurnPolicy keeps original print/chat default and opts adapters into strict", () => {
+		expect(resolveReliableTurnPolicy({ env: {} })).toBe("chat-aware");
+		expect(resolveReliableTurnPolicy({ taskPaths: { output: "/tmp/out" }, env: {} })).toBe("strict");
+		expect(resolveReliableTurnPolicy({ requested: "strict", env: {} })).toBe("strict");
 	});
 });
 

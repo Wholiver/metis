@@ -39,19 +39,19 @@ function StepIcon({ status }: { status: WorkflowPlanStep['status'] }) {
   return <span className={frame} aria-hidden="true" data-plan-step-icon="pending" />;
 }
 
-export const WorkflowPlanCard: React.FC<WorkflowPlanCardProps> = ({
+export const WorkflowPlanCard = React.memo<WorkflowPlanCardProps>(function WorkflowPlanCard({
   plan,
   interrupted = false,
   className,
-}) => {
+}) {
   const { t } = useI18n();
   const complete = isPlanComplete(plan);
   const [expanded, setExpanded] = useState(!complete);
-  const planIdentity = `${plan.updatedAt}:${plan.taskId || ''}:${plan.plan.map((item) => `${item.status}:${item.step}`).join('|')}`;
+  const planRevision = `${plan.updatedAt}:${plan.taskId || ''}`;
 
   useEffect(() => {
-    setExpanded(!isPlanComplete(plan));
-  }, [planIdentity]);
+    setExpanded(!complete);
+  }, [complete, planRevision]);
 
   const completedCount = plan.plan.filter((item) => item.status === 'completed').length;
   const totalCount = plan.plan.length;
@@ -164,6 +164,6 @@ export const WorkflowPlanCard: React.FC<WorkflowPlanCardProps> = ({
       </div>
     </section>
   );
-};
+});
 
 WorkflowPlanCard.displayName = 'WorkflowPlanCard';

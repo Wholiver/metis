@@ -247,13 +247,19 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 	const apiKey = String(config.apiKey || "").trim();
 	const reasoning = Boolean(config.reasoning);
 	if (!name) throw new Error(translate("providerNameRequired"));
-	const baseUrl = normalizeBaseUrl(config.baseUrl, translate);
 
 	const modelsPath = path.join(agentDir, "models.json");
 	const modelsConfig = await readModelsConfig(modelsPath, translate);
 	let providerId = String(config.providerId || config.id || "").trim();
+	const allowBuiltin = config.builtin === true;
 	if (providerId) {
-		if (modelsConfig.providers[providerId] && isCustomProviderId(providerId)) {
+		if (allowBuiltin) {
+			// Built-in provider: write/merge models under the catalog id (e.g. siliconflow-cn).
+			providerId = providerId.trim().toLowerCase();
+			if (!providerId || isCustomProviderId(providerId) || !/^[a-z0-9][a-z0-9_-]*$/.test(providerId)) {
+				throw new Error(translate("invalidCustomProviderId"));
+			}
+		} else if (modelsConfig.providers[providerId] && isCustomProviderId(providerId)) {
 			// Edit an existing custom provider.
 		} else if (modelsConfig.providers[providerId]) {
 			throw new Error(translate("customProviderNotFound"));
@@ -265,6 +271,15 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 		}
 	} else {
 		providerId = allocateProviderId(name, modelsConfig.providers);
+	}
+
+	const isBuiltinProvider = allowBuiltin;
+	const rawBaseUrl = String(config.baseUrl || "").trim();
+	let baseUrl = "";
+	if (rawBaseUrl) {
+		baseUrl = normalizeBaseUrl(rawBaseUrl, translate);
+	} else if (!isBuiltinProvider) {
+		throw new Error(translate("baseUrlInvalid"));
 	}
 
 	const existing = modelsConfig.providers[providerId] && typeof modelsConfig.providers[providerId] === "object"
@@ -285,18 +300,21 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 	let discoveredModels = Array.isArray(config.discoveredModels) && config.discoveredModels.length > 0
 		? config.discoveredModels
 		: undefined;
-	if (discoveredModels === undefined) {
+	if (discoveredModels === undefined && baseUrl) {
 		discoveredModels = await discoverCustomProviderModels(baseUrl, apiKey, options);
 		if (modelIds.length === 0) modelIds = discoveredModels.map((model) => model.id);
 	}
 	if (modelIds.length === 0) modelIds = normalizeModelIds(existingModels.map((model) => typeof model === "string" ? model : model?.id));
-	if (modelIds.length === 0) modelIds = ["default"];
+	if (modelIds.length === 0) modelIds = isBuiltinProvider ? [] : ["default"];
+	if (isBuiltinProvider && modelIds.length === 0) {
+		throw new Error(translate("discoverModelsEmpty"));
+	}
 	const modelsById = new Map(existingModels.filter((model) => model && typeof model === "object").map((model) => [model.id, model]));
 	const discoveredById = new Map((discoveredModels || []).map((model) => [model.id, model]));
 	const resolveModel = async (id) => {
 		const existingModel = modelsById.get(id) || {};
 		let discovered = discoveredById.get(id);
-		if (!discovered?.thinkingOptions?.length) {
+		if (baseUrl && !discovered?.thinkingOptions?.length) {
 			const details = await fetchSingleModelDetails(baseUrl, apiKey, id, options);
 			if (details) discovered = { ...discovered, ...details };
 		}
@@ -337,10 +355,11 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 	modelsConfig.providers[providerId] = {
 		...existing,
 		name,
-		baseUrl,
-		api: existing.api || "openai-completions",
+		...(baseUrl ? { baseUrl } : {}),
 		models,
 	};
+	const api = existing.api || (isBuiltinProvider ? undefined : "openai-completions");
+	if (api) modelsConfig.providers[providerId].api = api;
 	await writeModelsConfig(agentDir, modelsPath, modelsConfig);
 	return summarizeProvider(providerId, modelsConfig.providers[providerId], modelsPath);
 }

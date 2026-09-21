@@ -45,7 +45,7 @@ export const spawnAgentSchema = Type.Object({
 			Type.Literal("G0"), Type.Literal("G1"), Type.Literal("G2"), Type.Literal("G3.5"),
 			Type.Literal("G4"), Type.Literal("G5"), Type.Literal("G6"), Type.Literal("G7"),
 			Type.Literal("sweep"), Type.Literal("goal-check"),
-		], { description: "Performance gate this child must submit before its task can pass" }),
+		], { description: "Host-assigned Performance gate this child is bound to. The child emits ChildResult; it must not call performance_gate." }),
 	),
 	mode: Type.Optional(
 		Type.Union([Type.Literal("sync"), Type.Literal("async")], {
@@ -119,6 +119,7 @@ export interface SpawnAgentToolOptions {
 
 export const SPAWN_AGENT_GUIDANCE = [
 	"Delegate a specific task to a specialized named agent (e.g. planner, implementer, reviewer, verifier, or coordinator).",
+	"Children emit one ChildResult JSON line and must not call performance_gate; the host records gate evidence.",
 	"T0 forbids spawn_agent. T1 keeps implementation on root and permits only fresh reviewer/verifier assurance after G4. T2/T3 may delegate only roles and lanes admitted by Performance runtime.",
 	"By default, execution is synchronous ('sync') and blocks until the agent completes, returning structured results directly.",
 	"For parallel background execution across multiple agents, set mode to 'async'.",

@@ -619,6 +619,8 @@ describe("default model selection", () => {
 		expect(defaultModelPerProvider["qwen-token-plan"]).toBe("qwen3.7-max");
 		expect(defaultModelPerProvider["qwen-token-plan-individual"]).toBe("qwen3.8-max");
 		expect(defaultModelPerProvider["ant-ling"]).toBe("Ring-2.6-1T");
+		expect(defaultModelPerProvider.siliconflow).toBe("deepseek-ai/DeepSeek-V4-Flash");
+		expect(defaultModelPerProvider["siliconflow-cn"]).toBe("deepseek-ai/DeepSeek-V4-Flash");
 	});
 
 	test("ai-gateway default tracks current model", () => {

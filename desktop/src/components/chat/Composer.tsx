@@ -546,7 +546,7 @@ export const Composer = React.memo<ComposerProps>(({
 
         <div
           ref={stackRef}
-          className="pointer-events-auto relative flex w-full max-w-[620px] flex-col will-change-transform"
+          className="pointer-events-auto relative flex w-full max-w-[620px] flex-col"
           data-composer-stack={showPlanStack ? '' : undefined}
           data-composer-dock-stack=""
         >

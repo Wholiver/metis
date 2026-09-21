@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { AssistantWork, groupAssistantWorkItems } from '../desktop/src/components/chat/AssistantWork';
+import { AssistantWork, areVisibleAssistantWorkItemsEqual, groupAssistantWorkItems } from '../desktop/src/components/chat/AssistantWork';
 import { CommandToolGroup } from '../desktop/src/components/chat/CommandToolGroup';
 import { formatToolGroupItem, formatToolGroupSummary } from '../desktop/src/components/chat/ToolGroup';
 import { openCodeToolTitle, openCodeToolTitleKey, toolTriggerFields } from '../desktop/src/components/chat/ToolCard';
@@ -214,6 +214,11 @@ describe('desktop React Tool rendering', () => {
     expect(work).toContain('isToolCallFinished');
     expect(work).toContain('busy={lastContextGroupLive && item.id === lastContextGroupId}');
     expect(work).toContain('busy={lastCommandGroupLive && item.id === lastCommandGroupId}');
+    expect(work).toContain('areVisibleAssistantWorkItemsEqual');
+    expect(card).toContain('areToolCardPropsEqual');
+    expect(card).toContain('expandedView.truncated');
+    expect(context).toContain('areToolPartRefsEqual');
+    expect(commands).toContain('areToolPartRefsEqual');
     expect(card).toContain('toolTitlePerformanceAdmit');
     expect(card).toContain('toolTitleBrowserNavigate');
     expect(card).toContain('clipToolTranscript');
@@ -280,5 +285,22 @@ describe('desktop React Tool rendering', () => {
     expect(html).toContain('git status');
     expect(html).toContain('data-tool-name="bash"');
     expect(html).not.toContain('bash-output');
+  });
+
+  it('ignores streamed thinking tokens when comparing the live tool tree', () => {
+    const tools = [
+      completed('read-1', 'read', { path: '/repo/a.ts' }),
+      completed('edit-1', 'edit', { path: '/repo/a.ts' }),
+    ];
+    const prev: AssistantContentPart[] = [
+      { type: 'thinking', id: 'thought', thinking: 'Inspecting files' },
+      ...tools,
+    ];
+    const nextThought: AssistantContentPart[] = [
+      { type: 'thinking', id: 'thought', thinking: 'Inspecting files and tools' },
+      ...tools,
+    ];
+    expect(areVisibleAssistantWorkItemsEqual(prev, nextThought)).toBe(true);
+    expect(areVisibleAssistantWorkItemsEqual(prev, [...prev, completed('bash-1', 'bash', { command: 'ls' })])).toBe(false);
   });
 });

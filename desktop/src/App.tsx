@@ -337,6 +337,7 @@ export function App() {
     removeConversation,
     connectServer,
     selectConversation,
+    selectProject,
     newConversation,
     processProposal,
     refineProposal,
@@ -395,6 +396,14 @@ export function App() {
   const handleOpenMemorySettings = useCallback(() => {
     setSettingsTab('agent');
     setIsSettingsOpen(true);
+  }, []);
+
+  const handleOpenSettings = useCallback(() => {
+    setIsSettingsOpen(true);
+  }, []);
+
+  const handleCloseSettings = useCallback(() => {
+    setIsSettingsOpen(false);
   }, []);
 
   useEffect(() => {
@@ -525,7 +534,7 @@ export function App() {
     hostBusy: browserHostBusy,
     streaming: isStreaming,
     latched: browserShineLatched,
-    messages: displayedMessages,
+    toolParts: displayedToolParts,
   });
   const browserModelControlled = browserShine.active;
   useEffect(() => {
@@ -658,14 +667,23 @@ export function App() {
   });
 
   useEffect(() => {
+    if (isStreaming) return;
     const desktop = (window as any).metisDesktop;
     const sessionPaths = agents.map((a) => a.sessionPath).filter(Boolean);
     if (desktop?.sessionTokens?.costActivity && sessionPaths.length > 0) {
       desktop.sessionTokens.costActivity(sessionPaths).then((stats: any) => {
-        if (stats) setSessionCostStats(stats);
+        if (!stats) return;
+        setSessionCostStats((current) => (
+          current.tokenTotal === stats.tokenTotal
+          && current.costTotal === stats.costTotal
+          && current.recent5hTokens === stats.recent5hTokens
+          && current.recent7dTokens === stats.recent7dTokens
+            ? current
+            : stats
+        ));
       }).catch(() => {});
     }
-  }, [agents, messages]);
+  }, [agents, isStreaming]);
 
   const liveUsage = useMemo(() => {
     let cost = 0;
@@ -805,19 +823,18 @@ export function App() {
     removeConversation(sessionId);
   }, [activeAgent?.sessionPath, activeAgentId, archivedSessions, removeConversation, request]);
 
-  const handleSelectProject = useCallback(async (id: string) => {
+  const handleSelectProject = useCallback((id: string) => {
     const targetProj = projects.find((p) => p.id === id);
     if (!targetProj || targetProj.id === activeProjectId) return;
     setActiveProjectId(id);
+    void selectProject(targetProj);
     const desktop = (window as any).metisDesktop;
     if (desktop?.workspace?.set && targetProj?.path) {
-      try {
-        await desktop.workspace.set(targetProj.path);
-      } catch (err) {
+      void desktop.workspace.set(targetProj.path).catch((err: unknown) => {
         console.warn('[desktop] Failed to set workspace:', err);
-      }
+      });
     }
-  }, [activeProjectId, projects]);
+  }, [activeProjectId, projects, selectProject]);
 
   const handleToggleSidebar = useCallback(() => {
     setIsSidebarOpen((prev) => !prev);
@@ -844,6 +861,7 @@ export function App() {
 
   const handleSelectAgent = useCallback(async (agentId: string) => {
     setViewingSubagentStack([]);
+    const switching = selectConversation(agentId);
     let ownerPath: string | undefined;
     for (const [path, list] of Object.entries(projectAgentsByPath)) {
       if (list.some((agent) => agent.id === agentId)) {
@@ -860,15 +878,13 @@ export function App() {
         setActiveProjectId(ownerProject.id);
         const desktop = (window as any).metisDesktop;
         if (desktop?.workspace?.set) {
-          try {
-            await desktop.workspace.set(ownerProject.path);
-          } catch (err) {
+          void desktop.workspace.set(ownerProject.path).catch((err: unknown) => {
             console.warn('[desktop] Failed to set workspace:', err);
-          }
+          });
         }
       }
     }
-    await selectConversation(agentId);
+    await switching;
   }, [activeProject?.path, agents, projectAgentsByPath, projects, selectConversation]);
 
   const handleAddProject = async () => {
@@ -893,6 +909,7 @@ export function App() {
       const nextProject = additions[0];
       await desktop.workspace.set?.(nextProject.path);
       setActiveProjectId(nextProject.id);
+      void selectProject(nextProject);
     } catch (err) {
       console.warn('[desktop] Failed to select workspace folder:', err);
     }
@@ -912,6 +929,7 @@ export function App() {
       setProjects((current) => [project, ...current.filter((item) => item.path !== project.path)]);
       await desktop.workspace.set?.(project.path);
       setActiveProjectId(project.id);
+      void selectProject(project);
       return true;
     } catch (error) {
       console.warn('[desktop] Failed to change workspace:', error);
@@ -927,6 +945,7 @@ export function App() {
     };
     setProjects((current) => [project, ...current.filter((item) => item.path !== project.path)]);
     setActiveProjectId(project.id);
+    void selectProject(project);
   };
 
   useEffect(() => {
@@ -1154,8 +1173,7 @@ export function App() {
       }`}
     >
       {/* 1. Left Sidebar Panel */}
-      {isSidebarOpen && (
-        <>
+      <div className={isSidebarOpen ? 'contents' : 'hidden'} aria-hidden={!isSidebarOpen || undefined} data-sidebar-shell="">
           <Sidebar
             ref={sidebarRef}
             width={sidebarWidth}
@@ -1174,7 +1192,7 @@ export function App() {
             onAddProject={handleAddProject}
             onNewChat={handleNewChat}
             onArchiveAgent={captureConversationIcons ? undefined : handleArchiveAgent}
-            onOpenSettings={() => setIsSettingsOpen(true)}
+            onOpenSettings={handleOpenSettings}
             onToggleSidebar={handleCloseSidebar}
             workingAgentIds={
               captureConversationIcons
@@ -1190,8 +1208,7 @@ export function App() {
             title="Drag to resize sidebar"
             data-sidebar-resizer=""
           />
-        </>
-      )}
+      </div>
 
       {/* 2. Center Main Chat Area */}
       <ChatArea
@@ -1252,8 +1269,7 @@ export function App() {
       />
 
       {/* 3. Right Inspector Panel */}
-      {isInspectorOpen && (
-        <>
+      <div className={isInspectorOpen ? 'contents' : 'hidden'} aria-hidden={!isInspectorOpen || undefined} data-inspector-shell="">
           {/* Resizer Handle for Inspector */}
           <div
             onMouseDown={handleInspectorResizeStart}
@@ -1288,13 +1304,12 @@ export function App() {
             isWideWidth={inspectorWidth >= 650}
             browserModelControlled={browserModelControlled}
           />
-        </>
-      )}
+      </div>
       <SettingsDialog
         open={isSettingsOpen}
         initialTab={settingsTab}
         memoryState={memoryState}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={handleCloseSettings}
         request={request}
         refresh={refresh}
         onConnectServer={connectServer}
@@ -1340,7 +1355,7 @@ export function App() {
       {toast && (
         <div
           role="status"
-          className={`fixed bottom-6 right-6 z-[200] max-w-md rounded-window border px-4 py-3 text-[12.5px] font-medium shadow-overlay backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 ${
+          className={`fixed bottom-6 right-6 z-[200] max-w-md rounded-window border px-4 py-3 text-[12.5px] font-medium shadow-overlay transition-[opacity,transform] duration-300 animate-in fade-in slide-in-from-bottom-4 ${
             toast.tone === 'success'
               ? 'border-green/30 bg-green-tint text-green'
               : toast.tone === 'error'
