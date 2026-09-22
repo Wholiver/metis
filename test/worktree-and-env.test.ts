@@ -145,6 +145,7 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 			expect(DANGEROUS_ENV_VARS).toContain("DYLD_INSERT_LIBRARIES");
 			expect(DANGEROUS_ENV_VARS).toContain("DYLD_LIBRARY_PATH");
 			expect(DANGEROUS_ENV_VARS).toContain("SUDO_COMMAND");
+			expect(DANGEROUS_ENV_VARS).toContain("NODE_OPTIONS");
 		});
 
 		it("filters out dangerous environment variables from parent env", () => {
@@ -156,6 +157,7 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 				LD_PRELOAD: "/malicious/lib.so",
 				DYLD_INSERT_LIBRARIES: "/malicious/dylib.dylib",
 				SUDO_COMMAND: "/bin/bash",
+				NODE_OPTIONS: "--require=/malicious.js",
 			};
 
 			const filtered = filterChildEnvironment(parentEnv);
@@ -169,6 +171,7 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 			expect(filtered.LD_PRELOAD).toBeUndefined();
 			expect(filtered.DYLD_INSERT_LIBRARIES).toBeUndefined();
 			expect(filtered.SUDO_COMMAND).toBeUndefined();
+			expect(filtered.NODE_OPTIONS).toBeUndefined();
 		});
 
 		it("merges explicit overrides and Metis runtime variables", () => {
