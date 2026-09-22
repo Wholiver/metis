@@ -31,7 +31,7 @@
 
 | 商标 | 合作方 | 链接 |
 | :---: | :--- | :--- |
-| <img src="docs/images/siliconflow-logo.png" alt="硅基流动" height="36" /> | **硅基流动（SiliconFlow）** — 领先的 AI 推理与模型服务平台，为 Metis 提供高速、OpenAI 兼容的模型推理能力。 | [siliconflow.cn](https://siliconflow.cn) |
+| <img src="docs/images/siliconflow-logo.png" alt="硅基流动" height="36" /> | **硅基流动（SiliconFlow）** — 国内领先的独立生态词元（Token）供应平台，为Metis提供高效、灵活的模型推理能力。 | [siliconflow.cn](https://siliconflow.cn) |
 
 ## 快速开始
 

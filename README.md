@@ -31,7 +31,7 @@
 
 | Logo | Partner | Link |
 | :---: | :--- | :--- |
-| <img src="docs/images/siliconflow-logo.png" alt="SiliconFlow" height="36" /> | **SiliconFlow (硅基流动)** — AI inference platform powering Metis model access with high-speed, OpenAI-compatible APIs. | [siliconflow.cn](https://siliconflow.cn) |
+| <img src="docs/images/siliconflow-logo.png" alt="SiliconFlow" height="36" /> | **SiliconFlow (硅基流动)** — China's leading independent ecosystem token supply platform, providing Metis with efficient and flexible model inference. | [siliconflow.cn](https://siliconflow.cn) |
 
 ## Quick start
 
