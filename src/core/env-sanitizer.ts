@@ -16,6 +16,7 @@ export const DANGEROUS_ENV_VARS = [
 	"SUDO_USER",
 	"SUDO_UID",
 	"SUDO_GID",
+	"NODE_OPTIONS",
 ] as const;
 
 const DANGEROUS_SET = new Set<string>(DANGEROUS_ENV_VARS.map((k) => k.toUpperCase()));
