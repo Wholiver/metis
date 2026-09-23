@@ -1,0 +1,4 @@
+## 2025-02-14 - Fix Predictable Temporary File Names (CWE-377)
+**Vulnerability:** Found multiple instances where temporary files and directories were created in `os.tmpdir()` using predictable patterns like `Date.now()`, static filenames (e.g. `session.html`), or `Math.random()`. This allows attackers on the same system to predict temp file names, potentially leading to symlink attacks or data interception (CWE-377: Insecure Temporary File).
+**Learning:** Always use cryptographically secure random identifiers (e.g., `crypto.randomUUID()`) when creating temporary files or directories in shared locations like `/tmp` or `os.tmpdir()`.
+**Prevention:** Use `randomUUID()` from `node:crypto` or equivalent secure random generation for naming temporary files instead of `Date.now()` or static strings.

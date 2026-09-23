@@ -6,6 +6,7 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
+import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import {
 	Container,
@@ -128,7 +129,7 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 		}
 
 		const currentText = this.editor.getText();
-		const tmpFile = path.join(os.tmpdir(), `metis-extension-editor-${Date.now()}.md`);
+		const tmpFile = path.join(os.tmpdir(), `metis-extension-editor-${randomUUID()}.md`);
 
 		try {
 			fs.writeFileSync(tmpFile, currentText, "utf-8");
