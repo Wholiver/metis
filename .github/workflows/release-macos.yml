@@ -1,0 +1,66 @@
+name: Build macOS release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to package
+        required: true
+        default: main
+      tag:
+        description: GitHub release tag to attach the DMG to (e.g. v1.3.4)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  package-macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            npm-shrinkwrap.json
+            desktop/package-lock.json
+
+      - name: Restore vendored build artifacts
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          tarball_url="$(npm view "@wholiver_hu/metis@$version" dist.tarball)"
+          curl -fsSL "$tarball_url" -o published-package.tgz
+          tar -xzf published-package.tgz
+          rm -rf vendor/metis-ai/dist vendor/metis-agent-core/dist vendor/metis-tui/dist
+          cp -R package/node_modules/@earendil-works/metis-ai/dist vendor/metis-ai/dist
+          cp -R package/node_modules/@earendil-works/metis-agent-core/dist vendor/metis-agent-core/dist
+          cp -R package/node_modules/@earendil-works/metis-tui/dist vendor/metis-tui/dist
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Desktop dependencies
+        run: npm --prefix desktop ci
+
+      - name: Build macOS DMG
+        run: npm --prefix desktop run package:mac
+
+      - name: Upload DMG to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ls -lah desktop/release
+          dmg="$(find desktop/release -type f -name '*.dmg' ! -name '*.sha256' | head -n 1)"
+          test -n "$dmg"
+          gh release upload "${{ inputs.tag }}" "$dmg" --clobber --repo "${{ github.repository }}"
+          gh release view "${{ inputs.tag }}" --repo "${{ github.repository }}" --json assets --jq '.assets[].name'

@@ -216,9 +216,11 @@ When asked to bump, package, or release a new Metis version (e.g., `1.x.y`):
      ```bash
      npm publish --access public --tag latest --ignore-scripts --//registry.npmjs.org/:_authToken=<TOKEN>
      ```
-5. **Silent Wait for Windows CI**:
-   - Trigger `gh workflow run release-windows.yml --ref <TAG>`.
-   - Windows build takes ~25 minutes. Do NOT poll in a loop. Use `schedule` with a 25-minute one-shot timer (`DurationSeconds: 1500`).
+5. **Silent Wait for Desktop CI**:
+   - Prefer CI upload for large Desktop installers when the local network to `uploads.github.com` is slow or stalls.
+   - Trigger `gh workflow run release-windows.yml --ref <TAG> -f ref=<TAG>`.
+   - Trigger `gh workflow run release-macos.yml --ref main -f ref=<TAG> -f tag=<TAG>` (workflow file must be on `main`; it packages the release ref and attaches the DMG).
+   - Windows build takes ~25 minutes; macOS packaging+upload takes ~15–25 minutes. Do NOT poll in a loop. Use a one-shot wait, then attach Windows artifacts via `attach-windows-release-assets.yml` when needed.
 6. **GitHub Release Notes Scope**:
    - When creating `gh release create <TAG>`, pass only the release notes corresponding to that specific release version (not the full `CHANGELOG.md`).
    - Upload installer/binary assets only (`.dmg`, `.zip`, `-setup.exe`). Do **not** upload companion `.sha256` checksum files — they clutter the release asset list.
