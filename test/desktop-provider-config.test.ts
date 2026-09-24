@@ -293,7 +293,7 @@ describe("Desktop custom Provider configuration", () => {
 		const saved = await providerConfig.saveCustomProviderConfig(agentDir, {
 			builtin: true,
 			providerId: "siliconflow-cn",
-			name: "SiliconFlow (China)",
+			name: "SiliconFlow (CN)",
 			baseUrl: "https://api.siliconflow.cn/v1",
 			modelIds: ["deepseek-ai/DeepSeek-V4-Flash", "zai-org/GLM-5.2"],
 			discoveredModels: [

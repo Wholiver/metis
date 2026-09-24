@@ -17,6 +17,11 @@ const localizableAttributes = ['aria-label', 'placeholder', 'title'];
 const I18N_SKIP_SELECTOR = '[data-i18n-skip], .markdown-content, pre, code, textarea, input';
 const MIN_TEMPLATE_LITERAL_CHARS = 12;
 
+let reverseEnglishCache: Map<string, string> | null = null;
+let reverseEnglishCatalogRef: Catalog | null = null;
+let templateMatchers: Array<{ key: string; names: string[]; regex: RegExp; templateLiteralLength: number }> | null = null;
+let templateMatchersCatalogRef: Catalog | null = null;
+
 function templateLiteralLength(template: string): number {
   return template.replace(/\{[a-zA-Z0-9_]+\}/g, '').length;
 }
@@ -41,25 +46,45 @@ export function resolveLanguage(preference: string): string {
 }
 
 function reverseEnglishCatalog(): Map<string, string> {
-  return new Map(Object.entries(catalogs().en || {}).map(([key, value]) => [value, key]));
+  const en = catalogs().en || {};
+  if (reverseEnglishCache && reverseEnglishCatalogRef === en) return reverseEnglishCache;
+  reverseEnglishCatalogRef = en;
+  reverseEnglishCache = new Map(Object.entries(en).map(([key, value]) => [value, key]));
+  return reverseEnglishCache;
 }
 
-function matchTemplate(value: string): { key: string; variables: Record<string, string> } | undefined {
-  for (const [key, template] of Object.entries(catalogs().en || {})) {
+function compiledTemplateMatchers(): Array<{ key: string; names: string[]; regex: RegExp; templateLiteralLength: number }> {
+  const en = catalogs().en || {};
+  if (templateMatchers && templateMatchersCatalogRef === en) return templateMatchers;
+  templateMatchersCatalogRef = en;
+  templateMatchers = [];
+  for (const [key, template] of Object.entries(en)) {
     if (!template.includes('{')) continue;
     const names: string[] = [];
     const expression = `^${template.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\{([a-zA-Z0-9_]+)\\\}/g, (_match, name) => {
       names.push(name);
       return '(.+?)';
     })}$`;
-    const match = value.match(new RegExp(expression));
+    templateMatchers.push({
+      key,
+      names,
+      regex: new RegExp(expression),
+      templateLiteralLength: templateLiteralLength(template),
+    });
+  }
+  return templateMatchers;
+}
+
+function matchTemplate(value: string): { key: string; variables: Record<string, string> } | undefined {
+  for (const matcher of compiledTemplateMatchers()) {
+    const match = value.match(matcher.regex);
     if (!match) continue;
-    const variables = Object.fromEntries(names.map((name, index) => [name, match[index + 1]]));
-    if (templateLiteralLength(template) < MIN_TEMPLATE_LITERAL_CHARS) {
+    const variables = Object.fromEntries(matcher.names.map((name, index) => [name, match[index + 1]]));
+    if (matcher.templateLiteralLength < MIN_TEMPLATE_LITERAL_CHARS) {
       const capturesAreCompact = Object.values(variables).every((capture) => /^[\d.,:%+-]+$/.test(capture));
       if (!capturesAreCompact) continue;
     }
-    return { key, variables };
+    return { key: matcher.key, variables };
   }
   return undefined;
 }
@@ -80,35 +105,127 @@ export function translateExact(value: string, preference: string): string {
 
 function nextLocalizedValue(current: string, previous: LocalizedValueState | undefined, preference: string): LocalizedValueState {
   const source = resolveLocalizedSource(current, previous);
-  return { source, rendered: translateExact(source, preference) };
+  // Already translated for this preference and source — skip catalog work.
+  if (
+    previous
+    && previous.preference === preference
+    && previous.source === source
+    && previous.rendered === current
+  ) {
+    return previous;
+  }
+  return { source, rendered: translateExact(source, preference), preference };
+}
+
+function isSkippedElement(element: Element | null | undefined): boolean {
+  return Boolean(element?.closest(I18N_SKIP_SELECTOR));
 }
 
 function translateNode(node: Text, preference: string) {
-  if (node.parentElement?.closest(I18N_SKIP_SELECTOR)) return;
+  if (isSkippedElement(node.parentElement)) return;
   const current = node.nodeValue || '';
-  const next = nextLocalizedValue(current, localizedText.get(node), preference);
+  const previous = localizedText.get(node);
+  const next = nextLocalizedValue(current, previous, preference);
   localizedText.set(node, next);
   if (next.rendered !== current) node.nodeValue = next.rendered;
 }
 
 function translateAttributes(element: Element, preference: string) {
-  if (element.closest(I18N_SKIP_SELECTOR)) return;
+  if (isSkippedElement(element)) return;
   const values = localizedAttributes.get(element) || new Map<string, LocalizedValueState>();
   localizedAttributes.set(element, values);
   for (const attribute of localizableAttributes) {
     const current = element.getAttribute(attribute);
     if (!current) continue;
-    const next = nextLocalizedValue(current, values.get(attribute), preference);
+    const previous = values.get(attribute);
+    const next = nextLocalizedValue(current, previous, preference);
     values.set(attribute, next);
     if (next.rendered !== current) element.setAttribute(attribute, next.rendered);
   }
 }
 
+function skipNodeFilter(): NodeFilter {
+  return {
+    acceptNode(node) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        // REJECT skips the element and all descendants — critical under streaming markdown.
+        return (node as Element).matches(I18N_SKIP_SELECTOR)
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_SKIP;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  };
+}
+
+/** Full document walk — only on language preference changes. */
 function translateDocument(preference: string) {
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+    skipNodeFilter(),
+  );
   let node: Node | null;
-  while ((node = walker.nextNode())) translateNode(node as Text, preference);
-  document.querySelectorAll<HTMLElement>('[aria-label], [placeholder], [title]').forEach((element) => translateAttributes(element, preference));
+  while ((node = walker.nextNode())) {
+    if (node.nodeType === Node.TEXT_NODE) translateNode(node as Text, preference);
+  }
+  document.querySelectorAll<HTMLElement>('[aria-label], [placeholder], [title]').forEach((element) => {
+    if (isSkippedElement(element)) return;
+    translateAttributes(element, preference);
+  });
+}
+
+/** Incremental translate for newly inserted DOM (sidebar titles, dialogs, etc.). */
+function translateSubtree(root: Node, preference: string) {
+  if (root.nodeType === Node.TEXT_NODE) {
+    translateNode(root as Text, preference);
+    return;
+  }
+  if (root.nodeType !== Node.ELEMENT_NODE) return;
+  const element = root as Element;
+  if (element.matches(I18N_SKIP_SELECTOR) || isSkippedElement(element.parentElement)) return;
+  translateAttributes(element, preference);
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+    skipNodeFilter(),
+  );
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    if (node.nodeType === Node.TEXT_NODE) translateNode(node as Text, preference);
+  }
+  element.querySelectorAll<HTMLElement>('[aria-label], [placeholder], [title]').forEach((child) => {
+    if (isSkippedElement(child)) return;
+    translateAttributes(child, preference);
+  });
+}
+
+function mutationTouchesLocalizableDom(mutations: MutationRecord[]): boolean {
+  for (const mutation of mutations) {
+    const target = mutation.target;
+    const targetElement = target.nodeType === Node.ELEMENT_NODE
+      ? target as Element
+      : target.parentElement;
+    if (isSkippedElement(targetElement)) continue;
+    if (mutation.type === 'attributes') return true;
+    if (mutation.type === 'childList') {
+      if (mutation.addedNodes.length > 0) return true;
+    }
+  }
+  return false;
+}
+
+function translateMutations(mutations: MutationRecord[], preference: string) {
+  for (const mutation of mutations) {
+    if (mutation.type === 'attributes' && mutation.target.nodeType === Node.ELEMENT_NODE) {
+      translateAttributes(mutation.target as Element, preference);
+      continue;
+    }
+    if (mutation.type !== 'childList') continue;
+    for (const added of mutation.addedNodes) {
+      translateSubtree(added, preference);
+    }
+  }
 }
 
 export function useI18n() {
@@ -151,12 +268,17 @@ export function DesktopI18nProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     let raf = 0;
-    const observer = new MutationObserver(() => {
+    let pending: MutationRecord[] = [];
+    const observer = new MutationObserver((mutations) => {
+      if (!mutationTouchesLocalizableDom(mutations)) return;
+      pending.push(...mutations);
       if (raf) return;
       raf = window.requestAnimationFrame(() => {
         raf = 0;
+        const batch = pending;
+        pending = [];
         observer.disconnect();
-        translateDocument(preference);
+        translateMutations(batch, preference);
         observer.observe(document.body, {
           childList: true,
           subtree: true,
@@ -165,6 +287,7 @@ export function DesktopI18nProvider({ children }: PropsWithChildren) {
         });
       });
     });
+    // Language change (or first mount): full document pass once.
     translateDocument(preference);
     observer.observe(document.body, {
       childList: true,
@@ -180,4 +303,3 @@ export function DesktopI18nProvider({ children }: PropsWithChildren) {
 
   return <>{children}</>;
 }
-

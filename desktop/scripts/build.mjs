@@ -18,6 +18,7 @@ await cp(path.join(desktopDir, "session-token-totals.cjs"), path.join(outputDir,
 await cp(path.join(desktopDir, "server-connection.cjs"), path.join(outputDir, "server-connection.cjs"));
 await cp(path.join(desktopDir, "sse-ipc-bridge.cjs"), path.join(outputDir, "sse-ipc-bridge.cjs"));
 await cp(path.join(desktopDir, "browser-host.cjs"), path.join(outputDir, "browser-host.cjs"));
+await cp(path.join(desktopDir, "browser-fit.cjs"), path.join(outputDir, "browser-fit.cjs"));
 await cp(path.join(desktopDir, "preload.cjs"), path.join(outputDir, "preload.cjs"));
 await cp(path.join(desktopDir, "i18n.cjs"), path.join(outputDir, "i18n.cjs"));
 await cp(path.join(desktopDir, "i18n-source.cjs"), path.join(outputDir, "i18n-source.cjs"));

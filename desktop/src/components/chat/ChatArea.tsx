@@ -10,6 +10,7 @@ import { Composer } from './Composer';
 import { SkillCommand } from './SkillPicker';
 import { UserInputCard } from './UserInputCard';
 import { SubagentConversation } from './SubagentConversation';
+import { useI18n } from '../../i18n';
 
 interface ChatAreaProps {
   agent: Agent;
@@ -116,6 +117,7 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   onNavigateBreadcrumb,
   onBackToParent,
 }) => {
+  const { t } = useI18n();
   const [composerActivity, setComposerActivity] = useState(IDLE_COMPOSER_ACTIVITY);
 
   useEffect(() => {
@@ -211,7 +213,7 @@ export const ChatArea = React.memo<ChatAreaProps>(({
             className="rounded-chip px-3 py-1.5 text-[13px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
             data-back-to-parent=""
           >
-            Back to {parentLabel}
+            {t('backToParent', { name: parentLabel })}
           </button>
         </div>
       ) : pendingUserInput ? (

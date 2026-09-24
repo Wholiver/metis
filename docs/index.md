@@ -41,7 +41,7 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 - [Quickstart](quickstart.md) - install, authenticate, and run a first session.
 - [Using Metis](usage.md) - interactive mode, slash commands, context files, and CLI reference.
 - [Providers](providers.md) - subscription and API-key setup for built-in providers.
-- [Use SiliconFlow in Metis](use-siliconcloud-in-metis.md) - configure SiliconFlow (China) models.
+- [Use SiliconFlow in Metis](use-siliconcloud-in-metis.md) - configure SiliconFlow (CN) models.
 - [Security](security.md) - project trust, sandbox boundaries, and vulnerability reporting.
 - [Containerization](containerization.md) - sandbox metis with Gondolin, Docker, or OpenShell.
 - [Settings](settings.md) - global and project settings.

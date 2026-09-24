@@ -93,6 +93,11 @@ describe("instruction stack", () => {
 			expect(prompt).toContain("never emit because a tool result arrived");
 			expect(prompt).toContain("what you found or what is wrong, and what you will do next");
 			expect(prompt).toContain("emit zero visible text while exploring");
+			expect(prompt).toContain("update_plan checking off a step");
+			expect(prompt).toContain("a stretch of quiet implementation");
+			expect(prompt).toContain("Do not emit extra visible notes around performance_admit or a passing performance_gate");
+			expect(prompt).toContain("a completed checklist is not task completion");
+			expect(prompt).toContain("Never narrate tool-call schema, missing arguments, or how to invoke a tool");
 			expect(prompt).toContain("Never narrate one update per tool");
 			expect(prompt).toContain("Do not put a required update only in thinking");
 			expect(prompt.indexOf("Default is silence between tools")).toBeLessThan(prompt.indexOf("what you found or what is wrong"));
@@ -154,6 +159,8 @@ describe("instruction stack", () => {
 		expect(prompt).toContain("Artifact and generation work (SVG, image, page, report, data file)");
 		expect(prompt).toContain("at least one repair pass if that check fails");
 		expect(prompt).toContain("Do not claim completion after a failed or mismatched performance_gate");
+		expect(prompt).toContain("write gate receipts under that run's governance artifacts/ directory");
+		expect(prompt).toContain("T0: G4; T1: G4 then G5/G6");
 		expect(prompt).not.toContain("Reliable-headless short loop");
 	});
 

@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { normalizeUserMessageForDisplay } from '../desktop/src/lib/attachments';
 import { sessionSubtitle, sessionTitle } from '../desktop/src/hooks/useMetisServer';
 import {
-  PELICAN_BIKE_SVG_MODEL_PROMPT,
-  PELICAN_BIKE_SVG_USER_PROMPT,
+  WEB_MINECRAFT_MODEL_PROMPT,
+  WEB_MINECRAFT_USER_PROMPT,
   revealPromptForDisplay,
   rewritePromptForModel,
 } from '../desktop/src/lib/prompt-rewrite';
@@ -17,58 +17,63 @@ const session = {
   created: new Date().toISOString(),
   modified: new Date().toISOString(),
   messageCount: 1,
-  firstMessage: PELICAN_BIKE_SVG_MODEL_PROMPT,
-  lastMessage: PELICAN_BIKE_SVG_MODEL_PROMPT,
+  firstMessage: WEB_MINECRAFT_MODEL_PROMPT,
+  lastMessage: WEB_MINECRAFT_MODEL_PROMPT,
 };
 
-describe('desktop pelican SVG prompt rewrite', () => {
+describe('desktop web Minecraft prompt rewrite', () => {
   it('rewrites only the exact trigger for the model and restores it for display', () => {
-    expect(rewritePromptForModel(PELICAN_BIKE_SVG_USER_PROMPT)).toBe(PELICAN_BIKE_SVG_MODEL_PROMPT);
-    expect(rewritePromptForModel(`  ${PELICAN_BIKE_SVG_USER_PROMPT}  `)).toBe(PELICAN_BIKE_SVG_MODEL_PROMPT);
-    expect(rewritePromptForModel(`${PELICAN_BIKE_SVG_USER_PROMPT}。`)).toBe(`${PELICAN_BIKE_SVG_USER_PROMPT}。`);
-    expect(rewritePromptForModel(`${PELICAN_BIKE_SVG_USER_PROMPT} 请开始`)).toBe(`${PELICAN_BIKE_SVG_USER_PROMPT} 请开始`);
+    expect(rewritePromptForModel(WEB_MINECRAFT_USER_PROMPT)).toBe(WEB_MINECRAFT_MODEL_PROMPT);
+    expect(rewritePromptForModel(`  ${WEB_MINECRAFT_USER_PROMPT}  `)).toBe(WEB_MINECRAFT_MODEL_PROMPT);
+    expect(rewritePromptForModel(`${WEB_MINECRAFT_USER_PROMPT}。`)).toBe(`${WEB_MINECRAFT_USER_PROMPT}。`);
+    expect(rewritePromptForModel(`${WEB_MINECRAFT_USER_PROMPT} 请开始`)).toBe(`${WEB_MINECRAFT_USER_PROMPT} 请开始`);
     expect(rewritePromptForModel('Generate an SVG of a pelican riding a bicycle')).toBe(
       'Generate an SVG of a pelican riding a bicycle',
     );
-    expect(revealPromptForDisplay(PELICAN_BIKE_SVG_MODEL_PROMPT)).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
-    expect(revealPromptForDisplay(`  ${PELICAN_BIKE_SVG_MODEL_PROMPT}  `)).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
-    expect(revealPromptForDisplay(PELICAN_BIKE_SVG_USER_PROMPT)).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('does not skip performance_admit');
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).not.toContain('named-child dispatch');
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('root-owned zero spawn');
+    expect(revealPromptForDisplay(WEB_MINECRAFT_MODEL_PROMPT)).toBe(WEB_MINECRAFT_USER_PROMPT);
+    expect(revealPromptForDisplay(`  ${WEB_MINECRAFT_MODEL_PROMPT}  `)).toBe(WEB_MINECRAFT_USER_PROMPT);
+    expect(revealPromptForDisplay(WEB_MINECRAFT_USER_PROMPT)).toBe(WEB_MINECRAFT_USER_PROMPT);
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('does not skip performance_admit');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).not.toContain('named-child dispatch');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('root-owned zero spawn');
   });
 
   it('keeps the short prompt in the user bubble after the model rewrite', () => {
-    expect(normalizeUserMessageForDisplay(PELICAN_BIKE_SVG_MODEL_PROMPT).text).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
-    expect(normalizeUserMessageForDisplay(`第 ${PELICAN_BIKE_SVG_USER_PROMPT} 项`).text)
-      .toBe(PELICAN_BIKE_SVG_USER_PROMPT);
+    expect(normalizeUserMessageForDisplay(WEB_MINECRAFT_MODEL_PROMPT).text).toBe(WEB_MINECRAFT_USER_PROMPT);
+    expect(normalizeUserMessageForDisplay(`第 ${WEB_MINECRAFT_USER_PROMPT} 项`).text)
+      .toBe(WEB_MINECRAFT_USER_PROMPT);
   });
 
   it('keeps session titles and subtitles on the original trigger', () => {
-    expect(sessionTitle({ ...session, name: undefined })).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
-    expect(sessionSubtitle(session)).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
+    expect(sessionTitle({ ...session, name: undefined })).toBe(WEB_MINECRAFT_USER_PROMPT);
+    expect(sessionSubtitle(session)).toBe(WEB_MINECRAFT_USER_PROMPT);
     expect(sessionTitle({ ...session, name: 'Generated title' })).toBe('Generated title');
   });
 
-  it('tells the model to write SVG directly and skip Python generation', () => {
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('不要用 Python');
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('只交付一个可独立打开的 .svg');
+  it('tells the model to start the Next.js game instead of stopping at a plan', () => {
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('现在就动手做并跑起来');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('不要只给方案');
   });
 
-  it('forbids silhouette intersections anywhere in the drawing', () => {
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('不该相交的轮廓不要互相切开');
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('整幅每一处都检查，不限于某一对零件');
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).not.toContain('挡泥板应在轮胎外侧绕过');
+  it('treats visible shaders on an M1 8GB browser as a hard fail gate', () => {
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('光影是硬性验收，不过这一关不准结束');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('只要打开后看不出光影');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('水面必须有反光');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('Mac M1 8GB');
   });
 
-  it('forbids see-through solids and limbs being pierced by what they hold', () => {
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('实体默认不透明');
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('不能让车把从翅膀中间穿过');
+  it('treats playable features as a hard fail gate', () => {
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('完整功能是硬性验收，不过这一关不准结束');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('只能看不能玩');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('整局每一处都检查，不限于某一个画面');
   });
 
-  it('forbids connectors being drawn through another part\'s interior', () => {
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('不要画进另一件的内部平面');
-    expect(PELICAN_BIKE_SVG_MODEL_PROMPT).toContain('不要一条管子横贴在轮面上把辐条盖住或切断');
+  it('requires built-in browser verification and hands-on play before finishing', () => {
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('使用内置浏览器实时检查、验收和操作');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('不要改用系统浏览器');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('再在页面里亲手操作：移动、转视角、破坏、放置');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('你已经在内置浏览器里亲手操作过之后再结束');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('不必做一些调试界面');
   });
 
   it('sends the rewritten prompt on the Desktop prompt request path', () => {

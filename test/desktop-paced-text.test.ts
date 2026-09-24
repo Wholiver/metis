@@ -16,10 +16,10 @@ describe('streamed assistant markdown (Streamdown)', () => {
     expect(paced).toContain('React.lazy');
     expect(paced).toContain('StreamdownBoundary');
     expect(paced).toContain('<MarkdownContent markdown={text}');
-    expect(paced).toContain('isAnimating');
-    expect(paced).toContain("animation: 'blurIn'");
-    expect(paced).toContain("sep: 'word'");
-    expect(paced).toContain('prefers-reduced-motion');
+    expect(paced).toContain('animated={false}');
+    expect(paced).not.toContain('isAnimating');
+    expect(paced).not.toContain("animation: 'blurIn'");
+    expect(paced).not.toContain("sep: 'word'");
     expect(paced).not.toContain('createPacedTextController');
     expect(paced).not.toMatch(/^import .* from 'streamdown'/m);
 

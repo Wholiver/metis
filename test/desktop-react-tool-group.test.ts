@@ -215,6 +215,8 @@ describe('desktop React Tool rendering', () => {
     expect(work).toContain('busy={lastContextGroupLive && item.id === lastContextGroupId}');
     expect(work).toContain('busy={lastCommandGroupLive && item.id === lastCommandGroupId}');
     expect(work).toContain('areVisibleAssistantWorkItemsEqual');
+    expect(work).toContain('liveTextId');
+    expect(work).toContain('streaming={liveTextId === item.id}');
     expect(card).toContain('areToolCardPropsEqual');
     expect(card).toContain('expandedView.truncated');
     expect(context).toContain('areToolPartRefsEqual');

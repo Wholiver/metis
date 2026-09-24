@@ -41,14 +41,25 @@ describe("classifyProgressTool", () => {
 		expect(classifyProgressTool("browser_tabs", { action: "new" })).toBe("mutate");
 		expect(classifyProgressTool("performance_admit")).toBe("admit");
 		expect(classifyProgressTool("write")).toBe("mutate");
+		expect(classifyProgressTool("edit", { isError: true })).toBe("other");
 		expect(classifyProgressTool("bash", { command: "ls src" })).toBe("explore");
 		expect(classifyProgressTool("bash", { command: "git status" })).toBe("explore");
 		expect(classifyProgressTool("bash", { command: "npx vitest run" })).toBe("verify");
 		expect(classifyProgressTool("bash", { command: "npm run build" })).toBe("mutate");
 		expect(classifyProgressTool("performance_gate")).toBe("verify");
 		expect(classifyProgressTool("spawn_agent")).toBe("delegate");
+		expect(classifyProgressTool("update_plan")).toBe("other");
 	});
 });
+
+function explorePad(count: number, start = 0): ProgressHistoryMessage[] {
+	const out: ProgressHistoryMessage[] = [];
+	for (let index = 0; index < count; index += 1) {
+		const id = `grep-pad-${start + index}`;
+		out.push(assistant("", [{ id, name: "grep" }]), toolResult(id, "grep"));
+	}
+	return out;
+}
 
 describe("resolveProgressNudge", () => {
 	it("does nothing without current tool results", () => {
@@ -104,10 +115,10 @@ describe("resolveProgressNudge", () => {
 		)).toBeUndefined();
 	});
 
-	it("requires a visible update after admission", () => {
+	it("does not nag admission; the opening sentence and first write cover the start", () => {
 		const ls = toolResult("ls-1", "ls");
 		const admit = toolResult("admit-1", "performance_admit");
-		const nudge = resolveProgressNudge(
+		expect(resolveProgressNudge(
 			[
 				user("写 README"),
 				assistant("先看目录", [{ id: "ls-1", name: "ls" }]),
@@ -116,20 +127,13 @@ describe("resolveProgressNudge", () => {
 				admit,
 			],
 			[admit],
-		);
-		expect(nudge).toMatchObject({ kind: "required", reason: "admission" });
-		expect(formatProgressNudge(nudge!)).toContain("This is a one-off milestone, not permission to narrate later tools");
-		expect(formatProgressNudge(nudge!)).toContain("what you found or what is wrong, and what you will do next");
-		expect(formatProgressNudge(nudge!)).toContain("does not skip performance_admit");
-		expect(formatProgressNudge(nudge!)).toContain(PROGRESS_NUDGE_MARKER);
-		expect(formatProgressNudge(nudge!)).not.toContain("named-child dispatch");
-		expect(formatProgressNudge(nudge!)).not.toContain("write the final answer only");
+		)).toBeUndefined();
 	});
 
 	it("requires a visible update on explore→mutate even without admit", () => {
 		const ls = toolResult("ls-1", "ls");
 		const write = toolResult("write-1", "write");
-		expect(resolveProgressNudge(
+		const nudge = resolveProgressNudge(
 			[
 				user("写 README"),
 				assistant("先看目录", [{ id: "ls-1", name: "ls" }]),
@@ -138,7 +142,15 @@ describe("resolveProgressNudge", () => {
 				write,
 			],
 			[write],
-		)).toMatchObject({ kind: "required", reason: "explore→mutate" });
+		);
+		expect(nudge).toMatchObject({ kind: "required", reason: "explore→mutate" });
+		expect(formatProgressNudge(nudge!)).toContain("This is a spaced milestone, not permission to narrate later tools");
+		expect(formatProgressNudge(nudge!)).toContain("what you found or what is wrong, and what you will do next");
+		expect(formatProgressNudge(nudge!)).toContain("does not skip performance_admit");
+		expect(formatProgressNudge(nudge!)).toContain("A completed checklist or passing gate is not task completion");
+		expect(formatProgressNudge(nudge!)).toContain(PROGRESS_NUDGE_MARKER);
+		expect(formatProgressNudge(nudge!)).not.toContain("named-child dispatch");
+		expect(formatProgressNudge(nudge!)).toContain("Never mention tool-call schema");
 	});
 
 	it("does not require an update for same-phase writes", () => {
@@ -156,7 +168,7 @@ describe("resolveProgressNudge", () => {
 		)).toBeUndefined();
 	});
 
-	it("caps non-error nudges to one per user turn", () => {
+	it("spaces later non-error nudges instead of capping the whole turn", () => {
 		const admit = toolResult("admit-1", "performance_admit");
 		const write = toolResult("write-1", "write");
 		expect(resolveProgressNudge(
@@ -169,6 +181,99 @@ describe("resolveProgressNudge", () => {
 				write,
 			],
 			[write],
+		)).toBeUndefined();
+	});
+
+	it("requires an update when update_plan checks off or starts a step", () => {
+		const first = toolResult("plan-1", "update_plan");
+		const checked = toolResult("plan-2", "update_plan");
+		const firstPlan = [{ step: "看仓库", status: "in_progress" }, { step: "写文件", status: "pending" }];
+		const nextPlan = [{ step: "看仓库", status: "completed" }, { step: "写文件", status: "in_progress" }];
+		expect(resolveProgressNudge(
+			[
+				user("做任务"),
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: firstPlan } }]),
+				first,
+			],
+			[first],
+		)).toBeUndefined();
+		expect(resolveProgressNudge(
+			[
+				user("做任务"),
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: firstPlan } }]),
+				first,
+				assistant("", [{ id: "plan-2", name: "update_plan", arguments: { plan: nextPlan } }]),
+				checked,
+			],
+			[checked],
+		)).toMatchObject({ kind: "required", reason: "plan" });
+	});
+
+	it("does not stack a plan check-off immediately after another nudge", () => {
+		const first = toolResult("plan-1", "update_plan");
+		const checked = toolResult("plan-2", "update_plan");
+		const firstPlan = [{ step: "看仓库", status: "in_progress" }, { step: "写文件", status: "pending" }];
+		const nextPlan = [{ step: "看仓库", status: "completed" }, { step: "写文件", status: "in_progress" }];
+		expect(resolveProgressNudge(
+			[
+				user("做任务"),
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: firstPlan } }]),
+				first,
+				context(`${PROGRESS_NUDGE_MARKER} (required: explore→mutate; progress-nudge:write-1).`),
+				assistant("", [{ id: "plan-2", name: "update_plan", arguments: { plan: nextPlan } }]),
+				checked,
+			],
+			[checked],
+		)).toBeUndefined();
+	});
+
+	it("does not nag a fully completed update_plan at the end", () => {
+		const first = toolResult("plan-1", "update_plan");
+		const done = toolResult("plan-2", "update_plan");
+		const firstPlan = [{ step: "看仓库", status: "in_progress" }];
+		const donePlan = [{ step: "看仓库", status: "completed" }];
+		expect(resolveProgressNudge(
+			[
+				user("做任务"),
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: firstPlan } }]),
+				first,
+				...explorePad(6),
+				assistant("", [{ id: "plan-2", name: "update_plan", arguments: { plan: donePlan } }]),
+				done,
+			],
+			[done],
+		)).toBeUndefined();
+	});
+
+	it("does not consume the turn cap on the first update_plan", () => {
+		const plan = toolResult("plan-1", "update_plan");
+		const write = toolResult("write-1", "write");
+		const firstPlan = [{ step: "写文件", status: "in_progress" }];
+		expect(resolveProgressNudge(
+			[
+				user("做任务"),
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: firstPlan } }]),
+				plan,
+				assistant("", [{ id: "write-1", name: "write" }]),
+				write,
+			],
+			[write],
+		)).toMatchObject({ kind: "required", reason: "other→mutate" });
+	});
+
+	it("does not nag an unchanged update_plan checklist", () => {
+		const first = toolResult("plan-1", "update_plan");
+		const repeat = toolResult("plan-2", "update_plan");
+		const plan = [{ step: "看仓库", status: "in_progress" }];
+		expect(resolveProgressNudge(
+			[
+				user("做任务"),
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan } }]),
+				first,
+				assistant("", [{ id: "plan-2", name: "update_plan", arguments: { plan } }]),
+				repeat,
+			],
+			[repeat],
 		)).toBeUndefined();
 	});
 
@@ -202,6 +307,18 @@ describe("resolveProgressNudge", () => {
 		)).toMatchObject({ kind: "required", reason: "failed check" });
 	});
 
+	it("does not nag a failed edit; argument errors stay on the tool card", () => {
+		const edit = toolResult("edit-1", "edit", true);
+		expect(resolveProgressNudge(
+			[
+				user("改 SVG"),
+				assistant("", [{ id: "edit-1", name: "edit" }]),
+				edit,
+			],
+			[edit],
+		)).toBeUndefined();
+	});
+
 	it("does not treat a failed explore tool as a milestone", () => {
 		const ls = toolResult("ls-1", "ls", true);
 		expect(resolveProgressNudge(
@@ -222,7 +339,7 @@ describe("resolveProgressNudge", () => {
 		)).toMatchObject({ kind: "required", reason: "failed check" });
 	});
 
-	it("requires an update after a passing gate", () => {
+	it("does not nag a passing gate", () => {
 		const gate = toolResult("gate-1", "performance_gate");
 		expect(resolveProgressNudge(
 			[
@@ -231,7 +348,102 @@ describe("resolveProgressNudge", () => {
 				gate,
 			],
 			[gate],
-		)).toMatchObject({ kind: "required", reason: "gate" });
+		)).toBeUndefined();
+	});
+
+	it("does not let a silence heartbeat fire on a passing gate or completed checklist", () => {
+		const write = toolResult("write-1", "write");
+		const gate = toolResult("gate-1", "performance_gate");
+		const done = toolResult("plan-2", "update_plan");
+		const firstPlan = [{ step: "写文件", status: "in_progress" }];
+		const donePlan = [{ step: "写文件", status: "completed" }];
+		const first = toolResult("plan-1", "update_plan");
+		const quiet = explorePad(7);
+		expect(resolveProgressNudge(
+			[
+				user("画 SVG"),
+				assistant("开始写", [{ id: "write-1", name: "write" }]),
+				write,
+				context(`${PROGRESS_NUDGE_MARKER} (required: start→mutate; progress-nudge:write-1).`),
+				...quiet,
+				assistant("", [{ id: "gate-1", name: "performance_gate", arguments: { gate: "G4", verdict: "pass" } }]),
+				gate,
+			],
+			[gate],
+		)).toBeUndefined();
+		expect(resolveProgressNudge(
+			[
+				user("画 SVG"),
+				assistant("开始写", [{ id: "write-1", name: "write" }]),
+				write,
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: firstPlan } }]),
+				first,
+				context(`${PROGRESS_NUDGE_MARKER} (required: start→mutate; progress-nudge:write-1).`),
+				...quiet,
+				assistant("", [{ id: "plan-2", name: "update_plan", arguments: { plan: donePlan } }]),
+				done,
+			],
+			[done],
+		)).toBeUndefined();
+	});
+
+	it("requires an update after inspect-then-repair once enough tools have passed", () => {
+		const write = toolResult("write-1", "write");
+		const shot = toolResult("shot-1", "browser_take_screenshot");
+		const repair = toolResult("write-2", "write");
+		expect(resolveProgressNudge(
+			[
+				user("画 SVG"),
+				assistant("开始写", [{ id: "write-1", name: "write" }]),
+				write,
+				context(`${PROGRESS_NUDGE_MARKER} (required: start→mutate; progress-nudge:write-1).`),
+				...explorePad(5),
+				assistant("", [{ id: "shot-1", name: "browser_take_screenshot" }]),
+				shot,
+				assistant("", [{ id: "write-2", name: "write" }]),
+				repair,
+			],
+			[repair],
+		)).toMatchObject({ kind: "required", reason: "explore→mutate" });
+	});
+
+	it("requires an update after a long quiet stretch once implementation has started", () => {
+		const write = toolResult("write-1", "write");
+		const fourteen = explorePad(13);
+		const nine = explorePad(9);
+		expect(resolveProgressNudge(
+			[
+				user("画 SVG"),
+				assistant("开始写", [{ id: "write-1", name: "write" }]),
+				write,
+				context(`${PROGRESS_NUDGE_MARKER} (required: start→mutate; progress-nudge:write-1).`),
+				...fourteen,
+			],
+			[fourteen[fourteen.length - 1] as ProgressHistoryMessage & ProgressToolResult],
+		)).toMatchObject({ kind: "required", reason: "silence" });
+		expect(resolveProgressNudge(
+			[
+				user("画 SVG"),
+				assistant("开始写", [{ id: "write-1", name: "write" }]),
+				write,
+				context(`${PROGRESS_NUDGE_MARKER} (required: start→mutate; progress-nudge:write-1).`),
+				...nine,
+			],
+			[nine[nine.length - 1] as ProgressHistoryMessage & ProgressToolResult],
+		)).toBeUndefined();
+	});
+
+	it("requires an update after a long explore streak", () => {
+		const ten = explorePad(10);
+		const nine = explorePad(9);
+		expect(resolveProgressNudge(
+			[user("找穿模"), ...ten],
+			[ten[ten.length - 1] as ProgressHistoryMessage & ProgressToolResult],
+		)).toMatchObject({ kind: "required", reason: "explore-streak" });
+		expect(resolveProgressNudge(
+			[user("找穿模"), ...nine],
+			[nine[nine.length - 1] as ProgressHistoryMessage & ProgressToolResult],
+		)).toBeUndefined();
 	});
 
 	it("does not inject the same batch twice", () => {

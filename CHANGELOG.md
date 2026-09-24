@@ -4,6 +4,19 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.3.4] - 2026-09-24
+
+### Desktop Streaming Heat, Browser Fit & Performance Gate Hardening
+
+- GitHub Releases no longer attach companion `.sha256` checksum files alongside installers (DMG / ZIP / setup.exe only).
+- Disable Streamdown per-word `blurIn` / stagger on live answers (`animated={false}`) so fast token streams no longer create GPU compositor heat from `filter: blur` layers.
+- Make Desktop i18n MutationObserver updates incremental and skip `.markdown-content` subtrees, avoiding full-document walks during streaming.
+- Fit the Inspector embedded browser viewport to content (zoom + layout) via `browser-fit`, and keep shine-border / tab behavior stable while the model drives the guest page.
+- Harden Performance runs: remap workspace `artifacts/` writes into the governance artifacts directory, block `update_plan` from marking every step completed while a run is still open, and host-continue up to twice when the model stops early with an unfinished gate.
+- Tighten progress narration with silence heartbeats, explore-streak limits, and failed write/edit classification so status text stays tied to real milestones.
+- Desktop Add Model modal: pin SiliconFlow (CN) in popular providers and split the rest into OAuth vs API groups.
+- Rename SiliconFlow China display strings to SiliconFlow (CN) across provider labels and docs; refresh the SiliconFlow partner setup guide.
+
 ## [1.3.2] - 2026-09-21
 
 ### SiliconFlow Providers, Streamdown Chat & Desktop Streaming Polish

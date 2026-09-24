@@ -1,4 +1,4 @@
-import React, { Component, Suspense, useEffect, useState, type ReactNode } from 'react';
+import React, { Component, Suspense, type ReactNode } from 'react';
 import { MarkdownContent, handleMarkdownLinkClick } from './MarkdownContent';
 
 interface PacedMarkdownProps {
@@ -7,16 +7,11 @@ interface PacedMarkdownProps {
   className?: string;
 }
 
-/** Vercel Streamdown defaults for fast token batches — not a custom drip timer. */
-const STREAMDOWN_ANIMATED = {
-  animation: 'blurIn' as const,
-  duration: 220,
-  easing: 'ease-out',
-  sep: 'word' as const,
-  stagger: 24,
-  maxBacklogMs: 280,
-};
-
+/**
+ * Live answers use Streamdown for incremental markdown parsing.
+ * Per-word blurIn / stagger animations are disabled — each animated word
+ * creates a compositor layer with filter:blur and heats the GPU during stream.
+ */
 const LiveStreamdown = React.lazy(async () => {
   const [{ Streamdown }, { cjk }] = await Promise.all([
     import('streamdown'),
@@ -31,8 +26,7 @@ const LiveStreamdown = React.lazy(async () => {
       >
         <Streamdown
           mode="streaming"
-          isAnimating
-          animated={STREAMDOWN_ANIMATED}
+          animated={false}
           plugins={{ cjk }}
           controls={false}
           className="space-y-0 w-full min-w-0 max-w-full"
@@ -74,33 +68,14 @@ class StreamdownBoundary extends Component<
   }
 }
 
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(() => (
-    typeof window !== 'undefined'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  ));
-
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const sync = () => setReduced(media.matches);
-    sync();
-    media.addEventListener('change', sync);
-    return () => media.removeEventListener('change', sync);
-  }, []);
-
-  return reduced;
-}
-
 export const PacedMarkdown = React.memo(function PacedMarkdown({
   text,
   streaming = false,
   className,
 }: PacedMarkdownProps) {
-  const reduceMotion = usePrefersReducedMotion();
   if (!text) return null;
 
-  const live = streaming && !reduceMotion;
-  if (!live) {
+  if (!streaming) {
     return <MarkdownContent markdown={text} streaming={streaming} className={className} />;
   }
 

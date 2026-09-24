@@ -34,13 +34,13 @@ type ModelRow = { id: string; name: string };
 
 const CUSTOM_PROVIDER_ID = '__custom__';
 const POPULAR_PROVIDER_IDS = [
+  'siliconflow-cn',
   'anthropic',
   'openai',
   'gemini',
   'google',
   'openrouter',
   'deepseek',
-  'siliconflow-cn',
   'siliconflow',
   'groq',
   'ollama',
@@ -150,10 +150,20 @@ export function AddModelModal({
     return POPULAR_PROVIDER_IDS.map((id) => byId.get(id)).filter(Boolean) as ProviderCatalogEntry[];
   }, [filteredProviders]);
 
-  const otherProviders = useMemo(() => {
+  const oauthProviders = useMemo(() => {
     const popular = new Set(popularProviders.map((provider) => provider.id));
-    return filteredProviders.filter((provider) => !popular.has(provider.id));
+    return filteredProviders.filter(
+      (provider) => !popular.has(provider.id) && provider.authMethods.includes('oauth'),
+    );
   }, [filteredProviders, popularProviders]);
+
+  const apiProviders = useMemo(() => {
+    const popular = new Set(popularProviders.map((provider) => provider.id));
+    const oauth = new Set(oauthProviders.map((provider) => provider.id));
+    return filteredProviders.filter(
+      (provider) => !popular.has(provider.id) && !oauth.has(provider.id),
+    );
+  }, [filteredProviders, oauthProviders, popularProviders]);
 
   const customMatchesSearch = useMemo(() => {
     const query = providerSearchQuery.trim().toLowerCase();
@@ -553,14 +563,14 @@ export function AddModelModal({
                 />
               </div>
 
-              {popularProviders.length === 0 && otherProviders.length === 0 && !customMatchesSearch ? (
+              {popularProviders.length === 0 && oauthProviders.length === 0 && apiProviders.length === 0 && !customMatchesSearch ? (
                 <p className="px-1 py-6 text-center text-[13px] text-ink-3">
                   {translate(`No matches for “${providerSearchQuery.trim()}”`)}
                 </p>
               ) : (
                 <div className="space-y-4">
                   {popularProviders.length > 0 ? (
-                    <section className="space-y-1">
+                    <section className="space-y-1" data-provider-group="popular">
                       <h3 className="px-2 text-[12px] font-medium text-ink-3">{translate('Popular')}</h3>
                       <GlideMenu highlightClassName="inset-x-0 rounded-[8px] bg-hover-2" className="flex flex-col gap-px">
                         {popularProviders.map(renderProviderRow)}
@@ -568,11 +578,20 @@ export function AddModelModal({
                     </section>
                   ) : null}
 
-                  {otherProviders.length > 0 || customMatchesSearch ? (
-                    <section className="space-y-1">
-                      <h3 className="px-2 text-[12px] font-medium text-ink-3">{translate('Other')}</h3>
+                  {oauthProviders.length > 0 ? (
+                    <section className="space-y-1" data-provider-group="oauth">
+                      <h3 className="px-2 text-[12px] font-medium text-ink-3">{translate('OAuth')}</h3>
                       <GlideMenu highlightClassName="inset-x-0 rounded-[8px] bg-hover-2" className="flex flex-col gap-px">
-                        {otherProviders.map(renderProviderRow)}
+                        {oauthProviders.map(renderProviderRow)}
+                      </GlideMenu>
+                    </section>
+                  ) : null}
+
+                  {apiProviders.length > 0 || customMatchesSearch ? (
+                    <section className="space-y-1" data-provider-group="api">
+                      <h3 className="px-2 text-[12px] font-medium text-ink-3">{translate('API')}</h3>
+                      <GlideMenu highlightClassName="inset-x-0 rounded-[8px] bg-hover-2" className="flex flex-col gap-px">
+                        {apiProviders.map(renderProviderRow)}
                         {customMatchesSearch ? (
                           <button
                             type="button"

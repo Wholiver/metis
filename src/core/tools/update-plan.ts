@@ -90,6 +90,7 @@ export function createUpdatePlanToolDefinition(options: UpdatePlanToolOptions = 
 			"Call update_plan when a step starts or finishes; do not wait until the whole task ends.",
 			"Use status pending, in_progress, or completed only. Mark exactly one current step in_progress.",
 			"Write each step and explanation in the same language as the user's latest message.",
+			"Never mark every step completed while a Performance run is still active; close the required performance_gate first.",
 		],
 		capabilities: { effect: "write", parallelSafe: false },
 		parameters: updatePlanSchema,
@@ -98,14 +99,14 @@ export function createUpdatePlanToolDefinition(options: UpdatePlanToolOptions = 
 			if (plan.filter((item) => item.status === "in_progress").length > 1) {
 				throw new Error("update_plan accepts at most one in_progress step.");
 			}
-			options.onUpdate?.({ explanation, plan: plan as WorkflowPlanStep[] });
-			const warning = plan.every((item) => item.status === "completed")
+			const unfinished = plan.every((item) => item.status === "completed")
 				? options.unfinishedRunWarning?.()
 				: undefined;
-			const text = warning
-				? `Plan state updated for this session.\n${warning}`
-				: "Plan state updated for this session.";
-			return { content: [{ type: "text", text }], details: undefined };
+			if (unfinished) {
+				throw new Error(unfinished);
+			}
+			options.onUpdate?.({ explanation, plan: plan as WorkflowPlanStep[] });
+			return { content: [{ type: "text", text: "Plan state updated for this session." }], details: undefined };
 		},
 	};
 }

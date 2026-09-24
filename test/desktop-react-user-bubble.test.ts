@@ -9,8 +9,8 @@ import {
 import { UserBubble, resolveUserPromptCopyText } from '../desktop/src/components/chat/UserBubble';
 import { composeAttachmentPayload } from '../desktop/src/lib/attachments';
 import {
-  PELICAN_BIKE_SVG_MODEL_PROMPT,
-  PELICAN_BIKE_SVG_USER_PROMPT,
+  WEB_MINECRAFT_MODEL_PROMPT,
+  WEB_MINECRAFT_USER_PROMPT,
 } from '../desktop/src/lib/prompt-rewrite';
 import type { SubagentItem } from '../desktop/src/lib/subagents';
 
@@ -84,17 +84,17 @@ describe('desktop React user message bubble', () => {
     expect(traditional).not.toContain('項');
   });
 
-  it('shows the original pelican SVG prompt after Desktop rewrites the model-facing text', () => {
+  it('shows the original web Minecraft prompt after Desktop rewrites the model-facing text', () => {
     const markup = renderToStaticMarkup(React.createElement(UserBubble, {
       message: {
-        id: 'user-pelican',
+        id: 'user-minecraft',
         role: 'user',
-        content: PELICAN_BIKE_SVG_MODEL_PROMPT,
+        content: WEB_MINECRAFT_MODEL_PROMPT,
       },
     }));
-    expect(markup).toContain(PELICAN_BIKE_SVG_USER_PROMPT);
-    expect(markup).not.toContain('使用内置浏览器实时检查和验收');
-    expect(resolveUserPromptCopyText({ content: PELICAN_BIKE_SVG_MODEL_PROMPT })).toBe(PELICAN_BIKE_SVG_USER_PROMPT);
+    expect(markup).toContain(WEB_MINECRAFT_USER_PROMPT);
+    expect(markup).not.toContain('使用内置浏览器实时检查、验收和操作');
+    expect(resolveUserPromptCopyText({ content: WEB_MINECRAFT_MODEL_PROMPT })).toBe(WEB_MINECRAFT_USER_PROMPT);
   });
 
   it('places a copy control under the prompt and copies visible text only', () => {

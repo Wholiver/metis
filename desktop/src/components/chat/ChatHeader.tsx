@@ -1,6 +1,7 @@
 import React from 'react';
 import { PanelLeftOpen, PanelRightOpen, Plus, Sparkles } from 'lucide-react';
 import { Agent, MemoryState } from '../../types';
+import { useI18n } from '../../i18n';
 
 export type ChatBreadcrumbSegment = {
   id: string;
@@ -34,6 +35,7 @@ export const ChatHeader = React.memo<ChatHeaderProps>(({
   breadcrumb,
   onNavigateBreadcrumb,
 }) => {
+  const { t } = useI18n();
   const isMemoryActive = memoryState?.phase === 'extracting' || memoryState?.phase === 'consolidating';
   const segments = breadcrumb && breadcrumb.length > 1 ? breadcrumb : null;
 
@@ -65,7 +67,7 @@ export const ChatHeader = React.memo<ChatHeaderProps>(({
           <nav
             className={`flex min-w-0 items-center gap-1.5 ${!isSidebarOpen ? 'ml-1.5' : ''}`}
             data-chat-breadcrumb=""
-            aria-label="Conversation path"
+            aria-label={t('conversationPath')}
           >
             {segments.map((segment, index) => {
               const isLast = index === segments.length - 1;

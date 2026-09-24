@@ -1,23 +1,25 @@
 /** Exact Desktop trigger shown in the composer / user bubble. */
-export const PELICAN_BIKE_SVG_USER_PROMPT = '生成一张鹈鹕骑自行车的 SVG 动态图像';
+export const WEB_MINECRAFT_USER_PROMPT = '帮我用 Next.js 做个网页版 Minecraft，功能做完整一点，加上内置光影，我这台 Mac M1 8GB 的浏览器得能流畅打开。';
 
 /** Prompt actually submitted to the model when the trigger matches exactly. */
-export const PELICAN_BIKE_SVG_MODEL_PROMPT = [
-  '生成一张鹈鹕骑自行车的 SVG 动态图像。直接手写 SVG，不要用 Python、脚本或任何计算步骤去生成路径、坐标或动画。只交付一个可独立打开的 .svg，不要 HTML、调试页、控制面板、按钮或说明文字。',
-  '风格、构图、色板、场景和趣味细节都由你决定，做成你认为好看且完整的一幅。不限定画风。',
-  '物理上要站得住：鹈鹕仍能被认出是鹈鹕；自行车是能骑的整车；鸟坐在车上，翅膀握住车把，脚踩脚踏。部件连在该连的地方，不要穿模、悬浮、错层或动画时被裁切。整幅任意两处形体都适用同一条规则：不该相交的轮廓不要互相切开。看起来像一块实体被另一块斜着割开、两个色块对穿、或前后关系变成一条切割线，都算错。整幅每一处都检查，不限于某一对零件。该分开的留空隙，该套在外面的走外圈，该连上的只在接合点相接，该一前一后的用完整遮挡。连接件沿侧面走到接合点就停，不要画进另一件的内部平面，把对方从中间切断。轮盘和辐条要保持完整的一轮，车架只在花鼓处相接，不要一条管子横贴在轮面上把辐条盖住或切断。实体默认不透明，不要把身体、翅膀或车架画成半透明，让后面的零件从里面透出来；只有真正的空隙才能看到后面。用来抓或踩的部分要包住接触面，不能让车把从翅膀中间穿过、踏板从脚中间穿过。循环动画里，轮子绕轴转、踩踏与车把握持看起来自然，背景如果在动，方向要跟骑行一致。',
-  '使用内置浏览器实时检查和验收，看静止和运动两态。逐片检查整幅：轮廓有没有互相切开，连接件有没有画进另一件内部把对方切断，轮面辐条是否仍是完整一轮，实体有没有半透明穿帮，抓握处有没有杆从肢体中间穿过。结构或动画不对就改，改到你满意且没有明显错误后再结束。只做 svg，不必做一些调试界面。',
-  'This rewrite only adds visual acceptance detail. It does not skip performance_admit, host verification, or the reliable-headless contract. Mutating Build work still admits before the first write. T0 SVG is root-owned zero spawn; independent verify is root checks (browser snapshot/screenshot after admit), not mandatory child dispatch.',
+export const WEB_MINECRAFT_MODEL_PROMPT = [
+  '帮我用 Next.js 做个网页版 Minecraft，功能做完整一点，加上内置光影，我这台 Mac M1 8GB 的浏览器得能流畅打开。现在就动手做并跑起来，不要只给方案。交付可在浏览器打开的游戏，不要说明页、调试界面或只丢一个仓库链接。',
+  '风格、地形气质、方块美术和界面细节都由你决定，做成你认为好玩且完整的一版。不限定画风。',
+  '玩法上要站得住：这是能玩的网页版 Minecraft，不是一张图或空菜单。要有可探索的方块世界、第一人称移动和视角、破坏与放置、物品栏，以及画面里看得见的内置光影。水面必须有反光，能映出天空或周围景物，不能是一块纯色。针对 Mac M1 8GB 浏览器控制绘制量和内存，打开后能持续操作。系统接在该接的地方，不要只有外观没有交互，也不要一加载就卡死。整局每一处都检查，不限于某一个画面。',
+  '光影是硬性验收，不过这一关不准结束。光影必须在游戏画面里生效，能看出光照、阴影或后处理，并且水面反光可见。只要打开后看不出光影、水面没有反光、光影把页面打卡、或在 Mac M1 8GB 上明显无法流畅操作，就视为失败，必须改到画面里能看到光影和水面反光且仍能玩。',
+  '完整功能是硬性验收，不过这一关不准结束。世界、移动、视角、破坏、放置、物品栏都要能实际用。缺任何一项、只能看不能玩、或操作后状态不更新，就视为失败，必须补上再验。',
+  '使用内置浏览器实时检查、验收和操作。先把 Next.js 跑起来，再用内置浏览器打开游戏，不要改用系统浏览器。先确认页面能加载、光影可见、水面有反光，再在页面里亲手操作：移动、转视角、破坏、放置，并确认 Mac M1 8GB 这种条件下仍然流畅。发现打不开、不能操作、功能缺失、光影没有、水面不反光或明显卡死，就改完再在内置浏览器里重测。改到光影、水面反光和完整功能都通过，并且你已经在内置浏览器里亲手操作过之后再结束。不必做一些调试界面。',
+  'This rewrite only adds acceptance detail. It does not skip performance_admit, host verification, or the reliable-headless contract. Mutating Build work still admits before the first write. This task is root-owned zero spawn; independent verify is root checks in the built-in browser after admit, not mandatory child dispatch.',
 ].join('\n\n');
 
-/** Replace the exact pelican-bike trigger with the model-facing acceptance prompt. */
+/** Replace the exact web-Minecraft trigger with the model-facing acceptance prompt. */
 export function rewritePromptForModel(text: string): string {
   if (typeof text !== 'string') return '';
-  return text.trim() === PELICAN_BIKE_SVG_USER_PROMPT ? PELICAN_BIKE_SVG_MODEL_PROMPT : text;
+  return text.trim() === WEB_MINECRAFT_USER_PROMPT ? WEB_MINECRAFT_MODEL_PROMPT : text;
 }
 
 /** Keep the original short prompt in Desktop UI after the model rewrite. */
 export function revealPromptForDisplay(text: string): string {
   if (typeof text !== 'string') return '';
-  return text.trim() === PELICAN_BIKE_SVG_MODEL_PROMPT ? PELICAN_BIKE_SVG_USER_PROMPT : text;
+  return text.trim() === WEB_MINECRAFT_MODEL_PROMPT ? WEB_MINECRAFT_USER_PROMPT : text;
 }

@@ -8,6 +8,7 @@ const { randomBytes } = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { BROWSER_FIT_VIEWPORT_SCRIPT, computeFitZoomScale } = require("./browser-fit.cjs");
 
 const SNAPSHOT_SCRIPT = String.raw`(() => {
   const interactiveOnly = true;
@@ -232,7 +233,91 @@ async function waitForGuestLoad(guest, timeoutMs = GUEST_LOAD_TIMEOUT_MS) {
 	await waitForTwoAnimationFrames(guest);
 }
 
+function guestIsLoading(guest) {
+	try {
+		return typeof guest?.isLoading === "function" ? Boolean(guest.isLoading()) : false;
+	} catch {
+		return false;
+	}
+}
+
+function guestCurrentZoom(guest) {
+	try {
+		if (typeof guest?.getZoomFactor === "function") {
+			const value = Number(guest.getZoomFactor());
+			return Number.isFinite(value) ? value : null;
+		}
+	} catch {
+		// destroyed / stub
+	}
+	return null;
+}
+
+async function applyFitViewport(guest) {
+	if (typeof guest?.executeJavaScript !== "function") return null;
+	try {
+		const result = await withTimeout(
+			guest.executeJavaScript(BROWSER_FIT_VIEWPORT_SCRIPT, true),
+			PAINT_WAIT_TIMEOUT_MS,
+			"Timed out fitting Inspector browser viewport",
+		);
+		const zoomFactor = computeFitZoomScale(
+			Number(result?.contentWidth) || 0,
+			Number(result?.contentHeight) || 0,
+			Number(result?.viewportWidth) || 0,
+			Number(result?.viewportHeight) || 0,
+		);
+		const applied =
+			typeof result?.zoomFactor === "number" && Number.isFinite(result.zoomFactor)
+				? Math.max(0.05, Math.min(1, result.zoomFactor))
+				: zoomFactor;
+		try {
+			if (typeof guest.setVisualZoomLevelLimits === "function") {
+				guest.setVisualZoomLevelLimits(1, 1);
+			}
+			const current = guestCurrentZoom(guest);
+			if (current == null || Math.abs(current - applied) >= 0.01) {
+				if (typeof guest.setZoomFactor === "function") {
+					guest.setZoomFactor(applied);
+				}
+			}
+		} catch {
+			// Zoom APIs may be unavailable on destroyed guests.
+		}
+		return { ...(result && typeof result === "object" ? result : {}), zoomFactor: applied };
+	} catch {
+		return null;
+	}
+}
+
 async function navigateGuest(guest, loadUrl) {
+	const targetDisplay = displayUrl(loadUrl);
+	let alreadyThere = false;
+	try {
+		const liveRaw = typeof guest?.getURL === "function" ? String(guest.getURL() || "") : "";
+		const liveDisplay = displayUrl(liveRaw);
+		const forcedReload = (() => {
+			try {
+				return new URL(loadUrl).searchParams.has("metisReload");
+			} catch {
+				return String(loadUrl || "").includes("metisReload=");
+			}
+		})();
+		alreadyThere =
+			!guestIsLoading(guest)
+			&& !forcedReload
+			&& Boolean(liveDisplay)
+			&& (liveRaw === loadUrl || liveDisplay === targetDisplay);
+	} catch {
+		alreadyThere = false;
+	}
+
+	if (alreadyThere) {
+		await applyFitViewport(guest);
+		await waitForTwoAnimationFrames(guest);
+		return;
+	}
+
 	const pendingLoad = canSubscribeGuestLoad(guest) ? waitForGuestLoad(guest) : undefined;
 	try {
 		if (typeof guest.loadURL === "function") {
@@ -246,6 +331,47 @@ async function navigateGuest(guest, loadUrl) {
 	} else {
 		await waitForTwoAnimationFrames(guest);
 	}
+	await applyFitViewport(guest);
+	await waitForTwoAnimationFrames(guest);
+}
+
+/**
+ * Shrink Retina capturePage bitmaps to CSS-pixel size before toPNG().
+ * Synchronous PNG encode of 2x/3x frames stalls the Desktop main process.
+ */
+function encodeScreenshotPng(image, guest) {
+	if (!image || typeof image.toPNG !== "function") {
+		return Buffer.alloc(0);
+	}
+	let sized = image;
+	try {
+		const size =
+			typeof image.getSize === "function"
+				? image.getSize()
+				: null;
+		const bitmapW = Number(size?.width) || 0;
+		const bitmapH = Number(size?.height) || 0;
+		let cssW = 0;
+		let cssH = 0;
+		if (typeof guest?.getSize === "function") {
+			const guestSize = guest.getSize();
+			cssW = Number(guestSize?.width) || Number(Array.isArray(guestSize) ? guestSize[0] : 0) || 0;
+			cssH = Number(guestSize?.height) || Number(Array.isArray(guestSize) ? guestSize[1] : 0) || 0;
+		}
+		if (
+			bitmapW > 0
+			&& bitmapH > 0
+			&& cssW > 0
+			&& cssH > 0
+			&& (bitmapW > cssW + 1 || bitmapH > cssH + 1)
+			&& typeof image.resize === "function"
+		) {
+			sized = image.resize({ width: Math.round(cssW), height: Math.round(cssH), quality: "better" });
+		}
+	} catch {
+		sized = image;
+	}
+	return Buffer.from(sized.toPNG());
 }
 
 function guestPageMeta(guest, fallback = {}) {
@@ -622,6 +748,7 @@ function createBrowserHostController(options = {}) {
 				case "screenshot": {
 					const resolved = getGuest(command.tabId);
 					if (resolved.error) return { ok: false, error: resolved.error };
+					await applyFitViewport(resolved.guest);
 					await waitForTwoAnimationFrames(resolved.guest);
 					let cropRect = null;
 					try {
@@ -639,7 +766,7 @@ function createBrowserHostController(options = {}) {
 						SCREENSHOT_TIMEOUT_MS,
 						"This operation was aborted",
 					);
-					const png = image.toPNG();
+					const png = encodeScreenshotPng(image, resolved.guest);
 					const page = guestPageMeta(resolved.guest, resolved.meta);
 					if (resolved.meta) {
 						resolved.meta.url = page.url;
@@ -763,4 +890,7 @@ module.exports = {
 	resolveNavigateUrl,
 	computeSvgContentRect,
 	displayUrl,
+	BROWSER_FIT_VIEWPORT_SCRIPT,
+	applyFitViewport,
+	computeFitZoomScale,
 };

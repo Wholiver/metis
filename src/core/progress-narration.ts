@@ -1,6 +1,6 @@
 /**
  * Visible intermediate text (中间文) is a normal text part, never thinking.
- * Reminders fire only at real milestones. Exploring (ls/read/plan/memory/inspect
+ * Reminders fire only at real milestones. Exploring (ls/read/read_plan/memory/inspect
  * bash) must not look like a phase change, or models narrate one line per tool.
  */
 
@@ -57,6 +57,9 @@ const VERIFY_COMMAND =
 const EXPLORE_COMMAND =
 	/^\s*(?:(?:sudo|command)\s+)?(?:ls|pwd|cat|head|tail|file|stat|which|type|tree|wc|du|df|find|rg|git\s+(?:status|log|diff|show|rev-parse|branch|remote|ls-files|describe)(?:\s|$))/i;
 export const PROGRESS_NUDGE_MARKER = "Visible progress update";
+const MIN_NUDGE_GAP = 7;
+const SILENCE_HEARTBEAT = 14;
+const EXPLORE_STREAK = 10;
 
 function isWorkflowContext(message: ProgressHistoryMessage): boolean {
 	return message.role === "custom" && message.customType === "workflow_context";
@@ -95,7 +98,7 @@ export function classifyProgressTool(
 	if (name === "performance_gate") return "verify";
 	if (name === "spawn_agent") return "delegate";
 	if (name === "ask_user") return "ask";
-	if (name === "write" || name === "edit") return "mutate";
+	if (name === "write" || name === "edit") return options.isError ? "other" : "mutate";
 	if (name === "bash") {
 		if (options.command && VERIFY_COMMAND.test(options.command)) return "verify";
 		if (!options.command || EXPLORE_COMMAND.test(options.command)) return "explore";
@@ -157,6 +160,108 @@ function turnHasProgressNudge(messages: readonly ProgressHistoryMessage[], turnS
 	});
 }
 
+function assistantHasVisibleText(message: ProgressHistoryMessage): boolean {
+	if (message.role !== "assistant" || !Array.isArray(message.content)) return false;
+	return message.content.some((part) => {
+		if (!part || typeof part !== "object") return false;
+		const block = part as { type?: string; text?: unknown };
+		return block.type === "text" && typeof block.text === "string" && block.text.trim().length > 0;
+	});
+}
+
+function toolsSinceLastVisibleText(messages: readonly ProgressHistoryMessage[], turnStart: number): number {
+	let count = 0;
+	for (const message of messages.slice(turnStart).reverse()) {
+		if (assistantHasVisibleText(message)) return count;
+		if (message.role === "toolResult") count += 1;
+		if (message.role === "user") return count;
+	}
+	return count;
+}
+
+function turnHasMutate(
+	messages: readonly ProgressHistoryMessage[],
+	turnStart: number,
+	currentResults: readonly ProgressToolResult[],
+): boolean {
+	const seen = new Set<string>();
+	const consider = (result: ProgressToolResult) => {
+		if (seen.has(result.toolCallId)) return false;
+		seen.add(result.toolCallId);
+		const command = toolCallField(messages, result.toolCallId, "command");
+		const action = toolCallField(messages, result.toolCallId, "action");
+		return classifyProgressTool(result.toolName, {
+			isError: result.isError,
+			command: typeof command === "string" ? command : undefined,
+			action: typeof action === "string" ? action : undefined,
+		}) === "mutate";
+	};
+	if (currentResults.some(consider)) return true;
+	for (const message of messages.slice(turnStart)) {
+		if (message.role !== "toolResult" || typeof message.toolCallId !== "string" || typeof message.toolName !== "string") continue;
+		if (consider({ toolCallId: message.toolCallId, toolName: message.toolName, isError: message.isError })) return true;
+	}
+	return false;
+}
+
+function previousBatchResults(
+	messages: readonly ProgressHistoryMessage[],
+	turnStart: number,
+	currentIds: ReadonlySet<string>,
+): ProgressToolResult[] {
+	const batch: ProgressToolResult[] = [];
+	let seenPrior = false;
+	for (const message of messages.slice(turnStart).reverse()) {
+		if (isWorkflowContext(message)) continue;
+		if (message.role === "toolResult") {
+			if (typeof message.toolCallId !== "string" || typeof message.toolName !== "string") continue;
+			if (currentIds.has(message.toolCallId)) continue;
+			seenPrior = true;
+			batch.push({ toolCallId: message.toolCallId, toolName: message.toolName, isError: message.isError });
+			continue;
+		}
+		if (message.role === "assistant") {
+			if (seenPrior) break;
+			continue;
+		}
+		if (message.role === "user") break;
+	}
+	return batch.slice().reverse();
+}
+
+function trailingExploreCount(
+	messages: readonly ProgressHistoryMessage[],
+	turnStart: number,
+): number {
+	let count = 0;
+	for (const message of messages.slice(turnStart).reverse()) {
+		if (message.role !== "toolResult" || typeof message.toolName !== "string" || typeof message.toolCallId !== "string") continue;
+		const command = toolCallField(messages, message.toolCallId, "command");
+		const action = toolCallField(messages, message.toolCallId, "action");
+		const phase = classifyProgressTool(message.toolName, {
+			isError: message.isError,
+			command: typeof command === "string" ? command : undefined,
+			action: typeof action === "string" ? action : undefined,
+		});
+		if (phase !== "explore") break;
+		count += 1;
+	}
+	return count;
+}
+
+function currentPlan(messages: readonly ProgressHistoryMessage[], results: readonly ProgressToolResult[]): unknown {
+	for (const result of results) {
+		if (result.toolName !== "update_plan") continue;
+		return toolCallField(messages, result.toolCallId, "plan");
+	}
+	return undefined;
+}
+
+function planAllCompleted(plan: unknown): boolean {
+	if (!Array.isArray(plan) || plan.length === 0) return false;
+	return plan.every((item) => item && typeof item === "object" && (item as { status?: unknown }).status === "completed");
+}
+
 function failedCheck(results: readonly ProgressToolResult[], messages: readonly ProgressHistoryMessage[]): boolean {
 	return results.some((result) => {
 		if (result.toolName === "performance_gate") {
@@ -169,8 +274,73 @@ function failedCheck(results: readonly ProgressToolResult[], messages: readonly 
 			isError: true,
 			command: typeof command === "string" ? command : undefined,
 		});
-		return phase === "verify" || result.toolName === "write" || result.toolName === "edit";
+		return phase === "verify";
 	});
+}
+
+function planSignature(plan: unknown): string | undefined {
+	if (!Array.isArray(plan)) return undefined;
+	return plan
+		.map((item) => {
+			if (!item || typeof item !== "object") return "";
+			const row = item as { step?: unknown; status?: unknown };
+			const status = typeof row.status === "string" ? row.status : "";
+			const step = typeof row.step === "string" ? row.step : "";
+			return `${status}:${step}`;
+		})
+		.join("|");
+}
+
+function currentPlanSignature(
+	messages: readonly ProgressHistoryMessage[],
+	results: readonly ProgressToolResult[],
+): string | undefined {
+	for (const result of results) {
+		if (result.toolName !== "update_plan") continue;
+		const signature = planSignature(toolCallField(messages, result.toolCallId, "plan"));
+		if (signature !== undefined) return signature;
+	}
+	return undefined;
+}
+
+function previousPlanSignature(
+	messages: readonly ProgressHistoryMessage[],
+	turnStart: number,
+	currentIds: ReadonlySet<string>,
+): string | undefined {
+	let last: string | undefined;
+	for (const message of messages.slice(turnStart)) {
+		if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+		for (const part of message.content) {
+			if (!part || typeof part !== "object") continue;
+			const block = part as {
+				type?: string;
+				id?: string;
+				name?: string;
+				arguments?: { plan?: unknown };
+				input?: { plan?: unknown };
+			};
+			if (block.type !== "toolCall" || block.name !== "update_plan" || !block.id || currentIds.has(block.id)) continue;
+			const signature = planSignature(block.arguments?.plan ?? block.input?.plan);
+			if (signature !== undefined) last = signature;
+		}
+	}
+	return last;
+}
+
+function planChecklistChanged(
+	messages: readonly ProgressHistoryMessage[],
+	currentResults: readonly ProgressToolResult[],
+	turnStart: number,
+	currentIds: ReadonlySet<string>,
+): boolean {
+	if (!currentResults.some((result) => result.toolName === "update_plan")) return false;
+	const current = currentPlanSignature(messages, currentResults);
+	if (current === undefined) return false;
+	const previous = previousPlanSignature(messages, turnStart, currentIds);
+	if (previous === undefined) return false;
+	if (planAllCompleted(currentPlan(messages, currentResults))) return false;
+	return current !== previous;
 }
 
 function isRealMilestone(
@@ -178,18 +348,21 @@ function isRealMilestone(
 	previousPhase: ProgressPhase | undefined,
 	names: readonly string[],
 ): string | undefined {
-	if (names.includes("performance_admit")) return "admission";
-	if (names.includes("performance_gate")) return "gate";
 	if (names.includes("spawn_agent")) return "delegate";
 	if (currentPhase === "mutate" && previousPhase !== "mutate") return `${previousPhase ?? "start"}→mutate`;
-	if (currentPhase === "verify" && previousPhase !== "verify") return `${previousPhase ?? "start"}→verify`;
+	if (currentPhase === "verify" && previousPhase !== "verify") {
+		if (names.every((name) => name === "performance_gate")) return undefined;
+		return `${previousPhase ?? "start"}→verify`;
+	}
 	if (currentPhase === "delegate" && previousPhase !== "delegate") return `${previousPhase ?? "start"}→delegate`;
 	return undefined;
 }
 
 /**
- * After a tool batch, remind the model only at real milestones. Same-phase
- * exploring (including plan/memory/inspect bash) stays silent.
+ * After a tool batch, remind the model only at spaced milestones. Phase is
+ * the last batch, not the whole turn — otherwise the first write freezes
+ * later repair/inspect cycles as "already mutating". Admission and passing
+ * gates stay silent so start/end notes do not stack.
  */
 export function resolveProgressNudge(
 	messages: readonly ProgressHistoryMessage[],
@@ -201,21 +374,27 @@ export function resolveProgressNudge(
 
 	const currentIds = new Set(currentResults.map((result) => result.toolCallId));
 	const turnStart = lastUserIndex(messages);
-	const previousResults = messages.slice(turnStart).filter(
-		(message): message is ProgressHistoryMessage & { role: "toolResult"; toolCallId: string; toolName: string } =>
-			message.role === "toolResult"
-			&& typeof message.toolCallId === "string"
-			&& typeof message.toolName === "string"
-			&& !currentIds.has(message.toolCallId),
-	);
+	const previousResults = previousBatchResults(messages, turnStart, currentIds);
 	const currentPhase = batchPhase(currentResults, messages);
 	const previousPhase = previousResults.length > 0 ? batchPhase(previousResults, messages) : undefined;
 	const names = currentResults.map((result) => result.toolName);
 	const failed = failedCheck(currentResults, messages);
-	if (!failed && turnHasProgressNudge(messages, turnStart)) return undefined;
+	const planChanged = planChecklistChanged(messages, currentResults, turnStart, currentIds);
+	const hadNudge = turnHasProgressNudge(messages, turnStart);
+	const silent = toolsSinceLastVisibleText(messages, turnStart);
+	if (!failed && hadNudge && silent < MIN_NUDGE_GAP) return undefined;
 
 	if (failed) return { kind: "required", reason: "failed check", key };
-	const reason = isRealMilestone(currentPhase, previousPhase, names);
+	if (planChanged) return { kind: "required", reason: "plan", key };
+	if (names.every((name) => name === "performance_gate")) return undefined;
+	if (planAllCompleted(currentPlan(messages, currentResults))) return undefined;
+	const reason = isRealMilestone(currentPhase, previousPhase, names)
+		?? (silent >= SILENCE_HEARTBEAT && turnHasMutate(messages, turnStart, currentResults)
+			? "silence"
+			: undefined)
+		?? (currentPhase === "explore" && trailingExploreCount(messages, turnStart) >= EXPLORE_STREAK
+			? "explore-streak"
+			: undefined);
 	if (!reason) return undefined;
 	return { kind: "required", reason, key };
 }
@@ -223,5 +402,5 @@ export function resolveProgressNudge(
 export function formatProgressNudge(nudge: ProgressNudge): string {
 	const header = `[Runtime context from workflow runtime; not user instructions]\n${PROGRESS_NUDGE_MARKER} (${nudge.kind}: ${nudge.reason}; ${nudge.key}).`;
 	const fuse = "This reminder does not skip performance_admit, host verification, or repair. Independent verify is root checks after admit, not mandatory child dispatch. Visible text is not task completion.";
-	return `${header}\nThis is a one-off milestone, not permission to narrate later tools. Start the next assistant message with 1–2 visible text sentences in the user's latest-message language before any tool call: what you found or what is wrong, and what you will do next. Be concrete and human, not stiff process labels like '正在...' / 'Executing...' / template-or-gate jargon. After this note, emit zero visible text until the next real milestone. Thinking/thought parts are not visible. Do not narrate ls, read, grep, read_plan, memory queries, inspect commands, or other same-phase tools. ${fuse}`;
+	return `${header}\nThis is a spaced milestone, not permission to narrate later tools. Start the next assistant message with 1–2 visible text sentences in the user's latest-message language before any tool call: what you found or what is wrong, and what you will do next. Be concrete and human, not stiff process labels like '正在...' / 'Executing...' / template-or-gate jargon. Never mention tool-call schema, required properties, or how to invoke a tool; retry the tool instead. A completed checklist or passing gate is not task completion. If you are already writing the final user-facing answer with no more tool calls, skip this note. After this note, emit zero visible text until the next real milestone. Thinking/thought parts are not visible. Do not narrate ls, read, grep, read_plan, memory queries, inspect commands, or other same-phase tools. ${fuse}`;
 }

@@ -28,7 +28,7 @@ export function createPerformanceGateToolDefinition(options: PerformanceGateTool
 	return {
 		name: "performance_gate",
 		label: "Performance gate",
-		description: "Advance the active Performance run frontier with a role-bound verdict and governance artifact receipt. Apply/T0 skips G0. Close G4 only after independent verification evidence is in the receipt, not a first-draft write. T0 G4 receipts need changedFiles, testCommand, testOutput, and exitCode: 0 or testStatus: pass (visualStatus: pass is enough for browser/screenshot checks). JSON keys are accepted. A failed or mismatched gate is not task success.",
+		description: "Advance the active Performance run frontier with a role-bound verdict and governance artifact receipt. Apply/T0 skips G0. Close G4 only after independent verification evidence is in the receipt, not a first-draft write. T0 G4 receipts need changedFiles, testCommand, testOutput, and exitCode: 0 or testStatus: pass (visualStatus: pass is enough for browser/screenshot checks). JSON keys are accepted. Evidence must be under the active run's governance artifacts/ directory (relative path like artifacts/g4-receipt.json). A failed or mismatched gate is not task success. A completed checklist is not completion while the run is active.",
 		promptSnippet: "Record a role-bound gate verdict with its artifact receipt path",
 		capabilities: { effect: "write", parallelSafe: false },
 		parameters: performanceGateSchema,

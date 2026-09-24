@@ -122,7 +122,7 @@ describe("AgentSession prompt characterization", () => {
 		} as never)).toBeUndefined();
 	});
 
-	it("warns when update_plan completes the checklist while a Performance run is active", async () => {
+	it("rejects update_plan when the checklist is completed while a Performance run is active", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 		harness.setResponses([
@@ -130,30 +130,14 @@ describe("AgentSession prompt characterization", () => {
 			fauxAssistantMessage(fauxToolCall("update_plan", {
 				plan: [{ step: "Repair parser", status: "completed" }],
 			}), { stopReason: "toolUse" }),
-			fauxAssistantMessage("checklist marked complete"),
+			fauxAssistantMessage("will close the gate next"),
 		]);
 		await harness.session.prompt("Repair the parser");
 		expect(harness.session.performanceRun?.status).toBe("active");
 		expect(JSON.stringify(harness.session.messages)).toContain("FALSE_COMPLETION_BLOCKED");
 	});
 
-	it("starts native Performance orchestration only after structured admission", async () => {
-		const harness = await createHarness();
-		harnesses.push(harness);
-		harness.setResponses(admittedResponses());
-
-		await harness.session.prompt("Repair the parser");
-
-		expect(harness.session.performanceRun).toMatchObject({ mission: "Repair the parser", frontier: "G0", status: "active", schemaVersion: 2 });
-		expect(getMessageText(visibleSessionMessages(harness)[0]!)).toBe("Repair the parser");
-		expect(harness.session.performanceRun?.governanceRoot).toContain("performance-runs");
-		const roadmap = join(harness.session.performanceRun!.governanceRoot, "ROADMAP.md");
-		expect(existsSync(roadmap)).toBe(true);
-		expect(readFileSync(roadmap, "utf8")).toContain("Mission pointer:");
-		expect(harness.session.workflowPlan).toBeUndefined();
-	});
-
-	it("keeps an active T0 apply run instead of accepting a false completion", async () => {
+	it("continues a stopped turn while a T0 Performance run is still active", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 		harness.setResponses([
@@ -175,16 +159,39 @@ describe("AgentSession prompt characterization", () => {
 				}],
 			}), { stopReason: "toolUse" }),
 			fauxAssistantMessage("All steps done, the SVG is delivered."),
+			fauxAssistantMessage("Still done without closing the gate."),
+			fauxAssistantMessage("Closing G4 with governance receipt next."),
 		]);
 
 		await harness.session.prompt("画一只鹈鹕骑自行车");
 
-		// First-draft text does not close the run. Host auto-continue is not implemented.
 		expect(harness.session.performanceRun).toMatchObject({ status: "active", frontier: "G4" });
 		expect(getAssistantTexts(harness)).toEqual(expect.arrayContaining([
 			"All steps done, the SVG is delivered.",
+			"Still done without closing the gate.",
+			"Closing G4 with governance receipt next.",
 		]));
+		const contextBlocks = harness.session.agent.state.messages.filter(
+			(message) => message.role === "custom" && message.customType === "workflow_context",
+		);
+		expect(contextBlocks.filter((message) => String(message.content).includes("FALSE_COMPLETION_BLOCKED")).length).toBe(2);
 		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("starts native Performance orchestration only after structured admission", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses(admittedResponses());
+
+		await harness.session.prompt("Repair the parser");
+
+		expect(harness.session.performanceRun).toMatchObject({ mission: "Repair the parser", frontier: "G0", status: "active", schemaVersion: 2 });
+		expect(getMessageText(visibleSessionMessages(harness)[0]!)).toBe("Repair the parser");
+		expect(harness.session.performanceRun?.governanceRoot).toContain("performance-runs");
+		const roadmap = join(harness.session.performanceRun!.governanceRoot, "ROADMAP.md");
+		expect(existsSync(roadmap)).toBe(true);
+		expect(readFileSync(roadmap, "utf8")).toContain("Mission pointer:");
+		expect(harness.session.workflowPlan).toBeUndefined();
 	});
 
 	it("honors and strips native direct invocation controls", async () => {
@@ -808,21 +815,48 @@ describe("AgentSession prompt characterization", () => {
 		expect(visibleSessionMessages(harness).some((message) => message.role === "custom")).toBe(false);
 	});
 
-	it("injects a required progress nudge after performance_admit", async () => {
+	it("injects a required progress nudge after the first write", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 		harness.setResponses([
 			fauxAssistantMessage(admissionCall(), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("write", { path: join(harness.tempDir, "README.md"), content: "hi" }), { stopReason: "toolUse" }),
 			fauxAssistantMessage("开始实现。"),
 		]);
 		await harness.session.prompt("Create a README");
 		const nudges = harness.session.agent.state.messages.filter(
 			(message) => message.role === "custom" && message.customType === "workflow_context",
 		);
-		expect(nudges.some((message) => typeof message.content === "string" && message.content.includes("required: admission"))).toBe(true);
+		expect(nudges.some((message) => typeof message.content === "string" && message.content.includes("required: admission"))).toBe(false);
+		expect(nudges.some((message) => typeof message.content === "string" && message.content.includes("→mutate"))).toBe(true);
 	});
 
-	it("includes the admission nudge in the next provider convertToLlm payload", async () => {
+	it("injects a required progress nudge after update_plan checks off a step", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("update_plan", {
+				plan: [
+					{ step: "Inspect repo", status: "in_progress" },
+					{ step: "Write README", status: "pending" },
+				],
+			}), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("update_plan", {
+				plan: [
+					{ step: "Inspect repo", status: "completed" },
+					{ step: "Write README", status: "in_progress" },
+				],
+			}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("继续改 README。"),
+		]);
+		await harness.session.prompt("Create a README");
+		const nudges = harness.session.agent.state.messages.filter(
+			(message) => message.role === "custom" && message.customType === "workflow_context",
+		);
+		expect(nudges.some((message) => typeof message.content === "string" && message.content.includes("required: plan"))).toBe(true);
+	});
+
+	it("includes the first-write nudge in the next provider convertToLlm payload", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 		const payloads: string[] = [];
@@ -834,13 +868,15 @@ describe("AgentSession prompt characterization", () => {
 		};
 		harness.setResponses([
 			fauxAssistantMessage(admissionCall(), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("write", { path: join(harness.tempDir, "README.md"), content: "hi" }), { stopReason: "toolUse" }),
 			fauxAssistantMessage("开始实现。"),
 		]);
 		await harness.session.prompt("Create a README");
-		expect(payloads.length).toBeGreaterThanOrEqual(2);
+		expect(payloads.length).toBeGreaterThanOrEqual(3);
 		expect(payloads[0]).not.toContain("Visible progress update");
-		expect(payloads[1]).toContain("Visible progress update");
-		expect(payloads[1]).toContain("required: admission");
-		expect(payloads[1]).toContain("one-off milestone");
+		expect(payloads[1]).not.toContain("Visible progress update");
+		expect(payloads[2]).toContain("Visible progress update");
+		expect(payloads[2]).toContain("→mutate");
+		expect(payloads[2]).toContain("spaced milestone");
 	});
 });

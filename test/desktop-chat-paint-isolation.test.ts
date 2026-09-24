@@ -73,6 +73,7 @@ describe('desktop chat paint and scroll isolation', () => {
         { from: join(desktop, 'src/index.css') },
       );
       await writeFile(join(directory, 'fixture.css'), css);
+      // Streamdown styles still ship blurIn keyframes; live Desktop stream disables them.
       expect(css).toContain('@keyframes sd-blurIn');
       expect(css).toContain('[data-sd-animate]');
       await writeFile(
@@ -84,7 +85,7 @@ describe('desktop chat paint and scroll isolation', () => {
             <div data-message-scroll class="min-h-0 flex-1 overflow-y-auto">
               <div data-message-lane>
                 <div class="markdown-content"><p data-chat-copy>Streaming body copy that should wrap cheaply.</p>
-                <span data-sd-animate data-stream-token style="--sd-animation: sd-blurIn; --sd-duration: 220ms; --sd-easing: ease-out;">word</span>
+                <span data-stream-token>word</span>
                 </div>
                 <div class="cot-text">Work item</div>
                 <div data-user-bubble class="text-pretty">User bubble</div>
@@ -143,7 +144,7 @@ describe('desktop chat paint and scroll isolation', () => {
                   userBubble: { textWrap: getComputedStyle(userBubble).textWrap },
                   streamToken: {
                     animationName: getComputedStyle(streamToken).animationName,
-                    animationDuration: getComputedStyle(streamToken).animationDuration,
+                    filter: getComputedStyle(streamToken).filter,
                   },
                   trigger: styleOf('[data-component="tool-trigger"]'),
                   shine: styleOf('[data-shine-border]'),
@@ -185,8 +186,9 @@ describe('desktop chat paint and scroll isolation', () => {
       expect(evidence.chatCopy.textWrap).toBe('wrap');
       expect(evidence.userBubble.textWrap).toBe('wrap');
       expect(evidence.outsideCopy.textWrap).toBe('pretty');
-      expect(evidence.streamToken.animationName).toMatch(/sd-blurIn/);
-      expect(evidence.streamToken.animationDuration).toMatch(/0\.22s|220ms/);
+      // Live stream tokens are plain text — no per-word blurIn compositor layers.
+      expect(evidence.streamToken.animationName).toMatch(/none|^$/);
+      expect(evidence.streamToken.filter).toMatch(/none|^$/);
       expect(evidence.trigger.contentVisibility).not.toBe('auto');
       expect(evidence.shine.contain).toMatch(/paint/);
       expect(evidence.fade.contain).toMatch(/paint/);

@@ -153,6 +153,9 @@ const AssistantWorkComponent: React.FC<AssistantWorkProps> = ({
     && lastCommandGroup
     && lastCommandGroup.parts.some((part) => !isToolCallFinished(part)),
   );
+  // Only the trailing narration segment is still growing; settled text keeps LRU cache.
+  const lastRenderItem = renderItems[renderItems.length - 1];
+  const liveTextId = streaming && lastRenderItem?.type === 'text' ? lastRenderItem.id : null;
 
   return (
     <section className="cot-container" data-assistant-work>
@@ -186,7 +189,11 @@ const AssistantWorkComponent: React.FC<AssistantWorkProps> = ({
                 );
               } else {
                 contentNode = (
-                  <MarkdownContent markdown={item.text} className="cot-text" />
+                  <MarkdownContent
+                    markdown={item.text}
+                    streaming={liveTextId === item.id}
+                    className="cot-text"
+                  />
                 );
               }
               return (

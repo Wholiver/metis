@@ -138,6 +138,11 @@ describe('desktop React settings', () => {
     expect(modal).toContain('POPULAR_PROVIDER_IDS');
     expect(modal).toContain("'siliconflow-cn'");
     expect(modal).toContain("'siliconflow'");
+    expect(modal.indexOf("'siliconflow-cn'")).toBeLessThan(modal.indexOf("'siliconflow'"));
+    expect(modal).toContain('data-provider-group="popular"');
+    expect(modal).toContain('data-provider-group="oauth"');
+    expect(modal).toContain('data-provider-group="api"');
+    expect(modal).not.toContain("translate('Other')");
     expect(settings).toContain('providers={props.providerCatalog}');
     expect(settings).toContain('knownModels={props.models}');
     expect(settings).toContain('onOAuthLogin={handleOAuthLogin}');

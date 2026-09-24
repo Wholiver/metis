@@ -331,7 +331,7 @@ describe("server mode", () => {
 			expect.objectContaining({ id: "github-copilot", authMethods: ["api_key", "oauth"] }),
 			expect.objectContaining({
 				id: "siliconflow-cn",
-				name: "SiliconFlow (China)",
+				name: "SiliconFlow (CN)",
 				baseUrl: "https://api.siliconflow.cn/v1",
 				authMethods: ["api_key"],
 			}),

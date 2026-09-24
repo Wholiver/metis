@@ -62,6 +62,13 @@ describe('desktop view-switch jank', () => {
     expect(i18n).toContain('window.requestAnimationFrame');
     expect(i18n).toContain('observer.disconnect()');
     expect(i18n).not.toContain('characterData: true');
+    // Streaming markdown must not trigger full-document catalog walks.
+    expect(i18n).toContain('mutationTouchesLocalizableDom');
+    expect(i18n).toContain('translateMutations');
+    expect(i18n).toContain('translateDocument(preference)');
+    expect(i18n).toContain('NodeFilter.FILTER_REJECT');
+    expect(i18n).toContain('I18N_SKIP_SELECTOR');
+    expect(i18n).toContain('reverseEnglishCache');
   });
 
   it('does not flash settings loading on reopen once data is cached', () => {

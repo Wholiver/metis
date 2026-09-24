@@ -1137,7 +1137,7 @@ describe("ModelRegistry", () => {
 			expect(registry.getProviderDisplayName("github-copilot")).toBe("GitHub Copilot");
 			expect(registry.getProviderDisplayName("zai")).toBe("ZAI Coding Plan (Global)");
 			expect(registry.getProviderDisplayName("siliconflow")).toBe("SiliconFlow");
-			expect(registry.getProviderDisplayName("siliconflow-cn")).toBe("SiliconFlow (China)");
+			expect(registry.getProviderDisplayName("siliconflow-cn")).toBe("SiliconFlow (CN)");
 			expect(registry.getProviderDisplayName("unknown-provider")).toBe("unknown-provider");
 
 			registry.registerProvider("named-provider", {

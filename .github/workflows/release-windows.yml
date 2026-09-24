@@ -58,15 +58,12 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path windows-artifacts | Out-Null
           Copy-Item desktop/release/*.zip windows-artifacts/
-          Copy-Item desktop/release/*.sha256 windows-artifacts/
 
       - name: Upload portable Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: metis-windows-x64-portable
-          path: |
-            windows-artifacts/*.zip
-            windows-artifacts/*.sha256
+          path: windows-artifacts/*.zip
           if-no-files-found: error
           retention-days: 7
 

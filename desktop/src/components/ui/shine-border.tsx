@@ -52,7 +52,9 @@ export function ShineBorder({
         ...style,
       } as React.CSSProperties}
       className={cn(
-        'pointer-events-none absolute inset-0 z-20 size-full rounded-[inherit]',
+        // z-0: sit behind the opaque browser content frame so the animated
+        // ring never composites over the native <webview>.
+        'pointer-events-none absolute inset-0 z-0 size-full rounded-[inherit]',
         className,
       )}
       {...props}

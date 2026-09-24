@@ -28,6 +28,8 @@ const legitimateCognates = new Set([
 	"optional",
 	"onboardingProviderTabApiKey",
 	"onboardingProviderTabOAuth",
+	"oauthProviders",
+	"apiProviders",
 	"onboardingSetting",
 	"projectColorShort",
 	"projectNameShort",

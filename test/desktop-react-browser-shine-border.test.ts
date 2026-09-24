@@ -86,6 +86,11 @@ describe('desktop Inspector shine border while the model controls the browser', 
     expect(panel).toContain('<ShineBorder');
     expect(panel).toContain('modelControlled ?');
     expect(panel).toContain('p-[2px]');
+    expect(panel).toContain('data-browser-content-frame');
+    expect(panel).toContain('contain: \'layout paint\'');
+    expect(panel).toContain('relative z-10');
+    expect(shine).toContain('z-0');
+    expect(shine).not.toContain('z-20');
 
     expect(shine).toContain('data-shine-border=""');
     expect(shine).toContain('maskComposite');

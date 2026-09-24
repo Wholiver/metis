@@ -5,7 +5,7 @@
  * catalogs are not interchangeable:
  *
  * - siliconflow: international OpenAI-compatible API (api.siliconflow.com)
- * - siliconflow-cn: China OpenAI-compatible API (api.siliconflow.cn)
+ * - siliconflow-cn: CN OpenAI-compatible API (api.siliconflow.cn)
  *
  * Transport uses Metis's OpenAI Chat Completions client (the `openai` SDK).
  */
@@ -118,7 +118,7 @@ export const BUNDLED_SILICONFLOW_PROVIDERS: readonly BundledSiliconFlowProvider[
 	},
 	{
 		id: SILICONFLOW_CN_PROVIDER_ID,
-		name: "SiliconFlow (China)",
+		name: "SiliconFlow (CN)",
 		baseUrl: SILICONFLOW_CN_BASE_URL,
 		apiKeyEnv: SILICONFLOW_CN_API_KEY_ENV,
 		apiKey: `$${SILICONFLOW_CN_API_KEY_ENV}`,

@@ -193,7 +193,7 @@ describe("desktop browser-host controller", () => {
 		}
 	});
 
-	it("locks Inspector webview zoom in the browser panel", () => {
+	it("locks Inspector webview zoom gestures and applies fit zoom in the browser panel", () => {
 		const { readFileSync } = require("node:fs") as typeof import("node:fs");
 		const { resolve } = require("node:path") as typeof import("node:path");
 		const panel = readFileSync(
@@ -201,8 +201,209 @@ describe("desktop browser-host controller", () => {
 			"utf8",
 		);
 		expect(panel).toContain("setVisualZoomLevelLimits?.(1, 1)");
+		expect(panel).toContain("setZoomFactor?.(next)");
+		expect(panel).toContain("getZoomFactor");
+		expect(panel).toContain("computeFitZoomScale");
+		expect(panel).toContain("ResizeObserver");
+		expect(panel).toContain("Math.abs(prev.width - width) < 2");
+		expect(panel).toContain("Math.abs(current - next) < 0.01");
+		expect(panel).toContain("initialSrc");
+		expect(panel).toContain("memo(InspectorBrowserPanelInner");
 		expect(panel).toContain('data-browser-viewport=""');
+		expect(panel).toContain("data-browser-fit-viewport");
+		expect(panel).toContain("BROWSER_FIT_VIEWPORT_SCRIPT");
 		expect(panel).toContain("loadURL('about:blank')");
+		// Must not force zoom back to 1 after fitting oversized media.
+		expect(panel).not.toContain("setZoomFactor?.(1)");
+		// Controlled src rebinds on every address-bar update and reloads the guest.
+		expect(panel).not.toContain("src={currentUrl");
+	});
+
+	it("keeps browser-fit viewport script in sync across host and renderer", () => {
+		const { readFileSync } = require("node:fs") as typeof import("node:fs");
+		const { resolve } = require("node:path") as typeof import("node:path");
+		const {
+			BROWSER_FIT_VIEWPORT_SCRIPT: fromHost,
+			computeFitZoomScale,
+		} = require("../desktop/browser-fit.cjs") as {
+			BROWSER_FIT_VIEWPORT_SCRIPT: string;
+			computeFitZoomScale: (
+				contentWidth: number,
+				contentHeight: number,
+				viewportWidth: number,
+				viewportHeight: number,
+			) => number;
+		};
+		const ts = readFileSync(resolve(process.cwd(), "desktop/src/lib/browser-fit.ts"), "utf8");
+		const host = readFileSync(resolve(process.cwd(), "desktop/browser-host.cjs"), "utf8");
+		const build = readFileSync(resolve(process.cwd(), "desktop/scripts/build.mjs"), "utf8");
+		const markers = [
+			"metis-browser-fit-viewport",
+			"svg:root",
+			"max-width: 100vw",
+			"max-height: 100vh",
+			"preserveAspectRatio",
+			"xMidYMid meet",
+			"object-fit: contain",
+			"not-media-document",
+			"zoomFactor",
+			"waitFrames",
+		];
+		for (const marker of markers) {
+			expect(fromHost).toContain(marker);
+			expect(ts).toContain(marker);
+		}
+		expect(computeFitZoomScale(2400, 1600, 400, 300)).toBeCloseTo(0.1666, 3);
+		expect(computeFitZoomScale(400, 300, 400, 300)).toBe(1);
+		expect(host).toContain('require("./browser-fit.cjs")');
+		expect(host).toContain("applyFitViewport");
+		expect(host).toContain("setZoomFactor");
+		expect(host).toContain("encodeScreenshotPng");
+		expect(host).toContain("alreadyThere");
+		expect(build).toContain('"browser-fit.cjs"');
+	});
+
+	it("skips redundant loadURL and setZoomFactor when guest is already fitted", async () => {
+		const send = vi.fn();
+		const controller = createBrowserHostController({
+			token: "tok",
+			getMainWindow: () => ({ webContents: { send } }),
+		});
+		controllers.push(controller);
+		await controller.start();
+
+		let currentUrl = "https://example.com/";
+		const loadURL = vi.fn(async (next: string) => {
+			currentUrl = next;
+		});
+		const setZoomFactor = vi.fn();
+		const getZoomFactor = vi.fn(() => 0.25);
+		const guest = Object.assign(new EventEmitter(), {
+			id: 88,
+			isDestroyed: () => false,
+			isLoading: () => false,
+			getURL: () => currentUrl,
+			getTitle: () => "Example",
+			loadURL,
+			getZoomFactor,
+			setZoomFactor,
+			setVisualZoomLevelLimits: vi.fn(),
+			executeJavaScript: vi.fn(async (script: string) => {
+				if (script.includes("metis-browser-fit-viewport")) {
+					return {
+						fitted: true,
+						zoomFactor: 0.25,
+						contentWidth: 1600,
+						contentHeight: 1200,
+						viewportWidth: 400,
+						viewportHeight: 300,
+					};
+				}
+				if (script.includes("requestAnimationFrame")) return true;
+				return null;
+			}),
+			capturePage: vi.fn(async () => ({
+				getSize: () => ({ width: 800, height: 600 }),
+				resize: vi.fn(function resize(this: { toPNG: () => Buffer }) {
+					return { toPNG: () => Buffer.from("small-png") };
+				}),
+				toPNG: () => Buffer.from("big-png"),
+			})),
+			getSize: () => ({ width: 400, height: 300 }),
+		});
+		controller.registerGuest(guest);
+		expect(controller.bindTab("browser-skip", 88, { url: currentUrl, title: "Example" }).ok).toBe(true);
+
+		const navigated = await controller.handleCommand({
+			op: "navigate",
+			url: "https://example.com/",
+		});
+		expect(navigated.ok).toBe(true);
+		expect(loadURL).not.toHaveBeenCalled();
+		expect(setZoomFactor).not.toHaveBeenCalled();
+
+		const shot = await controller.handleCommand({ op: "screenshot" });
+		expect(shot.ok).toBe(true);
+		expect(shot.screenshotBase64).toBe(Buffer.from("small-png").toString("base64"));
+		expect(setZoomFactor).not.toHaveBeenCalled();
+	});
+
+	it("applies fit-viewport script after navigate and before screenshot", async () => {
+		const send = vi.fn();
+		const controller = createBrowserHostController({
+			token: "tok",
+			getMainWindow: () => ({ webContents: { send } }),
+		});
+		controllers.push(controller);
+		await controller.start();
+
+		const dir = mkdtempSync(join(tmpdir(), "metis-browser-fit-"));
+		try {
+			const svgPath = join(dir, "wide.svg");
+			writeFileSync(
+				svgPath,
+				"<svg xmlns='http://www.w3.org/2000/svg' width='2400' height='1600'></svg>",
+			);
+			const fileUrl = pathToFileURL(svgPath).href;
+			let currentUrl = "about:blank";
+			const scripts: string[] = [];
+			const setZoomFactor = vi.fn();
+			let guest: EventEmitter & {
+				loadURL: ReturnType<typeof vi.fn>;
+				executeJavaScript: ReturnType<typeof vi.fn>;
+				capturePage: ReturnType<typeof vi.fn>;
+				setZoomFactor: ReturnType<typeof vi.fn>;
+			};
+			guest = Object.assign(new EventEmitter(), {
+				id: 77,
+				isDestroyed: () => false,
+				getURL: () => currentUrl,
+				getTitle: () => "wide.svg",
+				loadURL: vi.fn(async (next: string) => {
+					currentUrl = next;
+					queueMicrotask(() => guest.emit("did-finish-load"));
+				}),
+				executeJavaScript: vi.fn(async (script: string) => {
+					scripts.push(script);
+					if (script.includes("metis-browser-fit-viewport")) {
+						return {
+							fitted: true,
+							tag: "svg",
+							hasViewBox: true,
+							zoomFactor: 0.25,
+							contentWidth: 1600,
+							contentHeight: 1200,
+							viewportWidth: 400,
+							viewportHeight: 300,
+						};
+					}
+					if (script.includes("requestAnimationFrame")) return true;
+					if (script.includes("querySelector('svg')")) {
+						return { x: 0, y: 0, width: 400, height: 300, viewBox: { width: 2400, height: 1600 } };
+					}
+					return null;
+				}),
+				setZoomFactor,
+				setVisualZoomLevelLimits: vi.fn(),
+				capturePage: vi.fn(async () => ({ toPNG: () => Buffer.from("png") })),
+			}) as typeof guest;
+			controller.registerGuest(guest);
+			expect(controller.bindTab("browser-fit", 77, { url: "about:blank", title: "Browser" }).ok).toBe(true);
+
+			const navigated = await controller.handleCommand({ op: "navigate", url: fileUrl });
+			expect(navigated.ok).toBe(true);
+			expect(scripts.some((script) => script.includes("metis-browser-fit-viewport"))).toBe(true);
+			expect(setZoomFactor).toHaveBeenCalledWith(0.25);
+
+			scripts.length = 0;
+			setZoomFactor.mockClear();
+			const shot = await controller.handleCommand({ op: "screenshot" });
+			expect(shot.ok).toBe(true);
+			expect(scripts.some((script) => script.includes("metis-browser-fit-viewport"))).toBe(true);
+			expect(setZoomFactor).toHaveBeenCalledWith(0.25);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it("crops SVG viewBox letterboxing inside a taller webview", () => {
@@ -255,7 +456,8 @@ describe("desktop browser-host controller", () => {
 
 			const blank = await controller.handleCommand({ op: "navigate", url: "about:blank" });
 			expect(blank.ok).toBe(true);
-			expect(guest.loadURL).toHaveBeenCalledWith("about:blank");
+			// Already on about:blank — skip a redundant loadURL, still return tab meta.
+			expect(guest.loadURL).not.toHaveBeenCalled();
 			expect(blank.title).toBe("Browser");
 
 			const first = await controller.handleCommand({ op: "navigate", url: fileUrl });
@@ -269,7 +471,8 @@ describe("desktop browser-host controller", () => {
 
 			const again = await controller.handleCommand({ op: "navigate", url: fileUrl });
 			expect(again.ok).toBe(true);
-			expect(guest.loadURL.mock.calls.length).toBeGreaterThanOrEqual(3);
+			// file:// always gets a fresh metisReload token so the guest reloads.
+			expect(guest.loadURL.mock.calls.length).toBeGreaterThanOrEqual(2);
 			expect(String(guest.loadURL.mock.calls.at(-1)?.[0])).toContain("metisReload=");
 		} finally {
 			rmSync(dir, { recursive: true, force: true });

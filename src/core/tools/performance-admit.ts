@@ -61,7 +61,7 @@ function routeProtocol(state: PerformanceRunState): string {
 	const coerced = state.admission?.tierCoercedFrom
 		? ` Coerced from ${state.admission.tierCoercedFrom} to T0 for single-lane artifact apply/docs/polish.`
 		: "";
-	return `route protocol: ${route}.${coerced} Canonical state: ${state.governanceRoot}/run.json; ROADMAP.md is a deterministic projection.`;
+	return `route protocol: ${route}.${coerced} Canonical state: ${state.governanceRoot}/run.json; ROADMAP.md is a deterministic projection. Write gate receipts under ${state.governanceRoot}/artifacts/ and pass evidence as artifacts/<name>.json|.md. A completed checklist is not completion while the run is active.`;
 }
 
 /** Deep admission seam: validates route once, then returns compact current-turn context. */

@@ -215,4 +215,28 @@ describe('desktop inspector browser tabs', () => {
     expect(browserTab?.browserUrl).toBe('https://docs.metis.sh');
     expect(browserTab?.browserTitle).toBe('Metis Docs');
   });
+
+  it('update returns the same state when browser metadata is unchanged', () => {
+    let state = reduce(createInspectorTabsState(), [
+      { type: 'open', kind: 'browser', browserUrl: 'https://example.com', browserTitle: 'Example' },
+    ]);
+    const before = state;
+    state = inspectorTabsReducer(state, {
+      type: 'update',
+      tabId: 'browser-2',
+      patch: {
+        browserUrl: 'https://example.com',
+        browserTitle: 'Example',
+      },
+    });
+    expect(state).toBe(before);
+
+    state = inspectorTabsReducer(state, {
+      type: 'update',
+      tabId: 'browser-2',
+      patch: { browserTitle: 'Changed' },
+    });
+    expect(state).not.toBe(before);
+    expect(state.tabs.find((tab) => tab.id === 'browser-2')?.browserTitle).toBe('Changed');
+  });
 });

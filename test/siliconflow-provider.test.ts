@@ -74,7 +74,7 @@ describe("bundled SiliconFlow providers", () => {
 
 	test("exposes both providers to API-key login", () => {
 		expect(BUILT_IN_PROVIDER_DISPLAY_NAMES[SILICONFLOW_PROVIDER_ID]).toBe("SiliconFlow");
-		expect(BUILT_IN_PROVIDER_DISPLAY_NAMES[SILICONFLOW_CN_PROVIDER_ID]).toBe("SiliconFlow (China)");
+		expect(BUILT_IN_PROVIDER_DISPLAY_NAMES[SILICONFLOW_CN_PROVIDER_ID]).toBe("SiliconFlow (CN)");
 		expect(isApiKeyLoginProvider(SILICONFLOW_PROVIDER_ID, new Set())).toBe(true);
 		expect(isApiKeyLoginProvider(SILICONFLOW_CN_PROVIDER_ID, new Set())).toBe(true);
 	});

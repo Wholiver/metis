@@ -224,8 +224,13 @@ export function inspectorTabsReducer(
         ? {}
         : { scrollTop: Math.max(0, Number.isFinite(action.patch.scrollTop) ? action.patch.scrollTop : 0) }),
     };
+    const next = { ...current, ...patch };
+    const unchanged = (Object.keys(patch) as Array<keyof InspectorTab>).every(
+      (key) => next[key] === current[key],
+    );
+    if (unchanged) return state;
     const tabs = [...state.tabs];
-    tabs[index] = { ...current, ...patch };
+    tabs[index] = next;
     return { ...state, tabs };
   }
 

@@ -1,4 +1,5 @@
 import React, {
+  memo,
   useCallback,
   useEffect,
   useRef,
@@ -20,6 +21,7 @@ import {
   formatDisplayUrl,
   getFallbackBrowserTitle,
 } from '../../lib/browser-url';
+import { BROWSER_FIT_VIEWPORT_SCRIPT, computeFitZoomScale } from '../../lib/browser-fit';
 import { useI18n } from '../../i18n';
 import { BROWSER_SHINE_COLORS, ShineBorder } from '../ui/shine-border';
 
@@ -36,6 +38,9 @@ interface WebviewElement extends HTMLElement {
   getURL: () => string;
   getTitle: () => string;
   getWebContentsId?: () => number;
+  executeJavaScript?: (code: string, userGesture?: boolean) => Promise<unknown>;
+  insertCSS?: (css: string) => Promise<string>;
+  getZoomFactor?: () => number;
   setZoomFactor?: (factor: number) => void;
   setZoomLevel?: (level: number) => void;
   setVisualZoomLevelLimits?: (minimumLevel: number, maximumLevel: number) => void;
@@ -63,16 +68,31 @@ interface InspectorBrowserPanelProps {
   ) => void;
 }
 
-export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
+function urlsMatch(a: string | undefined, b: string | undefined): boolean {
+  return formatDisplayUrl(a || '') === formatDisplayUrl(b || '');
+}
+
+function InspectorBrowserPanelInner({
   tab,
   modelControlled = false,
   onUpdateTab,
-}) => {
+}: InspectorBrowserPanelProps) {
   const { t } = useI18n();
   const webviewRef = useRef<WebviewElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const onUpdateTabRef = useRef(onUpdateTab);
+  const tabMetaRef = useRef({ id: tab.id, browserTitle: tab.browserTitle, browserUrl: tab.browserUrl });
+  const lastReportedUrlRef = useRef<string>(tab.browserUrl || 'about:blank');
+  const appliedZoomRef = useRef<number>(1);
+  const lastViewportSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  onUpdateTabRef.current = onUpdateTab;
+  tabMetaRef.current = { id: tab.id, browserTitle: tab.browserTitle, browserUrl: tab.browserUrl };
 
   const currentUrl = tab.browserUrl || '';
+  // Mount-once src — never rebind React `src` when the address bar / host updates URL.
+  const [initialSrc] = useState(() => currentUrl || 'about:blank');
   const [addressInput, setAddressInput] = useState<string>(formatDisplayUrl(currentUrl));
   const [isInputFocused, setIsInputFocused] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
@@ -83,23 +103,50 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
   const isLoading = Boolean(tab.browserIsLoading);
   const isBlankUrl = !currentUrl || currentUrl === 'about:blank';
 
-  // Sync input value when currentUrl changes and user is not actively typing
   useEffect(() => {
     if (!isInputFocused) {
       setAddressInput(formatDisplayUrl(currentUrl));
     }
   }, [currentUrl, isInputFocused]);
 
+  // Parent-driven navigation (markdown open-browser / ensure-tab UI). Host may also
+  // loadURL; skip when the guest is already on the display-normalized target.
+  useEffect(() => {
+    const target = currentUrl || 'about:blank';
+    if (urlsMatch(lastReportedUrlRef.current, target)) return;
+    const webview = webviewRef.current;
+    if (!webview) return;
+    try {
+      const live = webview.getURL?.() || '';
+      if (urlsMatch(live, target)) {
+        lastReportedUrlRef.current = target;
+        return;
+      }
+      if (typeof webview.isLoading === 'function' && webview.isLoading()) {
+        return;
+      }
+    } catch {
+      // Guest not ready yet.
+    }
+    setLoadError(null);
+    try {
+      void webview.loadURL(target);
+    } catch {
+      webview.src = target;
+    }
+  }, [currentUrl]);
+
   const navigateTo = useCallback((rawTarget: string) => {
     const url = normalizeBrowserInput(rawTarget);
     if (!url || url === 'about:blank') {
-      onUpdateTab(tab.id, {
+      onUpdateTabRef.current(tab.id, {
         browserUrl: 'about:blank',
         browserTitle: t('browser') || 'Browser',
         browserCanGoBack: false,
         browserCanGoForward: false,
         browserIsLoading: true,
       });
+      lastReportedUrlRef.current = 'about:blank';
       setLoadError(null);
       if (webviewRef.current) {
         try {
@@ -112,7 +159,8 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
     }
 
     setLoadError(null);
-    onUpdateTab(tab.id, {
+    lastReportedUrlRef.current = url;
+    onUpdateTabRef.current(tab.id, {
       browserUrl: url,
       browserTitle: getFallbackBrowserTitle(url),
       browserIsLoading: true,
@@ -125,7 +173,7 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
         webviewRef.current.src = url;
       }
     }
-  }, [onUpdateTab, tab.id, t]);
+  }, [tab.id, t]);
 
   const handleBack = useCallback(() => {
     if (webviewRef.current && webviewRef.current.canGoBack()) {
@@ -143,12 +191,12 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
     if (!webviewRef.current) return;
     if (isLoading) {
       webviewRef.current.stop();
-      onUpdateTab(tab.id, { browserIsLoading: false });
+      onUpdateTabRef.current(tab.id, { browserIsLoading: false });
     } else {
       setLoadError(null);
       webviewRef.current.reload();
     }
-  }, [isLoading, onUpdateTab, tab.id]);
+  }, [isLoading, tab.id]);
 
   const handleOpenExternal = useCallback(() => {
     if (isBlankUrl) return;
@@ -196,7 +244,7 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
     setAddressInput(formatDisplayUrl(currentUrl));
   };
 
-  // Attach webview event listeners
+  // Listeners + fit — only re-bind when the tab identity changes.
   useEffect(() => {
     const webview = webviewRef.current;
     if (!webview) return;
@@ -225,21 +273,22 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
       try {
         const webContentsId = webview.getWebContentsId?.();
         if (typeof webContentsId !== 'number') return;
+        const meta = tabMetaRef.current;
         void desktopBrowser?.bindTab?.({
-          tabId: tab.id,
+          tabId: meta.id,
           webContentsId,
           url: (() => {
             try {
-              return webview.getURL() || currentUrl;
+              return webview.getURL() || meta.browserUrl || '';
             } catch {
-              return currentUrl;
+              return meta.browserUrl || '';
             }
           })(),
           title: (() => {
             try {
-              return webview.getTitle() || tab.browserTitle || 'Browser';
+              return webview.getTitle() || meta.browserTitle || 'Browser';
             } catch {
-              return tab.browserTitle || 'Browser';
+              return meta.browserTitle || 'Browser';
             }
           })(),
         });
@@ -250,14 +299,14 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
 
     const syncHostMeta = (url?: string, title?: string) => {
       void desktopBrowser?.updateTabMeta?.({
-        tabId: tab.id,
+        tabId: tabMetaRef.current.id,
         url,
         title,
       });
     };
 
     const onStartLoading = () => {
-      onUpdateTab(tab.id, {
+      onUpdateTabRef.current(tabMetaRef.current.id, {
         browserIsLoading: true,
       });
     };
@@ -268,7 +317,8 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
         const canFwd = webview.canGoForward();
         const url = webview.getURL();
         const title = webview.getTitle();
-        onUpdateTab(tab.id, {
+        if (url) lastReportedUrlRef.current = url;
+        onUpdateTabRef.current(tabMetaRef.current.id, {
           browserIsLoading: false,
           browserCanGoBack: canBack,
           browserCanGoForward: canFwd,
@@ -278,14 +328,14 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
         syncHostMeta(url, title);
         bindToHost();
       } catch {
-        onUpdateTab(tab.id, { browserIsLoading: false });
+        onUpdateTabRef.current(tabMetaRef.current.id, { browserIsLoading: false });
       }
     };
 
     const onTitleUpdated = (event: Event) => {
       const customEvent = event as Event & { title?: string };
       if (customEvent.title) {
-        onUpdateTab(tab.id, { browserTitle: customEvent.title });
+        onUpdateTabRef.current(tabMetaRef.current.id, { browserTitle: customEvent.title });
         syncHostMeta(undefined, customEvent.title);
       }
     };
@@ -293,21 +343,22 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
     const onFaviconUpdated = (event: Event) => {
       const customEvent = event as Event & { favicons?: string[] };
       if (customEvent.favicons && customEvent.favicons.length > 0) {
-        onUpdateTab(tab.id, { browserFavicon: customEvent.favicons[0] });
+        onUpdateTabRef.current(tabMetaRef.current.id, { browserFavicon: customEvent.favicons[0] });
       }
     };
 
     const onDidNavigate = (event: Event) => {
       const customEvent = event as Event & { url?: string };
       if (customEvent.url && customEvent.url !== 'about:blank') {
+        lastReportedUrlRef.current = customEvent.url;
         try {
-          onUpdateTab(tab.id, {
+          onUpdateTabRef.current(tabMetaRef.current.id, {
             browserUrl: customEvent.url,
             browserCanGoBack: webview.canGoBack(),
             browserCanGoForward: webview.canGoForward(),
           });
         } catch {
-          onUpdateTab(tab.id, { browserUrl: customEvent.url });
+          onUpdateTabRef.current(tabMetaRef.current.id, { browserUrl: customEvent.url });
         }
         syncHostMeta(customEvent.url);
       }
@@ -321,39 +372,124 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
       };
       if (customEvent.isMainFrame && customEvent.errorCode !== -3) { // -3 is ERR_ABORTED
         setLoadError(customEvent.errorDescription || 'Failed to load webpage');
-        onUpdateTab(tab.id, { browserIsLoading: false });
+        onUpdateTabRef.current(tabMetaRef.current.id, { browserIsLoading: false });
       }
     };
 
-    const lockViewInteractions = () => {
+    const lockUserZoomGestures = () => {
       try {
         webview.setVisualZoomLevelLimits?.(1, 1);
-        webview.setZoomFactor?.(1);
-        webview.setZoomLevel?.(0);
       } catch {
         // webview may not expose zoom APIs yet
       }
     };
 
+    const applyZoomIfNeeded = (zoomFactor: number) => {
+      const next = Math.max(0.05, Math.min(1, zoomFactor));
+      let current = appliedZoomRef.current;
+      try {
+        if (typeof webview.getZoomFactor === 'function') {
+          current = webview.getZoomFactor();
+        }
+      } catch {
+        // keep appliedZoomRef
+      }
+      if (Math.abs(current - next) < 0.01) {
+        appliedZoomRef.current = current;
+        return;
+      }
+      try {
+        webview.setZoomFactor?.(next);
+        appliedZoomRef.current = next;
+      } catch {
+        // Zoom APIs may be unavailable.
+      }
+    };
+
+    const fitViewportContent = async () => {
+      try {
+        const viewportEl = viewportRef.current;
+        if (viewportEl) {
+          const panel = viewportEl.closest('[hidden]');
+          if (panel) return;
+          const rect = viewportEl.getBoundingClientRect();
+          if (rect.width < 2 || rect.height < 2) return;
+        }
+        lockUserZoomGestures();
+        const result = (await webview.executeJavaScript?.(BROWSER_FIT_VIEWPORT_SCRIPT, false)) as
+          | {
+              fitted?: boolean;
+              zoomFactor?: number;
+              contentWidth?: number;
+              contentHeight?: number;
+              viewportWidth?: number;
+              viewportHeight?: number;
+            }
+          | null
+          | undefined;
+        const fromResult =
+          typeof result?.zoomFactor === 'number' && Number.isFinite(result.zoomFactor)
+            ? Math.max(0.05, Math.min(1, result.zoomFactor))
+            : null;
+        const computed = computeFitZoomScale(
+          Number(result?.contentWidth) || 0,
+          Number(result?.contentHeight) || 0,
+          Number(result?.viewportWidth) || 0,
+          Number(result?.viewportHeight) || 0,
+        );
+        applyZoomIfNeeded(fromResult ?? computed);
+      } catch {
+        // Guest may not be ready yet; dom-ready / stop-loading / resize retry.
+      }
+    };
+
     const onDomReady = () => {
-      lockViewInteractions();
+      void fitViewportContent();
       bindToHost();
     };
 
+    const onStopLoadingWithFit = () => {
+      onStopLoading();
+      void fitViewportContent();
+    };
+
     webview.addEventListener('did-start-loading', onStartLoading);
-    webview.addEventListener('did-stop-loading', onStopLoading);
+    webview.addEventListener('did-stop-loading', onStopLoadingWithFit);
     webview.addEventListener('page-title-updated', onTitleUpdated);
     webview.addEventListener('page-favicon-updated', onFaviconUpdated);
     webview.addEventListener('did-navigate', onDidNavigate);
     webview.addEventListener('did-navigate-in-page', onDidNavigate);
     webview.addEventListener('did-fail-load', onFailLoad);
     webview.addEventListener('dom-ready', onDomReady);
-    lockViewInteractions();
+    void fitViewportContent();
     bindToHost();
 
+    const viewportEl = viewportRef.current;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const resizeObserver =
+      viewportEl && typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver((entries) => {
+            const entry = entries[0];
+            const width = entry?.contentRect?.width ?? 0;
+            const height = entry?.contentRect?.height ?? 0;
+            if (width < 2 || height < 2) return;
+            if (viewportEl.closest('[hidden]')) return;
+            const prev = lastViewportSizeRef.current;
+            if (Math.abs(prev.width - width) < 2 && Math.abs(prev.height - height) < 2) return;
+            lastViewportSizeRef.current = { width, height };
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+              void fitViewportContent();
+            }, 50);
+          })
+        : null;
+    resizeObserver?.observe(viewportEl);
+
     return () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeObserver?.disconnect();
       webview.removeEventListener('did-start-loading', onStartLoading);
-      webview.removeEventListener('did-stop-loading', onStopLoading);
+      webview.removeEventListener('did-stop-loading', onStopLoadingWithFit);
       webview.removeEventListener('page-title-updated', onTitleUpdated);
       webview.removeEventListener('page-favicon-updated', onFaviconUpdated);
       webview.removeEventListener('did-navigate', onDidNavigate);
@@ -361,11 +497,12 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
       webview.removeEventListener('did-fail-load', onFailLoad);
       webview.removeEventListener('dom-ready', onDomReady);
     };
-  }, [currentUrl, onUpdateTab, tab.browserTitle, tab.id]);
+  }, [tab.id]);
 
   return (
     <div
       className="relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-page select-text"
+      style={{ contain: 'layout paint' }}
       data-browser-panel=""
       data-browser-model-controlled={modelControlled ? 'true' : undefined}
       aria-busy={modelControlled ? true : undefined}
@@ -377,7 +514,12 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
           shineColor={[...BROWSER_SHINE_COLORS]}
         />
       ) : null}
-      <div className={`flex min-h-0 flex-1 flex-col ${modelControlled ? 'p-[2px]' : ''}`}>
+      {/* Opaque inner frame above shine — padding stays transparent so only the 2px ring shows. */}
+      <div
+        className={`relative z-10 flex min-h-0 flex-1 flex-col ${modelControlled ? 'p-[2px]' : ''}`}
+        data-browser-content-frame=""
+      >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-page">
       {/* Browser Toolbar — BeautifulUI & OpenCode styling */}
       <div className="flex items-center gap-1.5 px-2.5 h-[42px] border-b border-line bg-page shrink-0">
         {/* Navigation Buttons */}
@@ -481,10 +623,12 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
         </div>
       )}
 
-      {/* Main Viewport — fixed scale; no pinch-zoom / content drag chrome */}
+      {/* Main Viewport — media/local docs auto-fit via CSS + zoomFactor */}
       <div
+        ref={viewportRef}
         className="relative flex-1 min-h-0 min-w-0 w-full bg-page overflow-hidden overscroll-none"
         data-browser-viewport=""
+        data-browser-fit-viewport=""
         style={{ touchAction: 'pan-x pan-y' }}
       >
         {/* Load Error View */}
@@ -509,17 +653,39 @@ export const InspectorBrowserPanel: React.FC<InspectorBrowserPanelProps> = ({
           </div>
         )}
 
-        {/* Electron Webview — clean and always active */}
+        {/* Electron Webview — mount-once src; navigation via loadURL only */}
         <webview
           ref={webviewRef as unknown as React.RefObject<HTMLElement>}
           partition="persist:metis-browser"
-          src={currentUrl || 'about:blank'}
+          src={initialSrc}
           className="w-full h-full border-0 bg-transparent"
           style={{ width: '100%', height: '100%', touchAction: 'pan-x pan-y' }}
           data-browser-webview=""
         />
       </div>
+        </div>
       </div>
     </div>
   );
-};
+}
+
+function browserPanelPropsEqual(
+  prev: InspectorBrowserPanelProps,
+  next: InspectorBrowserPanelProps,
+): boolean {
+  if (prev.modelControlled !== next.modelControlled) return false;
+  if (prev.onUpdateTab !== next.onUpdateTab) return false;
+  const a = prev.tab;
+  const b = next.tab;
+  return (
+    a.id === b.id
+    && a.browserUrl === b.browserUrl
+    && a.browserTitle === b.browserTitle
+    && a.browserFavicon === b.browserFavicon
+    && a.browserCanGoBack === b.browserCanGoBack
+    && a.browserCanGoForward === b.browserCanGoForward
+    && a.browserIsLoading === b.browserIsLoading
+  );
+}
+
+export const InspectorBrowserPanel = memo(InspectorBrowserPanelInner, browserPanelPropsEqual);

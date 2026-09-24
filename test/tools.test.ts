@@ -299,6 +299,39 @@ describe("Coding Agent Tools", () => {
 				prepareWriteArguments({ _truncated: "Arguments truncated to save context window." }),
 			).toThrow(/truncated and has no path/);
 		});
+
+		it("redirects workspace artifacts writes into the active Performance governance root", async () => {
+			const { createWriteToolDefinition, remapWritePathForGovernanceArtifacts } = await import("../src/core/tools/write.ts");
+			const governanceRoot = join(testDir, "perf-run");
+			const mapped = remapWritePathForGovernanceArtifacts("artifacts/g4-receipt.json", testDir, governanceRoot);
+			expect(mapped).toMatchObject({
+				remapped: true,
+				displayPath: "artifacts/g4-receipt.json",
+				absolutePath: join(governanceRoot, "artifacts", "g4-receipt.json"),
+			});
+			expect(remapWritePathForGovernanceArtifacts("pelican.svg", testDir, governanceRoot).remapped).toBe(false);
+			expect(() =>
+				remapWritePathForGovernanceArtifacts("artifacts/../../tmp/evil.json", testDir, governanceRoot),
+			).toThrow(/must stay under the active Performance artifacts directory/);
+
+			const tool = createWriteToolDefinition(testDir, {
+				governanceArtifactsRoot: () => governanceRoot,
+			});
+			const result = await tool.execute("write-receipt", {
+				path: "artifacts/g4-receipt.json",
+				content: '{"exitCode":0}',
+			});
+			expect(getTextOutput(result)).toContain("artifacts/g4-receipt.json");
+			expect(getTextOutput(result)).toContain("redirected into active Performance governance artifacts");
+			expect(readFileSync(join(governanceRoot, "artifacts", "g4-receipt.json"), "utf8")).toBe('{"exitCode":0}');
+			expect(existsSync(join(testDir, "artifacts", "g4-receipt.json"))).toBe(false);
+			await expect(
+				tool.execute("write-escape", {
+					path: "artifacts/../outside.json",
+					content: "nope",
+				}),
+			).rejects.toThrow(/must stay under the active Performance artifacts directory/);
+		});
 	});
 
 	describe("log tool", () => {

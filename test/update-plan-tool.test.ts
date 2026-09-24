@@ -32,21 +32,30 @@ describe("update_plan tool", () => {
 			expect.stringContaining("do not wait until the whole task ends"),
 			expect.stringContaining("pending, in_progress, or completed"),
 			expect.stringContaining("same language as the user's latest message"),
+			expect.stringContaining("Never mark every step completed while a Performance run is still active"),
 		]));
 		expect(tool.prepareArguments).toBe(prepareUpdatePlanArguments);
 	});
 
-	it("warns when every checklist step is completed while a Performance run is still active", async () => {
+	it("rejects completing every checklist step while a Performance run is still active", async () => {
 		const tool = createUpdatePlanToolDefinition({
 			unfinishedRunWarning: () => "FALSE_COMPLETION_BLOCKED: the Performance run is still active.",
 		});
-		const result = await tool.execute("call", {
+		await expect(tool.execute("call", {
 			plan: [{ step: "draw svg", status: "completed" }],
-		}, undefined, undefined, {} as never);
-		expect(result.content[0]).toEqual({
-			type: "text",
-			text: "Plan state updated for this session.\nFALSE_COMPLETION_BLOCKED: the Performance run is still active.",
+		}, undefined, undefined, {} as never)).rejects.toThrow("FALSE_COMPLETION_BLOCKED");
+	});
+
+	it("keeps unfinished-run rejection from updating plan state", async () => {
+		let stored: { plan: Array<{ step: string; status: string }> } | undefined;
+		const tool = createUpdatePlanToolDefinition({
+			onUpdate: (plan) => (stored = plan),
+			unfinishedRunWarning: () => "FALSE_COMPLETION_BLOCKED: still active",
 		});
+		await expect(tool.execute("call", {
+			plan: [{ step: "draw svg", status: "completed" }],
+		}, undefined, undefined, {} as never)).rejects.toThrow("FALSE_COMPLETION_BLOCKED");
+		expect(stored).toBeUndefined();
 	});
 
 	it("canonicalizes status aliases before schema validation so checkmarks persist", async () => {

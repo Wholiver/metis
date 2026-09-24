@@ -262,6 +262,41 @@ function receiptHasIndependentPass(content: string, visual: boolean): boolean {
 	return mentionsVisualCheck && mentionsPass;
 }
 
+function nextActionForActiveFrontier(state: PerformanceRunState): string {
+	const itemHint = state.activeItemId ? ` for item ${state.activeItemId}` : "";
+	switch (state.frontier) {
+		case "G0":
+			return `write characterization evidence under governance artifacts/, then call performance_gate with gate=G0${itemHint}.`;
+		case "G1":
+			return `record the plan evidence, then call performance_gate with gate=G1${itemHint}.`;
+		case "G1-assurance":
+			return "record independent G1-review and G1-verify before continuing.";
+		case "G2":
+			return "accept the executable ROADMAP with performance_gate gate=G2.";
+		case "G2-assurance":
+			return "record independent G2-review and G2-verify before activation.";
+		case "G3.5":
+			return `record depth-lock evidence, then call performance_gate with gate=G3.5${itemHint}.`;
+		case "G4":
+			return `write independent verification evidence under governance artifacts/ (changedFiles, testCommand, testOutput, plus a pass token), then call performance_gate with gate=G4${itemHint}.`;
+		case "G4-assurance":
+			return "dispatch or record fresh G5 review and G6 verification against the integrated workspace.";
+		case "G5":
+			return `call performance_gate with gate=G5 from an independent reviewer${itemHint}.`;
+		case "G6":
+			return `call performance_gate with gate=G6 from an independent verifier${itemHint}.`;
+		case "G7":
+		case "G7-assurance":
+			return `record the required independent G7 juror verdict(s)${itemHint}.`;
+		case "sweep":
+			return "dispatch one fresh sweeper and record a passing sweep gate.";
+		case "goal-check":
+			return "record goal-check evidence with zero openFindings and a passing endToEnd, then call performance_gate with gate=goal-check.";
+		default:
+			return `advance the current frontier ${state.frontier} with the matching performance_gate and governance artifact evidence.`;
+	}
+}
+
 function normalizedAdmission(admission: PerformanceAdmission): PerformanceAdmission {
 	const cleanList = (values: string[], label: string): string[] => {
 		const result = values.map((value) => value.trim()).filter(Boolean);
@@ -1328,6 +1363,21 @@ ${line(state, "FRONTIER G2")}
 	 * blocks so that advancing a gate appends only the tool result instead of a new
 	 * state block that contradicts the previous turn's.
 	 */
+	/** Actionable host block when the model tries to finish while the run is still open (any T0–T3). */
+	completionBlockMessage(): string | undefined {
+		const state = this.stateValue;
+		if (!state || state.status !== "active") return undefined;
+		const route = state.admission ? ` (route ${state.admission.tier}/${state.admission.taskShape})` : "";
+		const item = state.activeItemId ? ` active item ${state.activeItemId};` : "";
+		return [
+			`FALSE_COMPLETION_BLOCKED: Performance run ${state.runId} is still active at frontier ${state.frontier}${route}.${item}`,
+			`Do not mark the checklist complete or claim task success.`,
+			`Write gate receipts only under ${state.governanceRoot}/artifacts/ and pass evidence as a relative path like artifacts/g4-receipt.json (workspace ./artifacts/ is not accepted).`,
+			`Next required action: ${nextActionForActiveFrontier(state)}.`,
+			RECEIPT_HELP,
+		].join(" ");
+	}
+
 	liveStateSummary(): string | undefined {
 		const state = this.stateValue;
 		if (!state) return undefined;
@@ -1337,11 +1387,13 @@ ${line(state, "FRONTIER G2")}
 		return [
 			`frontier: ${state.frontier}; active item: ${this.boundLaneId ?? state.activeItemId ?? "scope"}; live agents: ${state.leases.length}.${state.admission ? ` route: ${state.admission.tier}/${state.admission.taskShape}.` : ""}`,
 			`MISSION POINTER: ${pointer.path}; SHA-256: ${pointer.sha256}; bytes: ${pointer.bytes}.`,
+			`Gate receipts directory: ${state.governanceRoot}/artifacts/ (evidence paths are relative, e.g. artifacts/g4-receipt.json).`,
 			state.repairRequired ? `REPAIR REQUIRED at ${state.repairRequired.gate}: ${state.repairRequired.message}` : "",
 			activeItem
-				? `Active item ${activeItem.id}: ${activeItem.category}/${activeItem.tag}/${activeItem.tier}/${activeItem.framework}. ${itemPolicy!.requiresCharacterization ? "G0 characterization is required before planning or implementation." : "No G0 characterization."} ${itemPolicy!.requiresPlan ? "G1 is required." : "G1 is skipped."} ${itemPolicy!.requiresDepthLock ? "G3.5 depth-lock follows G1." : "No G3.5 depth-lock."} ${state.admission?.tier === "T0" ? `T0: close G4 only after independent evidence in the G4 receipt. Include changedFiles, testCommand, testOutput, and a pass token. ${RECEIPT_HELP} Do not skip verify. Do not dispatch G5/G6 workers.` : activeItem.framework === "apply" ? "Apply admission requires an exact change specification. Close G4 after independent evidence." : ""} ${itemPolicy!.requiredJurors ? `G7 requires ${itemPolicy!.requiredJurors} independent juror(s).` : "G7 is skipped for this framework/tier."}`
+				? `Active item ${activeItem.id}: ${activeItem.category}/${activeItem.tag}/${activeItem.tier}/${activeItem.framework}. ${itemPolicy!.requiresCharacterization ? "G0 characterization is required before planning or implementation." : "No G0 characterization."} ${itemPolicy!.requiresPlan ? "G1 is required." : "G1 is skipped."} ${itemPolicy!.requiresDepthLock ? "G3.5 depth-lock follows G1." : "No G3.5 depth-lock."} ${state.admission?.tier === "T0" ? `T0: close G4 only after independent evidence in the G4 receipt. Include changedFiles, testCommand, testOutput, and a pass token. ${RECEIPT_HELP} Do not skip verify. Do not dispatch G5/G6 workers.` : state.admission?.tier === "T1" ? "T1: root closes G4, then fresh G5 review and G6 verification in the integrated cwd before the run can complete." : state.admission?.tier === "T2" ? "T2: finish lane G4/G5/G6, required juror(s), then goal-check before claiming success." : state.admission?.tier === "T3" ? "T3: integrate admitted lanes, then G5/G6/juror/sweep/goal-check against the integrated workspace." : activeItem.framework === "apply" ? "Apply admission requires an exact change specification. Close G4 after independent evidence." : ""} ${itemPolicy!.requiredJurors ? `G7 requires ${itemPolicy!.requiredJurors} independent juror(s).` : "G7 is skipped for this framework/tier."}`
 				: "No item is active until G2 assurance accepts the structured roadmap.",
 			this.requiresConvergenceSweep() ? "After the final T3 item, dispatch one fresh sweeper. A passing sweep is required before goal-check; named findings reopen scope rather than being silently downgraded." : "",
+			"A completed checklist is not task completion while this run is active.",
 		]
 			.filter(Boolean)
 			.join("\n");

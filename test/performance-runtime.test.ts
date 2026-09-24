@@ -506,14 +506,31 @@ describe("built-in Performance runtime", () => {
 		} });
 		expect(runtime.allowedSpawnRoles()).toEqual([]);
 		expect(runtime.liveStateSummary()).toContain("close G4 only after independent evidence");
+		expect(runtime.liveStateSummary()).toContain("Gate receipts directory:");
+		expect(runtime.liveStateSummary()).toContain("A completed checklist is not task completion");
 		expect(runtime.liveStateSummary()).not.toContain("G4/G5/G6 only");
 		expect(runtime.liveStateSummary()).toContain("Do not dispatch G5/G6 workers");
+		expect(runtime.completionBlockMessage()).toMatch(/FALSE_COMPLETION_BLOCKED[\s\S]*frontier G4[\s\S]*artifacts\//);
 		runtime.recordGateReport({ gate: "G4", actor: "root", role: "root", verdict: "pass", evidence: receipt(state, "t0-apply") });
 		expect(runtime.state).toMatchObject({ status: "completed", frontier: "complete", completedItemIds: ["parser-fix"] });
+		expect(runtime.completionBlockMessage()).toBeUndefined();
 		const log = readFileSync(join(state.governanceRoot, "GATELOG.md"), "utf8");
 		expect(log).toContain("SKIP G5 reason=T0");
 		expect(log).toContain("SKIP G6 reason=T0");
 		expect(log).toContain("SKIP goal-check reason=T0");
+	});
+
+	it("blocks false completion for T1 while G4-assurance is still open", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({ kind: "admit", mission: "Rename exact option", workspaceRoot: "/workspace", admission: {
+			...boundedAdmission, tier: "T1", lanes: [{ ...boundedAdmission.lanes[0], framework: "apply", objective: "Rename --old to --new" }],
+		} });
+		runtime.recordGateReport({ gate: "G4", actor: "root", role: "root", verdict: "pass", evidence: receipt(state, "t1-apply") });
+		expect(runtime.state?.frontier).toBe("G4-assurance");
+		expect(runtime.completionBlockMessage()).toMatch(/FALSE_COMPLETION_BLOCKED[\s\S]*G4-assurance[\s\S]*G5/);
+		expect(runtime.liveStateSummary()).toContain("T1: root closes G4, then fresh G5 review and G6 verification");
 	});
 
 	it("coerces single-lane artifact apply admissions to T0 without changing backend-fix T1", () => {

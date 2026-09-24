@@ -35,27 +35,15 @@ jobs:
           path: installer
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Prepare checksum for installer
-        shell: bash
-        run: |
-          set -euo pipefail
-          ls -lah portable installer
-          exe="$(find installer -type f -name '*-setup.exe' | head -n 1)"
-          test -n "$exe"
-          if [[ ! -f "${exe}.sha256" ]]; then
-            (
-              cd "$(dirname "$exe")"
-              sha256sum "$(basename "$exe")" > "$(basename "$exe").sha256"
-            )
-          fi
-          ls -lah portable installer
-
       - name: Upload assets to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          files=(portable/* installer/*)
+          ls -lah portable installer
+          # Install binaries only — do not upload companion .sha256 checksum files.
+          mapfile -t files < <(find portable installer -type f ! -name '*.sha256' | sort)
+          test "${#files[@]}" -gt 0
           gh release upload "${{ inputs.tag }}" "${files[@]}" --clobber --repo "${{ github.repository }}"
           gh release view "${{ inputs.tag }}" --repo "${{ github.repository }}" --json assets --jq '.assets[].name'

@@ -14,7 +14,7 @@ const providers = [
 ];
 
 describe('Desktop add-model provider catalog', () => {
-  it('renders a searchable popular/other provider picker from Server catalog', () => {
+  it('renders a searchable popular/oauth/api provider picker from Server catalog', () => {
     const markup = renderToStaticMarkup(React.createElement(
       AddModelModal,
       {
@@ -32,8 +32,13 @@ describe('Desktop add-model provider catalog', () => {
     expect(markup).toContain('aria-modal="true"');
     expect(markup).toContain('data-wizard-step="pick"');
     expect(markup).toContain('Connect providers');
+    expect(markup).toContain('data-provider-group="popular"');
+    expect(markup).toContain('data-provider-group="oauth"');
+    expect(markup).toContain('data-provider-group="api"');
     expect(markup).toContain('Popular');
-    expect(markup).toContain('Other');
+    expect(markup).toContain('OAuth');
+    expect(markup).toContain('API');
+    expect(markup).not.toContain('>Other<');
     expect(markup).toContain('OpenAI');
     expect(markup).toContain('Anthropic');
     expect(markup).toContain('OpenAI Codex');
@@ -41,6 +46,24 @@ describe('Desktop add-model provider catalog', () => {
     expect(markup).toContain('https://api.openai.com/v1');
     expect(markup).not.toContain('腾讯云 Token Plan');
     expect(markup).not.toContain('PROVIDER_PRESETS');
+
+    const popularIdx = markup.indexOf('data-provider-group="popular"');
+    const oauthIdx = markup.indexOf('data-provider-group="oauth"');
+    const apiIdx = markup.indexOf('data-provider-group="api"');
+    expect(popularIdx).toBeGreaterThan(-1);
+    expect(oauthIdx).toBeGreaterThan(popularIdx);
+    expect(apiIdx).toBeGreaterThan(oauthIdx);
+  });
+
+  it('puts SiliconFlow CN first in the popular provider order', async () => {
+    const source = await import('node:fs').then((fs) =>
+      fs.readFileSync(new URL('../desktop/src/components/settings/AddModelModal.tsx', import.meta.url), 'utf8')
+    );
+    const match = source.match(/const POPULAR_PROVIDER_IDS = \[([\s\S]*?)\] as const/);
+    expect(match?.[1]).toBeTruthy();
+    const ids = [...(match?.[1].matchAll(/'([^']+)'/g) || [])].map((item) => item[1]);
+    expect(ids[0]).toBe('siliconflow-cn');
+    expect(ids).toContain('siliconflow');
   });
 
   it('keeps OAuth as a direct sign-in path and adds a models step for API key builtins', async () => {

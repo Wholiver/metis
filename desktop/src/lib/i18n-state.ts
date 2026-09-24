@@ -1,4 +1,4 @@
-export type LocalizedValueState = { source: string; rendered: string };
+export type LocalizedValueState = { source: string; rendered: string; preference?: string };
 
 export function splitSurroundingWhitespace(value: string): { leading: string; text: string; trailing: string } {
   const match = value.match(/^(\s*)([\s\S]*?)(\s*)$/);

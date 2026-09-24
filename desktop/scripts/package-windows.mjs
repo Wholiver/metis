@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -120,15 +119,6 @@ async function createZipArchive(sourceDir, zipPath) {
 	await run("tar", ["-a", "-cf", zipPath, "-C", sourceDir, "."], { logOutput: false });
 }
 
-async function writeSha256(filePath) {
-	const hash = createHash("sha256");
-	const data = await readFile(filePath);
-	hash.update(data);
-	const digest = hash.digest("hex");
-	await writeFile(`${filePath}.sha256`, `${digest}  ${path.basename(filePath)}\n`, "utf8");
-	return digest;
-}
-
 try {
 	console.log("[1/6] 构建 Metis CLI 与 Server");
 	await run("npm", ["run", "build"]);
@@ -168,9 +158,7 @@ try {
 	await mkdir(releaseDir, { recursive: true });
 	const zipPath = path.join(releaseDir, `Metis-${rootPackage.version}-win-${architecture}.zip`);
 	await createZipArchive(zipStageDir, zipPath);
-	const digest = await writeSha256(zipPath);
 	console.log(`完成：${zipPath}`);
-	console.log(`SHA256：${digest}`);
 } finally {
 	await rm(temporaryDir, { recursive: true, force: true });
 }

@@ -466,6 +466,8 @@ export class AgentSession {
 	private _subagentResultDeliveryInProgress = false;
 	private _subagentResultDrainPromise: Promise<void> | undefined;
 	private readonly _sharedMutatingOwners = new SharedMutatingOwnerRegistry();
+	/** Host-forced continue attempts while a Performance run is still active (per prompt). */
+	private _performanceContinuationAttempts = 0;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -1985,9 +1987,44 @@ export class AgentSession {
 			throw new Error("Process stopped before read_plan and update_plan completed. No implementation tool was allowed to run.");
 		}
 
+		const unfinishedPerformance = this._unfinishedPerformanceContinuation(msg);
+		if (unfinishedPerformance) {
+			this.agent.state.messages.push({
+				role: "custom",
+				customType: "workflow_context",
+				content: unfinishedPerformance,
+				display: false,
+				timestamp: Date.now(),
+			});
+			return true;
+		}
+
 		// The agent loop drains both queues before emitting agent_end. Any messages
 		// here were queued by agent_end extension handlers and need a continuation.
 		return this.agent.hasQueuedMessages();
+	}
+
+	/** Force more model turns when a Performance run is still open after a stop. */
+	private _unfinishedPerformanceContinuation(msg: AssistantMessage): string | undefined {
+		if (msg.stopReason !== "stop") return undefined;
+		if (this._namedAgentSession) return undefined;
+		const state = this._performanceRuntime.state;
+		if (!state || state.status !== "active") return undefined;
+		if (this._performanceContinuationAttempts >= 2) return undefined;
+		// Do not interrupt right after admission while still on G0/G1/G2/G3.5 with no reports.
+		// Interrupt false finishes once implementation/assurance frontiers are open (any T0–T3).
+		const implementationOrLater = new Set([
+			"G4", "G4-assurance", "G5", "G6", "G7", "G7-assurance", "sweep", "goal-check",
+		]);
+		if (state.reports.length === 0 && !implementationOrLater.has(state.frontier)) {
+			return undefined;
+		}
+		const block = this._performanceRuntime.completionBlockMessage();
+		if (!block) return undefined;
+		// Cap by attempt count only. Do not dedupe on identical block text — the model may
+		// stop again with another false completion, and the same guidance must re-fire.
+		this._performanceContinuationAttempts += 1;
+		return `${block} Host continue ${this._performanceContinuationAttempts}/2: close the required gate before claiming success.`;
 	}
 
 	/**
@@ -2242,6 +2279,7 @@ export class AgentSession {
 		}
 
 		preflightResult?.(true);
+		this._performanceContinuationAttempts = 0;
 		this._appendWorkflowCheckpoint("prompt_accepted");
 		const isFirstUserPrompt = !this.messages.some((message) => message.role === "user");
 		if (isFirstUserPrompt) {
@@ -3595,6 +3633,12 @@ export class AgentSession {
 				)
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
+					write: {
+						governanceArtifactsRoot: () =>
+							this._performanceRuntime.state?.status === "active"
+								? this._performanceRuntime.state.governanceRoot
+								: undefined,
+					},
 					bash: {
 						commandPrefix: shellCommandPrefix,
 						shellPath,
@@ -3694,12 +3738,7 @@ export class AgentSession {
 								phase: "active",
 							});
 						},
-						unfinishedRunWarning: () => {
-							if (this._performanceRuntime.state?.status === "active") {
-								return "FALSE_COMPLETION_BLOCKED: the Performance run is still active.";
-							}
-							return undefined;
-						},
+						unfinishedRunWarning: () => this._performanceRuntime.completionBlockMessage(),
 					},
 					performanceGate: {
 						runtime: () => this._performanceRuntime,

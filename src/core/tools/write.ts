@@ -1,7 +1,7 @@
 import type { AgentTool } from "@earendil-works/metis-agent-core";
 import { Container, Text } from "@earendil-works/metis-tui";
 import { mkdir as fsMkdir, writeFile as fsWriteFile } from "fs/promises";
-import { dirname } from "path";
+import { dirname, relative, resolve, sep } from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.ts";
@@ -39,6 +39,54 @@ export interface WriteToolOptions {
 	operations?: WriteOperations;
 	/** Reject generate_vN-style copy loops. Default true. */
 	rejectVersionedWriteLoops?: boolean;
+	/**
+	 * When a Performance run is active, remap workspace `artifacts/` writes into the
+	 * governance artifacts directory so G4/G6 receipts land where performance_gate reads them.
+	 */
+	governanceArtifactsRoot?: () => string | undefined;
+}
+
+/** Remap relative/workspace artifacts paths into the active run's governance artifacts dir. */
+export function remapWritePathForGovernanceArtifacts(
+	path: string,
+	cwd: string,
+	governanceRoot: string | undefined,
+): { absolutePath: string; displayPath: string; remapped: boolean } {
+	const absolutePath = resolveToCwd(path, cwd);
+	if (!governanceRoot) {
+		return { absolutePath, displayPath: path, remapped: false };
+	}
+	const normalized = path.replace(/\\/g, "/");
+	const workspaceArtifacts = resolve(cwd, "artifacts");
+	const underWorkspaceArtifacts =
+		absolutePath === workspaceArtifacts
+		|| absolutePath.startsWith(`${workspaceArtifacts}${sep}`);
+	const relativeArtifacts = /^(?:\.\/)?artifacts(?:\/|$)/i.test(normalized);
+	if (!underWorkspaceArtifacts && !relativeArtifacts) {
+		return { absolutePath, displayPath: path, remapped: false };
+	}
+	const relativeInside = underWorkspaceArtifacts
+		? relative(workspaceArtifacts, absolutePath)
+		: normalized.replace(/^(?:\.\/)?artifacts\/?/i, "");
+	if (relativeInside.split(/[/\\]/).some((segment) => segment === "..")) {
+		throw new Error(
+			`Gate receipt writes must stay under the active Performance artifacts directory. Refusing path ${JSON.stringify(path)}.`,
+		);
+	}
+	const artifactRoot = resolve(governanceRoot, "artifacts");
+	const remappedAbsolute = relativeInside && relativeInside !== "."
+		? resolve(artifactRoot, relativeInside)
+		: artifactRoot;
+	if (remappedAbsolute !== artifactRoot && !remappedAbsolute.startsWith(`${artifactRoot}${sep}`)) {
+		throw new Error(
+			`Gate receipt writes must stay under the active Performance artifacts directory (${artifactRoot}). Refusing path ${JSON.stringify(path)}.`,
+		);
+	}
+	const safeRel = relative(artifactRoot, remappedAbsolute);
+	const displayPath = safeRel && safeRel !== "."
+		? `artifacts/${safeRel.replace(/\\/g, "/")}`
+		: "artifacts";
+	return { absolutePath: remappedAbsolute, displayPath, remapped: true };
 }
 
 export const VERSIONED_WRITE_LOOP_LIMIT = 4;
@@ -247,7 +295,13 @@ export function createWriteToolDefinition(
 					versionedWrites.set(identity.stem, next);
 				}
 			}
-			const absolutePath = resolveToCwd(path, cwd);
+			const remapped = remapWritePathForGovernanceArtifacts(
+				path,
+				cwd,
+				options?.governanceArtifactsRoot?.(),
+			);
+			const absolutePath = remapped.absolutePath;
+			const reportedPath = remapped.remapped ? remapped.displayPath : path;
 			const dir = dirname(absolutePath);
 			return withFileMutationQueue(absolutePath, async () => {
 				// Do not reject from an abort event listener here: that would release the
@@ -267,8 +321,11 @@ export function createWriteToolDefinition(
 				await ops.writeFile(absolutePath, content);
 				throwIfAborted();
 
+				const suffix = remapped.remapped
+					? ` (redirected into active Performance governance artifacts for performance_gate)`
+					: "";
 				return {
-					content: [{ type: "text", text: `Successfully wrote ${content.length} bytes to ${path}` }],
+					content: [{ type: "text", text: `Successfully wrote ${content.length} bytes to ${reportedPath}${suffix}` }],
 					details: undefined,
 				};
 			});
