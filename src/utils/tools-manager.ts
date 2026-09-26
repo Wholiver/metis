@@ -2,6 +2,7 @@ import chalk from "chalk";
 import { type SpawnSyncReturns, spawnSync } from "child_process";
 import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "fs";
 import { arch, platform } from "os";
+import { randomUUID } from "node:crypto";
 import { join } from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
@@ -272,7 +273,7 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 	// during startup, so sharing a fixed directory causes races.
 	const extractDir = join(
 		TOOLS_DIR,
-		`extract_tmp_${config.binaryName}_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+		`extract_tmp_${config.binaryName}_${process.pid}_${randomUUID()}`,
 	);
 	mkdirSync(extractDir, { recursive: true });
 
