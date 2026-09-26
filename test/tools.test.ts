@@ -991,7 +991,7 @@ describe("Coding Agent Tools", () => {
 					pattern: "[",
 					path: testDir,
 				}),
-			).rejects.toThrow(/error parsing glob|fd exited with code 1|fd error/i);
+			).rejects.toThrow(/error parsing glob|fd exited with code 1|fd error|fd is not available/i);
 		});
 
 		it("should treat flag-like patterns as search text", async () => {

@@ -71,7 +71,7 @@ export function quarantineWindowsNativeDependencies(packageDir: string): void {
 		return;
 	}
 
-	const quarantineRunDir = join(quarantineRoot, `${Date.now()}-${process.pid}-${randomUUID()}`);
+	const quarantineRunDir = join(quarantineRoot, `${randomUUID()}`);
 	for (const loadedFile of loadedFiles) {
 		if (!existsSync(loadedFile)) {
 			continue;

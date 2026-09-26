@@ -24,6 +24,7 @@ function createRuntimeFixture() {
 		sessionName: "Server test",
 		autoCompactionEnabled: true,
 		autoRetryEnabled: true,
+		memoryState: { enabled: true, recordCount: 1, pendingJobs: 0 },
 		get pendingMessageCount() {
 			return session.steeringMessages.length + session.followUpMessages.length;
 		},
@@ -32,7 +33,17 @@ function createRuntimeFixture() {
 		getRunningSubagentIds: vi.fn(() => ["job-1"]),
 		messages: [{ role: "user", content: "hello" }],
 		agent: { waitForIdle: vi.fn(async () => {}) },
-		modelRegistry: { getAvailable: vi.fn(async () => [model]) },
+		modelRegistry: {
+			getAvailable: vi.fn(async () => [model]),
+			getAll: vi.fn(() => [model]),
+			refresh: vi.fn(),
+			authStorage: {
+				getOAuthProviders: vi.fn(() => []),
+				list: vi.fn(() => ["test"]),
+				set: vi.fn(),
+				logout: vi.fn(),
+			},
+		},
 		extensionRunner: { getRegisteredCommands: vi.fn(() => [{ name: "dream", description: "Dream mode" }]) },
 		sessionManager: {
 			getCwd: vi.fn(() => "/tmp"),
@@ -88,6 +99,8 @@ function createRuntimeFixture() {
 			session.autoRetryEnabled = enabled;
 		}),
 		settingsManager: {
+			getUiLanguage: vi.fn(() => "en"),
+			setUiLanguage: vi.fn(),
 			getDefaultProvider: vi.fn(() => undefined),
 			getDefaultModel: vi.fn(() => undefined),
 			getDefaultThinkingLevel: vi.fn(() => undefined),
@@ -102,7 +115,17 @@ function createRuntimeFixture() {
 		setFollowUpMode: vi.fn((mode: "all" | "one-at-a-time") => {
 			session.followUpMode = mode;
 		}),
+		setMemoryEnabled: vi.fn((enabled: boolean) => ({ ...session.memoryState, enabled })),
+		runMemory: vi.fn(async () => ({ ...session.memoryState, lastRunProcessed: 1 })),
+		searchMemory: vi.fn((query: string) => query ? [{ id: "memory-1", content: `match:${query}` }] : []),
+		forgetMemory: vi.fn((id: string) => id === "memory-1"),
+		resetMemory: vi.fn((confirmation: string) => {
+			if (confirmation !== "RESET_MEMORY") throw new Error("confirmation required");
+		}),
 		setSessionName: vi.fn(),
+		syncModelFromRegistry: vi.fn(),
+		exportToHtml: vi.fn(async (filePath?: string) => filePath || "/tmp/session.html"),
+		exportToJsonl: vi.fn(async (filePath?: string) => filePath || "/tmp/session.jsonl"),
 		ensureSessionName: vi.fn(async () => undefined),
 		navigateTree: vi.fn(async () => ({ cancelled: false })),
 		reload: vi.fn(async () => {}),
@@ -133,11 +156,40 @@ function createRuntimeFixture() {
 			await replaceSession();
 			return { cancelled: false, selectedText: undefined };
 		}),
+		importFromJsonl: vi.fn(async () => ({ cancelled: false })),
 		dispose: vi.fn(async () => {}),
 	};
+	const createSiblingRuntime = (sessionId: string, sessionFile: string) => {
+		const siblingSession = {
+			...session,
+			sessionId,
+			sessionFile,
+			isStreaming: false,
+			isCompacting: false,
+			messages: [],
+		};
+		return {
+			cwd: "/tmp",
+			session: siblingSession,
+			setRebindSession: vi.fn(),
+			newSession: vi.fn(async () => ({ cancelled: false })),
+			switchSession: vi.fn(async () => ({ cancelled: false })),
+			fork: vi.fn(async () => ({ cancelled: false, selectedText: undefined })),
+			importFromJsonl: vi.fn(async () => ({ cancelled: false })),
+			dispose: vi.fn(async () => {}),
+		};
+	};
+	const switchedSibling = createSiblingRuntime("session-2", "/tmp/other.jsonl");
+	const newSibling = createSiblingRuntime("session-3", "/tmp/new.jsonl");
+	Object.assign(runtime, {
+		createSiblingForSession: vi.fn(async () => switchedSibling),
+		createSiblingNewSession: vi.fn(async () => newSibling),
+	});
 	return {
 		runtime: runtime as unknown as AgentSessionRuntime,
 		session,
+		switchedSibling,
+		newSibling,
 		emit: (event: object) => {
 			for (const listener of listeners) listener(event);
 		},
@@ -198,6 +250,12 @@ describe("server mode", () => {
 		expect(spec.paths).toHaveProperty("/commands");
 		expect(spec.paths).toHaveProperty("/session/command");
 		expect(spec.paths).toHaveProperty("/session/user-input/{requestId}");
+		expect(spec.paths).toHaveProperty("/config/providers");
+		expect(spec.paths).toHaveProperty("/session/model");
+		expect(spec.paths["/session"]).toEqual(expect.objectContaining({
+			get: expect.anything(),
+			delete: expect.anything(),
+		}));
 
 		const expiredInput = await fetch(`${handle.address.url}/session/user-input/missing`, {
 			method: "POST",
@@ -219,7 +277,8 @@ describe("server mode", () => {
 			commands: Array<{ name: string; source: string }>;
 		};
 		expect(commandData.commands.filter((command) => command.source === "builtin")).toHaveLength(26);
-		expect(commandData.commands.map((command) => command.name)).toEqual(expect.arrayContaining(["settings", "model", "compact", "memory", "quit"]));
+		expect(commandData.commands.map((command) => command.name)).not.toContain("performance");
+		expect(commandData.commands.map((command) => command.name)).toEqual(expect.arrayContaining(["settings", "model", "compact", "memory", "quit", "agents"]));
 
 		const settingsCommandResponse = await fetch(`${handle.address.url}/session/command`, {
 			method: "POST",
@@ -233,6 +292,7 @@ describe("server mode", () => {
 			cwd: string;
 			sessionId: string;
 			thinkingLevels: string[];
+			thinkingOptions: Array<{ id: string; label: string; value: string }>;
 			supportsThinking: boolean;
 			followUpMessages: string[];
 			runningSubagentIds: string[];
@@ -243,12 +303,53 @@ describe("server mode", () => {
 		expect(state.sessionId).toBe("session-1");
 		expect(state.cwd).toBe("/tmp");
 		expect(state.thinkingLevels).toEqual(["off", "low", "medium", "high"]);
+		expect(state.thinkingOptions.map((option) => option.id)).toEqual(state.thinkingLevels);
 		expect(state.supportsThinking).toBe(true);
 		expect(state.followUpMessages).toEqual(["follow-up queued"]);
 		expect(state.runningSubagentIds).toEqual(["job-1"]);
 		expect(state.collaborationMode).toBe("build");
 		expect(state.contextWindowId).toBe("window-1");
 		expect(state.autoRetryEnabled).toBe(true);
+
+		const providerModels = await fetch(`${handle.address.url}/config/providers`).then((response) => response.json());
+		expect(providerModels.models).toEqual([
+			{ provider: "test", id: "model-1", name: "Test Model", thinkingLevels: ["off"], thinkingOptions: [] },
+		]);
+		expect(providerModels.providers).toEqual(expect.arrayContaining([
+			expect.objectContaining({
+				id: "openai",
+				name: "OpenAI",
+				baseUrl: "https://api.openai.com/v1",
+				authMethods: ["api_key"],
+			}),
+			expect.objectContaining({
+				id: "openai-codex",
+				name: "OpenAI Codex",
+				authMethods: ["oauth"],
+			}),
+			expect.objectContaining({ id: "anthropic", authMethods: ["api_key", "oauth"] }),
+			expect.objectContaining({ id: "github-copilot", authMethods: ["api_key", "oauth"] }),
+			expect.objectContaining({
+				id: "siliconflow-cn",
+				name: "SiliconFlow (CN)",
+				baseUrl: "https://api.siliconflow.cn/v1",
+				authMethods: ["api_key"],
+			}),
+			expect.objectContaining({
+				id: "siliconflow",
+				baseUrl: "https://api.siliconflow.com/v1",
+				authMethods: ["api_key"],
+			}),
+		]));
+
+		const modelResponse = await fetch(`${handle.address.url}/session/model`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ provider: "test", modelId: "model-1" }),
+		});
+		expect(modelResponse.status).toBe(200);
+		expect(await modelResponse.json()).toEqual({ provider: "test", id: "model-1", name: "Test Model" });
+		expect(fixture.session.setModel).toHaveBeenCalledWith(fixture.session.model);
 
 		const initialDefaultsResponse = await fetch(`${handle.address.url}/settings/defaults`);
 		expect(initialDefaultsResponse.status).toBe(200);
@@ -445,13 +546,220 @@ describe("server mode", () => {
 		});
 	});
 
-	test("starts title generation before dispatching the first Desktop prompt", async () => {
+	test("serves every Memory control used by Desktop settings", async () => {
+		const fixture = createRuntimeFixture();
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+
+		const stateResponse = await fetch(`${handle.address.url}/memory`);
+		expect(stateResponse.status).toBe(200);
+		expect(await stateResponse.json()).toMatchObject({ enabled: true, recordCount: 1 });
+
+		const settingResponse = await fetch(`${handle.address.url}/memory/settings`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ enabled: false }),
+		});
+		expect(settingResponse.status).toBe(200);
+		expect(fixture.session.setMemoryEnabled).toHaveBeenCalledWith(false);
+
+		const runResponse = await fetch(`${handle.address.url}/memory/run`, { method: "POST" });
+		expect(runResponse.status).toBe(200);
+		expect(fixture.session.runMemory).toHaveBeenCalledOnce();
+
+		const searchResponse = await fetch(`${handle.address.url}/memory/search?q=needle`);
+		expect(searchResponse.status).toBe(200);
+		expect(await searchResponse.json()).toEqual([{ id: "memory-1", content: "match:needle" }]);
+		expect(fixture.session.searchMemory).toHaveBeenCalledWith("needle");
+
+		const forgetResponse = await fetch(`${handle.address.url}/memory/memory-1`, { method: "DELETE" });
+		expect(forgetResponse.status).toBe(200);
+		expect(await forgetResponse.json()).toEqual({ forgotten: true });
+		expect(fixture.session.forgetMemory).toHaveBeenCalledWith("memory-1");
+
+		const resetResponse = await fetch(`${handle.address.url}/memory/reset`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ confirm: "RESET_MEMORY" }),
+		});
+		expect(resetResponse.status).toBe(200);
+		expect(fixture.session.resetMemory).toHaveBeenCalledWith("RESET_MEMORY");
+	});
+
+	test("preserves active work when a client tries to replace the session", async () => {
+		const fixture = createRuntimeFixture();
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+		fixture.session.isStreaming = true;
+
+		const requests = [
+			fetch(`${handle.address.url}/session/new`, { method: "POST" }),
+			fetch(`${handle.address.url}/session/switch`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ sessionPath: "/tmp/other.jsonl" }),
+			}),
+			fetch(`${handle.address.url}/session/fork`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ entryId: "entry-1" }),
+			}),
+		];
+		for (const response of await Promise.all(requests)) {
+			expect(response.status).toBe(409);
+			expect(await response.json()).toEqual({
+				error: {
+					code: "session_busy",
+					message: "Agent is running or compacting context. Wait for the current run to finish.",
+				},
+			});
+		}
+
+		expect(fixture.runtime.newSession).not.toHaveBeenCalled();
+		expect(fixture.runtime.switchSession).not.toHaveBeenCalled();
+		expect(fixture.runtime.fork).not.toHaveBeenCalled();
+
+		fixture.session.isStreaming = false;
+		fixture.session.isCompacting = true;
+		const compactingResponse = await fetch(`${handle.address.url}/session/switch`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ sessionPath: "/tmp/other.jsonl" }),
+		});
+		expect(compactingResponse.status).toBe(409);
+		expect(fixture.runtime.switchSession).not.toHaveBeenCalled();
+	});
+
+	test("lets Desktop switch and create sessions without cancelling active work", async () => {
+		const fixture = createRuntimeFixture();
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+		fixture.session.isStreaming = true;
+		const desktopHeaders = { "Content-Type": "application/json", "X-Metis-Desktop": "1" };
+
+		const switchResponse = await fetch(`${handle.address.url}/session/switch`, {
+			method: "POST",
+			headers: desktopHeaders,
+			body: JSON.stringify({ sessionPath: "/tmp/other.jsonl" }),
+		});
+		expect(switchResponse.status).toBe(200);
+		expect(await switchResponse.json()).toMatchObject({ cancelled: false, sessionId: "session-2" });
+		expect(fixture.runtime.createSiblingForSession).toHaveBeenCalledWith("/tmp/other.jsonl");
+		expect(fixture.session.abort).not.toHaveBeenCalled();
+		expect(fixture.runtime.dispose).not.toHaveBeenCalled();
+
+		const switchBackResponse = await fetch(`${handle.address.url}/session/switch`, {
+			method: "POST",
+			headers: desktopHeaders,
+			body: JSON.stringify({ sessionPath: "/tmp/session.jsonl" }),
+		});
+		expect(switchBackResponse.status).toBe(200);
+		expect(await switchBackResponse.json()).toMatchObject({ sessionId: "session-1", isStreaming: true });
+		expect(fixture.runtime.createSiblingForSession).toHaveBeenCalledTimes(1);
+
+		const newResponse = await fetch(`${handle.address.url}/session/new`, {
+			method: "POST",
+			headers: desktopHeaders,
+			body: JSON.stringify({ cwd: "/tmp", collaborationMode: "plan" }),
+		});
+		expect(newResponse.status).toBe(200);
+		expect(await newResponse.json()).toMatchObject({ cancelled: false, sessionId: "session-3" });
+		expect(fixture.runtime.createSiblingNewSession).toHaveBeenCalledWith({
+			cwd: "/tmp",
+			parentSession: undefined,
+			collaborationMode: "plan",
+		});
+		expect(fixture.session.abort).not.toHaveBeenCalled();
+	});
+
+	test("serves session, language, credential, import, export, and reload settings actions", async () => {
+		const fixture = createRuntimeFixture();
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+		const command = (value: string) => fetch(`${handle!.address.url}/session/command`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ command: value }),
+		});
+
+		const nameResponse = await fetch(`${handle.address.url}/session/name`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name: " Renamed session " }),
+		});
+		expect(nameResponse.status).toBe(200);
+		expect(fixture.session.setSessionName).toHaveBeenCalledWith("Renamed session");
+
+		const compactResponse = await fetch(`${handle.address.url}/session/compact`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(compactResponse.status).toBe(200);
+		expect(fixture.session.compact).toHaveBeenCalledWith(undefined);
+
+		expect((await command("/language")).status).toBe(200);
+		expect((await command("/language zh-CN")).status).toBe(200);
+		expect(fixture.session.settingsManager.setUiLanguage).toHaveBeenCalledWith("zh-CN");
+		expect(await (await command("/login")).json()).toMatchObject({ providers: ["test"], oauthProviders: [] });
+		expect(await (await command("/logout")).json()).toMatchObject({ providers: ["test"] });
+		expect((await command("/logout test")).status).toBe(200);
+		expect(fixture.session.modelRegistry.authStorage.logout).toHaveBeenCalledWith("test");
+
+		const htmlPath = "/tmp/session export.html";
+		expect((await command(`/export ${htmlPath}`)).status).toBe(200);
+		expect(fixture.session.exportToHtml).toHaveBeenCalledWith(htmlPath);
+		const jsonlPath = "/tmp/session import.jsonl";
+		expect((await command(`/import ${jsonlPath}`)).status).toBe(200);
+		expect(fixture.runtime.importFromJsonl).toHaveBeenCalledWith(jsonlPath);
+		expect((await command("/reload")).status).toBe(200);
+		expect(fixture.session.reload).toHaveBeenCalledOnce();
+	});
+
+	test("deletes non-active session files and rejects active session deletion", async () => {
+		const { mkdtempSync, writeFileSync, existsSync } = await import("node:fs");
+		const { tmpdir } = await import("node:os");
+		const { join } = await import("node:path");
+		const dir = mkdtempSync(join(tmpdir(), "metis-session-delete-"));
+		const activePath = join(dir, "active.jsonl");
+		const otherPath = join(dir, "other.jsonl");
+		writeFileSync(activePath, '{"type":"session","id":"active"}\n');
+		writeFileSync(otherPath, '{"type":"session","id":"other"}\n');
+
+		const fixture = createRuntimeFixture();
+		fixture.session.sessionFile = activePath;
+		handle = await startServerMode(fixture.runtime, { port: 0 });
+
+		const missing = await fetch(`${handle.address.url}/session`, {
+			method: "DELETE",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(missing.status).toBe(400);
+
+		const active = await fetch(`${handle.address.url}/session`, {
+			method: "DELETE",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ sessionPath: activePath }),
+		});
+		expect(active.status).toBe(409);
+		expect(existsSync(activePath)).toBe(true);
+
+		const deleted = await fetch(`${handle.address.url}/session`, {
+			method: "DELETE",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ sessionPath: otherPath }),
+		});
+		expect(deleted.status).toBe(200);
+		expect(await deleted.json()).toMatchObject({ success: true, sessionPath: otherPath });
+		expect(existsSync(otherPath)).toBe(false);
+	});
+
+	test("awaits title generation before dispatching the first Desktop prompt", async () => {
 		const fixture = createRuntimeFixture();
 		fixture.session.sessionName = undefined as unknown as string;
 		fixture.session.messages = [];
 		const order: string[] = [];
 		fixture.session.ensureSessionName.mockImplementation(async (options?: { prompt?: string }) => {
-			order.push(`title:${options?.prompt}`);
+			order.push(`title-start:${options?.prompt}`);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			order.push(`title-done:${options?.prompt}`);
 			return undefined;
 		});
 		fixture.session.prompt.mockImplementation(async (_message, options) => {
@@ -468,7 +776,7 @@ describe("server mode", () => {
 
 		expect(response.status).toBe(202);
 		expect(fixture.session.ensureSessionName).toHaveBeenCalledWith({ prompt: "首个用户 prompt" });
-		expect(order).toEqual(["title:首个用户 prompt", "prompt"]);
+		expect(order).toEqual(["title-start:首个用户 prompt", "title-done:首个用户 prompt", "prompt"]);
 	});
 
 	test("returns Dream migration guidance without generating a title", async () => {
