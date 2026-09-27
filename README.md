@@ -140,3 +140,5 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for developmen
 ## License
 
 Distributed under the [MIT License](LICENSE).
+
+本项目认可 [LINUX DO](https://linux.do) 社区。
