@@ -29,7 +29,7 @@ import {
   unarchiveSession,
   type ArchivedSessionsMap,
 } from './lib/archived-sessions';
-import { useMetisServer } from './hooks/useMetisServer';
+import { pathsEqual, useMetisServer } from './hooks/useMetisServer';
 import { useUpdateCheck } from './hooks/useUpdateCheck';
 import { useSystemTheme } from './hooks/useSystemTheme';
 import { SettingsDialog } from './components/settings/SettingsDialog';
@@ -1330,7 +1330,6 @@ export function App() {
       <SettingsDialog
         open={isSettingsOpen}
         initialTab={settingsTab}
-        memoryState={memoryState}
         onClose={handleCloseSettings}
         request={request}
         refresh={refresh}
