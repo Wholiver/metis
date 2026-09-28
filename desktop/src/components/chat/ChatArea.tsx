@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Agent, CollaborationMode, ContextUsage, MemoryState, Message, ModelOption, PendingUserInput, ProjectItem, SendMessageOptions, ThinkingOption, TokenBreakdown, UserInputResponse, WorkflowPlanState, WorkflowProposalState } from '../../types';
+import { Agent, CollaborationMode, ContextUsage, Message, ModelOption, PendingUserInput, ProjectItem, SendMessageOptions, ThinkingOption, TokenBreakdown, UserInputResponse, WorkflowPlanState, WorkflowProposalState } from '../../types';
 import { IDLE_COMPOSER_ACTIVITY, reduceComposerActivity } from '../../lib/composer';
 import { formatAgentTitle } from '../../lib/task-agent';
 import { SubagentItem } from '../../lib/subagents';
@@ -49,8 +49,6 @@ interface ChatAreaProps {
   pendingUserInput?: PendingUserInput;
   onRespondToUserInput: (requestId: string, response: UserInputResponse) => boolean | Promise<boolean>;
   onNewChat?: () => void;
-  memoryState?: MemoryState;
-  onOpenMemorySettings?: () => void;
   contextUsage?: ContextUsage;
   tokenBreakdown?: TokenBreakdown;
   isOAuth?: boolean;
@@ -102,8 +100,6 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   pendingUserInput,
   onRespondToUserInput,
   onNewChat,
-  memoryState,
-  onOpenMemorySettings,
   contextUsage,
   tokenBreakdown,
   isOAuth = false,
@@ -171,8 +167,6 @@ export const ChatArea = React.memo<ChatAreaProps>(({
         onToggleSidebar={onToggleSidebar}
         onToggleInspector={onToggleInspector}
         onNewChat={onNewChat}
-        memoryState={memoryState}
-        onOpenMemorySettings={onOpenMemorySettings}
         breadcrumb={breadcrumb}
         onNavigateBreadcrumb={onNavigateBreadcrumb}
       />

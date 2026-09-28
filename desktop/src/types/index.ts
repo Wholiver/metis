@@ -241,31 +241,18 @@ export interface ServerSessionItem {
   lastMessage?: string;
 }
 
-export type MemoryPhase = 'idle' | 'extracting' | 'consolidating' | 'retry_wait' | 'error' | 'disabled';
-
-export interface MemoryState {
-  enabled: boolean;
-  phase: MemoryPhase;
-  globalCount?: number;
-  projectCount?: number;
-  pendingJobs?: number;
-  lastExtractedAt?: string;
-  lastConsolidatedAt?: string;
-  nextRetryAt?: string;
-  error?: string;
-  nextEligibleAt?: string;
-  lastRunProcessed?: number;
-  lastRunAdded?: number;
-  lastRunSkipped?: number;
-  lastExtractionMethod?: 'model' | 'fallback' | 'none';
-  fallbackUsed?: boolean;
-  modelFailureReason?: string;
-  extractingTotal?: number;
-  extractingProcessed?: number;
-  extractingAdded?: number;
-  extractingSkipped?: number;
-  summary?: string;
-  recordCount?: number;
-  lastRunAt?: string;
-  extractionMethod?: string;
+export interface AdaptationSummaryItem {
+  id: string;
+  scope: 'user' | 'project';
+  kind: 'profile' | 'skill' | 'role' | 'tool' | 'hook' | 'architecture' | 'workflow' | 'proposal';
+  name?: string;
+  filePath: string;
+  sizeBytes: number;
+  revision: number;
+  updatedAt: string;
+  isRetired?: boolean;
+  appliedCount?: number;
+  lastOutcome?: 'success' | 'failure';
+  recurredCorrections?: number;
+  pendingChecks?: string[];
 }

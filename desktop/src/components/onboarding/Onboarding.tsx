@@ -93,13 +93,29 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
   const [baseUrl, setBaseUrl] = useState('');
   const [modelIds, setModelIds] = useState('');
   const [discoveredModels, setDiscoveredModels] = useState<Array<{ id: string; thinkingOptions: Array<{ id: string; label: string; value: string }> }>>([]);
-  const [memoryEnabled, setMemoryEnabled] = useState(true);
   const [projectMode, setProjectMode] = useState<'create' | 'import'>('create');
   const [parentPath, setParentPath] = useState('');
   const [projectName, setProjectName] = useState('');
   const [selectedProject, setSelectedProject] = useState<Workspace>();
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [selfLearningEnabled, setSelfLearningEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!open || !isConnected) return;
+    void request<{ enabled?: boolean }>('/self-learning')
+      .then((data) => {
+        if (data && typeof data.enabled === 'boolean') {
+          setSelfLearningEnabled(data.enabled);
+        }
+      })
+      .catch(() => null);
+  }, [open, isConnected, request]);
+
+  const toggleSelfLearning = (next: boolean) => run(async () => {
+    await request('/self-learning', 'PUT', { enabled: next });
+    setSelfLearningEnabled(next);
+  });
 
   const providerChoices = useMemo(() => Array.from(new Set([
     ...FALLBACK_PROVIDERS,
@@ -146,15 +162,6 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
       })
       .catch(() => undefined);
 
-    void request<{ enabled?: boolean }>('/memory')
-      .then((result) => {
-        if (!current) return;
-        if (typeof result?.enabled === 'boolean') {
-          setMemoryEnabled(result.enabled);
-        }
-      })
-      .catch(() => undefined);
-
     return () => { current = false; };
   }, [isConnected, open, request]);
 
@@ -174,15 +181,6 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
     setLanguage(nextLanguage);
     await desktop?.setUiLanguage?.(nextLanguage);
     window.dispatchEvent(new CustomEvent('metis:language-changed', { detail: nextLanguage }));
-  };
-  const toggleMemory = async () => {
-    const next = !memoryEnabled;
-    setMemoryEnabled(next);
-    try {
-      await request('/memory/settings', 'PUT', { enabled: next });
-    } catch (err) {
-      console.warn('[onboarding] Failed to update memory settings:', err);
-    }
   };
   const bindModelAfterAuth = async (targetProvider?: string) => {
     const updatedModels = onRefreshModels
@@ -213,7 +211,6 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
     if (!apiKey.trim()) throw new Error('API Key is required');
     await request('/session/command', 'POST', { command: `/login ${provider} ${apiKey.trim()}` });
     await bindModelAfterAuth(provider);
-    await request('/memory/settings', 'PUT', { enabled: memoryEnabled }).catch(() => undefined);
     setApiKey('');
     setStep(3);
   });
@@ -221,7 +218,6 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
     if (!oauthProvider) throw new Error('No OAuth Providers available');
     await request('/session/command', 'POST', { command: `/login ${oauthProvider}` }, 10 * 60_000);
     await bindModelAfterAuth(oauthProvider);
-    await request('/memory/settings', 'PUT', { enabled: memoryEnabled }).catch(() => undefined);
     setStep(3);
   });
   const discoverModels = () => run(async () => {
@@ -240,7 +236,6 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
     await request('/session/command', 'POST', { command: '/reload' });
     if (apiKey.trim()) await request('/session/command', 'POST', { command: `/login ${saved.provider} ${apiKey.trim()}` });
     await bindModelAfterAuth(saved.provider);
-    await request('/memory/settings', 'PUT', { enabled: memoryEnabled }).catch(() => undefined);
     setApiKey('');
     setStep(3);
   });
@@ -276,7 +271,6 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
         return;
       }
       if (models.length > 0) {
-        void request('/memory/settings', 'PUT', { enabled: memoryEnabled }).catch(() => undefined);
         setStep(3);
         return;
       }
@@ -516,24 +510,22 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
               </div>
             </div>
 
-            {/* Memory Setting Card: Inner row R=10px, padding=4px (p-1) -> Outer R = 10 + 4 = 14px */}
-            <div className="space-y-0.5 rounded-[14px] border border-line bg-surface p-1 shadow-hairline">
-              <div className="flex min-h-[48px] items-center justify-between gap-4 rounded-[10px] px-3.5 py-2 transition-colors hover:bg-hover">
-                <div className="min-w-0">
-                  <p className="text-[13.5px] font-medium text-ink">AI Long-term Memory</p>
-                  <p className="mt-0.5 text-pretty text-[12px] leading-[18px] text-ink-3">
-                    Automatically consolidates work experience and historical context to retrieve in future conversations.
-                  </p>
-                </div>
-                <div className="shrink-0">
-                  <Switch
-                    label="AI Long-term Memory"
-                    checked={memoryEnabled}
-                    onChange={toggleMemory}
-                    disabled={busy || !isConnected}
-                  />
-                </div>
+            {/* Self-Learning Card */}
+            <div className="flex items-center justify-between rounded-[26px] border border-line bg-surface p-4 shadow-card">
+              <div className="space-y-0.5 pr-4">
+                <span className="text-[14px] font-semibold text-ink">
+                  {translateExact('Self-Learning', language)}
+                </span>
+                <p className="text-[12px] leading-5 text-ink-3">
+                  {translateExact('Runtime architecture adapts from experience. Disabling reverts to default architecture.', language)}
+                </p>
               </div>
+              <Switch
+                label={translateExact('Self-learning', language)}
+                checked={selfLearningEnabled}
+                disabled={busy || !isConnected}
+                onChange={() => void toggleSelfLearning(!selfLearningEnabled)}
+              />
             </div>
           </div>
 

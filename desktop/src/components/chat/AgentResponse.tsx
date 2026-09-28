@@ -62,7 +62,7 @@ function toolNode(part: ToolPart, streaming: boolean): TraceNode {
   const isCommand = Boolean(command) || /bash|exec|run_command|exec_command/.test(normalized);
   const type = isCommand
     ? 'terminal'
-    : /search|find|grep|query_memory/.test(normalized)
+    : /search|find|grep/.test(normalized)
       ? 'search'
       : 'tool';
   const details = isCommand
