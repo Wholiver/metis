@@ -128,9 +128,17 @@ export async function startServerMode(
 			throw new HttpError(409, "session_busy", SESSION_REPLACEMENT_BUSY_MESSAGE);
 		}
 	};
-	const sessionPathKey = (sessionPath: string | undefined): string | undefined => (
-		sessionPath ? path.resolve(sessionPath) : undefined
-	);
+	const sessionPathKey = (sessionPath: string | undefined): string | undefined => {
+		if (!sessionPath) return undefined;
+		const resolved = path.resolve(sessionPath);
+		return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+	};
+	const pathsMatch = (a?: string, b?: string): boolean => {
+		if (!a || !b) return false;
+		const normA = path.resolve(a);
+		const normB = path.resolve(b);
+		return process.platform === "win32" ? normA.toLowerCase() === normB.toLowerCase() : normA === normB;
+	};
 	const rememberDesktopRuntime = (host: AgentSessionRuntime): void => {
 		const key = sessionPathKey(host.session.sessionFile);
 		if (key) desktopRuntimesBySessionPath.set(key, host);
@@ -801,15 +809,11 @@ export async function startServerMode(
 			if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) {
 				return sendError(response, 404, "session_not_found", `Session file not found: ${resolvedPath}`);
 			}
-			const activePath = session.sessionFile ? path.resolve(session.sessionFile) : undefined;
-			if (activePath && activePath === resolvedPath) {
+			if (pathsMatch(session.sessionFile, resolvedPath)) {
 				return sendError(response, 409, "session_active", "Cannot delete the active session");
 			}
 			for (const [, desktopRuntime] of desktopRuntimesBySessionPath) {
-				const desktopActive = desktopRuntime.session.sessionFile
-					? path.resolve(desktopRuntime.session.sessionFile)
-					: undefined;
-				if (desktopActive && desktopActive === resolvedPath) {
+				if (pathsMatch(desktopRuntime.session.sessionFile, resolvedPath)) {
 					return sendError(response, 409, "session_active", "Cannot delete an active Desktop session");
 				}
 			}

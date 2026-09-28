@@ -1,5 +1,5 @@
-import React, { useCallback, useRef } from 'react';
-import { Search } from 'lucide-react';
+import React, { useCallback, useRef, useState } from 'react';
+import { FolderTree, List, Search } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import type { ReviewFileDiff, ReviewMode } from '../../hooks/useWorkspaceReview';
 import { SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_MIN } from '../../hooks/useWorkspaceReview';
@@ -36,6 +36,13 @@ export function ReviewSidebar({
 }) {
   const { t } = useI18n();
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [viewMode, setViewMode] = useState<'tree' | 'list'>(() => {
+    try {
+      return (localStorage.getItem('metis:review:view-mode') as 'tree' | 'list') || 'tree';
+    } catch {
+      return 'tree';
+    }
+  });
 
   const modeLabel = (value: ReviewMode) => {
     if (value === 'git') return t('reviewModeGit') || 'Git changes';
@@ -96,8 +103,8 @@ export function ReviewSidebar({
           )}
         </div>
 
-        <div data-slot="session-review-v2-sidebar-filter">
-          <div data-slot="session-review-v2-sidebar-filter-wrap">
+        <div data-slot="session-review-v2-sidebar-filter" className="flex items-center gap-1.5">
+          <div data-slot="session-review-v2-sidebar-filter-wrap" className="flex-1 min-w-0">
             <Search size={14} strokeWidth={1.8} data-slot="session-review-v2-sidebar-filter-icon" aria-hidden="true" />
             <input
               type="search"
@@ -108,13 +115,27 @@ export function ReviewSidebar({
               data-review-filter=""
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setViewMode((prev) => {
+              const next = prev === 'tree' ? 'list' : 'tree';
+              try { localStorage.setItem('metis:review:view-mode', next); } catch {}
+              return next;
+            })}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-line bg-page text-ink-3 hover:text-ink hover:bg-hover active:scale-[0.96] transition-all cursor-pointer"
+            title={viewMode === 'tree' ? (t('reviewListView') || 'List view') : (t('reviewTreeView') || 'Tree view')}
+            aria-label={viewMode === 'tree' ? (t('reviewListView') || 'List view') : (t('reviewTreeView') || 'Tree view')}
+            data-review-view-mode={viewMode}
+          >
+            {viewMode === 'tree' ? <List size={14} strokeWidth={1.8} /> : <FolderTree size={14} strokeWidth={1.8} />}
+          </button>
         </div>
 
         <div data-slot="session-review-v2-sidebar-tree">
           {loading ? (
             <p className="px-2 py-2 text-[12px] text-ink-3">{t('reviewLoadingChanges') || 'Loading changes…'}</p>
           ) : (
-            <ReviewFileList files={files} activeFile={activeFile} onSelect={onSelectFile} />
+            <ReviewFileList files={files} activeFile={activeFile} onSelect={onSelectFile} viewMode={viewMode} />
           )}
         </div>
       </aside>

@@ -193,6 +193,8 @@ describe('desktop React Tool rendering', () => {
     expect(work).toContain('<CommandToolGroup');
     expect(work).not.toContain('<ToolGroup');
     expect(card).toContain('BasicTool');
+    expect(card).not.toContain('icon={');
+    expect(card).not.toContain('toolIcon');
     expect(card).toContain('tool-details-body');
     expect(card).toContain('buildToolExpandedView');
     expect(card).toContain('flush');
@@ -205,6 +207,8 @@ describe('desktop React Tool rendering', () => {
     expect(card).toContain('bash-output');
     expect(card).toContain('tool-transcript');
     expect(basic).toContain('data-component="tool-trigger"');
+    expect(basic).not.toContain('basic-tool-tool-indicator');
+    expect(basic).not.toContain('icon?: LucideIcon');
     expect(context).toContain('data-component="context-tool-group-trigger"');
     expect(context).toContain('data-component="context-tool-group-list"');
     expect(context).toContain('useState(false)');

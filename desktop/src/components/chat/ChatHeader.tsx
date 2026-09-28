@@ -2,6 +2,7 @@ import React from 'react';
 import { PanelLeftOpen, PanelRightOpen, Plus, Sparkles } from 'lucide-react';
 import { Agent, MemoryState } from '../../types';
 import { useI18n } from '../../i18n';
+import { isMac, isWindows } from '../../lib/platform';
 
 export type ChatBreadcrumbSegment = {
   id: string;
@@ -40,11 +41,11 @@ export const ChatHeader = React.memo<ChatHeaderProps>(({
   const segments = breadcrumb && breadcrumb.length > 1 ? breadcrumb : null;
 
   return (
-    <div className={`h-[50px] ${!isSidebarOpen ? 'px-3.5' : 'pl-6 pr-3.5'} flex items-center justify-between flex-shrink-0 titlebar-drag`}>
+    <div className={`h-[50px] ${!isSidebarOpen ? 'px-3.5' : 'pl-6 pr-3.5'} ${isWindows && !isInspectorOpen ? 'pr-[140px]' : ''} flex items-center justify-between flex-shrink-0 titlebar-drag`}>
       <div className="flex items-center gap-2 min-w-0 no-drag">
         {!isSidebarOpen && (
           <>
-            <div className="w-[66px] h-[16px]" />
+            {isMac && <div className="w-[66px] h-[16px]" />}
             <button
               onClick={onToggleSidebar}
               className="w-7 h-7 rounded-chip flex items-center justify-center text-ink-3 hover:bg-hover hover:text-ink transition-colors"

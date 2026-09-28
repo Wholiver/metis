@@ -10,6 +10,7 @@ import {
   messageIsStrictlyAhead,
   parseMetisIpcEvent,
   queuePendingToolUpdate,
+  resolveStreamingAfterDisconnect,
   reuseStableMessages,
   sessionNameFromPrompt,
   toMessage,
@@ -64,6 +65,37 @@ describe('desktop chat performance helpers', () => {
 
     const withRemoved = applyWorkingSessionIds(withAdded, ['s3'], false);
     expect([...withRemoved].sort()).toEqual(['s1', 's2']);
+  });
+
+  it('keeps live streaming across SSE disconnect unless /session reports idle', () => {
+    expect(resolveStreamingAfterDisconnect({ wasStreamingLocally: false })).toEqual({
+      keepStreaming: false,
+      clearWorkingSessions: true,
+    });
+    expect(resolveStreamingAfterDisconnect({ wasStreamingLocally: true })).toEqual({
+      keepStreaming: true,
+      clearWorkingSessions: false,
+    });
+    expect(resolveStreamingAfterDisconnect({
+      wasStreamingLocally: true,
+      serverIsStreaming: true,
+    })).toEqual({
+      keepStreaming: true,
+      clearWorkingSessions: false,
+    });
+    expect(resolveStreamingAfterDisconnect({
+      wasStreamingLocally: true,
+      serverIsStreaming: false,
+    })).toEqual({
+      keepStreaming: false,
+      clearWorkingSessions: true,
+    });
+
+    const server = readFileSync(resolve(process.cwd(), 'desktop/src/hooks/useMetisServer.ts'), 'utf8');
+    expect(server).toContain('resolveStreamingAfterDisconnect');
+    expect(server).toContain('Mid-turn blip: keep "思考中"');
+    expect(server).toContain('if (streamingRef.current)');
+    expect(server).toContain('void loadMessages(sessionId || undefined)');
   });
 
   it('ships markdown html LRU, paced parse, and stable segment splitting', () => {

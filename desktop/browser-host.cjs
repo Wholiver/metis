@@ -13,10 +13,12 @@ const { BROWSER_FIT_VIEWPORT_SCRIPT, computeFitZoomScale } = require("./browser-
 const SNAPSHOT_SCRIPT = String.raw`(() => {
   const interactiveOnly = true;
   const selector = interactiveOnly
-    ? 'a[href], button, input, textarea, select, summary, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="textbox"], [role="combobox"], [role="menuitem"], [onclick], [tabindex]:not([tabindex="-1"])'
+    ? 'a[href], button, input, textarea, select, summary, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="textbox"], [role="combobox"], [role="menuitem"], [onclick], [tabindex]:not([tabindex="-1"]), canvas, video'
     : 'body *';
   const elements = Array.from(document.querySelectorAll(selector)).filter((el) => {
-    if (!(el instanceof HTMLElement)) return false;
+    if (!(el instanceof HTMLElement) && !(el instanceof HTMLCanvasElement) && !(typeof HTMLVideoElement !== 'undefined' && el instanceof HTMLVideoElement)) {
+      return false;
+    }
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
     const rect = el.getBoundingClientRect();
@@ -26,6 +28,7 @@ const SNAPSHOT_SCRIPT = String.raw`(() => {
   const nodes = elements.map((el, index) => {
     const ref = 'e' + index;
     el.setAttribute('data-metis-ref', ref);
+    const rect = el.getBoundingClientRect();
     const text = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('name') || '').trim().replace(/\s+/g, ' ').slice(0, 120);
     return {
       ref,
@@ -35,9 +38,24 @@ const SNAPSHOT_SCRIPT = String.raw`(() => {
       name: text || undefined,
       value: typeof el.value === 'string' ? el.value.slice(0, 80) : undefined,
       href: el.tagName === 'A' ? el.href : undefined,
+      box: {
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      },
     };
   });
-  return { url: location.href, title: document.title, nodes };
+  const lockEl = document.pointerLockElement;
+  return {
+    url: location.href,
+    title: document.title,
+    nodes,
+    pointerLocked: Boolean(lockEl),
+    pointerLockTag: lockEl ? lockEl.tagName.toLowerCase() : null,
+    viewportWidth: Math.round(window.innerWidth || 0),
+    viewportHeight: Math.round(window.innerHeight || 0),
+  };
 })()`;
 
 function isHttpUrl(value) {
@@ -86,8 +104,26 @@ function resolveNavigateUrl(raw, workspaceRoot) {
 const GUEST_LOAD_TIMEOUT_MS = 12_000;
 const SCREENSHOT_TIMEOUT_MS = 8_000;
 const PAINT_WAIT_TIMEOUT_MS = 2_000;
+/**
+ * Crop only standalone SVG documents (svg:root or body with a single svg child).
+ * Never crop the first inline HUD/icon svg inside an HTML app.
+ */
 const SVG_CROP_SCRIPT = String.raw`(() => {
-  const svg = document.querySelector('svg');
+  const root = document.documentElement;
+  if (!root) return null;
+  const isSvgRoot = root.tagName && root.tagName.toLowerCase() === 'svg';
+  let svg = null;
+  if (isSvgRoot) {
+    svg = root;
+  } else if (document.body) {
+    const kids = Array.from(document.body.children).filter((el) => {
+      const tag = el.tagName ? el.tagName.toLowerCase() : '';
+      return tag && tag !== 'script' && tag !== 'style' && tag !== 'link' && tag !== 'meta';
+    });
+    if (kids.length === 1 && kids[0].tagName.toLowerCase() === 'svg') {
+      svg = kids[0];
+    }
+  }
   if (!svg) return null;
   const rect = svg.getBoundingClientRect();
   const base = svg.viewBox && svg.viewBox.baseVal;
@@ -103,7 +139,7 @@ const SVG_CROP_SCRIPT = String.raw`(() => {
       }
     }
   }
-  return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, viewBox };
+  return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, viewBox, standalone: true };
 })()`;
 
 function isStubFn(fn) {
@@ -290,6 +326,105 @@ async function applyFitViewport(guest) {
 	}
 }
 
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function isLocalDevHostname(hostname) {
+	const host = String(hostname || "").toLowerCase();
+	return host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1";
+}
+
+function isLocalDevUrl(value) {
+	try {
+		const url = new URL(String(value || ""));
+		return (url.protocol === "http:" || url.protocol === "https:") && isLocalDevHostname(url.hostname);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Map user/agent key names to Electron sendInputEvent keyCode + DOM code.
+ * Electron keyCode uses "W", "Left", "Space", etc.
+ */
+function resolveKeyboardKey(raw) {
+	const input = String(raw || "").trim();
+	if (!input) return { error: "key required" };
+
+	const codeLetter = /^Key([A-Za-z])$/i.exec(input);
+	if (codeLetter) {
+		const letter = codeLetter[1].toUpperCase();
+		return { key: letter.toLowerCase(), code: `Key${letter}`, keyCode: letter };
+	}
+	const codeDigit = /^Digit([0-9])$/i.exec(input);
+	if (codeDigit) {
+		return { key: codeDigit[1], code: `Digit${codeDigit[1]}`, keyCode: codeDigit[1] };
+	}
+
+	const aliases = {
+		enter: { key: "Enter", code: "Enter", keyCode: "Enter" },
+		return: { key: "Enter", code: "Enter", keyCode: "Enter" },
+		escape: { key: "Escape", code: "Escape", keyCode: "Escape" },
+		esc: { key: "Escape", code: "Escape", keyCode: "Escape" },
+		tab: { key: "Tab", code: "Tab", keyCode: "Tab" },
+		space: { key: " ", code: "Space", keyCode: "Space" },
+		" ": { key: " ", code: "Space", keyCode: "Space" },
+		arrowleft: { key: "ArrowLeft", code: "ArrowLeft", keyCode: "Left" },
+		left: { key: "ArrowLeft", code: "ArrowLeft", keyCode: "Left" },
+		arrowright: { key: "ArrowRight", code: "ArrowRight", keyCode: "Right" },
+		right: { key: "ArrowRight", code: "ArrowRight", keyCode: "Right" },
+		arrowup: { key: "ArrowUp", code: "ArrowUp", keyCode: "Up" },
+		up: { key: "ArrowUp", code: "ArrowUp", keyCode: "Up" },
+		arrowdown: { key: "ArrowDown", code: "ArrowDown", keyCode: "Down" },
+		down: { key: "ArrowDown", code: "ArrowDown", keyCode: "Down" },
+		shift: { key: "Shift", code: "ShiftLeft", keyCode: "Shift" },
+		shiftleft: { key: "Shift", code: "ShiftLeft", keyCode: "Shift" },
+		shiftright: { key: "Shift", code: "ShiftRight", keyCode: "Shift" },
+		control: { key: "Control", code: "ControlLeft", keyCode: "Control" },
+		controlleft: { key: "Control", code: "ControlLeft", keyCode: "Control" },
+		controlright: { key: "Control", code: "ControlRight", keyCode: "Control" },
+		ctrl: { key: "Control", code: "ControlLeft", keyCode: "Control" },
+		alt: { key: "Alt", code: "AltLeft", keyCode: "Alt" },
+		meta: { key: "Meta", code: "MetaLeft", keyCode: "Meta" },
+		backspace: { key: "Backspace", code: "Backspace", keyCode: "Backspace" },
+		delete: { key: "Delete", code: "Delete", keyCode: "Delete" },
+	};
+	const lower = input.toLowerCase();
+	if (aliases[lower]) return aliases[lower];
+
+	if (/^[A-Za-z]$/.test(input)) {
+		const letter = input.toUpperCase();
+		return { key: letter.toLowerCase(), code: `Key${letter}`, keyCode: letter };
+	}
+	if (/^[0-9]$/.test(input)) {
+		return { key: input, code: `Digit${input}`, keyCode: input };
+	}
+	const fKey = /^F([1-9]|1[0-2])$/i.exec(input);
+	if (fKey) {
+		const name = `F${fKey[1]}`;
+		return { key: name, code: name, keyCode: name };
+	}
+
+	return { key: input, code: input, keyCode: input };
+}
+
+function getSendInputEvent(guest) {
+	if (typeof guest?.sendInputEvent === "function") {
+		return (event) => guest.sendInputEvent(event);
+	}
+	if (typeof guest?.webContents?.sendInputEvent === "function") {
+		return (event) => guest.webContents.sendInputEvent(event);
+	}
+	return null;
+}
+
+function mouseButtonName(raw) {
+	const value = String(raw || "left").toLowerCase();
+	if (value === "right" || value === "middle") return value;
+	return "left";
+}
+
 async function navigateGuest(guest, loadUrl) {
 	const targetDisplay = displayUrl(loadUrl);
 	let alreadyThere = false;
@@ -310,6 +445,30 @@ async function navigateGuest(guest, loadUrl) {
 			&& (liveRaw === loadUrl || liveDisplay === targetDisplay);
 	} catch {
 		alreadyThere = false;
+	}
+
+	// Localhost/127.0.0.1: always reloadIgnoringCache so code edits are visible without ?bust=.
+	if (alreadyThere && isLocalDevUrl(targetDisplay || loadUrl)) {
+		const pendingLoad = canSubscribeGuestLoad(guest) ? waitForGuestLoad(guest) : undefined;
+		try {
+			if (typeof guest.reloadIgnoringCache === "function") {
+				guest.reloadIgnoringCache();
+			} else if (typeof guest.reload === "function") {
+				guest.reload();
+			} else if (typeof guest.loadURL === "function") {
+				await guest.loadURL(loadUrl);
+			}
+		} catch {
+			// Fall through to fit + paint wait.
+		}
+		if (pendingLoad) {
+			await pendingLoad;
+		} else {
+			await waitForTwoAnimationFrames(guest);
+		}
+		await applyFitViewport(guest);
+		await waitForTwoAnimationFrames(guest);
+		return;
 	}
 
 	if (alreadyThere) {
@@ -558,6 +717,159 @@ function createBrowserHostController(options = {}) {
 		return guest.executeJavaScript(script, true);
 	}
 
+	async function readPageState(guest) {
+		try {
+			return await runPageScript(
+				guest,
+				`(() => ({
+          url: location.href,
+          title: document.title,
+          pointerLocked: Boolean(document.pointerLockElement),
+          pointerLockTag: document.pointerLockElement
+            ? document.pointerLockElement.tagName.toLowerCase()
+            : null,
+        }))()`,
+			);
+		} catch {
+			return { url: undefined, title: undefined, pointerLocked: false, pointerLockTag: null };
+		}
+	}
+
+	async function resolveRefCenter(guest, ref) {
+		const selector = JSON.stringify(`[data-metis-ref="${String(ref || "")}"]`);
+		return runPageScript(
+			guest,
+			`(() => {
+        const el = document.querySelector(${selector});
+        if (!el) return { ok: false, error: 'ref not found' };
+        if (typeof el.scrollIntoView === 'function') {
+          el.scrollIntoView({ block: 'center', inline: 'nearest' });
+        }
+        if (typeof el.focus === 'function') {
+          try { el.focus({ preventScroll: true }); } catch { try { el.focus(); } catch {} }
+        }
+        const rect = el.getBoundingClientRect();
+        if (!(rect.width > 0) || !(rect.height > 0)) {
+          return { ok: false, error: 'ref has zero-size box' };
+        }
+        return {
+          ok: true,
+          x: Math.round(rect.left + rect.width / 2),
+          y: Math.round(rect.top + rect.height / 2),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          tag: el.tagName.toLowerCase(),
+          url: location.href,
+          title: document.title,
+        };
+      })()`,
+		);
+	}
+
+	async function sendTrustedMouse(guest, events) {
+		const send = getSendInputEvent(guest);
+		if (!send) {
+			return { ok: false, error: "webview sendInputEvent is unavailable" };
+		}
+		try {
+			if (typeof guest.focus === "function") guest.focus();
+		} catch {
+			// focus is best-effort
+		}
+		try {
+			for (const event of events) {
+				send(event);
+				if (event.type === "mouseDown" || event.type === "mouseUp" || event.type === "mouseMove") {
+					await sleep(8);
+				}
+			}
+			return { ok: true };
+		} catch (error) {
+			return { ok: false, error: error instanceof Error ? error.message : String(error) };
+		}
+	}
+
+	async function waitForPointerLockState(guest, { timeoutMs = 600, preferLocked = true } = {}) {
+		const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+		let state = await readPageState(guest);
+		if (preferLocked && state.pointerLocked) return state;
+		if (!preferLocked && !state.pointerLocked) return state;
+		while (Date.now() < deadline) {
+			await sleep(40);
+			state = await readPageState(guest);
+			if (preferLocked && state.pointerLocked) return state;
+			if (!preferLocked && !state.pointerLocked) return state;
+		}
+		return state;
+	}
+
+	async function resolveMouseAim(guest, command) {
+		let x = command.x != null ? Number(command.x) : NaN;
+		let y = command.y != null ? Number(command.y) : NaN;
+		if (command.ref && (!Number.isFinite(x) || !Number.isFinite(y))) {
+			const center = await resolveRefCenter(guest, command.ref);
+			if (!center?.ok) {
+				return { error: center?.error || "ref not found" };
+			}
+			x = center.x;
+			y = center.y;
+		}
+		const movementX = command.movementX != null ? Number(command.movementX) : NaN;
+		const movementY = command.movementY != null ? Number(command.movementY) : NaN;
+		const hasRelative = Number.isFinite(movementX) || Number.isFinite(movementY);
+		if (!Number.isFinite(x) || !Number.isFinite(y)) {
+			if (hasRelative) {
+				const viewport = await runPageScript(
+					guest,
+					`(() => ({
+            w: Math.round(window.innerWidth || 0),
+            h: Math.round(window.innerHeight || 0),
+          }))()`,
+				);
+				x = Math.round((Number(viewport?.w) || 800) / 2);
+				y = Math.round((Number(viewport?.h) || 600) / 2);
+			}
+		}
+		return {
+			x,
+			y,
+			movementX: Number.isFinite(movementX) ? Math.round(movementX) : 0,
+			movementY: Number.isFinite(movementY) ? Math.round(movementY) : 0,
+			hasRelative,
+		};
+	}
+
+	async function trustedClickAt(guest, x, y, button = "left") {
+		const bx = Math.round(Number(x));
+		const by = Math.round(Number(y));
+		if (!Number.isFinite(bx) || !Number.isFinite(by)) {
+			return { ok: false, error: "x and y coordinates required" };
+		}
+		const btn = mouseButtonName(button);
+		const before = await readPageState(guest);
+		const sent = await sendTrustedMouse(guest, [
+			{ type: "mouseMove", x: bx, y: by },
+			{ type: "mouseDown", x: bx, y: by, button: btn, clickCount: 1 },
+			{ type: "mouseUp", x: bx, y: by, button: btn, clickCount: 1 },
+		]);
+		if (!sent.ok) return sent;
+		// requestPointerLock is async; wait briefly so receipts reflect the lock.
+		const state = await waitForPointerLockState(guest, {
+			timeoutMs: before.pointerLocked ? 120 : 700,
+			preferLocked: true,
+		});
+		return {
+			ok: true,
+			x: bx,
+			y: by,
+			button: btn,
+			url: state.url,
+			title: state.title,
+			pointerLocked: Boolean(state.pointerLocked),
+			pointerLockTag: state.pointerLockTag || null,
+		};
+	}
+
 	async function handleCommand(command) {
 		if (!command || typeof command !== "object" || typeof command.op !== "string") {
 			return { ok: false, error: "Invalid browser command" };
@@ -620,8 +932,16 @@ function createBrowserHostController(options = {}) {
 							node.name ? `"${node.name}"` : null,
 							node.value != null && node.value !== "" ? `value="${node.value}"` : null,
 							node.href ? node.href : null,
+							node.box
+								? `box=${node.box.x},${node.box.y},${node.box.width}x${node.box.height}`
+								: null,
 						].filter(Boolean);
 						lines.push(bits.join(" "));
+					}
+					lines.push(`pointerLocked: ${Boolean(data.pointerLocked)}`);
+					if (data.pointerLockTag) lines.push(`pointerLockTag: ${data.pointerLockTag}`);
+					if (data.viewportWidth != null && data.viewportHeight != null) {
+						lines.push(`viewport: ${data.viewportWidth}x${data.viewportHeight}`);
 					}
 					const meta = tabs.get(resolved.tabId);
 					if (meta) {
@@ -634,23 +954,157 @@ function createBrowserHostController(options = {}) {
 						url: data.url,
 						title: data.title,
 						snapshot: lines.join("\n"),
+						pointerLocked: Boolean(data.pointerLocked),
+						pointerLockTag: data.pointerLockTag || null,
+						viewportWidth: data.viewportWidth,
+						viewportHeight: data.viewportHeight,
 					};
 				}
 				case "click": {
 					const resolved = getGuest(command.tabId);
 					if (resolved.error) return { ok: false, error: resolved.error };
-					const selector = JSON.stringify(`[data-metis-ref="${String(command.ref || "")}"]`);
-					const result = await runPageScript(
-						resolved.guest,
-						`(() => {
-              const el = document.querySelector(${selector});
-              if (!el) return { ok: false, error: 'ref not found' };
-              el.click();
-              return { ok: true, url: location.href, title: document.title };
-            })()`,
-					);
-					if (!result?.ok) return { ok: false, error: result?.error || "click failed", tabId: resolved.tabId };
-					return { ok: true, tabId: resolved.tabId, url: result.url, title: result.title };
+					const center = await resolveRefCenter(resolved.guest, command.ref);
+					if (!center?.ok) {
+						return { ok: false, error: center?.error || "click failed", tabId: resolved.tabId };
+					}
+					const clicked = await trustedClickAt(resolved.guest, center.x, center.y, "left");
+					if (!clicked.ok) {
+						return { ok: false, error: clicked.error || "click failed", tabId: resolved.tabId };
+					}
+					return {
+						ok: true,
+						tabId: resolved.tabId,
+						url: clicked.url,
+						title: clicked.title,
+						x: clicked.x,
+						y: clicked.y,
+						pointerLocked: clicked.pointerLocked,
+						pointerLockTag: clicked.pointerLockTag,
+					};
+				}
+				case "mouse": {
+					const resolved = getGuest(command.tabId);
+					if (resolved.error) return { ok: false, error: resolved.error };
+					const action = String(command.action || "click").toLowerCase();
+					const button = mouseButtonName(command.button);
+					const aim = await resolveMouseAim(resolved.guest, command);
+					if (aim.error) {
+						return { ok: false, error: aim.error, tabId: resolved.tabId };
+					}
+					let x = aim.x;
+					let y = aim.y;
+					const movementX = aim.movementX;
+					const movementY = aim.movementY;
+					const hasRelative = aim.hasRelative;
+
+					if (action === "click") {
+						if (!Number.isFinite(x) || !Number.isFinite(y)) {
+							return { ok: false, error: "x/y or ref required for mouse click", tabId: resolved.tabId };
+						}
+						const clicked = await trustedClickAt(resolved.guest, x, y, button);
+						if (!clicked.ok) {
+							return { ok: false, error: clicked.error || "mouse click failed", tabId: resolved.tabId };
+						}
+						return {
+							ok: true,
+							tabId: resolved.tabId,
+							url: clicked.url,
+							title: clicked.title,
+							x: clicked.x,
+							y: clicked.y,
+							button: clicked.button,
+							pointerLocked: clicked.pointerLocked,
+							pointerLockTag: clicked.pointerLockTag,
+						};
+					}
+
+					if (!Number.isFinite(x) || !Number.isFinite(y)) {
+						return {
+							ok: false,
+							error: "x/y, ref, or movementX/movementY required for mouse action",
+							tabId: resolved.tabId,
+						};
+					}
+					const bx = Math.round(x);
+					const by = Math.round(y);
+					/** @type {Array<object>} */
+					const events = [];
+					if (action === "move" || action === "look") {
+						// FPS / pointer-lock look needs movementX/Y deltas, not only absolute x/y.
+						const moveEvent = { type: "mouseMove", x: bx, y: by };
+						if (hasRelative) {
+							moveEvent.movementX = movementX;
+							moveEvent.movementY = movementY;
+						}
+						events.push(moveEvent);
+					} else if (action === "down") {
+						events.push(
+							{ type: "mouseMove", x: bx, y: by },
+							{ type: "mouseDown", x: bx, y: by, button, clickCount: 1 },
+						);
+					} else if (action === "up") {
+						events.push({ type: "mouseUp", x: bx, y: by, button, clickCount: 1 });
+					} else if (action === "drag") {
+						let endX = Math.round(Number(command.endX));
+						let endY = Math.round(Number(command.endY));
+						if ((!Number.isFinite(endX) || !Number.isFinite(endY)) && hasRelative) {
+							endX = bx + movementX;
+							endY = by + movementY;
+						}
+						if (!Number.isFinite(endX) || !Number.isFinite(endY)) {
+							return {
+								ok: false,
+								error: "endX/endY or movementX/movementY required for drag",
+								tabId: resolved.tabId,
+							};
+						}
+						events.push(
+							{ type: "mouseMove", x: bx, y: by },
+							{ type: "mouseDown", x: bx, y: by, button, clickCount: 1 },
+							{
+								type: "mouseMove",
+								x: endX,
+								y: endY,
+								movementX: endX - bx,
+								movementY: endY - by,
+							},
+							{ type: "mouseUp", x: endX, y: endY, button, clickCount: 1 },
+						);
+					} else if (action === "wheel") {
+						const deltaX = Number(command.deltaX) || 0;
+						const deltaY = Number(command.deltaY) || 0;
+						events.push({
+							type: "mouseWheel",
+							x: bx,
+							y: by,
+							deltaX,
+							deltaY,
+							hasPreciseScrollingDeltas: true,
+							canScroll: true,
+						});
+					} else {
+						return { ok: false, error: `Unsupported mouse action: ${action}`, tabId: resolved.tabId };
+					}
+					const sent = await sendTrustedMouse(resolved.guest, events);
+					if (!sent.ok) {
+						return { ok: false, error: sent.error || "mouse failed", tabId: resolved.tabId };
+					}
+					await sleep(20);
+					const state = await readPageState(resolved.guest);
+					return {
+						ok: true,
+						tabId: resolved.tabId,
+						url: state.url,
+						title: state.title,
+						x: bx,
+						y: by,
+						movementX: hasRelative ? movementX : undefined,
+						movementY: hasRelative ? movementY : undefined,
+						button,
+						action,
+						pointerLocked: Boolean(state.pointerLocked),
+						pointerLockTag: state.pointerLockTag || null,
+					};
 				}
 				case "fill": {
 					const resolved = getGuest(command.tabId);
@@ -696,54 +1150,219 @@ function createBrowserHostController(options = {}) {
               } else if (el.isContentEditable) {
                 el.textContent = (el.textContent || '') + ${text};
               }
-              if (${submit}) {
-                const enter = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true });
-                el.dispatchEvent(enter);
-              }
-              return { ok: true, url: location.href, title: document.title };
+              return { ok: true, url: location.href, title: document.title, needsSubmit: ${submit} };
             })()`,
 					);
 					if (!result?.ok) return { ok: false, error: result?.error || "type failed", tabId: resolved.tabId };
+					if (submit) {
+						const send = getSendInputEvent(resolved.guest);
+						if (send) {
+							try {
+								send({ type: "keyDown", keyCode: "Enter" });
+								await sleep(20);
+								send({ type: "keyUp", keyCode: "Enter" });
+							} catch {
+								// fall through — text was already inserted
+							}
+						}
+					}
 					return { ok: true, tabId: resolved.tabId, url: result.url, title: result.title };
 				}
 				case "press_key": {
 					const resolved = getGuest(command.tabId);
 					if (resolved.error) return { ok: false, error: resolved.error };
-					const key = JSON.stringify(String(command.key || ""));
-					const result = await runPageScript(
-						resolved.guest,
-						`(() => {
-              const target = document.activeElement || document.body;
-              const eventInit = { key: ${key}, code: ${key}, bubbles: true, cancelable: true };
-              target.dispatchEvent(new KeyboardEvent('keydown', eventInit));
-              target.dispatchEvent(new KeyboardEvent('keyup', eventInit));
-              return { ok: true, url: location.href, title: document.title };
-            })()`,
-					);
-					return { ok: true, tabId: resolved.tabId, url: result?.url, title: result?.title };
+					const mapped = resolveKeyboardKey(command.key);
+					if (mapped.error) {
+						return { ok: false, error: mapped.error, tabId: resolved.tabId };
+					}
+					const send = getSendInputEvent(resolved.guest);
+					if (!send) {
+						return {
+							ok: false,
+							error: "webview sendInputEvent is unavailable",
+							tabId: resolved.tabId,
+						};
+					}
+					const holdMsRaw = Number(command.holdMs);
+					const holdMs = Number.isFinite(holdMsRaw)
+						? Math.max(0, Math.min(10_000, Math.round(holdMsRaw)))
+						: 50;
+					try {
+						if (typeof resolved.guest.focus === "function") resolved.guest.focus();
+					} catch {
+						// best-effort
+					}
+					try {
+						send({ type: "keyDown", keyCode: mapped.keyCode });
+						if (holdMs > 0) await sleep(holdMs);
+						send({ type: "keyUp", keyCode: mapped.keyCode });
+					} catch (error) {
+						return {
+							ok: false,
+							error: error instanceof Error ? error.message : String(error),
+							tabId: resolved.tabId,
+						};
+					}
+					await sleep(20);
+					const state = await readPageState(resolved.guest);
+					return {
+						ok: true,
+						tabId: resolved.tabId,
+						url: state.url,
+						title: state.title,
+						key: mapped.key,
+						code: mapped.code,
+						keyCode: mapped.keyCode,
+						holdMs,
+						pointerLocked: Boolean(state.pointerLocked),
+						pointerLockTag: state.pointerLockTag || null,
+					};
 				}
 				case "scroll": {
 					const resolved = getGuest(command.tabId);
 					if (resolved.error) return { ok: false, error: resolved.error };
 					const amount = Number(command.amount) > 0 ? Number(command.amount) : 600;
-					const direction = JSON.stringify(String(command.direction || "down"));
-					const selector = command.ref
-						? JSON.stringify(`[data-metis-ref="${String(command.ref)}"]`)
-						: "null";
-					const result = await runPageScript(
+					const direction = String(command.direction || "down");
+					const dx = direction === "left" ? -amount : direction === "right" ? amount : 0;
+					const dy = direction === "up" ? -amount : direction === "down" ? amount : 0;
+
+					// Aim at ref center when provided; otherwise viewport mid.
+					// (10,10) often misses the scrollable region.
+					let aimX = NaN;
+					let aimY = NaN;
+					if (command.ref) {
+						const center = await resolveRefCenter(resolved.guest, command.ref);
+						if (center?.ok) {
+							aimX = Number(center.x);
+							aimY = Number(center.y);
+						}
+					}
+					const before = await runPageScript(
+						resolved.guest,
+						`(() => ({
+              x: window.scrollX || 0,
+              y: window.scrollY || 0,
+              w: Math.round(window.innerWidth || 0),
+              h: Math.round(window.innerHeight || 0),
+            }))()`,
+					);
+					if (!Number.isFinite(aimX) || !Number.isFinite(aimY)) {
+						aimX = Math.round((Number(before?.w) || 800) / 2);
+						aimY = Math.round((Number(before?.h) || 600) / 2);
+					}
+
+					// Keep both paths: trusted mouseWheel (games / custom listeners) +
+					// window.scrollBy fallback when the viewport did not move.
+					let wheeled = false;
+					const send = getSendInputEvent(resolved.guest);
+					if (send) {
+						try {
+							if (typeof resolved.guest.focus === "function") resolved.guest.focus();
+							send({
+								type: "mouseWheel",
+								x: aimX,
+								y: aimY,
+								deltaX: dx,
+								deltaY: dy,
+								hasPreciseScrollingDeltas: true,
+								canScroll: true,
+							});
+							wheeled = true;
+						} catch {
+							// fall through to scrollBy
+						}
+					}
+					if (wheeled) await sleep(20);
+
+					const after = wheeled
+						? await runPageScript(
+								resolved.guest,
+								`(() => ({ x: window.scrollX || 0, y: window.scrollY || 0 }))()`,
+							)
+						: null;
+					const moved =
+						Boolean(after) &&
+						(Number(after.x) !== Number(before?.x) || Number(after.y) !== Number(before?.y));
+					if (!moved) {
+						await runPageScript(
+							resolved.guest,
+							`(() => { window.scrollBy(${dx}, ${dy}); return true; })()`,
+						);
+					}
+
+					const state = await readPageState(resolved.guest);
+					return { ok: true, tabId: resolved.tabId, url: state.url, title: state.title };
+				}
+				case "evaluate": {
+					const resolved = getGuest(command.tabId);
+					if (resolved.error) return { ok: false, error: resolved.error };
+					const expression = String(command.expression || "").trim();
+					if (!expression) {
+						return { ok: false, error: "expression required", tabId: resolved.tabId };
+					}
+					const exprJson = JSON.stringify(expression);
+					const evaluated = await runPageScript(
 						resolved.guest,
 						`(() => {
-              const el = ${selector} ? document.querySelector(${selector}) : null;
-              if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' });
-              const dir = ${direction};
-              const amt = ${amount};
-              const dx = dir === 'left' ? -amt : dir === 'right' ? amt : 0;
-              const dy = dir === 'up' ? -amt : dir === 'down' ? amt : 0;
-              window.scrollBy(dx, dy);
-              return { ok: true, url: location.href, title: document.title };
+              let value;
+              try {
+                value = (0, eval)(${exprJson});
+              } catch (error) {
+                return {
+                  ok: false,
+                  error: error instanceof Error ? error.message : String(error),
+                  url: location.href,
+                  title: document.title,
+                  pointerLocked: Boolean(document.pointerLockElement),
+                };
+              }
+              let resultText;
+              try {
+                resultText = JSON.stringify(value);
+              } catch {
+                resultText = JSON.stringify(String(value));
+              }
+              if (resultText == null) resultText = 'null';
+              if (resultText.length > 8000) {
+                resultText = resultText.slice(0, 8000) + '…';
+              }
+              return {
+                ok: true,
+                resultText,
+                url: location.href,
+                title: document.title,
+                pointerLocked: Boolean(document.pointerLockElement),
+                pointerLockTag: document.pointerLockElement
+                  ? document.pointerLockElement.tagName.toLowerCase()
+                  : null,
+              };
             })()`,
 					);
-					return { ok: true, tabId: resolved.tabId, url: result?.url, title: result?.title };
+					if (!evaluated?.ok) {
+						return {
+							ok: false,
+							error: evaluated?.error || "evaluate failed",
+							tabId: resolved.tabId,
+							url: evaluated?.url,
+							title: evaluated?.title,
+						};
+					}
+					let parsed = null;
+					try {
+						parsed = JSON.parse(evaluated.resultText);
+					} catch {
+						parsed = evaluated.resultText;
+					}
+					return {
+						ok: true,
+						tabId: resolved.tabId,
+						url: evaluated.url,
+						title: evaluated.title,
+						result: parsed,
+						resultText: evaluated.resultText,
+						pointerLocked: Boolean(evaluated.pointerLocked),
+						pointerLockTag: evaluated.pointerLockTag || null,
+					};
 				}
 				case "screenshot": {
 					const resolved = getGuest(command.tabId);
@@ -757,7 +1376,9 @@ function createBrowserHostController(options = {}) {
 							PAINT_WAIT_TIMEOUT_MS,
 							"Timed out measuring Inspector SVG bounds",
 						);
-						cropRect = computeSvgContentRect(info, info?.viewBox);
+						if (info && info.standalone) {
+							cropRect = computeSvgContentRect(info, info?.viewBox);
+						}
 					} catch {
 						cropRect = null;
 					}
@@ -887,7 +1508,9 @@ module.exports = {
 	isHttpUrl,
 	isFileUrl,
 	isAllowedBrowserUrl,
+	isLocalDevUrl,
 	resolveNavigateUrl,
+	resolveKeyboardKey,
 	computeSvgContentRect,
 	displayUrl,
 	BROWSER_FIT_VIEWPORT_SCRIPT,

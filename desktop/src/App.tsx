@@ -749,14 +749,25 @@ export function App() {
     const restore = async () => {
       try {
         const workspace = await desktop?.workspace?.get?.();
-        const current = workspace?.path
-          ? { id: workspace.path, name: workspace.name || workspace.path.split('/').pop(), path: workspace.path }
+        const isAppPath = (p?: string) => {
+          if (!p) return true;
+          const norm = p.replace(/\\/g, '/');
+          return norm.includes('/Metis.app') || norm.includes('app.asar');
+        };
+        const current = workspace?.path && !isAppPath(workspace.path)
+          ? {
+              id: workspace.path,
+              name: workspace.name || workspace.path.split(/[/\\]/).filter(Boolean).pop() || 'Project',
+              path: workspace.path,
+            }
           : undefined;
-        const merged = current
-          ? [current, ...storedProjects.filter((project) => project.path !== current.path)]
-          : storedProjects;
+        const merged = storedProjects.length > 0
+          ? (current && !storedProjects.some((project) => pathsEqual(project.path, current.path))
+              ? [...storedProjects, current]
+              : storedProjects)
+          : (current ? [current] : []);
         const storedActive = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-        const nextActive = merged.find((project) => project.id === storedActive) || current || merged[0];
+        const nextActive = merged.find((project) => project.id === storedActive || pathsEqual(project.path, storedActive || '')) || current || merged[0];
         setProjects(merged);
         setActiveProjectId(nextActive?.id || '');
       } catch (error) {
@@ -872,8 +883,8 @@ export function App() {
     if (!ownerPath) {
       ownerPath = agents.find((agent) => agent.id === agentId)?.projectPath;
     }
-    if (ownerPath && ownerPath !== activeProject?.path) {
-      const ownerProject = projects.find((project) => project.path === ownerPath);
+    if (ownerPath && !pathsEqual(ownerPath, activeProject?.path)) {
+      const ownerProject = projects.find((project) => pathsEqual(project.path, ownerPath));
       if (ownerProject) {
         setActiveProjectId(ownerProject.id);
         const desktop = (window as any).metisDesktop;
@@ -899,12 +910,12 @@ export function App() {
       if (selected.length === 0) return;
       const additions: ProjectItem[] = selected.map((workspace: { name?: string; path: string }) => ({
         id: workspace.path,
-        name: workspace.name || workspace.path.split('/').pop() || 'Project',
+        name: workspace.name || workspace.path.split(/[/\\]/).filter(Boolean).pop() || 'Project',
         path: workspace.path,
       }));
       setProjects((current) => [
         ...current,
-        ...additions.filter((addition) => !current.some((project) => project.path === addition.path)),
+        ...additions.filter((addition) => !current.some((project) => pathsEqual(project.path, addition.path))),
       ]);
       const nextProject = additions[0];
       await desktop.workspace.set?.(nextProject.path);
@@ -923,10 +934,10 @@ export function App() {
       if (!workspace?.path) return false;
       const project: ProjectItem = {
         id: workspace.path,
-        name: workspace.name || workspace.path.split('/').pop() || 'Project',
+        name: workspace.name || workspace.path.split(/[/\\]/).filter(Boolean).pop() || 'Project',
         path: workspace.path,
       };
-      setProjects((current) => [project, ...current.filter((item) => item.path !== project.path)]);
+      setProjects((current) => [project, ...current.filter((item) => !pathsEqual(item.path, project.path))]);
       await desktop.workspace.set?.(project.path);
       setActiveProjectId(project.id);
       void selectProject(project);
@@ -940,10 +951,22 @@ export function App() {
   const handleOnboardingProject = async (workspace: { name?: string; path: string }) => {
     const project: ProjectItem = {
       id: workspace.path,
-      name: workspace.name || workspace.path.split('/').pop() || 'Project',
+      name: workspace.name || workspace.path.split(/[/\\]/).filter(Boolean).pop() || 'Project',
       path: workspace.path,
     };
-    setProjects((current) => [project, ...current.filter((item) => item.path !== project.path)]);
+    const desktop = (window as any).metisDesktop;
+    if (desktop?.workspace?.set) {
+      await desktop.workspace.set(project.path).catch((err: unknown) => {
+        console.warn('[desktop] Failed to set workspace:', err);
+      });
+    }
+    setProjects((current) => {
+      const filtered = current.filter((item) => {
+        const norm = item.path.replace(/\\/g, '/');
+        return !norm.includes('/Metis.app') && !norm.includes('app.asar') && !pathsEqual(item.path, project.path);
+      });
+      return [project, ...filtered];
+    });
     setActiveProjectId(project.id);
     void selectProject(project);
   };

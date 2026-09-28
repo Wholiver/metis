@@ -205,14 +205,20 @@ export function reconcileSessionAgents(
   let nextAgents = sessions.map(sessionToAgent);
   const belongsToProject = isSessionOwnedByProject(state, projectPath);
   const activeIndex = nextAgents.findIndex((agent) => (
-    agent.id === state.sessionId || (state.sessionFile && agent.sessionPath === state.sessionFile)
+    agent.id === state.sessionId || (state.sessionFile && agent.sessionPath && pathsEqual(agent.sessionPath, state.sessionFile))
   ));
   if (activeIndex >= 0 && state.sessionName?.trim() && nextAgents[activeIndex].name !== state.sessionName.trim()) {
     nextAgents = nextAgents.map((agent, index) => (
       index === activeIndex ? { ...agent, name: state.sessionName!.trim() } : agent
     ));
   }
-  if (belongsToProject && state.sessionId && !nextAgents.some((agent) => agent.id === state.sessionId)) {
+  if (
+    belongsToProject
+    && state.sessionId
+    && !nextAgents.some((agent) => (
+      agent.id === state.sessionId || (state.sessionFile && agent.sessionPath && pathsEqual(agent.sessionPath, state.sessionFile))
+    ))
+  ) {
     nextAgents = [{
       ...EMPTY_AGENT,
       id: state.sessionId,
@@ -737,6 +743,25 @@ export function applyWorkingSessionIds(
   return changed ? next : current;
 }
 
+/**
+ * SSE blips must not drop the live "思考中" row while the agent is still running.
+ * Only clear local streaming when we were idle, or when /session confirms idle.
+ * Probe failures keep streaming until reconnect reconciles via snapshot.
+ */
+export function resolveStreamingAfterDisconnect(options: {
+  wasStreamingLocally: boolean;
+  /** `undefined` = probe not run / failed; `true`/`false` = /session.isStreaming */
+  serverIsStreaming?: boolean;
+}): { keepStreaming: boolean; clearWorkingSessions: boolean } {
+  if (!options.wasStreamingLocally) {
+    return { keepStreaming: false, clearWorkingSessions: true };
+  }
+  if (options.serverIsStreaming === false) {
+    return { keepStreaming: false, clearWorkingSessions: true };
+  }
+  return { keepStreaming: true, clearWorkingSessions: false };
+}
+
 export type SessionViewExtras = {
   workflowPlan?: WorkflowPlanState;
   workflowProposal?: WorkflowProposalState;
@@ -1064,6 +1089,22 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const pendingSwitchAgentIdRef = useRef<string | null>(null);
   const lastSessionByProjectRef = useRef(new Map<string, string>());
   const lastActivatedProjectPathRef = useRef('');
+
+  const getLastSessionForProject = useCallback((projectPath: string): string | undefined => {
+    for (const [key, value] of lastSessionByProjectRef.current.entries()) {
+      if (pathsEqual(key, projectPath)) return value;
+    }
+    return undefined;
+  }, []);
+
+  const setLastSessionForProject = useCallback((projectPath: string, sessionId: string): void => {
+    for (const key of Array.from(lastSessionByProjectRef.current.keys())) {
+      if (pathsEqual(key, projectPath)) {
+        lastSessionByProjectRef.current.delete(key);
+      }
+    }
+    lastSessionByProjectRef.current.set(projectPath, sessionId);
+  }, []);
   const sessionMutationRef = useRef(Promise.resolve());
   const creatingSessionRef = useRef<Promise<boolean> | null>(null);
   const suppressSessionChangedRef = useRef(false);
@@ -1336,8 +1377,8 @@ export function useMetisServer(activeProject?: ProjectItem) {
       const preferredPath = preferredSessionId
         ? result.sessions.find((session) => session.id === preferredSessionId)?.path
         : undefined;
-      const current = result.sessions.find((session) => session.path === state.sessionFile);
-      const preferredMismatch = Boolean(preferredPath && state.sessionFile !== preferredPath);
+      const current = result.sessions.find((session) => pathsEqual(session.path, state.sessionFile));
+      const preferredMismatch = Boolean(preferredPath && !pathsEqual(state.sessionFile, preferredPath));
       if (switchWhenNeeded && (!pathsEqual(state.cwd, project.path) || !current || preferredMismatch)) {
         const destination = preferredPath || result.sessions[0]?.path;
         if (destination) {
@@ -1371,7 +1412,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
       activeSessionIdRef.current = nextSessionId;
       setActiveAgentId(nextSessionId);
       if (nextSessionId && !isTransientSessionId(nextSessionId)) {
-        lastSessionByProjectRef.current.set(project.path, nextSessionId);
+        setLastSessionForProject(project.path, nextSessionId);
         messagesSessionIdRef.current = nextSessionId;
       }
       if (ownsNavigation && nextSessionId && pendingSwitchAgentIdRef.current === PROJECT_SWITCH_PENDING_ID) {
@@ -1572,6 +1613,11 @@ export function useMetisServer(activeProject?: ProjectItem) {
       }
       if (type === 'server.connected') {
         setIsConnected(true);
+        // After a mid-turn SSE blip, restore transcript + isStreaming from snapshot.
+        if (streamingRef.current) {
+          const sessionId = activeSessionIdRef.current;
+          void loadMessages(sessionId || undefined).catch(() => {});
+        }
         return;
       }
       if (type === 'message_start' || type === 'message_update' || type === 'message_end') {
@@ -1704,9 +1750,27 @@ export function useMetisServer(activeProject?: ProjectItem) {
     const unsubscribeDisconnect = desktop.metis.onDisconnect(() => {
       flushPendingStream();
       setIsConnected(false);
-      assignStreaming(false);
-      setWorkingSessionIds(new Set());
-      lastActivatedProjectPathRef.current = '';
+      const wasStreamingLocally = streamingRef.current;
+      const idleDecision = resolveStreamingAfterDisconnect({ wasStreamingLocally });
+      if (!idleDecision.keepStreaming) {
+        assignStreaming(false);
+        setWorkingSessionIds(new Set());
+        lastActivatedProjectPathRef.current = '';
+        return;
+      }
+      // Mid-turn blip: keep "思考中" until /session (or reconnect snapshot) says idle.
+      void request<SessionState>('/session').then((state) => {
+        const decision = resolveStreamingAfterDisconnect({
+          wasStreamingLocally: streamingRef.current,
+          serverIsStreaming: Boolean(state.isStreaming),
+        });
+        if (decision.keepStreaming) return;
+        assignStreaming(false);
+        setWorkingSessionIds(new Set());
+        lastActivatedProjectPathRef.current = '';
+      }).catch(() => {
+        // Keep thinking UI; server.connected + loadMessages will reconcile.
+      });
     });
     const unsubscribeServerReady = desktop.metis.onServerReady?.(() => {
       void connect();
@@ -1775,7 +1839,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     if (outgoingId && !isTransientSessionId(outgoingId)) {
       sessionExtrasCacheRef.current.set(outgoingId, sessionExtrasLiveRef.current);
       const previousPath = activeProjectRef.current?.path;
-      if (previousPath) lastSessionByProjectRef.current.set(previousPath, outgoingId);
+      if (previousPath) setLastSessionForProject(previousPath, outgoingId);
     }
     pendingSwitchAgentIdRef.current = agentId;
     suppressSessionChangedRef.current = true;
@@ -1915,7 +1979,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
           setMessagesSessionId(realId);
           setMessages([]);
           rememberSessionMessages(messagesCacheRef.current, realId, []);
-          if (realId) lastSessionByProjectRef.current.set(project.path, realId);
+          if (realId) setLastSessionForProject(project.path, realId);
           const withReal = [realAgent, ...agentsRef.current.filter((agent) => (
             agent.id !== optimisticId && agent.id !== realId
           ))];
@@ -1967,10 +2031,10 @@ export function useMetisServer(activeProject?: ProjectItem) {
     if (
       previousPath
       && previousSession
-      && previousPath !== project.path
+      && !pathsEqual(previousPath, project.path)
       && !isTransientSessionId(previousSession)
     ) {
-      lastSessionByProjectRef.current.set(previousPath, previousSession);
+      setLastSessionForProject(previousPath, previousSession);
     }
 
     let cachedAgents = projectAgentsByPathRef.current[project.path] || [];
@@ -1982,11 +2046,11 @@ export function useMetisServer(activeProject?: ProjectItem) {
         }
       }
     }
-    const lastId = lastSessionByProjectRef.current.get(project.path);
+    const lastId = getLastSessionForProject(project.path);
     const preferred = pickPreferredProjectSession(cachedAgents, lastId);
 
     if (
-      lastActivatedProjectPathRef.current === project.path
+      pathsEqual(lastActivatedProjectPathRef.current, project.path)
       && preferred
       && (preferred.id === activeSessionIdRef.current || preferred.id === messagesSessionIdRef.current)
       && !pendingSwitchAgentIdRef.current
@@ -2004,7 +2068,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
         messagesCacheRef.current.has(preferred.id) ? 'cached' : 'loading',
       );
       if (cachedAgents.length) setAgents(cachedAgents);
-      lastSessionByProjectRef.current.set(project.path, preferred.id);
+      setLastSessionForProject(project.path, preferred.id);
       try {
         await loadProject(project, true, preferred.id);
         if (currentSwitchVersion !== switchVersionRef.current) return;

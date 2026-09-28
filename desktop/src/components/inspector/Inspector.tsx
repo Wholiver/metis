@@ -12,6 +12,7 @@ import { WorkflowPlanState, WorkflowProposalState, AssistantContentPart } from '
 import { SubagentItem } from '../../lib/subagents';
 import { InspectorTab, InspectorTabKind, isPinnedInspectorTab } from '../../lib/inspector-tabs';
 import { useI18n } from '../../i18n';
+import { isWindows } from '../../lib/platform';
 import { ReviewPanel } from './ReviewPanel';
 import { InspectorPlanPanel } from './InspectorPlanPanel';
 import { SubagentsList } from './SubagentsList';
@@ -222,7 +223,7 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
 
   return (
     <aside ref={ref} style={{ width: `${width}px` }} className="h-full min-w-[360px] shrink bg-page flex flex-col overflow-hidden select-none relative" aria-label={t('workspaceContext') || 'Workspace context'} data-plan-inspector="">
-      <div className="h-[50px] px-2 flex items-center justify-between flex-shrink-0 titlebar-drag gap-1.5 border-b border-line">
+      <div className={`h-[50px] px-2 ${isWindows ? 'pr-[140px]' : ''} flex items-center justify-between flex-shrink-0 titlebar-drag gap-1.5 border-b border-line`}>
         <div className="flex min-w-0 flex-1 items-center gap-1 no-drag">
           <div
             ref={tabStripRef}

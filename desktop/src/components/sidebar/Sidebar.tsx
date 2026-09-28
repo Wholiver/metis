@@ -5,6 +5,7 @@ import { AgentItem } from './AgentItem';
 import { useI18n } from '../../i18n';
 import { RELEASES_URL, type UpdateCheckState } from '../../hooks/useUpdateCheck';
 import { pathsEqual } from '../../hooks/useMetisServer';
+import { isMac } from '../../lib/platform';
 import GlideMenu from '../primitives/GlideMenu';
 
 const VISIBLE_CONVERSATIONS = 8;
@@ -390,7 +391,7 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
     >
       <div className="h-[50px] px-3 flex items-center flex-shrink-0 titlebar-drag">
         <div className="flex items-center gap-1.5 no-drag">
-          <div className="w-[66px] h-[16px]" />
+          {isMac && <div className="w-[66px] h-[16px]" />}
           <button
             onClick={onToggleSidebar}
             className="w-7 h-7 rounded-chip flex items-center justify-center text-ink-3 hover:bg-hover hover:text-ink transition-colors"

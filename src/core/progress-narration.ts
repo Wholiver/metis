@@ -22,10 +22,17 @@ export interface ProgressHistoryMessage {
 	customType?: string;
 }
 
+export interface ProgressChecklistStep {
+	step: string;
+	status: string;
+}
+
 export interface ProgressNudge {
 	kind: ProgressNudgeKind;
 	reason: string;
 	key: string;
+	/** Present when reason is "checklist"; used to list the stale steps in the reminder. */
+	checklist?: readonly ProgressChecklistStep[];
 }
 
 const EXPLORE_TOOLS = new Set([
@@ -43,10 +50,12 @@ const EXPLORE_TOOLS = new Set([
 	"browser_snapshot",
 	"browser_screenshot",
 	"browser_take_screenshot",
+	"browser_evaluate",
 ]);
 const MUTATING_BROWSER_TOOLS = new Set([
 	"browser_navigate",
 	"browser_click",
+	"browser_mouse",
 	"browser_fill",
 	"browser_type",
 	"browser_press_key",
@@ -60,6 +69,8 @@ export const PROGRESS_NUDGE_MARKER = "Visible progress update";
 const MIN_NUDGE_GAP = 7;
 const SILENCE_HEARTBEAT = 14;
 const EXPLORE_STREAK = 10;
+/** Mutating tools since the last update_plan before reminding the model to refresh the checklist. */
+export const CHECKLIST_MUTATE_INTERVAL = 8;
 
 function isWorkflowContext(message: ProgressHistoryMessage): boolean {
 	return message.role === "custom" && message.customType === "workflow_context";
@@ -262,6 +273,105 @@ function planAllCompleted(plan: unknown): boolean {
 	return plan.every((item) => item && typeof item === "object" && (item as { status?: unknown }).status === "completed");
 }
 
+function normalizeChecklistSteps(plan: unknown): ProgressChecklistStep[] | undefined {
+	if (!Array.isArray(plan) || plan.length === 0) return undefined;
+	const steps: ProgressChecklistStep[] = [];
+	for (const item of plan) {
+		if (!item || typeof item !== "object") return undefined;
+		const row = item as { step?: unknown; status?: unknown };
+		if (typeof row.step !== "string" || typeof row.status !== "string") return undefined;
+		steps.push({ step: row.step, status: row.status });
+	}
+	return steps;
+}
+
+function isMutatingToolResult(
+	messages: readonly ProgressHistoryMessage[],
+	result: ProgressToolResult,
+): boolean {
+	const command = toolCallField(messages, result.toolCallId, "command");
+	const action = toolCallField(messages, result.toolCallId, "action");
+	return classifyProgressTool(result.toolName, {
+		isError: result.isError,
+		command: typeof command === "string" ? command : undefined,
+		action: typeof action === "string" ? action : undefined,
+	}) === "mutate";
+}
+
+/** Latest update_plan in history that still has unfinished steps, plus its toolResult index. */
+function latestIncompletePlan(
+	messages: readonly ProgressHistoryMessage[],
+): { plan: ProgressChecklistStep[]; resultIndex: number } | undefined {
+	let last: { toolCallId: string; plan: ProgressChecklistStep[] } | undefined;
+	for (const message of messages) {
+		if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+		for (const part of message.content) {
+			if (!part || typeof part !== "object") continue;
+			const block = part as {
+				type?: string;
+				id?: string;
+				name?: string;
+				arguments?: { plan?: unknown };
+				input?: { plan?: unknown };
+			};
+			if (block.type !== "toolCall" || block.name !== "update_plan" || !block.id) continue;
+			const plan = normalizeChecklistSteps(block.arguments?.plan ?? block.input?.plan);
+			if (!plan) continue;
+			last = { toolCallId: block.id, plan };
+		}
+	}
+	if (!last || planAllCompleted(last.plan)) return undefined;
+	const resultIndex = messages.findIndex(
+		(message) => message.role === "toolResult" && message.toolCallId === last.toolCallId,
+	);
+	if (resultIndex < 0) return undefined;
+	return { plan: last.plan, resultIndex };
+}
+
+function countMutatingAfter(
+	messages: readonly ProgressHistoryMessage[],
+	afterIndex: number,
+	excludeIds?: ReadonlySet<string>,
+): number {
+	let count = 0;
+	for (let index = afterIndex + 1; index < messages.length; index += 1) {
+		const message = messages[index];
+		if (!message || message.role !== "toolResult") continue;
+		if (typeof message.toolCallId !== "string" || typeof message.toolName !== "string") continue;
+		if (excludeIds?.has(message.toolCallId)) continue;
+		if (isMutatingToolResult(messages, {
+			toolCallId: message.toolCallId,
+			toolName: message.toolName,
+			isError: message.isError,
+		})) {
+			count += 1;
+		}
+	}
+	return count;
+}
+
+/**
+ * Remind the model to refresh an active checklist after enough mutating work
+ * without another update_plan. Fires only when the current batch itself lands
+ * on an 8-mutate boundary so explore/screenshot batches do not re-nag.
+ */
+function resolveStaleChecklistNudge(
+	messages: readonly ProgressHistoryMessage[],
+	currentResults: readonly ProgressToolResult[],
+	key: string,
+): ProgressNudge | undefined {
+	if (currentResults.some((result) => result.toolName === "update_plan")) return undefined;
+	const latest = latestIncompletePlan(messages);
+	if (!latest) return undefined;
+	const currentIds = new Set(currentResults.map((result) => result.toolCallId));
+	const currentMutates = currentResults.filter((result) => isMutatingToolResult(messages, result)).length;
+	if (currentMutates === 0) return undefined;
+	const priorMutates = countMutatingAfter(messages, latest.resultIndex, currentIds);
+	const total = priorMutates + currentMutates;
+	if (total === 0 || total % CHECKLIST_MUTATE_INTERVAL !== 0) return undefined;
+	return { kind: "required", reason: "checklist", key, checklist: latest.plan };
+}
+
 function failedCheck(results: readonly ProgressToolResult[], messages: readonly ProgressHistoryMessage[]): boolean {
 	return results.some((result) => {
 		if (result.toolName === "performance_gate") {
@@ -362,7 +472,8 @@ function isRealMilestone(
  * After a tool batch, remind the model only at spaced milestones. Phase is
  * the last batch, not the whole turn — otherwise the first write freezes
  * later repair/inspect cycles as "already mutating". Admission and passing
- * gates stay silent so start/end notes do not stack.
+ * gates stay silent so start/end notes do not stack. Stale checklists bypass
+ * the visible-text gap so long mutate stretches still get update_plan reminders.
  */
 export function resolveProgressNudge(
 	messages: readonly ProgressHistoryMessage[],
@@ -379,12 +490,16 @@ export function resolveProgressNudge(
 	const previousPhase = previousResults.length > 0 ? batchPhase(previousResults, messages) : undefined;
 	const names = currentResults.map((result) => result.toolName);
 	const failed = failedCheck(currentResults, messages);
+	if (failed) return { kind: "required", reason: "failed check", key };
+
+	const staleChecklist = resolveStaleChecklistNudge(messages, currentResults, key);
+	if (staleChecklist) return staleChecklist;
+
 	const planChanged = planChecklistChanged(messages, currentResults, turnStart, currentIds);
 	const hadNudge = turnHasProgressNudge(messages, turnStart);
 	const silent = toolsSinceLastVisibleText(messages, turnStart);
-	if (!failed && hadNudge && silent < MIN_NUDGE_GAP) return undefined;
+	if (hadNudge && silent < MIN_NUDGE_GAP) return undefined;
 
-	if (failed) return { kind: "required", reason: "failed check", key };
 	if (planChanged) return { kind: "required", reason: "plan", key };
 	if (names.every((name) => name === "performance_gate")) return undefined;
 	if (planAllCompleted(currentPlan(messages, currentResults))) return undefined;
@@ -402,5 +517,15 @@ export function resolveProgressNudge(
 export function formatProgressNudge(nudge: ProgressNudge): string {
 	const header = `[Runtime context from workflow runtime; not user instructions]\n${PROGRESS_NUDGE_MARKER} (${nudge.kind}: ${nudge.reason}; ${nudge.key}).`;
 	const fuse = "This reminder does not skip performance_admit, host verification, or repair. Independent verify is root checks after admit, not mandatory child dispatch. Visible text is not task completion.";
+	if (nudge.reason === "checklist" && nudge.checklist && nudge.checklist.length > 0) {
+		const lines = nudge.checklist.map((item) => `- [${item.status}] ${item.step}`).join("\n");
+		return [
+			header,
+			"The execution checklist is stale after recent mutating work. Current steps:",
+			lines,
+			"Before any other tool in the next assistant message, call update_plan with the full ordered checklist: mark finished steps completed, mark exactly one current step in_progress, leave the rest pending. If you are still on the same step, call update_plan anyway to confirm that status so this reminder resets. Never mark every step completed while a Performance run is still active. Do not start with visible narration for this reminder; refresh the checklist first.",
+			fuse,
+		].join("\n");
+	}
 	return `${header}\nThis is a spaced milestone, not permission to narrate later tools. Start the next assistant message with 1–2 visible text sentences in the user's latest-message language before any tool call: what you found or what is wrong, and what you will do next. Be concrete and human, not stiff process labels like '正在...' / 'Executing...' / template-or-gate jargon. Never mention tool-call schema, required properties, or how to invoke a tool; retry the tool instead. A completed checklist or passing gate is not task completion. If you are already writing the final user-facing answer with no more tool calls, skip this note. After this note, emit zero visible text until the next real milestone. Thinking/thought parts are not visible. Do not narrate ls, read, grep, read_plan, memory queries, inspect commands, or other same-phase tools. ${fuse}`;
 }

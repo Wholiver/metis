@@ -58,6 +58,9 @@ function loadDesktopPreferences() {
 		desktopTheme = "system";
 		metisServer = restoreMetisServer(saved?.server);
 		nativeTheme.themeSource = "system";
+		if (saved?.workspaceRoot && typeof saved.workspaceRoot === "string" && fs.existsSync(saved.workspaceRoot)) {
+			workspaceRoot = saved.workspaceRoot;
+		}
 	} catch {
 		desktopLanguage = "auto";
 		desktopTheme = "system";
@@ -72,6 +75,7 @@ function saveDesktopPreferences() {
 		language: desktopLanguage,
 		theme: desktopTheme,
 		server: persistMetisServer(metisServer),
+		workspaceRoot,
 	}), "utf8");
 }
 
@@ -2049,7 +2053,15 @@ app.whenReady().then(async () => {
 	if (process.platform === "darwin") app.dock?.setIcon(createAppIcon());
 	rebuildApplicationMenu();
 	const browserSession = session.fromPartition("persist:metis-browser");
-	browserSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+	// Deny most web permissions, but allow pointer lock / fullscreen so Inspector
+	// games (FPS look) and media apps can request them after a trusted click.
+	const BROWSER_ALLOWED_PERMISSIONS = new Set(["pointerLock", "fullscreen"]);
+	browserSession.setPermissionCheckHandler((_webContents, permission) =>
+		BROWSER_ALLOWED_PERMISSIONS.has(String(permission || "")),
+	);
+	browserSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+		callback(BROWSER_ALLOWED_PERMISSIONS.has(String(permission || "")));
+	});
 	registerIpc();
 	createWindow();
 	process.stderr.write("[desktop] performence mode loaded\n");
@@ -2336,19 +2348,33 @@ function setWorkspaceRoot(workspacePath) {
 	}
 	workspaceRoot = resolved;
 	isDefaultWorkspaceProjectRepo = true;
+	try {
+		saveDesktopPreferences();
+	} catch {}
 	return workspaceSummary();
 }
 
 function findDefaultWorkspace() {
-	for (const candidate of [path.resolve(__dirname, ".."), path.resolve(__dirname, "../.."), process.cwd()]) {
-		if (fs.existsSync(path.join(candidate, "src", "modes")) && fs.existsSync(path.join(candidate, "package.json"))) {
-			isDefaultWorkspaceProjectRepo = true;
-			return candidate;
+	try {
+		const saved = JSON.parse(fs.readFileSync(desktopPreferencesPath(), "utf8"));
+		if (saved?.workspaceRoot && typeof saved.workspaceRoot === "string" && fs.existsSync(saved.workspaceRoot)) {
+			return saved.workspaceRoot;
+		}
+	} catch {}
+
+	if (!app.isPackaged && !process.env.METIS_PACKAGED) {
+		for (const candidate of [path.resolve(__dirname, ".."), path.resolve(__dirname, "../.."), process.cwd()]) {
+			if (fs.existsSync(path.join(candidate, "src", "modes")) && fs.existsSync(path.join(candidate, "package.json"))) {
+				if (!candidate.includes("Metis.app") && !candidate.includes("app.asar")) {
+					isDefaultWorkspaceProjectRepo = true;
+					return candidate;
+				}
+			}
 		}
 	}
 	isDefaultWorkspaceProjectRepo = false;
 	const cwd = process.cwd();
-	if (cwd && cwd !== "/" && fs.existsSync(cwd)) {
+	if (cwd && cwd !== "/" && !cwd.includes("Metis.app") && !cwd.includes("app.asar") && fs.existsSync(cwd)) {
 		return cwd;
 	}
 	try {

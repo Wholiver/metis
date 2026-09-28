@@ -9,18 +9,10 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../lib/utils";
 
-const Icons: Record<string, React.ReactNode> = {
-  think: <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />,
-  write: <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></g>,
-  run: <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l6-5-6-5M12 19h8" /></g>,
-  read: <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></g>,
-  search: <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></g>,
-  agent: <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></g>,
-};
-
 export type ToolDetailLine = { text: string; tone?: "add" };
 export type ToolStep = {
   id?: string;
+  /** @deprecated Leading tool icons removed; kept optional for call-site compat. */
   icon?: string;
   partType?: "thinking" | "text" | "toolCall";
   label: string;
@@ -156,18 +148,7 @@ export default function ToolChips({
                     onClick={() => toggleRow(rowKey)}
                     className="group/row -mx-[3px] flex h-7 w-[calc(100%+6px)] min-w-0 items-center gap-2 rounded-control px-[3px] text-left transition-colors duration-100 hover:bg-hover-2"
                   >
-                    <span className="relative flex size-4 shrink-0 items-center justify-center text-ink-3">
-                      <svg
-                        width="13"
-                        height="13"
-                        viewBox="0 0 24 24"
-                        fill={row.icon === "think" ? "currentColor" : "none"}
-                        stroke="currentColor"
-                        className={`transition-opacity duration-100 group-hover/row:opacity-0 ${rowOpen ? "opacity-0" : ""}`}
-                        aria-hidden
-                      >
-                        {Icons[row.icon ?? "run"] ?? Icons.run}
-                      </svg>
+                    <span className="flex size-4 shrink-0 items-center justify-center text-ink-3">
                       <svg
                         data-tool-chip-chevron=""
                         width="12"
@@ -178,7 +159,7 @@ export default function ToolChips({
                         strokeWidth="2.2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className={`absolute transition-[opacity,transform] duration-150 group-hover/row:opacity-100 ${rowOpen ? "opacity-100" : "opacity-0"}`}
+                        className="transition-transform duration-150"
                         style={{ transform: rowOpen ? "rotate(0deg)" : "rotate(-90deg)" }}
                         aria-hidden
                       >

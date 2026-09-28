@@ -88,6 +88,7 @@ export function createUpdatePlanToolDefinition(options: UpdatePlanToolOptions = 
 		promptSnippet: "Keep the session execution checklist current as steps start and finish",
 		promptGuidelines: [
 			"Call update_plan when a step starts or finishes; do not wait until the whole task ends.",
+			"After the checklist is active, call update_plan again when a step finishes or after several mutating writes so the visible list stays current.",
 			"Use status pending, in_progress, or completed only. Mark exactly one current step in_progress.",
 			"Write each step and explanation in the same language as the user's latest message.",
 			"Never mark every step completed while a Performance run is still active; close the required performance_gate first.",

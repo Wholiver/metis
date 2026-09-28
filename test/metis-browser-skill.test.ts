@@ -72,6 +72,58 @@ describe("metis-browser skill + browser host tools", () => {
 		expect(result.content.some((part) => part.type === "text" && String(part.text).includes("[e0]"))).toBe(true);
 	});
 
+	it("rejects browser_navigate and browser_tabs to reserved Desktop Vite port 5173", async () => {
+		const { isReservedPreviewPortUrl, RESERVED_PREVIEW_PORT_REJECTION } = await import(
+			"../src/core/tools/browser.ts"
+		);
+		expect(isReservedPreviewPortUrl("http://127.0.0.1:5173")).toBe(true);
+		expect(isReservedPreviewPortUrl("http://localhost:5173/app")).toBe(true);
+		expect(isReservedPreviewPortUrl("localhost:5173")).toBe(true);
+		expect(isReservedPreviewPortUrl("http://127.0.0.1:4173")).toBe(false);
+		expect(isReservedPreviewPortUrl("pelican.svg")).toBe(false);
+		expect(isReservedPreviewPortUrl("about:blank")).toBe(false);
+
+		const execute = vi.fn(async (): Promise<BrowserHostResult> => ({
+			ok: true,
+			url: "http://127.0.0.1:4173/",
+			title: "Ok",
+		}));
+		const defs = createBrowserToolDefinitions({ host: { execute } });
+		const navigate = defs.find((def) => def.name === "browser_navigate");
+		const tabs = defs.find((def) => def.name === "browser_tabs");
+		expect(navigate).toBeDefined();
+		expect(tabs).toBeDefined();
+
+		const blocked = await navigate!.execute!("nav-5173", { url: "http://127.0.0.1:5173" }, undefined);
+		expect(execute).not.toHaveBeenCalled();
+		expect(blocked.content.some((part) => part.type === "text" && String(part.text).includes("5173"))).toBe(
+			true,
+		);
+		expect(blocked.content.some((part) => part.type === "text" && String(part.text).includes("reserved"))).toBe(
+			true,
+		);
+		expect(String((blocked as { details?: { error?: string } }).details?.error || "")).toContain(
+			RESERVED_PREVIEW_PORT_REJECTION.slice(0, 20),
+		);
+
+		const blockedTab = await tabs!.execute!(
+			"tabs-5173",
+			{ action: "new", url: "http://localhost:5173/" },
+			undefined,
+		);
+		expect(execute).not.toHaveBeenCalled();
+		expect(blockedTab.content.some((part) => part.type === "text" && String(part.text).includes("5173"))).toBe(
+			true,
+		);
+
+		const allowed = await navigate!.execute!("nav-4173", { url: "http://127.0.0.1:4173" }, undefined);
+		expect(execute).toHaveBeenCalledWith(
+			{ op: "navigate", url: "http://127.0.0.1:4173", newTab: undefined, tabId: undefined },
+			undefined,
+		);
+		expect(allowed.content.some((part) => part.type === "text" && String(part.text).includes("4173"))).toBe(true);
+	});
+
 	it("documents local file preview and forbids system browser fallback in skill text", () => {
 		const skill = BUILTIN_SKILLS.find((entry) => entry.name === "metis-browser");
 		expect(skill).toBeDefined();
@@ -82,11 +134,30 @@ describe("metis-browser skill + browser host tools", () => {
 		expect(body).toMatch(/Prefer `browser_take_screenshot`/);
 		expect(body).toContain("performance_admit");
 		expect(body).toContain("Do not always `browser_navigate` first");
+		expect(body).toContain("Viewport sizing");
+		expect(body).toMatch(/100vw|100vh/);
+		expect(body).toMatch(/hardcode|Inspector panel|design target/i);
+		expect(body).toContain("movementX");
+		expect(body).toContain("browser_mouse");
+		expect(body).toContain("KeyW");
+		expect(body).toContain("holdMs");
+		expect(body).toContain("browser_evaluate");
+		expect(body).toMatch(/reload ignoring cache|ignoring cache/i);
+		expect(body).toMatch(/ref not found|stale refs/i);
+		expect(body).toMatch(/5173/);
+		expect(body).toMatch(/reserved|Desktop Vite/i);
 		expect(skill!.description.toLowerCase()).toContain("svg");
 		const workflow = readFileSync(join(skill!.baseDir, "references/workflow.md"), "utf8");
 		expect(workflow).toContain("browser_snapshot");
 		expect(workflow).toContain("require `performance_admit`");
 		expect(workflow).toContain("Do not always `browser_navigate` first");
+		expect(workflow).toMatch(/hardcode|Inspector panel|fluid viewport/i);
+		expect(workflow).toContain("browser_mouse");
+		expect(workflow).toContain("sendInputEvent");
+		expect(workflow).toContain("pointerLocked");
+		expect(workflow).toContain("movementX");
+		expect(workflow).toMatch(/5173/);
+		expect(workflow).toMatch(/reserved|Desktop/i);
 	});
 
 	it("http browser host client posts commands with token", async () => {

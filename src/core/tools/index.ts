@@ -38,6 +38,7 @@ export {
 	commandEmbedsFileWrite,
 	commandIsTruncatedActionStub,
 	commandUsesExternalBrowserPreview,
+	commandBindsReservedPreviewPort,
 	commandUsesInlineFileRead,
 	createBashTool,
 	prepareBashArguments,
@@ -175,8 +176,11 @@ export {
 } from "./webfetch.ts";
 export {
 	BROWSER_TOOL_NAMES,
+	RESERVED_DESKTOP_VITE_PORT,
+	RESERVED_PREVIEW_PORT_REJECTION,
 	createBrowserToolDefinitions,
 	createBrowserTools,
+	isReservedPreviewPortUrl,
 	type BrowserToolName,
 	type BrowserToolOptions,
 } from "./browser.ts";

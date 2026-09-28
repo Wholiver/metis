@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("metisDesktop", {
+	platform: process.platform,
 	appInfo: () => ipcRenderer.invoke("app:info"),
 	setUiLanguage: (language) => ipcRenderer.invoke("app:set-language", language),
 	setUiTheme: (theme) => ipcRenderer.invoke("app:set-theme", theme),

@@ -61,6 +61,37 @@ function explorePad(count: number, start = 0): ProgressHistoryMessage[] {
 	return out;
 }
 
+function writePad(count: number, start = 0): ProgressHistoryMessage[] {
+	const out: ProgressHistoryMessage[] = [];
+	for (let index = 0; index < count; index += 1) {
+		const id = `write-pad-${start + index}`;
+		out.push(assistant("", [{ id, name: "write" }]), toolResult(id, "write"));
+	}
+	return out;
+}
+
+const SAMPLE_PLAN = [
+	{ step: "初始化项目", status: "in_progress" },
+	{ step: "构建世界引擎", status: "pending" },
+	{ step: "浏览器验收", status: "pending" },
+];
+
+function historyAfterPlan(writes: number): {
+	history: ProgressHistoryMessage[];
+	lastWrite: ProgressHistoryMessage & ProgressToolResult;
+} {
+	const plan = toolResult("plan-1", "update_plan");
+	const pad = writePad(writes);
+	const history = [
+		user("做网页版 Minecraft"),
+		assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: SAMPLE_PLAN } }]),
+		plan,
+		...pad,
+	];
+	const lastWrite = pad[pad.length - 1] as ProgressHistoryMessage & ProgressToolResult;
+	return { history, lastWrite };
+}
+
 describe("resolveProgressNudge", () => {
 	it("does nothing without current tool results", () => {
 		expect(resolveProgressNudge([user("hi")], [])).toBeUndefined();
@@ -458,5 +489,131 @@ describe("resolveProgressNudge", () => {
 			],
 			[admit],
 		)).toBeUndefined();
+	});
+
+	it("does not nag a stale checklist before 8 mutating tools", () => {
+		const { history, lastWrite } = historyAfterPlan(7);
+		expect(resolveProgressNudge(history, [lastWrite])).toBeUndefined();
+	});
+
+	it("requires update_plan after 8 mutating tools without a checklist refresh", () => {
+		const { history, lastWrite } = historyAfterPlan(8);
+		const nudge = resolveProgressNudge(history, [lastWrite]);
+		expect(nudge).toMatchObject({ kind: "required", reason: "checklist" });
+		expect(nudge?.checklist).toEqual(SAMPLE_PLAN);
+		const text = formatProgressNudge(nudge!);
+		expect(text).toContain("初始化项目");
+		expect(text).toContain("构建世界引擎");
+		expect(text).toContain("call update_plan");
+		expect(text).toContain("[in_progress]");
+		expect(text).toContain("refresh the checklist first");
+		expect(text).not.toContain("Start the next assistant message with 1–2 visible text sentences");
+	});
+
+	it("requires update_plan again at 16 mutating tools and stays quiet in between", () => {
+		const mid = historyAfterPlan(12);
+		expect(resolveProgressNudge(mid.history, [mid.lastWrite])).toBeUndefined();
+		const again = historyAfterPlan(16);
+		expect(resolveProgressNudge(again.history, [again.lastWrite])).toMatchObject({
+			kind: "required",
+			reason: "checklist",
+		});
+	});
+
+	it("does not nag checklist when the current batch already called update_plan", () => {
+		const plan = toolResult("plan-1", "update_plan");
+		const refreshed = toolResult("plan-2", "update_plan");
+		const nextPlan = [
+			{ step: "初始化项目", status: "completed" },
+			{ step: "构建世界引擎", status: "in_progress" },
+			{ step: "浏览器验收", status: "pending" },
+		];
+		expect(resolveProgressNudge(
+			[
+				user("做任务"),
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: SAMPLE_PLAN } }]),
+				plan,
+				...writePad(8),
+				assistant("", [{ id: "plan-2", name: "update_plan", arguments: { plan: nextPlan } }]),
+				refreshed,
+			],
+			[refreshed],
+		)).toMatchObject({ kind: "required", reason: "plan" });
+	});
+
+	it("does not nag checklist when there is no plan or the plan is fully completed", () => {
+		const write = toolResult("write-1", "write");
+		expect(resolveProgressNudge(
+			[user("写文件"), assistant("", [{ id: "write-1", name: "write" }]), write],
+			[write],
+		)).toMatchObject({ kind: "required", reason: "start→mutate" });
+
+		const donePlan = SAMPLE_PLAN.map((step) => ({ ...step, status: "completed" as const }));
+		const plan = toolResult("plan-1", "update_plan");
+		const { history: afterWrites, lastWrite } = (() => {
+			const pad = writePad(8);
+			return {
+				history: [
+					user("做任务"),
+					assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: donePlan } }]),
+					plan,
+					...pad,
+				],
+				lastWrite: pad[pad.length - 1] as ProgressHistoryMessage & ProgressToolResult,
+			};
+		})();
+		expect(resolveProgressNudge(afterWrites, [lastWrite])).toBeUndefined();
+	});
+
+	it("does not re-nag checklist on explore tools after the mutate boundary", () => {
+		const plan = toolResult("plan-1", "update_plan");
+		const shot = toolResult("shot-1", "browser_take_screenshot");
+		expect(resolveProgressNudge(
+			[
+				user("做任务"),
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: SAMPLE_PLAN } }]),
+				plan,
+				...writePad(8),
+				assistant("", [{ id: "shot-1", name: "browser_take_screenshot" }]),
+				shot,
+			],
+			[shot],
+		)).toBeUndefined();
+	});
+
+	it("prefers a failed check over a stale checklist reminder", () => {
+		const plan = toolResult("plan-1", "update_plan");
+		const failed = toolResult("bash-fail", "bash", true);
+		const pad = writePad(7);
+		expect(resolveProgressNudge(
+			[
+				user("做任务"),
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: SAMPLE_PLAN } }]),
+				plan,
+				...pad,
+				assistant("", [{ id: "bash-fail", name: "bash", arguments: { command: "npx vitest run" } }]),
+				failed,
+			],
+			[failed],
+		)).toMatchObject({ kind: "required", reason: "failed check" });
+	});
+
+	it("still reminds about a stale checklist after an earlier visible-text nudge", () => {
+		const plan = toolResult("plan-1", "update_plan");
+		const first = toolResult("write-1", "write");
+		const pad = writePad(7, 1);
+		const lastWrite = pad[pad.length - 1] as ProgressHistoryMessage & ProgressToolResult;
+		expect(resolveProgressNudge(
+			[
+				user("做任务"),
+				assistant("", [{ id: "plan-1", name: "update_plan", arguments: { plan: SAMPLE_PLAN } }]),
+				plan,
+				assistant("", [{ id: "write-1", name: "write" }]),
+				first,
+				context(`${PROGRESS_NUDGE_MARKER} (required: other→mutate; progress-nudge:write-1).`),
+				...pad,
+			],
+			[lastWrite],
+		)).toMatchObject({ kind: "required", reason: "checklist" });
 	});
 });

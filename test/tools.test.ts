@@ -581,6 +581,35 @@ describe("Coding Agent Tools", () => {
 			expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("1") });
 		});
 
+		it("rejects preview/test servers on reserved Desktop Vite port 5173 when browser tools are available", async () => {
+			const { commandBindsReservedPreviewPort } = await import("../src/core/tools/bash.ts");
+			expect(commandBindsReservedPreviewPort("npx vite")).toBe(true);
+			expect(commandBindsReservedPreviewPort("vite preview")).toBe(true);
+			expect(commandBindsReservedPreviewPort("npx vite --port 5173")).toBe(true);
+			expect(commandBindsReservedPreviewPort("python3 -m http.server 5173")).toBe(true);
+			expect(commandBindsReservedPreviewPort("php -S 127.0.0.1:5173")).toBe(true);
+			expect(commandBindsReservedPreviewPort("PORT=5173 npm start")).toBe(true);
+			expect(commandBindsReservedPreviewPort("npx vite --port 4173")).toBe(false);
+			expect(commandBindsReservedPreviewPort("npx vitest")).toBe(false);
+			expect(commandBindsReservedPreviewPort("npx playwright test")).toBe(false);
+			expect(commandBindsReservedPreviewPort("rg 5173")).toBe(false);
+			expect(commandBindsReservedPreviewPort("curl http://127.0.0.1:5173")).toBe(false);
+			expect(commandBindsReservedPreviewPort("which vite")).toBe(false);
+
+			const bash = createBashTool(testDir, { rejectExternalBrowserPreview: true });
+			await expect(bash.execute("bash-vite-1", { command: "npx vite" })).rejects.toThrow(
+				/Port 5173 is reserved for Metis Desktop Vite/,
+			);
+			await expect(bash.execute("bash-vite-5173", { command: "npx vite --port 5173" })).rejects.toThrow(
+				/Port 5173 is reserved/,
+			);
+			await expect(
+				bash.execute("bash-http-5173", { command: "python3 -m http.server 5173" }),
+			).rejects.toThrow(/Port 5173 is reserved/);
+			const allowed = await bash.execute("bash-vite-4173", { command: "printf ok" });
+			expect(allowed.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("ok") });
+		});
+
 		it("rejects python3 -c file reads when read is available, but allows scripts and math", async () => {
 			const { commandUsesInlineFileRead } = await import("../src/core/tools/bash.ts");
 			expect(

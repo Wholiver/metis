@@ -393,6 +393,8 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 
 	describe("Integration with spawn_agent tool", () => {
 		it("spawns child in isolated workspace and retains successful output", async () => {
+			const prevPolicy = process.env.METIS_WORKSPACE_POLICY;
+			process.env.METIS_WORKSPACE_POLICY = "isolated";
 			const mockChild = createMockChildProcess();
 			spawnMock.mockReturnValue(mockChild);
 
@@ -435,7 +437,14 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 
 			// Simulate a child edit and successful completion.
 			await fs.writeFile(join(isolatedPath, "child-change.txt"), "retained output\n");
-			mockChild.stdout.emit("data", Buffer.from("Refactored queries cleanly."));
+			const childResult = JSON.stringify({
+				status: "completed",
+				summary: "Refactored queries cleanly.",
+				filesChanged: ["child-change.txt"],
+				commands: [],
+				findings: [],
+			});
+			mockChild.stdout.emit("data", Buffer.from(`${childResult}\n`));
 			mockChild.emit("close", 0);
 
 			const result = await executePromise;
@@ -451,6 +460,8 @@ describe("Worktree Isolation & Environment Security (Bundle 4)", () => {
 			expect(existsSync(isolatedPath)).toBe(true);
 			expect(await fs.readFile(join(isolatedPath, "child-change.txt"), "utf8")).toBe("retained output\n");
 			rmSync(isolatedPath, { recursive: true, force: true });
+			if (prevPolicy === undefined) delete process.env.METIS_WORKSPACE_POLICY;
+			else process.env.METIS_WORKSPACE_POLICY = prevPolicy;
 		});
 	});
 });

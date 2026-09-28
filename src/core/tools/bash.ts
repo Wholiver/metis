@@ -238,6 +238,12 @@ const EMBEDDED_FILE_WRITE_REJECTION =
 const EXTERNAL_BROWSER_PREVIEW_REJECTION =
 	"Use browser_navigate after performance_admit for local SVG/HTML preview. browser_snapshot and browser_screenshot are readable. Do not launch Chrome/Safari/Edge --headless --screenshot, open -a, xdg-open, or qlmanage when browser_* tools are available.";
 
+/** Desktop Vite reserved port — must stay in sync with browser.ts RESERVED_DESKTOP_VITE_PORT. */
+const RESERVED_DESKTOP_VITE_PORT = 5173;
+
+export const RESERVED_PREVIEW_PORT_BASH_REJECTION =
+	`Port ${RESERVED_DESKTOP_VITE_PORT} is reserved for Metis Desktop Vite. Do not start local preview/test servers on ${RESERVED_DESKTOP_VITE_PORT} — use another port (e.g. --port 4173).`;
+
 const INLINE_FILE_READ_REJECTION =
 	"Use the read tool to inspect workspace files. Do not use python3 -c / node -e with open()/readFile to read or search file contents when read is available. python3 script.py and ET.parse checks are still allowed.";
 
@@ -275,6 +281,39 @@ export function commandUsesExternalBrowserPreview(command: string): boolean {
 		return true;
 	}
 	return false;
+}
+
+const RESERVED_PORT = String(RESERVED_DESKTOP_VITE_PORT);
+const EXPLICIT_RESERVED_PORT_FLAG = new RegExp(
+	String.raw`(?:--port(?:=|\s+)|-p\s+|PORT=)${RESERVED_PORT}\b`,
+);
+const LISTEN_HOST_RESERVED_PORT = new RegExp(
+	String.raw`\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|::1):${RESERVED_PORT}\b`,
+);
+const HTTP_SERVER_RESERVED_PORT = new RegExp(
+	String.raw`\b(?:python3?|pypy3?)\s+-m\s+http\.server\s+${RESERVED_PORT}\b`,
+);
+const PHP_SERVER_RESERVED_PORT = new RegExp(String.raw`\bphp\s+-S\s+\S*:${RESERVED_PORT}\b`);
+/** Bare `vite` / `vite preview` as a command (default port 5173). Does not match `vitest`. */
+const BARE_VITE_PREVIEW = /(?:^|[\n;&|]|&&|\|\|)\s*(?:npx\s+)?vite(?:\s+preview)?(?:\s|$)/;
+const PORT_OVERRIDE = /(?:--port(?:=|\s+)|-p\s+|PORT=)(\d+)\b/;
+const CURL_OR_SEARCH_PROBE = /^\s*(?:curl|wget|rg|grep|egrep|fgrep|ag|ack)\b/;
+
+/**
+ * Detect bash starting a local preview/test server on Desktop-reserved port 5173,
+ * or bare `vite`/`vite preview` (default 5173). Allows curl/rg probes and vitest.
+ */
+export function commandBindsReservedPreviewPort(command: string): boolean {
+	const text = command.trim();
+	if (!text) return false;
+	if (EXPLICIT_RESERVED_PORT_FLAG.test(text)) return true;
+	if (HTTP_SERVER_RESERVED_PORT.test(text)) return true;
+	if (PHP_SERVER_RESERVED_PORT.test(text)) return true;
+	if (LISTEN_HOST_RESERVED_PORT.test(text) && !CURL_OR_SEARCH_PROBE.test(text)) return true;
+	if (!BARE_VITE_PREVIEW.test(text)) return false;
+	const override = text.match(PORT_OVERRIDE);
+	if (override && override[1] !== RESERVED_PORT) return false;
+	return true;
 }
 
 const TRUNCATED_ACTION_STUB_REJECTION =
@@ -459,6 +498,9 @@ export function createBashToolDefinition(
 			}
 			if (shouldRejectOption(rejectExternalBrowserPreview) && commandUsesExternalBrowserPreview(command)) {
 				throw new Error(EXTERNAL_BROWSER_PREVIEW_REJECTION);
+			}
+			if (shouldRejectOption(rejectExternalBrowserPreview) && commandBindsReservedPreviewPort(command)) {
+				throw new Error(RESERVED_PREVIEW_PORT_BASH_REJECTION);
 			}
 			if (shouldRejectOption(rejectInlineFileReads) && commandUsesInlineFileRead(command)) {
 				throw new Error(INLINE_FILE_READ_REJECTION);

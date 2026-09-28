@@ -8,10 +8,26 @@ export type BrowserHostCommand =
 	| { op: "tabs"; action: "list" | "select" | "new"; tabId?: string; url?: string }
 	| { op: "snapshot"; tabId?: string; interactive?: boolean }
 	| { op: "click"; ref: string; tabId?: string }
+	| {
+			op: "mouse";
+			action: "move" | "look" | "down" | "up" | "click" | "drag" | "wheel";
+			x?: number;
+			y?: number;
+			endX?: number;
+			endY?: number;
+			deltaX?: number;
+			deltaY?: number;
+			movementX?: number;
+			movementY?: number;
+			ref?: string;
+			button?: "left" | "right" | "middle";
+			tabId?: string;
+	  }
 	| { op: "fill"; ref: string; value: string; tabId?: string }
 	| { op: "type"; text: string; ref?: string; tabId?: string; submit?: boolean }
-	| { op: "press_key"; key: string; tabId?: string }
+	| { op: "press_key"; key: string; holdMs?: number; tabId?: string }
 	| { op: "scroll"; direction: "up" | "down" | "left" | "right"; amount?: number; ref?: string; tabId?: string }
+	| { op: "evaluate"; expression: string; tabId?: string }
 	| { op: "screenshot"; tabId?: string; fullPage?: boolean };
 
 export interface BrowserHostResult {
@@ -24,6 +40,22 @@ export interface BrowserHostResult {
 	snapshot?: string;
 	screenshotBase64?: string;
 	mimeType?: string;
+	pointerLocked?: boolean;
+	pointerLockTag?: string | null;
+	viewportWidth?: number;
+	viewportHeight?: number;
+	key?: string;
+	code?: string;
+	keyCode?: string;
+	holdMs?: number;
+	x?: number;
+	y?: number;
+	movementX?: number;
+	movementY?: number;
+	button?: string;
+	action?: string;
+	result?: unknown;
+	resultText?: string;
 }
 
 export interface BrowserHostClient {

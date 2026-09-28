@@ -6,35 +6,17 @@ import {
   ChevronDown,
   Search,
   Terminal,
-  Check,
   Globe,
   ExternalLink,
   Brain,
   FileCode2,
   FileText,
-  Command,
   Database,
   AlertCircle,
-  Cpu,
   Code2,
   Copy,
   CheckCheck,
 } from "lucide-react";
-
-/* ─────────────────────────────────────────────────────────
- * SAFE DYNAMIC ICON RENDERER
- * ───────────────────────────────────────────────────────── */
-function renderDynamicIcon(icon: any, className?: string): React.ReactNode {
-  if (!icon) return null;
-  if (React.isValidElement(icon)) return icon;
-  if (typeof icon === "function" || typeof icon === "object") {
-    return React.createElement(icon, {
-      className: cn("size-3.5 shrink-0", className),
-      "aria-hidden": "true",
-    });
-  }
-  return null;
-}
 
 /* ─────────────────────────────────────────────────────────
  * COMPACT 3x3 PIXEL DOT GRID LOADER
@@ -690,7 +672,7 @@ function TracePillRow({
 
   const isMono = node.mono ?? (isCommandNode || Boolean(toolDef?.monoChip));
 
-  const renderIcon = () => {
+  const renderLeadingAffordance = () => {
     if (isActive) {
       return (
         <span
@@ -702,47 +684,16 @@ function TracePillRow({
     if (node.status === "failed" || (node.exitCode !== undefined && node.exitCode > 0)) {
       return <AlertCircle className="size-3.5 text-rose-500 shrink-0" aria-hidden="true" />;
     }
-
-    if (node.icon) return renderDynamicIcon(node.icon, node.iconClassName);
-    if (toolDef?.icon) return renderDynamicIcon(toolDef.icon, toolDef.iconClassName);
-
-    const semanticKey = `${node.primary || ""} ${node.toolName || ""} ${node.type || ""} ${node.command || ""}`.toLowerCase();
-
-    if (semanticKey.includes("read") || semanticKey.includes("inspect") || semanticKey.includes("parse")) {
-      return <FileText className="size-3.5 text-muted-foreground/80 shrink-0" aria-hidden="true" />;
-    }
-    if (
-      semanticKey.includes("edit") ||
-      semanticKey.includes("write") ||
-      semanticKey.includes("patch") ||
-      semanticKey.includes("create")
-    ) {
-      return <FileCode2 className="size-3.5 text-amber-500 shrink-0" aria-hidden="true" />;
-    }
-    if (
-      isCommandNode ||
-      semanticKey.includes("run") ||
-      semanticKey.includes("test") ||
-      semanticKey.includes("compile") ||
-      semanticKey.includes("tsc") ||
-      semanticKey.includes("exec")
-    ) {
-      return <Terminal className="size-3.5 text-violet-500 shrink-0" aria-hidden="true" />;
-    }
-    if (semanticKey.includes("search") || semanticKey.includes("query") || semanticKey.includes("lookup")) {
-      return <Search className="size-3.5 text-blue-500 shrink-0" aria-hidden="true" />;
-    }
-    if (semanticKey.includes("db") || semanticKey.includes("database") || semanticKey.includes("sql") || semanticKey.includes("redis")) {
-      return <Database className="size-3.5 text-emerald-500 shrink-0" aria-hidden="true" />;
-    }
-    if (semanticKey.includes("deploy") || semanticKey.includes("canary") || semanticKey.includes("cluster")) {
-      return <Cpu className="size-3.5 text-sky-500 shrink-0" aria-hidden="true" />;
-    }
-    if (node.type === "step") {
-      return <Check className="size-3.5 text-emerald-500 shrink-0" aria-hidden="true" />;
-    }
-
-    return <Command className="size-3.5 text-muted-foreground/80 shrink-0" aria-hidden="true" />;
+    if (!hasDetails) return null;
+    return (
+      <ChevronDown
+        aria-hidden="true"
+        className={cn(
+          "size-3.5 transition-transform duration-200",
+          open ? "rotate-0" : "-rotate-90"
+        )}
+      />
+    );
   };
 
   return (
@@ -758,27 +709,11 @@ function TracePillRow({
           hasDetails ? "hover:bg-muted/60 cursor-pointer active:scale-[0.98]" : "cursor-default"
         )}
       >
-        <span className="relative flex size-4 shrink-0 items-center justify-center text-muted-foreground">
-          <span
-            className={cn(
-              "transition-opacity duration-150 flex items-center justify-center",
-              hasDetails && "group-hover/row:opacity-0",
-              open && "opacity-0"
-            )}
-          >
-            {renderIcon()}
+        {(isActive || node.status === "failed" || (node.exitCode !== undefined && node.exitCode > 0) || hasDetails) && (
+          <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+            {renderLeadingAffordance()}
           </span>
-          {hasDetails && (
-            <ChevronDown
-              aria-hidden="true"
-              className={cn(
-                "absolute size-3.5 transition-transform duration-200 opacity-0",
-                "group-hover/row:opacity-100",
-                open ? "opacity-100 rotate-0" : "-rotate-90"
-              )}
-            />
-          )}
-        </span>
+        )}
 
         <span className="shrink-0 text-[12px] font-medium text-foreground tracking-tight">
           {primaryText}

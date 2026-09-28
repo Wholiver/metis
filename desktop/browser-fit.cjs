@@ -5,14 +5,24 @@
 
 const BROWSER_FIT_STYLE_ID = "metis-browser-fit-viewport";
 
-function computeFitZoomScale(contentWidth, contentHeight, viewportWidth, viewportHeight) {
-	if (!(contentWidth > 0) || !(contentHeight > 0) || !(viewportWidth > 0) || !(viewportHeight > 0)) {
-		return 1;
-	}
-	const scale = Math.min(1, viewportWidth / contentWidth, viewportHeight / contentHeight);
-	if (!Number.isFinite(scale) || scale <= 0) return 1;
-	if (scale >= 0.995) return 1;
-	return Math.max(0.05, scale);
+function computeFitZoomScale(
+  contentWidth,
+  contentHeight,
+  viewportWidth,
+  viewportHeight,
+) {
+  if (
+    !(contentWidth > 0) ||
+    !(contentHeight > 0) ||
+    !(viewportWidth > 0) ||
+    !(viewportHeight > 0)
+  ) {
+    return 1;
+  }
+  const scale = Math.min(1, viewportWidth / contentWidth, viewportHeight / contentHeight);
+  if (!Number.isFinite(scale) || scale <= 0) return 1;
+  if (scale >= 0.995) return 1;
+  return Math.max(0.05, scale);
 }
 
 const BROWSER_FIT_VIEWPORT_SCRIPT = `(() => {
@@ -35,14 +45,6 @@ const BROWSER_FIT_VIEWPORT_SCRIPT = `(() => {
       const href = String(location.href || "");
       const path = String(location.pathname || "");
       return /\\.svg(?:$|\\?|#)/i.test(path) || /\\.svg(?:$|\\?|#)/i.test(href);
-    } catch {
-      return false;
-    }
-  };
-
-  const isFileUrl = () => {
-    try {
-      return location.protocol === "file:";
     } catch {
       return false;
     }
@@ -150,16 +152,24 @@ const BROWSER_FIT_VIEWPORT_SCRIPT = `(() => {
       "}",
       "body > img:first-of-type,",
       "body > video:first-of-type,",
-      "body > canvas:first-of-type,",
       "body > object:first-of-type,",
       "body img:only-of-type,",
-      "body video:only-of-type,",
-      "body canvas:only-of-type {",
+      "body video:only-of-type {",
       "  max-width: 100vw !important;",
       "  max-height: 100vh !important;",
       "  width: auto !important;",
       "  height: auto !important;",
       "  object-fit: contain !important;",
+      "}",
+      /* Canvas/WebGL: fill the Inspector viewport — do not letterbox to intrinsic bitmap size */
+      "body > canvas:first-of-type,",
+      "body canvas:only-of-type {",
+      "  width: 100% !important;",
+      "  height: 100% !important;",
+      "  max-width: 100vw !important;",
+      "  max-height: 100vh !important;",
+      "  object-fit: fill !important;",
+      "  display: block !important;",
       "}",
     ].join("\\n");
   };
@@ -204,7 +214,10 @@ const BROWSER_FIT_VIEWPORT_SCRIPT = `(() => {
     const existing = document.getElementById(STYLE_ID);
     const viewportWidth = Math.max(1, Number(window.innerWidth) || 1);
     const viewportHeight = Math.max(1, Number(window.innerHeight) || 1);
-    const shouldFit = Boolean(media) || isFileUrl() || isSvgUrl();
+    // Only fit real media/SVG documents. Never treat arbitrary file:// HTML apps as
+    // media — flex-centering those pages locks the painted size to the Inspector panel
+    // and agents then bake that size into source (letterboxing in external browsers).
+    const shouldFit = Boolean(media) || isSvgUrl();
 
     if (!shouldFit) {
       existing?.remove();
@@ -221,6 +234,13 @@ const BROWSER_FIT_VIEWPORT_SCRIPT = `(() => {
 
     if (media && media.tagName.toLowerCase() === "svg") {
       prepareSvg(media);
+    } else if (media && media.tagName.toLowerCase() === "canvas") {
+      media.style.setProperty("width", "100%", "important");
+      media.style.setProperty("height", "100%", "important");
+      media.style.setProperty("max-width", "100vw", "important");
+      media.style.setProperty("max-height", "100vh", "important");
+      media.style.setProperty("object-fit", "fill", "important");
+      media.style.setProperty("display", "block", "important");
     } else if (media && mediaTags.has(media.tagName.toLowerCase())) {
       media.style.setProperty("max-width", "100vw", "important");
       media.style.setProperty("max-height", "100vh", "important");

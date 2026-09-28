@@ -8,11 +8,15 @@ const {
   peekSseEventType,
   peekSseToolCallId,
   peekSseServerSequence,
+  stripInlineImageData,
+  prepareSsePayload,
   createSseIpcBridge,
 } = require('../desktop/sse-ipc-bridge.cjs') as {
   peekSseEventType: (data: string) => string;
   peekSseToolCallId: (data: string) => string;
   peekSseServerSequence: (data: string) => number;
+  stripInlineImageData: (value: unknown) => unknown;
+  prepareSsePayload: (data: string) => string;
   createSseIpcBridge: (options: {
     send: (data: string) => void;
     schedule?: (fn: () => void) => unknown;
@@ -113,6 +117,58 @@ describe('desktop SSE IPC bridge', () => {
     expect(sent.map((frame) => JSON.parse(frame).type)).toEqual(['message_update', 'message_end']);
     expect(JSON.parse(sent[0]).serverSequence).toBe(20);
     expect(JSON.parse(sent[1]).serverSequence).toBe(21);
+  });
+
+  it('strips inline screenshot base64 before IPC while keeping mimeType', () => {
+    const huge = 'A'.repeat(800);
+    const result = {
+      content: [
+        { type: 'text', text: 'tabId: browser-1' },
+        { type: 'image', data: huge, mimeType: 'image/png' },
+      ],
+    };
+    const stripped = stripInlineImageData(result) as typeof result;
+    expect(stripped).not.toBe(result);
+    expect(stripped.content[1]).toMatchObject({
+      type: 'image',
+      mimeType: 'image/png',
+      data: '',
+      _omitted: 'image_data',
+    });
+    expect((stripped.content[0] as { text: string }).text).toBe('tabId: browser-1');
+    expect((result.content[1] as { data: string }).data).toHaveLength(800);
+
+    const prepared = prepareSsePayload(envelope({
+      type: 'tool_execution_end',
+      toolCallId: 'call-shot',
+      result,
+    }, 55));
+    const parsed = JSON.parse(prepared);
+    expect(parsed.result.content[1].data).toBe('');
+    expect(parsed.result.content[1]._omitted).toBe('image_data');
+    expect(prepared.length).toBeLessThan(huge.length);
+
+    const { sent, bridge } = createQueuedBridge();
+    bridge.push(envelope({
+      type: 'tool_execution_end',
+      toolCallId: 'call-shot',
+      result,
+    }, 56));
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(sent[0]).result.content[1].data).toBe('');
+  });
+
+  it('still coalesces ordinary message_update frames after image stripping', () => {
+    const { sent, runScheduled, bridge } = createQueuedBridge();
+    bridge.push(envelope({ type: 'message_update', message: { text: 'a' } }, 2));
+    bridge.push(envelope({ type: 'message_update', message: { text: 'ab' } }, 3));
+    runScheduled();
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(sent[0])).toMatchObject({
+      type: 'message_update',
+      message: { text: 'ab' },
+      serverSequence: 3,
+    });
   });
 
   it('forwards session switch, abort, and user-input events immediately', () => {

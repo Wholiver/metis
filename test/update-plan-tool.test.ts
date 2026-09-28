@@ -30,6 +30,7 @@ describe("update_plan tool", () => {
 		expect(tool.promptSnippet).toContain("Keep the session execution checklist current");
 		expect(tool.promptGuidelines).toEqual(expect.arrayContaining([
 			expect.stringContaining("do not wait until the whole task ends"),
+			expect.stringContaining("after several mutating writes"),
 			expect.stringContaining("pending, in_progress, or completed"),
 			expect.stringContaining("same language as the user's latest message"),
 			expect.stringContaining("Never mark every step completed while a Performance run is still active"),

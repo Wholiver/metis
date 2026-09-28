@@ -93,7 +93,7 @@ describe('desktop React user message bubble', () => {
       },
     }));
     expect(markup).toContain(WEB_MINECRAFT_USER_PROMPT);
-    expect(markup).not.toContain('使用内置浏览器实时检查、验收和操作');
+    expect(markup).not.toContain('动手前先花点时间调研');
     expect(resolveUserPromptCopyText({ content: WEB_MINECRAFT_MODEL_PROMPT })).toBe(WEB_MINECRAFT_USER_PROMPT);
   });
 

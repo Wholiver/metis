@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { packager } from "@electron/packager";
+import { HELP_FILE_NAME, HELP_FOLDER_NAME, getOpenHelpText } from "./dmg-help-content.mjs";
 
 const execFileAsync = promisify(execFile);
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -22,7 +23,6 @@ const iconPath = path.join(temporaryDir, "Metis.icns");
 const runtimeDir = path.join(temporaryDir, "metis-runtime");
 const packagedAppsDir = path.join(temporaryDir, "apps");
 const dmgRootDir = path.join(temporaryDir, "dmg");
-const helpDir = path.join(dmgRootDir, "打不开？");
 
 async function run(command, args, { logOutput = true, ...options } = {}) {
 	const { stdout = "", stderr = "" } = await execFileAsync(command, args, {
@@ -80,29 +80,35 @@ async function buildBundledRuntime() {
 	});
 }
 
+async function buildDmgBackground() {
+	const bgDir = path.join(dmgRootDir, ".background");
+	await mkdir(bgDir, { recursive: true });
+	const svgPath = path.join(desktopDir, "public", "assets", "dmg-background.svg");
+	const png1xPath = path.join(bgDir, "background.png");
+	const png2xPath = path.join(temporaryDir, "background@2x.png");
+	const tiffPath = path.join(bgDir, "background.tiff");
+
+	try {
+		const { Resvg } = await import("@resvg/resvg-js");
+		const svgContent = await readFile(svgPath, "utf8");
+		const resvg1x = new Resvg(svgContent, { fitTo: { mode: "width", value: 660 } });
+		await writeFile(png1xPath, resvg1x.render().asPng());
+		const resvg2x = new Resvg(svgContent, { fitTo: { mode: "width", value: 1320 } });
+		await writeFile(png2xPath, resvg2x.render().asPng());
+	} catch {
+		await run("/usr/bin/sips", ["-s", "format", "png", "-z", "480", "660", svgPath, "--out", png1xPath], { logOutput: false });
+		await run("/usr/bin/sips", ["-s", "format", "png", "-z", "960", "1320", svgPath, "--out", png2xPath], { logOutput: false });
+	}
+
+	try {
+		await run("/usr/bin/tiffutil", ["-cathidpicheck", png1xPath, png2xPath, "-out", tiffPath], { logOutput: false });
+	} catch {}
+}
+
 async function writeOpenHelp() {
+	const helpDir = path.join(dmgRootDir, HELP_FOLDER_NAME);
 	await mkdir(helpDir, { recursive: true });
-	const text = `Metis for macOS 打不开时请看
-
-此安装包未经过 Apple Developer ID 公共签名与公证。仅在确认 DMG 来源可信时继续。
-
-推荐方法（macOS 系统设置）
-1. 先把 Metis.app 拖入 Applications，并尝试打开一次。
-2. 打开“系统设置”>“隐私与安全性”。
-3. 向下找到“安全性”，点击 Metis 对应的“仍要打开”。
-4. 按系统提示输入登录密码，然后再次确认打开。
-
-Apple 官方说明：
-https://support.apple.com/zh-cn/guide/mac-help/mh40616/mac
-
-若系统设置中没有按钮，可在“终端”执行：
-
-xattr -dr com.apple.quarantine "/Applications/Metis.app"
-open "/Applications/Metis.app"
-
-xattr 命令会移除下载隔离属性。不要对来源不明的软件执行此命令。
-`;
-	await writeFile(path.join(helpDir, "Mac打不开时请看.txt"), text, "utf8");
+	await writeFile(path.join(helpDir, HELP_FILE_NAME), getOpenHelpText(), "utf8");
 }
 
 try {
@@ -145,12 +151,76 @@ try {
 	await cp(appPath, path.join(dmgRootDir, "Metis.app"), { recursive: true, verbatimSymlinks: true });
 	await symlink("/Applications", path.join(dmgRootDir, "Applications"));
 	await writeOpenHelp();
+	await buildDmgBackground();
+
 	await rm(releaseDir, { recursive: true, force: true });
 	await mkdir(releaseDir, { recursive: true });
 	const dmgPath = path.join(releaseDir, `Metis-${rootPackage.version}-macos-${architecture}.dmg`);
-	await run("/usr/bin/hdiutil", ["create", "-volname", "Metis", "-srcfolder", dmgRootDir, "-ov", "-format", "UDZO", dmgPath]);
+	const tempDmgPath = path.join(temporaryDir, "metis-layout.dmg");
+
+	let styled = false;
+	try {
+		await run("/usr/bin/hdiutil", ["create", "-srcfolder", dmgRootDir, "-volname", "Metis", "-format", "UDRW", "-ov", tempDmgPath]);
+		await run("/usr/bin/hdiutil", ["attach", tempDmgPath, "-readwrite", "-noverify", "-noautoopen"]);
+
+		const appleScript = `
+tell application "Finder"
+	tell disk "Metis"
+		open
+		set current view of container window to icon view
+		set toolbar visible of container window to false
+		set statusbar visible of container window to false
+		set the bounds of container window to {200, 150, 860, 630}
+		set viewOptions to the icon view options of container window
+		set arrangement of viewOptions to not arranged
+		set icon size of viewOptions to 110
+		set text size of viewOptions to 12
+		try
+			set background picture of viewOptions to file ".background:background.tiff"
+		on error
+			try
+				set background picture of viewOptions to file ".background:background.png"
+			end try
+		end try
+		set position of item "Metis.app" of container window to {165, 175}
+		set position of item "Applications" of container window to {495, 175}
+		set position of item "${HELP_FOLDER_NAME}" of container window to {330, 365}
+		close
+		open
+		update without registering applications
+		delay 1
+	end tell
+end tell`;
+
+		try {
+			await run("/usr/bin/osascript", ["-e", appleScript], { logOutput: false });
+			styled = true;
+		} catch (error) {
+			console.warn("提示：未能通过 Finder AppleScript 调整 DMG 视图（可能是无头 CI 环境），将使用默认视图布局。错误：", error.message);
+		}
+
+		try {
+			await run("/bin/chmod", ["-Rf", "go-w", "/Volumes/Metis"], { logOutput: false });
+		} catch {}
+
+		await run("/usr/bin/hdiutil", ["detach", "/Volumes/Metis", "-force"], { logOutput: false });
+
+		if (styled) {
+			await run("/usr/bin/hdiutil", ["convert", tempDmgPath, "-format", "UDZO", "-imagekey", "zlib-level=9", "-ov", "-o", dmgPath]);
+		}
+	} catch (error) {
+		console.warn("提示：高级 DMG 样式生成异常，自动降级至标准 hdiutil 生成。原因：", error.message);
+		styled = false;
+	}
+
+	if (!styled) {
+		await run("/usr/bin/hdiutil", ["create", "-volname", "Metis", "-srcfolder", dmgRootDir, "-ov", "-format", "UDZO", dmgPath]);
+	}
 	console.log(`完成：${dmgPath}`);
 } finally {
+	try {
+		await run("/usr/bin/hdiutil", ["detach", "/Volumes/Metis", "-force"], { logOutput: false });
+	} catch {}
 	await rm(temporaryDir, { recursive: true, force: true });
 }
 

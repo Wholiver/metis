@@ -7,10 +7,26 @@
  *
  * Payloads stay as JSON strings: cloning a string is cheaper than walking the
  * parsed object tree, and the renderer parses once per flushed frame.
+ *
+ * Inline screenshot base64 (browser tool results) is stripped before IPC. Session
+ * files and `/session/messages` keep full images; the live chat tool row only
+ * shows text, so omitting live image bytes avoids multi-MB frames that tear the
+ * SSE reader mid-turn and briefly drop the "思考中" row.
  */
 
 const COALESCE_TYPES = new Set(["message_update", "tool_execution_update"]);
 const DROP_TYPES = new Set(["server.heartbeat"]);
+const STRIP_IMAGE_TYPES = new Set([
+	"message_start",
+	"message_update",
+	"message_end",
+	"tool_execution_update",
+	"tool_execution_end",
+]);
+/** Skip JSON walk when payload has no large base64 `data` field. */
+const LARGE_IMAGE_DATA_RE = /"data"\s*:\s*"[A-Za-z0-9+/=\s]{512,}/;
+const IMAGE_TYPE_MARKER = '"type":"image"';
+const IMAGE_TYPE_MARKER_SPACED = '"type": "image"';
 
 function peekSseEventType(data) {
 	const text = String(data);
@@ -38,6 +54,68 @@ function coalesceKey(type, data) {
 		return `tool_execution_update:${peekSseToolCallId(data) || "_"}`;
 	}
 	return type;
+}
+
+function looksLikeInlineImageBlock(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	if (value.type === "image") return true;
+	return typeof value.mimeType === "string"
+		&& value.mimeType.startsWith("image/")
+		&& typeof value.data === "string";
+}
+
+/**
+ * Replace inline image base64 with a short placeholder; keep mimeType.
+ * Returns the same reference when nothing changed.
+ */
+function stripInlineImageData(value) {
+	if (Array.isArray(value)) {
+		let changed = false;
+		const next = value.map((item) => {
+			const stripped = stripInlineImageData(item);
+			if (stripped !== item) changed = true;
+			return stripped;
+		});
+		return changed ? next : value;
+	}
+	if (!value || typeof value !== "object") return value;
+
+	if (looksLikeInlineImageBlock(value) && typeof value.data === "string" && value.data.length > 0) {
+		return {
+			...value,
+			data: "",
+			_omitted: "image_data",
+		};
+	}
+
+	let changed = false;
+	const next = {};
+	for (const [key, child] of Object.entries(value)) {
+		const stripped = stripInlineImageData(child);
+		next[key] = stripped;
+		if (stripped !== child) changed = true;
+	}
+	return changed ? next : value;
+}
+
+function prepareSsePayload(data) {
+	const text = String(data);
+	const type = peekSseEventType(text);
+	if (!STRIP_IMAGE_TYPES.has(type)) return text;
+	if (
+		!LARGE_IMAGE_DATA_RE.test(text)
+		&& !text.includes(IMAGE_TYPE_MARKER)
+		&& !text.includes(IMAGE_TYPE_MARKER_SPACED)
+	) {
+		return text;
+	}
+	try {
+		const parsed = JSON.parse(text);
+		const stripped = stripInlineImageData(parsed);
+		return stripped === parsed ? text : JSON.stringify(stripped);
+	} catch {
+		return text;
+	}
 }
 
 function createSseIpcBridge(options = {}) {
@@ -75,14 +153,15 @@ function createSseIpcBridge(options = {}) {
 
 	function push(data) {
 		if (disposed || data == null || data === "") return;
-		const type = peekSseEventType(data);
+		const prepared = prepareSsePayload(data);
+		const type = peekSseEventType(prepared);
 		if (DROP_TYPES.has(type)) return;
 		if (COALESCE_TYPES.has(type)) {
-			enqueue(coalesceKey(type, data), data, peekSseServerSequence(data));
+			enqueue(coalesceKey(type, prepared), prepared, peekSseServerSequence(prepared));
 			return;
 		}
 		flush();
-		send(data);
+		send(prepared);
 	}
 
 	function dispose() {
@@ -100,8 +179,11 @@ function createSseIpcBridge(options = {}) {
 module.exports = {
 	COALESCE_TYPES,
 	DROP_TYPES,
+	STRIP_IMAGE_TYPES,
 	peekSseEventType,
 	peekSseToolCallId,
 	peekSseServerSequence,
+	stripInlineImageData,
+	prepareSsePayload,
 	createSseIpcBridge,
 };

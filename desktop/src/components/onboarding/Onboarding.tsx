@@ -160,7 +160,28 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
 
   if (!open) return null;
 
-  const complete = () => {
+  const complete = async () => {
+    if (!selectedProject?.path) {
+      if (projectMode === 'create' && parentPath.trim()) {
+        try {
+          if (projectName.trim()) {
+            const workspace = await desktop?.workspace?.create?.({ parentPath, name: projectName.trim() });
+            if (workspace?.path) {
+              setSelectedProject(workspace);
+              await onProjectReady(workspace);
+            }
+          } else {
+            const name = parentPath.split(/[/\\]/).filter(Boolean).pop() || 'Project';
+            const workspace = { path: parentPath, name };
+            await desktop?.workspace?.set?.(parentPath);
+            setSelectedProject(workspace);
+            await onProjectReady(workspace);
+          }
+        } catch (err) {
+          console.warn('[onboarding] Failed to create/set project on complete:', err);
+        }
+      }
+    }
     localStorage.setItem(COMPLETED_KEY, 'true');
     onComplete();
   };
@@ -690,7 +711,7 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
             <button
               type="button"
               disabled={busy}
-              onClick={complete}
+              onClick={() => void complete()}
               className={ONBOARDING_BTN_CLASS}
             >
               <span>Finish & Start Coding</span>

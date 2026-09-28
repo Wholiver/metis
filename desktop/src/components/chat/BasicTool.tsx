@@ -1,5 +1,5 @@
 import React, { useId, useState } from 'react';
-import { ChevronRight, type LucideIcon } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { TextShimmer } from './TextShimmer';
 
 export type BasicToolTrigger = {
@@ -13,7 +13,6 @@ export type BasicToolTrigger = {
 };
 
 export interface BasicToolProps {
-  icon?: LucideIcon;
   trigger: BasicToolTrigger | React.ReactNode;
   children?: React.ReactNode;
   status?: string;
@@ -35,7 +34,6 @@ function isTriggerTitle(value: unknown): value is BasicToolTrigger {
 
 /** React port of OpenCode `BasicTool` (MIT) — collapsible tool/reasoning trigger. */
 export function BasicTool({
-  icon: Icon,
   trigger,
   children,
   status,
@@ -84,11 +82,6 @@ export function BasicTool({
           data-hide-details={hideDetails ? 'true' : undefined}
         >
           <div data-slot="basic-tool-tool-trigger-content">
-            {Icon && (
-              <span data-slot="basic-tool-tool-indicator" aria-hidden="true">
-                <Icon size={14} strokeWidth={1.7} />
-              </span>
-            )}
             <div data-slot="basic-tool-tool-info">
               {titleTrigger ? (
                 <div data-slot="basic-tool-tool-info-structured">

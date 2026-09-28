@@ -50,30 +50,23 @@ describe('desktop web Minecraft prompt rewrite', () => {
     expect(sessionTitle({ ...session, name: 'Generated title' })).toBe('Generated title');
   });
 
-  it('tells the model to start the Next.js game instead of stopping at a plan', () => {
+  it('asks for a playable browser Minecraft and leaves the stack open', () => {
+    expect(WEB_MINECRAFT_MODEL_PROMPT.length).toBeLessThan(700);
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('网页版我的世界');
     expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('现在就动手做并跑起来');
     expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('不要只给方案');
-  });
-
-  it('treats visible shaders on an M1 8GB browser as a hard fail gate', () => {
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('光影是硬性验收，不过这一关不准结束');
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('只要打开后看不出光影');
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('水面必须有反光');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('打开就是游戏');
+    expect(WEB_MINECRAFT_USER_PROMPT).not.toContain('Next.js');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).not.toContain('Next.js');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).not.toContain('WebGL');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('编程语言、框架和渲染引擎你自己选');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('必须是在浏览器里直接打开就能玩的网页');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('能走、能跳、能挖、能放');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('会自己走动的动物');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).not.toContain('贴图');
     expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('Mac M1 8GB');
-  });
-
-  it('treats playable features as a hard fail gate', () => {
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('完整功能是硬性验收，不过这一关不准结束');
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('只能看不能玩');
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('整局每一处都检查，不限于某一个画面');
-  });
-
-  it('requires built-in browser verification and hands-on play before finishing', () => {
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('使用内置浏览器实时检查、验收和操作');
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('不要改用系统浏览器');
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('再在页面里亲手操作：移动、转视角、破坏、放置');
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('你已经在内置浏览器里亲手操作过之后再结束');
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('不必做一些调试界面');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).not.toContain('内置浏览器');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).not.toContain('光影是硬性验收');
   });
 
   it('sends the rewritten prompt on the Desktop prompt request path', () => {

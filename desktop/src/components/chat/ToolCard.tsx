@@ -1,19 +1,7 @@
 import React, { useId, useMemo, useState } from 'react';
 import {
-  FilePenLine,
-  FileSearch,
-  FolderSearch,
-  Glasses,
-  Globe,
-  List,
-  Search,
-  Terminal,
-  Brain,
-  Bot,
-  Wrench,
   Copy,
   Check,
-  type LucideIcon,
 } from 'lucide-react';
 import { AssistantContentPart } from '../../types';
 import { computeToolDiffStats } from '../../lib/turn-files';
@@ -93,21 +81,6 @@ export function formatToolDisplayName(toolName: string, status: ToolStatus, args
     return agent ? `Spawned ${agent}` : 'Spawned Agent';
   }
   return openCodeToolTitle(toolName);
-}
-
-function toolIcon(name: string): LucideIcon {
-  const normalized = name.toLowerCase();
-  if (normalized === 'read' || /read_file|view_file|read_plan|read_resource/.test(normalized)) return Glasses;
-  if (normalized === 'write' || normalized === 'edit' || /write_to_file|replace_file|edit_file|apply_patch/.test(normalized)) return FilePenLine;
-  if (normalized === 'bash' || normalized === 'exec' || /run_command|exec_command/.test(normalized)) return Terminal;
-  if (normalized === 'ls' || /list_dir/.test(normalized)) return List;
-  if (normalized === 'glob' || normalized === 'find') return FolderSearch;
-  if (normalized === 'grep' || /search/.test(normalized)) return Search;
-  if (normalized.startsWith('browser_')) return Globe;
-  if (/spawn_agent|subagent|agent/.test(normalized)) return Bot;
-  if (/skill/.test(normalized)) return Brain;
-  if (/webfetch|websearch/.test(normalized)) return FileSearch;
-  return Wrench;
 }
 
 function fileName(value: unknown): string {
@@ -397,7 +370,6 @@ export const ToolCard = React.memo<{
     [expanded, expandable, part],
   );
   const title = titleKey ? t(titleKey) : fields.title;
-  const Icon = toolIcon(part.name);
 
   if (subagent) {
     return (
@@ -443,7 +415,6 @@ export const ToolCard = React.memo<{
       data-tool-kind={toolKindAttr(part)}
     >
       <BasicTool
-        icon={Icon}
         status={running ? 'running' : status === 'Error' || status === 'Denied' ? 'error' : 'completed'}
         allowOpenWhilePending={isShellTool(part.name)}
         hideDetails={hideDetails}

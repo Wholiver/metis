@@ -348,6 +348,7 @@ const PERFORMANCE_ADMISSION_GATED_TOOLS = new Set([
 	"browser_navigate",
 	"browser_tabs",
 	"browser_click",
+	"browser_mouse",
 	"browser_fill",
 	"browser_type",
 	"browser_press_key",
@@ -2171,7 +2172,7 @@ export class AgentSession {
 				const activeTools = new Set(this.getActiveToolNames());
 				const hasNativePerformanceGate = this.getAllTools().some((tool) => tool.name === "performance_gate");
 				const hasNativePerformanceAdmit = this.getAllTools().some((tool) => tool.name === "performance_admit");
-				const requestsNativeBuild = ["write", "edit", "bash", "spawn_agent", "browser_navigate", "browser_tabs", "browser_click", "browser_fill", "browser_type", "browser_press_key", "browser_scroll"].some((tool) => activeTools.has(tool));
+				const requestsNativeBuild = ["write", "edit", "bash", "spawn_agent", "browser_navigate", "browser_tabs", "browser_click", "browser_mouse", "browser_fill", "browser_type", "browser_press_key", "browser_scroll"].some((tool) => activeTools.has(tool));
 				if (hasNativePerformanceGate && requestsNativeBuild && !activeTools.has("performance_gate")) {
 					throw new Error("Performance control capability is disabled; direct Build cannot start without performance_gate.");
 				}
@@ -3845,7 +3846,7 @@ export class AgentSession {
 			const bashDefinition = toolDefinitionRecord.bash;
 			if (bashDefinition) {
 				const guideline =
-					"When browser_* tools are available, never use bash `open`, `open -a Safari/Chrome`, Chrome/Chromium `--headless --screenshot`, `xdg-open`, or `qlmanage` to preview local HTML/SVG/pages — use browser_* tools instead. Mutating navigate/tabs/click/fill still require performance_admit in Build; snapshot and screenshot are readable.";
+					"When browser_* tools are available, never use bash `open`, `open -a Safari/Chrome`, Chrome/Chromium `--headless --screenshot`, `xdg-open`, or `qlmanage` to preview local HTML/SVG/pages — use browser_* tools instead. Mutating navigate/tabs/click/fill still require performance_admit in Build; snapshot and screenshot are readable. Port 5173 is reserved for Metis Desktop Vite — do not start preview/test servers on 5173 and do not browser_navigate to :5173; use another port (e.g. --port 4173).";
 				const existing = bashDefinition.promptGuidelines ?? [];
 				if (!existing.includes(guideline)) {
 					bashDefinition.promptGuidelines = [...existing, guideline];

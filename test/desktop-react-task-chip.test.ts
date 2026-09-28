@@ -113,6 +113,8 @@ describe('desktop OpenCode subagent task chip', () => {
     expect(chip).toContain('data-component="task-tool-title"');
     expect(chip).toContain('data-slot="basic-tool-tool-subtitle"');
     expect(chip).toContain('task-tool-spinner');
+    expect(chip).toContain('task-tool-icon');
+    expect(chip).toContain('SubagentIcon');
     expect(icon).toContain('data-icon="subagent"');
     expect(css).toContain('[data-component="task-tool-surface"]');
     expect(css).toContain('border-radius: 8px');

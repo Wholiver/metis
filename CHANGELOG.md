@@ -4,6 +4,15 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+## [1.3.5] - 2026-09-28
+
+### Windows 11 UI & Path Normalization, Inspector Tree View & Workspace Persistence
+
+- **Windows 11 Layout & Caption Controls**: Fix sidebar collapse button positioning and eliminate macOS-only traffic-light spacer on Windows/Linux; add titlebar overlay padding for Windows caption controls (min/max/close) so header buttons and Inspector collapse controls are never obstructed.
+- **Cross-Platform Path Reconciliation**: Normalize drive letters and path separators across desktop state, `/session/switch`, and Server runtime lookup, resolving an issue on Windows where switching between projects caused chat history to temporarily disappear or trigger duplicate session creation.
+- **Workspace Directory Persistence**: Persist selected workspace root across restarts in desktop preferences, and ensure packaged first-run onboarding never falls back to the internal app installation bundle.
+- **Inspector Directory Tree View**: Add hierarchical folder tree view to the Review panel in the right sidebar, allowing file changes to be reviewed either by directory structure or flat list with aggregate diff counts and expand/collapse controls.
+
 ## [1.3.4] - 2026-09-24
 
 ### Desktop Streaming Heat, Browser Fit & Performance Gate Hardening
