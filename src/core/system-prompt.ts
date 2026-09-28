@@ -13,7 +13,7 @@ import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 import type { CollaborationMode } from "./workflow-runtime.ts";
 
 export type InstructionChannel = "base" | "developer" | "context";
-export type InstructionTrust = "builtin" | "global" | "project" | "extension" | "runtime" | "memory";
+export type InstructionTrust = "builtin" | "global" | "project" | "extension" | "runtime" | "adaptation";
 
 export interface InstructionBlock {
 	id: string;
@@ -25,13 +25,6 @@ export interface InstructionBlock {
 
 export interface InstructionStack {
 	base: InstructionBlock;
-	/**
-	 * Trusted memory summary. Declared here for provenance, but delivered as an
-	 * appended runtime-context block rather than compiled into the system prompt, so
-	 * that adding a memory appends to the request instead of invalidating the cached
-	 * prefix ahead of every message.
-	 */
-	memoryOverview?: InstructionBlock;
 	developer: InstructionBlock[];
 	context: InstructionBlock[];
 }
@@ -59,7 +52,6 @@ export interface BuildSystemPromptOptions {
 	customPrompt?: string;
 	/** @deprecated Use developerInstructions. */
 	appendSystemPrompt?: string;
-	memoryOverview?: string;
 	selectedTools?: string[];
 	toolSnippets?: Record<string, string>;
 	promptGuidelines?: string[];
@@ -161,14 +153,6 @@ export function buildInstructionStack(options: BuildSystemPromptOptions): Instru
 			trust: "builtin" as const,
 		};
 
-	const memoryOverview = options.memoryOverview ? block(
-		"metis:memory-overview",
-		"developer",
-		options.memoryOverview,
-		"memory:overview",
-		"memory",
-	) : undefined;
-
 	const developer: InstructionBlock[] = [];
 	for (const [index, content] of (options.developerInstructions ?? []).entries()) {
 		const entry = block(`developer:${index}`, "developer", content, "configured", "global");
@@ -212,7 +196,7 @@ export function buildInstructionStack(options: BuildSystemPromptOptions): Instru
 			if (entry) developer.push(entry);
 		}
 	}
-	const turnBoundaryGuidance = "Default is silence between tools. Visible intermediate text is a normal text part in the user's latest-message language; thinking/thought parts are not visible. When: emit one note before the first tool call; emit zero visible text while exploring (ls, read, grep, find, read_plan, memory queries, inspect commands, screenshots) except a single note after a long search if you found something concrete; emit later notes only at spaced milestones (first write/edit, a later inspect-then-repair, a stretch of quiet implementation, start of verify, a failed check, or update_plan checking off a step). Do not emit extra visible notes around performance_admit or a passing performance_gate; those tools still run, and a completed checklist is not task completion while a Performance run is active. Never narrate tool-call schema, missing arguments, or how to invoke a tool — retry the tool instead; those failures belong on the tool card, not in visible text. Never narrate one update per tool, and never emit because a tool result arrived. If you emit, format: 1–2 concrete human sentences — what you found or what is wrong, and what you will do next (file, failure, mismatch, next check). Avoid stiff process speak such as '正在...', '我将...', 'Executing...', or template/receipt/gate jargon as the whole update. Do not put a required update only in thinking. When producing the final response or plan without more tool calls, write the final answer directly without conversational meta-commentary, checklist recitation, or tag previews.";
+	const turnBoundaryGuidance = "Default is silence between tools. Visible intermediate text is a normal text part in the user's latest-message language; thinking/thought parts are not visible. When: emit one note before the first tool call; emit zero visible text while exploring (ls, read, grep, find, read_plan, inspect commands, screenshots) except a single note after a long search if you found something concrete; emit later notes only at spaced milestones (first write/edit, a later inspect-then-repair, a stretch of quiet implementation, start of verify, a failed check, or update_plan checking off a step). Do not emit extra visible notes around performance_admit or a passing performance_gate; those tools still run, and a completed checklist is not task completion while a Performance run is active. Never narrate tool-call schema, missing arguments, or how to invoke a tool — retry the tool instead; those failures belong on the tool card, not in visible text. Never narrate one update per tool, and never emit because a tool result arrived. If you emit, format: 1–2 concrete human sentences — what you found or what is wrong, and what you will do next (file, failure, mismatch, next check). Avoid stiff process speak such as '正在...', '我将...', 'Executing...', or template/receipt/gate jargon as the whole update. Do not put a required update only in thinking. When producing the final response or plan without more tool calls, write the final answer directly without conversational meta-commentary, checklist recitation, or tag previews.";
 	const turnBoundaryEntry = block("runtime:turn-boundary", "developer", turnBoundaryGuidance, "workflow runtime", "runtime");
 	if (turnBoundaryEntry) developer.push(turnBoundaryEntry);
 	const collaborationGuidance = namedChild
@@ -234,17 +218,11 @@ export function buildInstructionStack(options: BuildSystemPromptOptions): Instru
 	const contextEntry = block("runtime:context", "context", runtimeContext, "runtime", "runtime");
 	if (contextEntry) context.push(contextEntry);
 
-	return { base, memoryOverview, developer, context };
+	return { base, developer, context };
 }
 
 /**
  * Deterministic privileged prompt compiler for all provider backends.
- *
- * The memory overview is deliberately absent: it is the only privileged input that
- * changes while a session runs, and the system prompt sits ahead of every message in
- * a provider's cached request prefix, so embedding it here made each new memory
- * invalidate the entire conversation. WorkflowRuntime delivers it as an appended
- * runtime-context block instead (see `InstructionStack.memoryOverview`).
  */
 export function compileInstructionStack(stack: InstructionStack): string {
 	const sections = [
@@ -267,7 +245,7 @@ export function instructionStackHash(stack: InstructionStack): string {
 }
 
 export function summarizeInstructionStack(stack: InstructionStack): InstructionSourceSummary[] {
-	const visible = [stack.base, ...(stack.memoryOverview ? [stack.memoryOverview] : []), ...stack.developer].filter((entry) => entry.trust !== "runtime");
+	const visible = [stack.base, ...stack.developer].filter((entry) => entry.trust !== "runtime");
 	return visible.map((entry) => ({
 		id: entry.id,
 		channel: entry.channel as "base" | "developer",

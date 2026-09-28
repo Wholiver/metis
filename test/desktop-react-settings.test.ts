@@ -44,7 +44,7 @@ describe('desktop React settings', () => {
     for (const legacyTab of ['shortcuts', 'security', 'session']) {
       expect(settings).toContain(`${legacyTab}:`);
     }
-    for (const endpoint of ['/settings/defaults', '/session/settings', '/memory/settings', '/memory/run', '/memory/reset', '/session/name', '/session/compact']) {
+    for (const endpoint of ['/settings/defaults', '/session/settings', '/session/name', '/session/compact']) {
       expect(settings).toContain(endpoint);
     }
     expect(settings).toContain('data-archived-sessions-list');
@@ -181,35 +181,16 @@ describe('desktop React settings', () => {
     expect(splitSurroundingWhitespace(' of ')).toEqual({ leading: ' ', text: 'of', trailing: ' ' });
   });
 
-  it('renders live memory progress, stop control, and connects ChatHeader memory pill to settings', () => {
+  it('does not render legacy memory progress or stop controls', () => {
     const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
     const header = source('desktop/src/components/chat/ChatHeader.tsx');
-    const chatArea = source('desktop/src/components/chat/ChatArea.tsx');
-    const app = source('desktop/src/App.tsx');
     const hook = source('desktop/src/hooks/useMetisServer.ts');
 
-    // SettingsDialog progress and stop
-    expect(settings).toContain("isConsolidating");
-    expect(settings).toContain("props.request('/memory/abort', 'POST')");
-    expect(settings).toContain("Extracting checkpoints");
-    expect(settings).toContain("Consolidating & saving records…");
-    expect(settings).toContain("progressPercent");
-
-    // ChatHeader live pill
-    expect(header).toContain("memoryState?.phase === 'extracting'");
-    expect(header).toContain("onOpenMemorySettings");
-    expect(chatArea).toContain("onOpenMemorySettings={onOpenMemorySettings}");
-    expect(app).toContain("onOpenMemorySettings={handleOpenMemorySettings}");
-    expect(app).toContain("setSettingsTab('agent')");
-
-    // Hook SSE & abort method
-    expect(hook).toContain("type === 'memory_state_changed'");
-    expect(hook).toContain("request<MemoryState>('/memory/abort', 'POST')");
-    expect(hook).toContain("metis:memory-finished");
-
-    // Toast notification
-    expect(app).toContain("metis:memory-finished");
-    expect(app).toContain("Memory consolidation completed:");
+    expect(settings).not.toContain("isConsolidating");
+    expect(settings).not.toContain("props.request('/memory/abort'");
+    expect(header).not.toContain("memoryState");
+    expect(hook).not.toContain("type === 'memory_state_changed'");
+    expect(hook).not.toContain("'/memory/abort'");
   });
 
   it('renders Concurrency strategy options and binds them to session settings', () => {

@@ -59,7 +59,6 @@ describe("regression #5109: exclude tools", () => {
 			"ls",
 			"performance_admit",
 			"performance_gate",
-			"query_memory_db",
 			"read_plan",
 			"spawn_agent",
 			"update_plan",

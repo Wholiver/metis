@@ -72,9 +72,9 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 
 | Agent Framework | Model | Benchmark | Solved (Accuracy) | Architecture & Harness Advantage |
 | :--- | :--- | :--- | :---: | :--- |
-| 🏆 **Metis** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | **73 / 89 (82.02%)** | ✅ Recursive 5-role agents + SQLite memory + Plan/Build |
+| 🏆 **Metis** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | **73 / 89 (82.02%)** | ✅ Recursive 5-role agents + Self-learning adaptations + Plan/Build |
 | **OpenCode** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | 60 / 89 (67.42%) | ⚠️ Single-thread flat tool execution |
-| 📈 *Improvement* | *Same Model & Budget* | *Same Environment* | **+14.6% (+13 tasks)** | 🚀 *Harness, memory, and verification gates alone* |
+| 📈 *Improvement* | *Same Model & Budget* | *Same Environment* | **+14.6% (+13 tasks)** | 🚀 *Harness, adaptations, and verification gates alone* |
 
 ### Feature Comparison Matrix
 
@@ -85,7 +85,7 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 | **User Interfaces** | ✅ **TUI + React Desktop** | ⚠️ Terminal Only | ⚠️ Terminal Only | ⚠️ IDE Only |
 | **Workflow Mode** | ✅ **Plan ↔ Build Dual-Mode** | ⚠️ Single Flow | ⚠️ Single Flow | ⚠️ Chat / Inline |
 | **Multi-Agent System** | ✅ **Recursive L0→L4 (5 Roles)** | ⚠️ Flat Subagents | ⚠️ Basic | ❌ None |
-| **Durable Memory** | ✅ **SQLite + Vector Search** | ❌ Ephemeral | ❌ Ephemeral | ⚠️ Code Embeddings |
+| **Self-Learning Adaptations** | ✅ **Filesystem Profile & Workflow Evolution** | ❌ Ephemeral | ❌ Ephemeral | ⚠️ Code Embeddings |
 | **Verification Gates** | ✅ **Test Gates + Video Evidence** | ⚠️ Manual Bash | ⚠️ Manual Bash | ⚠️ Basic Linter |
 | **Headless Benchmark** | ✅ **Python Adapter + Trace** | ❌ None | ⚠️ Partial | ❌ None |
 
@@ -94,7 +94,7 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 - **Plan & Build Dual Workflows** — Safely investigate in read-only Plan mode, then execute approved plans with a live-updating checklist in Build mode.
 - **Dual Interface for Terminal & Desktop** — Work directly in your terminal via the rich interactive TUI, or use the dedicated React/Vite Desktop workspace on macOS and Windows.
 - **Recursive Multi-Agent System** — Native named agents (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`) with L0→L4 recursive delegation and Git Worktree isolation.
-- **Durable Memory & Resumable Sessions** — Project knowledge and decisions persist in SQLite across restarts, context compactions, and session forks.
+- **Self-Learning Adaptations & Resumable Sessions** — Project profiles, learned workflows, and custom checks adapt safely on disk across sessions with full rollback support.
 - **Extensible & Model-Agnostic** — Use any LLM provider (OpenAI, Anthropic, DeepSeek, OrcaRouter, Gemini, Groq, Ollama, vLLM) and extend with TypeScript plugins, Agent Skills, and MCP.
 - **Benchmark-Grade Reliability** — Automated verification gates, video evidence inspection, and full Terminal-Bench & Harbor evaluation readiness.
 

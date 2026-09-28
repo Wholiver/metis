@@ -402,16 +402,22 @@ describe("Coding Agent Tools", () => {
 				} as any;
 			}
 
-		it("returns a compatibility message when no persisted session history is available", async () => {
-				const rememberTool = (await import("../src/core/tools/remember-user-intent.ts")).createRememberUserIntentToolDefinition(testDir);
+			it("returns user prompts from session history", async () => {
 				const tool = (await import("../src/core/tools/user-intent.ts")).createUserIntentToolDefinition(testDir);
-				await rememberTool.execute("remember-1", { content: "Build feature A" }, undefined, undefined, createUserIntentTestContext("session-a"));
-				await rememberTool.execute("remember-2", { content: "补充测试约束" }, undefined, undefined, createUserIntentTestContext("session-a"));
-				await rememberTool.execute("remember-3", { content: "Build feature B" }, undefined, undefined, createUserIntentTestContext("session-b"));
+				const ctx = {
+					...createUserIntentTestContext("session-a"),
+					sessionManager: {
+						getSessionId: () => "session-a",
+						getEntries: () => [
+							{ type: "message", message: { role: "user", content: "Build feature A" } },
+							{ type: "message", message: { role: "user", content: "补充测试约束" } },
+						],
+					},
+				};
+				const result = await tool.execute("test-call-user-intent", {}, undefined, undefined, ctx as any);
 
-				const result = await tool.execute("test-call-user-intent", {}, undefined, undefined, createUserIntentTestContext("session-a"));
-
-			expect(getTextOutput(result)).toContain("No user prompts");
+				expect(getTextOutput(result)).toContain("Build feature A");
+				expect(getTextOutput(result)).toContain("补充测试约束");
 			});
 
 			it("returns a clear message when no prompt is recorded", async () => {
@@ -427,8 +433,7 @@ describe("Coding Agent Tools", () => {
 	describe("tool aggregation", () => {
 		it("should include log in coding tools", () => {
 			expect(createCodingTools(testDir).map((tool) => tool.name)).toContain("log");
-			expect(createCodingTools(testDir).map((tool) => tool.name)).toContain("user_intent");
-			expect(createCodingTools(testDir).map((tool) => tool.name)).toContain("remember_user_intent");
+			expect(createCodingTools(testDir).map((tool) => tool.name)).not.toContain("remember_user_intent");
 		});
 	});
 

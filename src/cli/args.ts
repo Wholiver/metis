@@ -21,6 +21,8 @@ export interface Args {
 	collaborationMode?: CollaborationMode;
 	/** Headless execution profile. Sole value: reliable-headless (legacy removed). */
 	executionProfile?: ExecutionProfile;
+	/** Self-learning adaptations switch: on | off */
+	adaptations?: "on" | "off";
 	thinking?: ThinkingLevel;
 	continue?: boolean;
 	resume?: boolean;
@@ -176,6 +178,16 @@ export function parseArgs(args: string[]): Args {
 				result.diagnostics.push({
 					type: "error",
 					message: `Invalid execution profile: ${profile}. Use reliable-headless.`,
+				});
+			}
+		} else if (arg === "--adaptations" && i + 1 < args.length) {
+			const val = args[++i];
+			if (val === "on" || val === "off") {
+				result.adaptations = val;
+			} else {
+				result.diagnostics.push({
+					type: "error",
+					message: `Invalid adaptations value: ${val}. Use 'on' or 'off'.`,
 				});
 			}
 		} else if (arg === "--name" || arg === "-n") {
@@ -381,6 +393,7 @@ ${chalk.bold("Options:")}
   --developer-instructions <text> Add trusted developer instructions (repeatable)
   --collaboration-mode <mode>    Workflow mode: plan (default) or build
   --execution-profile <profile>  Execution profile (sole value: reliable-headless; legacy removed)
+  --adaptations <on|off>         Enable or disable self-learning runtime adaptations (default: off)
   --mode <mode>                  Output mode: text (default), json, or rpc
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session

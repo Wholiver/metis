@@ -15,18 +15,8 @@ export interface CompactionSettings {
 	keepRecentTokens?: number; // default: 20000
 }
 
-export interface WorkingMemorySettings {
-	enabled?: boolean; // default: true
-	checkpointInterval?: number; // default: 8 non-log tool calls
-}
-
-/** Durable, advisory memory. `workingMemory` remains read-only compatibility. */
-export interface MemorySettings {
-	enabled?: boolean;
-	maxUnusedDays?: number;
-	maxRolloutAgeDays?: number;
-	minRolloutIdleHours?: number;
-	maxRolloutsPerSweep?: number;
+export interface SelfLearningSettings {
+	enabled?: boolean; // default: false
 }
 
 export interface BranchSummarySettings {
@@ -106,8 +96,7 @@ export interface Settings {
 	theme?: string;
 	uiLanguage?: UiLanguage; // global-only TUI language preference; default: "auto"
 	compaction?: CompactionSettings;
-	workingMemory?: WorkingMemorySettings;
-	memory?: MemorySettings;
+	selfLearning?: SelfLearningSettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
@@ -462,6 +451,10 @@ export class SettingsManager {
 
 	getProjectSettings(): Settings {
 		return structuredClone(this.projectSettings);
+	}
+
+	getSettings(): Settings {
+		return structuredClone(this.settings);
 	}
 
 	isProjectTrusted(): boolean {
@@ -850,39 +843,20 @@ export class SettingsManager {
 		};
 	}
 
-	getWorkingMemoryEnabled(): boolean {
-		return this.settings.workingMemory?.enabled ?? true;
+	getSelfLearningEnabled(): boolean {
+		return this.settings.selfLearning?.enabled ?? false;
 	}
 
-	getWorkingMemoryCheckpointInterval(): number {
-		const configured = this.settings.workingMemory?.checkpointInterval;
-		return configured !== undefined && Number.isFinite(configured) && configured >= 1 ? Math.floor(configured) : 8;
-	}
-
-	getWorkingMemorySettings(): { enabled: boolean; checkpointInterval: number } {
+	getSelfLearningSettings(): Required<SelfLearningSettings> {
 		return {
-			enabled: this.getWorkingMemoryEnabled(),
-			checkpointInterval: this.getWorkingMemoryCheckpointInterval(),
+			enabled: this.getSelfLearningEnabled(),
 		};
 	}
 
-	getMemorySettings(): Required<MemorySettings> {
-		const memory = this.settings.memory ?? {};
-		const positive = (value: unknown, fallback: number) =>
-			typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
-		return {
-			enabled: memory.enabled ?? true,
-			maxUnusedDays: positive(memory.maxUnusedDays, 30),
-			maxRolloutAgeDays: positive(memory.maxRolloutAgeDays, 10),
-			minRolloutIdleHours: positive(memory.minRolloutIdleHours, 6),
-			maxRolloutsPerSweep: positive(memory.maxRolloutsPerSweep, 2),
-		};
-	}
-
-	setMemoryEnabled(enabled: boolean): void {
-		if (!this.globalSettings.memory) this.globalSettings.memory = {};
-		this.globalSettings.memory.enabled = enabled;
-		this.markModified("memory", "enabled");
+	setSelfLearningEnabled(enabled: boolean): void {
+		if (!this.globalSettings.selfLearning) this.globalSettings.selfLearning = {};
+		this.globalSettings.selfLearning.enabled = enabled;
+		this.markModified("selfLearning", "enabled");
 		this.save();
 	}
 

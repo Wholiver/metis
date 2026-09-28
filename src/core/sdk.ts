@@ -10,6 +10,7 @@ import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { CollaborationMode } from "./workflow-runtime.ts";
+import type { ExecutionProfile } from "./execution-types.ts";
 import type { AskUserHandler } from "./ask-user.ts";
 import type { PerformanceAttendance } from "./performance-runtime.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
@@ -18,7 +19,6 @@ import { ModelRegistry } from "./model-registry.ts";
 import { findInitialModel } from "./model-resolver.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import { withRawReasoningPreference } from "./raw-reasoning-stream.ts";
-import { MemoryCoordinator, type MemoryCandidate, type MemoryCategory, type MemoryExtractionResult, type MemoryRecordSummary, type MemoryScope, type SessionMemoryCheckpoint } from "./memory-coordinator.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
@@ -32,7 +32,6 @@ import {
 	createGrepTool,
 	createLsTool,
 	createLogTool,
-	createRememberUserIntentTool,
 	createUserIntentTool,
 	createReadOnlyTools,
 	createReadTool,
@@ -42,211 +41,14 @@ import {
 	createWebFetchTool,
 	createAskUserTool,
 	createReadPlanTool,
-	createQueryMemoryDbToolDefinition,
 	createWriteTool,
 	type ToolName,
 	withFileMutationQueue,
 } from "./tools/index.ts";
 
-const MEMORY_EXTRACTION_PROMPT = `Extract durable coding-agent memory from this checkpoint, maintain an up-to-date Memory Map catalog, and produce a concise Memory Overview with a quick index.
 
-All extracted memory records, the Memory Map, and the Memory Overview MUST be written in English, regardless of the conversation or checkpoint language.
 
-Standard Categories:
-- tech_stack: Runtime environment (e.g. Node 22+), language, core dependencies, package name.
-- architecture_patterns: Directory structure, module boundaries, system design principles.
-- project_conventions: Code conventions, style guidelines, Git commit/branch rules.
-- domain_knowledge: Domain logic, key business terms, background facts.
-- workflows_and_commands: Common CLI commands, build/test/verification procedures.
-- known_failures_and_fixes: Known error causes, debugging solutions, pitfalls to avoid.
-- deployment_and_infra: Deployment target, env config, release pipeline.
-- user_preferences: User personal preferences, language preference, collaboration style.
 
-Instructions:
-1. Determine the relevant category for new durable knowledge from the checkpoint.
-2. Use query_memory_db to inspect existing records (e.g. \`SELECT id, category, content FROM memory_records WHERE category = '...'\`).
-3. Apply 3-Way Deduplication Decision:
-   - SKIP (Redundant): If an existing record already covers the fact/rule with equivalent or sufficient information, DO NOT extract it (skip completely).
-   - MERGE / UPDATE (Supersedes): If the checkpoint provides more complete, updated, or corrected information that refines one or more existing records, extract the consolidated English text and set "supersedes": ["<existing-id-1>", ...] with the ID(s) of the superseded record(s).
-   - NEW (Novel knowledge): If the knowledge is genuinely new and uncovered by existing records, extract as a new candidate in English without "supersedes".
-4. Maintain the Memory Map (memoryMap):
-   - Review the existing Memory Map provided in the context (if any).
-   - Produce an updated, high-density Markdown document indexing where different categories and kinds of memories are organized across scopes (Global vs Projects) and their thematic ranges/summaries.
-   - Example structure:
-     # Memory Map
-     ## Global Memories
-     - **[user_preferences]** (Global): Key preferences, rules...
-     ## Projects
-     ### <project / checkout>
-     - **[tech_stack]**: Runtime, dependencies, package overview...
-     - **[workflows_and_commands]**: Build, test, run commands...
-     - **[known_failures_and_fixes]**: Recurring pitfalls and fixes...
-5. Maintain the Memory Overview (memoryOverview):
-   - Review the existing Memory Overview provided in the context (if any) and the newly extracted knowledge from this checkpoint.
-   - Synthesize old overview points + new memory knowledge into an updated, concise Memory Overview document.
-   - Include a quick index covering key preferences, tech stack, conventions, workflows, and common pitfalls.
-   - Keep this overview short, high-density, and compact so it can be injected directly into the coding agent's system prompt without token bloat. Write strictly in English.
-
-Return strict JSON only. The JSON object format is:
-{
-  "candidates": [
-    {
-      "scope": "global" | "project" | "checkout",
-      "category": "tech_stack" | "architecture_patterns" | "project_conventions" | "domain_knowledge" | "workflows_and_commands" | "known_failures_and_fixes" | "deployment_and_infra" | "user_preferences",
-      "kind": "preference" | "fact" | "procedure" | "failure",
-      "content": "string (concise, clear, durable knowledge written strictly in English)",
-      "confidence": 0-1,
-      "supersedes": ["optional array of superseded record IDs"]
-    }
-  ],
-  "memoryMap": "string (updated Markdown document of the Memory Map)",
-  "memoryOverview": "string (concise updated Markdown document of the Memory Overview & Quick Index, written in English)"
-}
-
-(Returning an array of candidate objects is also accepted for backward compatibility.)
-
-Exclude temporary tasks, guesses, secrets, and unexecuted plans.`;
-
-export async function extractMemoryCandidates(
-	model: Model<any> | undefined,
-	modelRegistry: ModelRegistry,
-	checkpoint: SessionMemoryCheckpoint,
-	queryMemoryDb: (sql: string, params?: Array<string | number | null | undefined>) => Array<Record<string, unknown>> = () => [],
-	signal?: AbortSignal,
-	stream: typeof streamSimple = streamSimple,
-	existingMemoryMap?: string,
-	existingMemoryOverview?: string,
-): Promise<MemoryExtractionResult> {
-	if (!model) return { candidates: [], failureReason: "No model is available for background memory extraction." };
-	try {
-		const auth = await modelRegistry.getApiKeyAndHeaders(model);
-		if (!auth.ok) return { candidates: [], failureReason: "No authentication is available for the background memory model." };
-		const tool = createQueryMemoryDbToolDefinition();
-		let userPromptText = `Checkpoint:\n${JSON.stringify(checkpoint)}`;
-		if (existingMemoryOverview && existingMemoryOverview.trim().length > 0) {
-			userPromptText += `\n\nExisting Memory Overview:\n${existingMemoryOverview.trim()}`;
-		}
-		if (existingMemoryMap && existingMemoryMap.trim().length > 0) {
-			userPromptText += `\n\nExisting Memory Map:\n${existingMemoryMap.trim()}`;
-		}
-		const messages: Message[] = [{ role: "user", content: [{ type: "text", text: userPromptText }], timestamp: Date.now() }];
-		while (true) {
-			if (signal?.aborted) throw new Error("Background memory extraction aborted.");
-			const response = await stream(model, {
-				systemPrompt: MEMORY_EXTRACTION_PROMPT,
-				messages,
-				tools: [{ name: tool.name, description: tool.description, parameters: tool.parameters }],
-			}, {
-				apiKey: auth.apiKey,
-				env: auth.env,
-				headers: auth.headers,
-				signal,
-				...(model.reasoning === true ? { reasoning: "low" as const } : {}),
-			}).result();
-			if (signal?.aborted || response.stopReason === "aborted") throw new Error("Background memory extraction aborted.");
-			if (response.stopReason === "error") return { candidates: [], failureReason: "Background memory extraction stopped: error." };
-
-			const toolCalls = response.content.filter((part) => part.type === "toolCall");
-			if (toolCalls.length > 0) {
-				messages.push(response);
-				for (const toolCall of toolCalls) {
-					if (toolCall.name !== "query_memory_db") return { candidates: [], failureReason: `Background memory model requested unknown tool: ${toolCall.name}.` };
-					const args = toolCall.arguments as Record<string, unknown> | undefined;
-					const sql = typeof args?.sql === "string" ? args.sql.trim() : "";
-					if (!sql) return { candidates: [], failureReason: "Background memory query arguments were invalid: sql is required." };
-					const params = Array.isArray(args?.params) ? args.params : [];
-					let formattedText = "No matching records found.";
-					try {
-						const rows = queryMemoryDb(sql, params);
-						if (rows.length > 0) {
-							formattedText = `Query returned ${rows.length} row${rows.length > 1 ? "s" : ""}:\n\`\`\`json\n${JSON.stringify(rows, null, 2)}\n\`\`\``;
-						}
-					} catch (error) {
-						formattedText = `Query error: ${error instanceof Error ? error.message : String(error)}`;
-					}
-					messages.push({
-						role: "toolResult",
-						toolCallId: toolCall.id,
-						toolName: toolCall.name,
-						content: [{ type: "text", text: formattedText }],
-						isError: false,
-						timestamp: Date.now(),
-					});
-				}
-				continue;
-			}
-			if (response.stopReason === "toolUse") return { candidates: [], failureReason: "Background memory model stopped for tool use without a tool call." };
-			const text = response.content.filter((part): part is { type: "text"; text: string } => part.type === "text").map((part) => part.text).join("\n").trim();
-			const json = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-			const parsed = JSON.parse(json) as unknown;
-			let candidateList: unknown[];
-			let memoryMapText: string | undefined;
-			let memoryOverviewText: string | undefined;
-			if (Array.isArray(parsed)) {
-				candidateList = parsed;
-			} else if (parsed && typeof parsed === "object") {
-				const obj = parsed as Record<string, unknown>;
-				if (!Array.isArray(obj.candidates)) {
-					return { candidates: [], failureReason: "Background memory model returned JSON object without candidates array." };
-				}
-				candidateList = obj.candidates;
-				if (typeof obj.memoryMap === "string" && obj.memoryMap.trim().length > 0) {
-					memoryMapText = obj.memoryMap.trim();
-				}
-				if (typeof obj.memoryOverview === "string" && obj.memoryOverview.trim().length > 0) {
-					memoryOverviewText = obj.memoryOverview.trim();
-				}
-			} else {
-				return { candidates: [], failureReason: "Background memory model returned invalid JSON structure." };
-			}
-			const candidates: MemoryCandidate[] = [];
-			for (const value of candidateList) {
-				if (!value || typeof value !== "object") return { candidates: [], failureReason: "Background memory model returned an invalid candidate object." };
-				const candidate = value as Record<string, unknown>;
-				const scope = String(candidate.scope ?? "project");
-				const kind = String(candidate.kind ?? "fact");
-				const category = candidate.category ? String(candidate.category) : undefined;
-				const content = typeof candidate.content === "string" ? candidate.content.trim() : "";
-				const confidence = typeof candidate.confidence === "number" ? candidate.confidence : 0;
-
-				if (!["global", "project", "checkout"].includes(scope)
-					|| !["preference", "fact", "procedure", "failure"].includes(kind)
-					|| (category && !["tech_stack", "architecture_patterns", "project_conventions", "domain_knowledge", "workflows_and_commands", "known_failures_and_fixes", "deployment_and_infra", "user_preferences"].includes(category))
-					|| content.length < 8
-					|| !Number.isFinite(confidence)
-					|| confidence < 0 || confidence > 1) {
-					return { candidates: [], failureReason: "Background memory model returned a candidate that failed schema validation." };
-				}
-
-				let supersedes: string[] | undefined;
-				if (Array.isArray(candidate.supersedes)) {
-					supersedes = candidate.supersedes.map((id) => String(id).trim()).filter((id) => id.length > 0);
-				} else if (typeof candidate.supersedes === "string" && candidate.supersedes.trim().length > 0) {
-					supersedes = [candidate.supersedes.trim()];
-				}
-
-				if (confidence >= 0.75) {
-					candidates.push({
-						scope: scope as any,
-						kind: kind as any,
-						category: category as any,
-						content,
-						confidence,
-						...(supersedes && supersedes.length > 0 ? { supersedes } : {}),
-					});
-				}
-			}
-			return {
-				candidates: candidates.slice(0, 6),
-				...(memoryMapText ? { memoryMap: memoryMapText } : {}),
-				...(memoryOverviewText ? { memoryOverview: memoryOverviewText } : {}),
-			};
-		}
-	} catch (error) {
-		if (signal?.aborted) throw error;
-		return { candidates: [], failureReason: `Background memory extraction failed: ${error instanceof Error ? error.message : String(error)}` };
-	}
-}
 
 export interface CreateAgentSessionOptions {
 	/** Working directory for project-local discovery. Default: process.cwd() */
@@ -273,6 +75,10 @@ export interface CreateAgentSessionOptions {
 	namedAgentSession?: boolean;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
+	/** Self-learning adaptations CLI override: "on" | "off" */
+	adaptations?: "on" | "off";
+	/** Execution profile (e.g. "reliable-headless") */
+	executionProfile?: ExecutionProfile;
 
 	/**
 	 * Optional default tool suppression mode when no explicit allowlist is provided.
@@ -345,7 +151,6 @@ export {
 	createBashTool,
 	createEditTool,
 	createLogTool,
-	createRememberUserIntentTool,
 	createUserIntentTool,
 	createWriteTool,
 	createGrepTool,
@@ -419,6 +224,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			agentDir,
 			settingsManager,
 			extensionFactories: [],
+			adaptations: options.adaptations,
+			executionProfile: options.executionProfile,
+			namedAgentSession: options.namedAgentSession,
 		});
 		await resourceLoader.reload();
 		time("resourceLoader.reload");
@@ -483,9 +291,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
 	}
 
-	// Legacy memory/log bookkeeping tools remain explicit-only. query_memory_db is
-	// active so the model can retrieve durable knowledge on demand in any host.
-	const defaultActiveToolNames: ToolName[] = ["read", "grep", "ls", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "video", "update_plan", "ask_user", "read_plan", "performance_admit", "performance_gate", "query_memory_db"];
+	const defaultActiveToolNames: ToolName[] = ["read", "grep", "ls", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "video", "update_plan", "ask_user", "read_plan", "performance_admit", "performance_gate"];
 	const namedAgentSession = Boolean(options.namedAgentSession);
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
@@ -643,25 +449,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionManager.appendCollaborationModeChange(collaborationMode);
 	}
 
-	let memoryCoordinator: MemoryCoordinator | undefined;
-	if (sessionManager.isPersistent()) {
-		memoryCoordinator = new MemoryCoordinator({
-			agentDir,
-			cwd,
-			trusted: () => settingsManager.isProjectTrusted(),
-			settings: () => settingsManager.getMemorySettings(),
-			extract: async (checkpoint, signal, existingMemoryMap, existingMemoryOverview) => extractMemoryCandidates(
-				agent.state.model,
-				modelRegistry,
-				checkpoint,
-				(sql, params) => memoryCoordinator?.query(sql, params) ?? [],
-				signal,
-				streamSimple,
-				existingMemoryMap,
-				existingMemoryOverview,
-			),
-		});
-	}
 	const session = new AgentSession({
 		agent,
 		sessionManager,
@@ -680,9 +467,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
 		autoSessionName: options.autoSessionName ?? true,
-		memoryCoordinator,
 		askUserHandler: options.askUserHandler,
 		performanceAttendance: options.performanceAttendance,
+		adaptations: options.adaptations,
+		executionProfile: options.executionProfile,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 

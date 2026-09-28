@@ -6,6 +6,7 @@ import { parseFrontmatter } from "../utils/frontmatter.ts";
 import { canonicalizePath, resolvePath } from "../utils/paths.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
+import { PROTECTED_BUILTIN_ROLES } from "./adaptations/types.ts";
 
 /** Max agent name length */
 export const MAX_AGENT_NAME_LENGTH = 64;
@@ -442,7 +443,6 @@ const NAMED_AGENT_FALLBACK_TOOLS = [
 	"video",
 	"ask_user",
 	"read_plan",
-	"query_memory_db",
 ];
 
 const NAMED_AGENT_STRIPPED_TOOLS = new Set(["performance_gate", "performance_admit"]);
@@ -726,6 +726,7 @@ export interface LoadAgentsOptions {
 	cwd: string;
 	agentDir?: string;
 	agentPaths?: string[];
+	adaptationAgentPaths?: string[];
 	includeBuiltins?: boolean;
 }
 
@@ -738,6 +739,7 @@ export function loadAgents(options: LoadAgentsOptions): AgentDiscoveryResult {
 	const resolvedAgentDir = resolvePath(options.agentDir ?? getAgentDir());
 	const includeBuiltins = options.includeBuiltins ?? true;
 	const explicitPaths = options.agentPaths ?? [];
+	const adaptationPaths = options.adaptationAgentPaths ?? [];
 
 	const agentMap = new Map<string, AgentDefinition>();
 	const realPathSet = new Set<string>();
@@ -776,9 +778,36 @@ export function loadAgents(options: LoadAgentsOptions): AgentDiscoveryResult {
 		}
 	}
 
-	// 2. User level agents (~/.metis/agent/agents and ~/.metis/agents)
+	// 1.5 Learned adaptation agents (higher than builtins, lower than user/project handwritten agents)
+	if (adaptationPaths.length > 0) {
+		for (const rawPath of adaptationPaths) {
+			const resolvedPath = resolvePath(rawPath, resolvedCwd, { trim: true });
+			if (!existsSync(resolvedPath)) continue;
+			try {
+				const stats = statSync(resolvedPath);
+				const dirResult = stats.isDirectory()
+					? loadAgentsFromDir(resolvedPath, "adaptation" as any)
+					: stats.isFile() && resolvedPath.endsWith(".md")
+						? parseAgentDefinition(readFileSync(resolvedPath, "utf-8"), resolvedPath, "adaptation" as any)
+						: { agents: [], diagnostics: [] };
+				const candidateAgents = "agents" in dirResult ? dirResult.agents : dirResult.agent ? [dirResult.agent] : [];
+				for (const agent of candidateAgents) {
+					// Cannot override protected builtin roles!
+					if (PROTECTED_BUILTIN_ROLES.includes(agent.name.toLowerCase() as any)) {
+						continue;
+					}
+					agent.source = "adaptation" as any;
+					agent.sourceInfo = createSyntheticSourceInfo(agent.filePath, { source: "adaptation", scope: "user" });
+					addAgent(agent);
+				}
+			} catch {}
+		}
+	}
+
+	// 2. User level agents (~/.metis/agent/agents, ~/.metis/agent/roles, and ~/.metis/agents)
 	const userDirs = [
 		join(resolvedAgentDir, "agents"),
+		join(resolvedAgentDir, "roles"),
 		join(dirname(resolvedAgentDir), "agents"),
 	];
 	for (const uDir of userDirs) {

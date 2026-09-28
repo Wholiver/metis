@@ -17,7 +17,6 @@ import {
   WorkflowPlanState,
   WorkflowProposalState,
   ToolCallResult,
-  MemoryState,
   ContextUsage,
   MessageUsage,
   TokenBreakdown,
@@ -101,7 +100,7 @@ type MetisEvent = {
   mode?: CollaborationMode;
   request?: PendingUserInput;
   entry?: { type?: string; customType?: string; timestamp?: string; data?: unknown };
-  state?: MemoryState;
+  state?: unknown;
   toolCallId?: string;
   partialResult?: unknown;
   result?: unknown;
@@ -1066,11 +1065,9 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const [thinkingOptions, setThinkingOptions] = useState<ThinkingOption[]>([]);
   const [supportsThinking, setSupportsThinking] = useState(false);
   const [isChangingThinking, setIsChangingThinking] = useState(false);
-  const [memoryState, setMemoryState] = useState<MemoryState>();
   const [contextUsage, setContextUsage] = useState<ContextUsage>();
   const [extensionUiRequests, setExtensionUiRequests] = useState<ExtensionUiRequest[]>([]);
   const [isRespondingToExtensionUi, setIsRespondingToExtensionUi] = useState(false);
-  const prevMemoryPhaseRef = useRef<string>();
   const activeProjectRef = useRef(activeProject);
   const agentsRef = useRef<Agent[]>([]);
   const projectAgentsByPathRef = useRef<Record<string, Agent[]>>({});
@@ -1203,10 +1200,9 @@ export function useMetisServer(activeProject?: ProjectItem) {
 
   const loadMessages = useCallback(async (expectedSessionId?: string, force = false, knownState?: SessionState) => {
     const version = ++messageLoadVersionRef.current;
-    const [state, result, memoryRes] = await Promise.all([
+    const [state, result] = await Promise.all([
       knownState ? Promise.resolve(knownState) : request<SessionState>('/session'),
       request<SessionMessagesResponse>('/session/messages'),
-      request<MemoryState>('/memory').catch(() => undefined),
     ]);
     if (version !== messageLoadVersionRef.current) return;
     if (
@@ -1228,10 +1224,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
     if (result.serverInstanceId) serverInstanceIdRef.current = result.serverInstanceId;
     if (Number.isSafeInteger(result.serverSequence)) {
       lastServerSequenceRef.current = Math.max(lastServerSequenceRef.current, result.serverSequence || 0);
-    }
-    if (memoryRes) {
-      prevMemoryPhaseRef.current = memoryRes.phase;
-      setMemoryState(memoryRes);
     }
     if (state.contextUsage !== undefined) {
       setContextUsage(state.contextUsage);
@@ -1710,40 +1702,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
           }
         }
         if (type === 'session_info_changed' && event.session) void refreshModels();
-        return;
-      }
-      if (type === 'memory_state_changed' && event.state) {
-        const nextMemoryState = event.state as MemoryState;
-        const prevPhase = prevMemoryPhaseRef.current;
-        prevMemoryPhaseRef.current = nextMemoryState.phase;
-        setMemoryState(nextMemoryState);
-        if ((prevPhase === 'extracting' || prevPhase === 'consolidating') && nextMemoryState.phase === 'idle') {
-          window.dispatchEvent(new CustomEvent('metis:memory-finished', {
-            detail: {
-              status: 'completed',
-              processed: nextMemoryState.lastRunProcessed ?? 0,
-              added: nextMemoryState.lastRunAdded ?? 0,
-              skipped: nextMemoryState.lastRunSkipped ?? 0,
-              fallbackUsed: nextMemoryState.fallbackUsed,
-            },
-          }));
-        } else if ((prevPhase === 'extracting' || prevPhase === 'consolidating') && (nextMemoryState.phase === 'retry_wait' || nextMemoryState.phase === 'error')) {
-          window.dispatchEvent(new CustomEvent('metis:memory-finished', {
-            detail: {
-              status: 'failed',
-              error: nextMemoryState.error,
-            },
-          }));
-        }
-        return;
-      }
-      if (type === 'memory_records_changed') {
-        void request<MemoryState>('/memory').then((res) => {
-          if (res) {
-            prevMemoryPhaseRef.current = res.phase;
-            setMemoryState(res);
-          }
-        }).catch(() => {});
         return;
       }
     });
@@ -2284,14 +2242,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
     [activeAgentId, activeProject?.name, agents],
   );
 
-  const runMemory = useCallback(async () => {
-    return await request<MemoryState>('/memory/run', 'POST', undefined, 10 * 60_000);
-  }, [request]);
-
-  const abortMemory = useCallback(async () => {
-    return await request<MemoryState>('/memory/abort', 'POST');
-  }, [request]);
-
   const abortTurn = useCallback(async () => {
     flushPendingStreamRef.current();
     assignStreaming(false);
@@ -2300,19 +2250,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
       setWorkingSessionIds((current) => applyWorkingSessionIds(current, [activeId], false));
     }
     return await request<{ success?: boolean }>('/session/abort', 'POST');
-  }, [request]);
-
-  const refreshMemory = useCallback(async () => {
-    try {
-      const next = await request<MemoryState>('/memory');
-      if (next) {
-        prevMemoryPhaseRef.current = next.phase;
-        setMemoryState(next);
-      }
-      return next;
-    } catch {
-      return undefined;
-    }
   }, [request]);
 
   const respondToExtensionUi = useCallback(async (response: ExtensionUiResponse) => {
@@ -2373,10 +2310,6 @@ export function useMetisServer(activeProject?: ProjectItem) {
     isLoadingSessions,
     isLoadingMessages,
     sessionError,
-    memoryState,
-    runMemory,
-    abortMemory,
-    refreshMemory,
     request,
     refresh,
     removeConversation,

@@ -5,7 +5,7 @@ import type { InstructionSourceSummary } from "../../core/system-prompt.ts";
 import type { CollaborationMode, WorkflowPlanState } from "../../core/workflow-runtime.ts";
 import type { WorkflowProposalState } from "../../core/workflow-runtime.ts";
 import type { AskUserRequest } from "../../core/ask-user.ts";
-import type { MemoryState } from "../../core/memory-coordinator.ts";
+
 import type { PerformanceRunSummary } from "../../core/performance-runtime.ts";
 import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "../rpc/rpc-types.ts";
 
@@ -15,6 +15,8 @@ export interface ServerModeOptions {
 	cors?: string[];
 	username?: string;
 	password?: string;
+	adaptations?: "on" | "off";
+	executionProfile?: string;
 }
 
 export interface ServerAddress {
@@ -52,7 +54,6 @@ export interface ServerSessionState {
 	pendingUserInput?: AskUserRequest;
 	instructionSources: InstructionSourceSummary[];
 	instructionDiagnostics: string[];
-	memoryState: MemoryState;
 	sessionFile: string | undefined;
 	sessionId: string;
 	sessionName: string | undefined;

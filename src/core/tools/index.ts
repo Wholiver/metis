@@ -1,4 +1,11 @@
 export {
+	createAdaptTool,
+	createAdaptToolDefinition,
+	adaptSchema,
+	type AdaptToolInput,
+	type AdaptToolOptions,
+} from "./adapt.ts";
+export {
 	createUpdatePlanTool,
 	createUpdatePlanToolDefinition,
 	type UpdatePlanToolInput,
@@ -19,13 +26,7 @@ export {
 	type PerformanceGateToolInput,
 	type PerformanceGateToolOptions,
 } from "./performance-gate.ts";
-export {
-	createQueryMemoryDbTool,
-	createQueryMemoryDbToolDefinition,
-	queryMemoryDbSchema,
-	type QueryMemoryDbToolInput,
-	type QueryMemoryDbToolOptions,
-} from "./query-memory-db.ts";
+
 export {
 	BASH_GUIDELINES,
 	type BashOperations,
@@ -68,11 +69,6 @@ export {
 	type LogToolInput,
 	type LogToolOptions,
 } from "./log.ts";
-export {
-	createRememberUserIntentTool,
-	createRememberUserIntentToolDefinition,
-	type RememberUserIntentToolInput,
-} from "./remember-user-intent.ts";
 export {
 	createUserIntentTool,
 	createUserIntentToolDefinition,
@@ -193,7 +189,6 @@ import { createFindTool, createFindToolDefinition, type FindToolOptions } from "
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createLogTool, createLogToolDefinition, type LogToolOptions } from "./log.ts";
-import { createRememberUserIntentTool, createRememberUserIntentToolDefinition } from "./remember-user-intent.ts";
 import { createUserIntentTool, createUserIntentToolDefinition } from "./user-intent.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import { createVideoTool, createVideoToolDefinition, type VideoToolOptions } from "./video.ts";
@@ -217,7 +212,7 @@ import { createAskUserTool, createAskUserToolDefinition, type AskUserToolOptions
 import { createReadPlanTool, createReadPlanToolDefinition } from "./read-plan.ts";
 import { createPerformanceAdmitTool, createPerformanceAdmitToolDefinition, type PerformanceAdmitToolOptions } from "./performance-admit.ts";
 import { createPerformanceGateTool, createPerformanceGateToolDefinition, type PerformanceGateToolOptions } from "./performance-gate.ts";
-import { createQueryMemoryDbTool, createQueryMemoryDbToolDefinition, type QueryMemoryDbToolOptions } from "./query-memory-db.ts";
+import { createAdaptTool, createAdaptToolDefinition, type AdaptToolOptions } from "./adapt.ts";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
@@ -227,7 +222,6 @@ export type ToolName =
 	| "edit"
 	| "write"
 	| "log"
-	| "remember_user_intent"
 	| "user_intent"
 	| "grep"
 	| "find"
@@ -245,14 +239,13 @@ export type ToolName =
 	| "read_plan"
 	| "performance_admit"
 	| "performance_gate"
-	| "query_memory_db";
+	| "adapt";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
 	"edit",
 	"write",
 	"log",
-	"remember_user_intent",
 	"user_intent",
 	"grep",
 	"find",
@@ -270,7 +263,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"read_plan",
 	"performance_admit",
 	"performance_gate",
-	"query_memory_db",
+	"adapt",
 ]);
 
 export interface ToolsOptions {
@@ -289,9 +282,9 @@ export interface ToolsOptions {
 	video?: VideoToolOptions;
 	updatePlan?: UpdatePlanToolOptions;
 	askUser?: AskUserToolOptions;
-	queryMemoryDb?: QueryMemoryDbToolOptions;
 	performanceAdmit?: PerformanceAdmitToolOptions;
 	performanceGate?: PerformanceGateToolOptions;
+	adapt?: AdaptToolOptions;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
@@ -306,8 +299,6 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createWriteToolDefinition(cwd, options?.write);
 		case "log":
 			return createLogToolDefinition(cwd, options?.log);
-		case "remember_user_intent":
-			return createRememberUserIntentToolDefinition(cwd);
 		case "user_intent":
 			return createUserIntentToolDefinition(cwd);
 		case "grep":
@@ -342,8 +333,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createPerformanceAdmitToolDefinition(options?.performanceAdmit);
 		case "performance_gate":
 			return createPerformanceGateToolDefinition(options?.performanceGate ?? {});
-		case "query_memory_db":
-			return createQueryMemoryDbToolDefinition(options?.queryMemoryDb);
+		case "adapt":
+			return createAdaptToolDefinition(cwd, options?.adapt);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -361,8 +352,6 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createWriteTool(cwd, options?.write);
 		case "log":
 			return createLogTool(cwd, options?.log);
-		case "remember_user_intent":
-			return createRememberUserIntentTool(cwd);
 		case "user_intent":
 			return createUserIntentTool(cwd);
 		case "grep":
@@ -397,8 +386,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createPerformanceAdmitTool(options?.performanceAdmit);
 		case "performance_gate":
 			return createPerformanceGateTool(options?.performanceGate ?? {});
-		case "query_memory_db":
-			return createQueryMemoryDbTool(options?.queryMemoryDb);
+		case "adapt":
+			return createAdaptTool(cwd, options?.adapt);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -411,12 +400,10 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createEditToolDefinition(cwd, options?.edit),
 		createWriteToolDefinition(cwd, options?.write),
 		createLogToolDefinition(cwd, options?.log),
-		createRememberUserIntentToolDefinition(cwd),
 		createUserIntentToolDefinition(cwd),
 		createAskUserToolDefinition(options?.askUser),
 		createReadPlanToolDefinition(options?.performanceGate),
 		createPerformanceAdmitToolDefinition(options?.performanceAdmit),
-		createQueryMemoryDbToolDefinition(options?.queryMemoryDb),
 		createSpawnAgentToolDefinition(cwd, options?.spawnAgent),
 		createListAgentsToolDefinition(options?.agentManagement),
 		createWaitAgentToolDefinition(options?.agentManagement),
@@ -439,7 +426,6 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 		createReadPlanToolDefinition(options?.performanceGate),
 		createPerformanceAdmitToolDefinition(options?.performanceAdmit),
 		createPerformanceGateToolDefinition(options?.performanceGate ?? {}),
-		createQueryMemoryDbToolDefinition(options?.queryMemoryDb),
 	];
 }
 
@@ -450,7 +436,6 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		edit: createEditToolDefinition(cwd, options?.edit),
 		write: createWriteToolDefinition(cwd, options?.write),
 		log: createLogToolDefinition(cwd, options?.log),
-		remember_user_intent: createRememberUserIntentToolDefinition(cwd),
 		user_intent: createUserIntentToolDefinition(cwd),
 		grep: createGrepToolDefinition(cwd, options?.grep),
 		find: createFindToolDefinition(cwd, options?.find),
@@ -468,7 +453,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		read_plan: createReadPlanToolDefinition(options?.performanceGate),
 		performance_admit: createPerformanceAdmitToolDefinition(options?.performanceAdmit),
 		performance_gate: createPerformanceGateToolDefinition(options?.performanceGate ?? {}),
-		query_memory_db: createQueryMemoryDbToolDefinition(options?.queryMemoryDb),
+		adapt: createAdaptToolDefinition(cwd, options?.adapt),
 	};
 }
 
@@ -479,12 +464,10 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createEditTool(cwd, options?.edit),
 		createWriteTool(cwd, options?.write),
 		createLogTool(cwd, options?.log),
-		createRememberUserIntentTool(cwd),
 		createUserIntentTool(cwd),
 		createAskUserTool(options?.askUser),
 		createReadPlanTool(options?.performanceGate),
 		createPerformanceAdmitTool(options?.performanceAdmit),
-		createQueryMemoryDbTool(options?.queryMemoryDb),
 		createSpawnAgentTool(cwd, options?.spawnAgent),
 		createListAgentsTool(options?.agentManagement),
 		createWaitAgentTool(options?.agentManagement),
@@ -507,7 +490,6 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 		createReadPlanTool(options?.performanceGate),
 		createPerformanceAdmitTool(options?.performanceAdmit),
 		createPerformanceGateTool(options?.performanceGate ?? {}),
-		createQueryMemoryDbTool(options?.queryMemoryDb),
 	];
 }
 
@@ -518,7 +500,6 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		edit: createEditTool(cwd, options?.edit),
 		write: createWriteTool(cwd, options?.write),
 		log: createLogTool(cwd, options?.log),
-		remember_user_intent: createRememberUserIntentTool(cwd),
 		user_intent: createUserIntentTool(cwd),
 		grep: createGrepTool(cwd, options?.grep),
 		find: createFindTool(cwd, options?.find),
@@ -536,6 +517,6 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		read_plan: createReadPlanTool(options?.performanceGate),
 		performance_admit: createPerformanceAdmitTool(options?.performanceAdmit),
 		performance_gate: createPerformanceGateTool(options?.performanceGate ?? {}),
-		query_memory_db: createQueryMemoryDbTool(options?.queryMemoryDb),
+		adapt: createAdaptTool(cwd, options?.adapt),
 	};
 }

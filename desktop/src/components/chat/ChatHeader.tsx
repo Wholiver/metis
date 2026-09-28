@@ -1,6 +1,6 @@
 import React from 'react';
-import { PanelLeftOpen, PanelRightOpen, Plus, Sparkles } from 'lucide-react';
-import { Agent, MemoryState } from '../../types';
+import { PanelLeftOpen, PanelRightOpen, Plus } from 'lucide-react';
+import { Agent } from '../../types';
 import { useI18n } from '../../i18n';
 import { isMac, isWindows } from '../../lib/platform';
 
@@ -18,8 +18,6 @@ interface ChatHeaderProps {
   onToggleSidebar?: () => void;
   onToggleInspector?: () => void;
   onNewChat?: () => void;
-  memoryState?: MemoryState;
-  onOpenMemorySettings?: () => void;
   breadcrumb?: ChatBreadcrumbSegment[];
   onNavigateBreadcrumb?: (depth: number) => void;
 }
@@ -31,13 +29,10 @@ export const ChatHeader = React.memo<ChatHeaderProps>(({
   onToggleSidebar,
   onToggleInspector,
   onNewChat,
-  memoryState,
-  onOpenMemorySettings,
   breadcrumb,
   onNavigateBreadcrumb,
 }) => {
   const { t } = useI18n();
-  const isMemoryActive = memoryState?.phase === 'extracting' || memoryState?.phase === 'consolidating';
   const segments = breadcrumb && breadcrumb.length > 1 ? breadcrumb : null;
 
   return (
@@ -111,23 +106,6 @@ export const ChatHeader = React.memo<ChatHeaderProps>(({
       </div>
 
       <div className="flex items-center gap-2 no-drag">
-        {isMemoryActive && (
-          <button
-            type="button"
-            onClick={onOpenMemorySettings}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-chip text-[11px] font-medium bg-green-tint text-green border border-green/30 hover:bg-green-tint transition-colors cursor-pointer active:scale-[0.98]"
-            title="Consolidating memory… Click to view progress"
-          >
-            <Sparkles className="w-3.5 h-3.5 animate-spin text-green" />
-            <span>
-              {memoryState.phase === 'consolidating'
-                ? 'Saving memory…'
-                : memoryState.extractingTotal
-                  ? `Memory: ${memoryState.extractingProcessed ?? 0}/${memoryState.extractingTotal}`
-                  : 'Extracting memory…'}
-            </span>
-          </button>
-        )}
         {!isInspectorOpen && (
           <button
             onClick={onToggleInspector}

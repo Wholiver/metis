@@ -91,13 +91,16 @@ export function createServerOpenApiDocument() {
 			"/session/model": { put: bodyOperation("Select model", json, 200, json) },
 			"/session/thinking": { put: bodyOperation("Set thinking level", json, 200, json) },
 			"/session/collaboration-mode": { put: bodyOperation("Set Build or Plan workflow mode", json, 200, json) },
-			"/settings/defaults": { get: operation("Get persisted defaults for new sessions", 200, json), put: bodyOperation("Update persisted defaults for new sessions", json, 200, json) },
-			"/memory": { get: operation("Get memory state", 200, json) },
-			"/memory/search": { get: operation("Search advisory memory", 200, json) },
-			"/memory/settings": { put: bodyOperation("Enable or disable memory", json, 200, json) },
-			"/memory/run": { post: operation("Run idle memory consolidation", 200, json) },
-			"/memory/abort": { post: operation("Abort running memory consolidation", 200, json) },
-			"/memory/reset": { post: bodyOperation("Reset memory with explicit confirmation", json, 200, json) },
+			"/self-learning": { get: operation("Get self-learning status", 200, json), put: bodyOperation("Update self-learning status", json, 200, json) },
+			"/adaptations": { get: operation("List active adaptations", 200, json) },
+			"/adaptations/rollback": { post: bodyOperation("Rollback adaptation", json, 200, json) },
+			"/adaptations/checks/{id}/retire": {
+				post: {
+					...bodyOperation("Retire an extra check from workflow", json, 200, json),
+					parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+				},
+			},
+
 		"/session/settings": { put: bodyOperation("Update Agent session settings", json, 200, json) },
 		"/commands": { get: operation("List built-in and loaded slash commands", 200, json) },
 		"/session/command": { post: bodyOperation("Execute a slash command", json, 200, json) },

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -1359,5 +1359,92 @@ Run nonce: ${state.nonce}
 		expect(runtime.state?.roadmapItems).toEqual([
 			expect.objectContaining({ id: "DOC-01", category: "docs", framework: "docs", tier: "T1" }),
 		]);
+	});
+
+	it("isolates workflowSnapshot per run: disk changes or switch changes mid-run do not affect current run", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		const workspaceRoot = mkdtempSync(join(tmpdir(), "metis-perf-workspace-"));
+		roots.push(agentDir, workspaceRoot);
+
+		const t2Admission = {
+			...boundedAdmission,
+			tier: "T2" as const,
+			taskShape: "sequential-complex" as const,
+			sharedMutableState: true,
+			lanes: [{ ...boundedAdmission.lanes[0], framework: "plan-design" }],
+		};
+
+		// Write initial workflow.json in agentDir/adaptations
+		const adaptationsDir = join(agentDir, "adaptations");
+		mkdirSync(adaptationsDir, { recursive: true });
+		const workflow1 = {
+			routeBias: { planner: "reviewer" },
+			extraChecks: [
+				{
+					id: "check-1",
+					name: "Check 1",
+					gate: "G6",
+					command: "echo check1",
+				},
+			],
+		};
+		writeFileSync(join(adaptationsDir, "workflow.json"), JSON.stringify(workflow1), "utf8");
+
+		const runtime = new PerformanceRuntime(agentDir);
+
+		// 1. Admit with self-learning enabled -> snapshots workflow1
+		const state1 = runtime.admit({
+			kind: "admit",
+			mission: "Mission 1",
+			workspaceRoot,
+			admission: t2Admission,
+			settings: { selfLearning: { enabled: true } },
+		});
+
+		expect(state1.workflowSnapshot).toBeDefined();
+		expect(state1.workflowSnapshot?.extraChecks?.[0]?.id).toBe("check-1");
+		const allowedRoles1 = runtime.allowedSpawnRoles();
+		expect(allowedRoles1[0]).toBe("reviewer");
+
+		// 2. Mid-run: Modify workflow.json on disk to something different
+		const workflow2 = {
+			routeBias: { planner: "verifier" },
+			extraChecks: [
+				{
+					id: "check-2",
+					name: "Check 2",
+					gate: "G6",
+					command: "echo check2",
+				},
+			],
+		};
+		writeFileSync(join(adaptationsDir, "workflow.json"), JSON.stringify(workflow2), "utf8");
+
+		// Current run's snapshot and allowedSpawnRoles MUST be unchanged!
+		expect(runtime.state?.workflowSnapshot?.extraChecks?.[0]?.id).toBe("check-1");
+		expect(runtime.allowedSpawnRoles()).toEqual(allowedRoles1);
+
+		// 3. Next admit with selfLearning OFF -> workflowSnapshot is undefined
+		const state2 = runtime.admit({
+			kind: "admit",
+			mission: "Mission 2",
+			workspaceRoot,
+			admission: t2Admission,
+			settings: { selfLearning: { enabled: false } },
+		});
+		expect(state2.workflowSnapshot).toBeUndefined();
+		expect(runtime.allowedSpawnRoles()[0]).toBe("planner");
+
+		// 4. Next admit with selfLearning ON -> captures new workflow2 from disk
+		const state3 = runtime.admit({
+			kind: "admit",
+			mission: "Mission 3",
+			workspaceRoot,
+			admission: t2Admission,
+			settings: { selfLearning: { enabled: true } },
+		});
+		expect(state3.workflowSnapshot).toBeDefined();
+		expect(state3.workflowSnapshot?.extraChecks?.[0]?.id).toBe("check-2");
+		expect(runtime.allowedSpawnRoles()[0]).toBe("verifier");
 	});
 });

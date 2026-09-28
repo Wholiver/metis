@@ -179,8 +179,8 @@ export function resolveWorkProgress(items: AssistantContentPart[]): WorkProgress
   if (/read_plan/.test(name)) {
     return { phase: 'reading', label: 'Reading the current plan…', status: 'active' };
   }
-  if (/query_memory|memory_db/.test(name)) {
-    return { phase: 'reading', label: 'Checking memory…', status: 'active' };
+  if (/^adapt$/.test(name)) {
+    return { phase: 'executing', label: 'Applying adaptation…', status: 'active' };
   }
   if (/webfetch|fetch/.test(name)) {
     return { phase: 'reading', label: 'Fetching a source…', status: 'active' };

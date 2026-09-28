@@ -30,26 +30,6 @@ export { type BashExecutorOptions, type BashResult, executeBashWithOperations } 
 export type { CompactionResult } from "./compaction/index.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.ts";
 export { areExperimentalFeaturesEnabled } from "./experimental.ts";
-export {
-	MemoryCoordinator,
-	type MemoryCandidate,
-	type MemoryCategory,
-	MEMORY_CATEGORIES,
-	CATEGORY_DISPLAY_TITLES,
-	normalizeCategory,
-	categoryToKind,
-	type MemoryCoordinatorOptions,
-	type MemoryExtractionResult,
-	type MemoryKind,
-	type MemoryRecordStatus,
-	type MemoryRecordSummary,
-	type MemoryScope,
-	type MemorySearchOptions,
-	type MemorySettings,
-	type MemoryState,
-	type SessionMemoryCheckpoint,
-	resolveMemoryProjectIdentity,
-} from "./memory-coordinator.ts";
 // Extensions system
 export {
 	type AgentEndEvent,
@@ -100,5 +80,4 @@ export {
 export { createSyntheticSourceInfo } from "./source-info.ts";
 export { validateAskUserRequest, validateAskUserResponse, type AskUserAnswer, type AskUserHandler, type AskUserOption, type AskUserQuestion, type AskUserRequest, type AskUserResponse } from "./ask-user.ts";
 export { extractProposedPlan, getLatestWorkflowProposal, resolveWorkflowPlan, resolveWorkflowProposal, type WorkflowPlanPhase, type WorkflowPlanState, type WorkflowPlanStep, type WorkflowProposalState } from "./workflow-runtime.ts";
-export { createQueryMemoryDbTool, createQueryMemoryDbToolDefinition, queryMemoryDbSchema, type QueryMemoryDbToolInput, type QueryMemoryDbToolOptions } from "./tools/query-memory-db.ts";
-
+export * from "./adaptations/index.ts";

@@ -841,6 +841,8 @@ export async function main(args: string[], options?: MainOptions) {
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
 			namedAgentSession: sessionOptions.namedAgentSession,
+			adaptations: parsed.adaptations,
+			executionProfile: parsed.executionProfile,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {
@@ -929,6 +931,8 @@ export async function main(args: string[], options?: MainOptions) {
 		await runServerMode(runtime, {
 			hostname: parsed.hostname || "127.0.0.1",
 			port: parsed.port || 4096,
+			adaptations: parsed.adaptations,
+			executionProfile: parsed.executionProfile,
 		});
 	} else if (appMode === "rpc") {
 		printTimings();
