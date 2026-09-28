@@ -73,10 +73,10 @@ describe("Desktop React first-run onboarding", () => {
 		expect(onboardingCss).not.toContain("transition: all");
 	});
 
-	it("integrates AI Memory toggle with backend memory settings API", () => {
+	it("integrates Self-Learning toggle with backend self-learning settings API", () => {
 		expect(onboarding).toContain("role=\"switch\"");
-		expect(onboarding).toContain("request('/memory/settings', 'PUT'");
-		expect(onboarding).toContain("request<{ enabled?: boolean }>('/memory')");
+		expect(onboarding).toContain("request('/self-learning', 'PUT'");
+		expect(onboarding).toContain("request<{ enabled?: boolean }>('/self-learning')");
 	});
 
 	it("exposes narrowly scoped native workspace creation APIs", () => {

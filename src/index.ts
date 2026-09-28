@@ -25,26 +25,7 @@ export {
 	parseSkillBlock,
 	type SessionStats,
 } from "./core/agent-session.ts";
-export {
-	MemoryCoordinator,
-	type MemoryCandidate,
-	type MemoryCategory,
-	MEMORY_CATEGORIES,
-	CATEGORY_DISPLAY_TITLES,
-	normalizeCategory,
-	categoryToKind,
-	type MemoryCoordinatorOptions,
-	type MemoryExtractionResult,
-	type MemoryKind,
-	type MemoryRecordStatus,
-	type MemoryRecordSummary,
-	type MemoryScope,
-	type MemorySearchOptions,
-	type MemorySettings,
-	type MemoryState,
-	type SessionMemoryCheckpoint,
-	resolveMemoryProjectIdentity,
-} from "./core/memory-coordinator.ts";
+
 export { validateAskUserRequest, validateAskUserResponse, type AskUserAnswer, type AskUserHandler, type AskUserOption, type AskUserQuestion, type AskUserRequest, type AskUserResponse } from "./core/ask-user.ts";
 export { extractProposedPlan, getLatestWorkflowProposal, resolveWorkflowPlan, resolveWorkflowProposal, type WorkflowPlanPhase, type WorkflowPlanState, type WorkflowPlanStep, type WorkflowProposalState } from "./core/workflow-runtime.ts";
 export {
@@ -407,7 +388,7 @@ export {
 	type RetrySettings,
 	SettingsManager,
 	type SettingsManagerCreateOptions,
-	type WorkingMemorySettings,
+	type SelfLearningSettings,
 } from "./core/settings-manager.ts";
 export {
 	RESOLVED_UI_LANGUAGES,
@@ -475,8 +456,8 @@ export {
 	createLocalBashOperations,
 	createLsToolDefinition,
 	createReadToolDefinition,
-	createQueryMemoryDbTool,
-	createQueryMemoryDbToolDefinition,
+	createAdaptTool,
+	createAdaptToolDefinition,
 	createVideoToolDefinition,
 	createWriteToolDefinition,
 	DEFAULT_MAX_BYTES,
@@ -498,8 +479,9 @@ export {
 	type LsToolDetails,
 	type LsToolInput,
 	type LsToolOptions,
-	type QueryMemoryDbToolInput,
-	type QueryMemoryDbToolOptions,
+	adaptSchema,
+	type AdaptToolInput,
+	type AdaptToolOptions,
 	createPerformanceAdmitTool,
 	createPerformanceAdmitToolDefinition,
 	performanceAdmitSchema,

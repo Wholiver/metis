@@ -12,6 +12,7 @@ import { createEventBus, type EventBus } from "./event-bus.ts";
 import {
 	clearExtensionCache,
 	createExtensionRuntime,
+	loadExtension,
 	loadExtensionFromFactory,
 	loadExtensionsCached,
 } from "./extensions/loader.ts";
@@ -22,9 +23,12 @@ import { loadPromptTemplates } from "./prompt-templates.ts";
 import { SettingsManager } from "./settings-manager.ts";
 import type { Skill } from "./skills.ts";
 import { loadSkills } from "./skills.ts";
-import { createSourceInfo, type SourceInfo } from "./source-info.ts";
+import { createSourceInfo, createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { resetTimings } from "./timings.ts";
 import { AgentRegistry, type AgentDefinition, loadAgents } from "./agent-definition.ts";
+import { isSelfLearningActive } from "./adaptations/activation.ts";
+import { discoverAdaptationResources } from "./adaptations/effective.ts";
+import type { ExecutionProfile } from "./execution-types.ts";
 
 export interface ResourceExtensionPaths {
 	skillPaths?: Array<{ path: string; metadata: PathMetadata }>;
@@ -190,6 +194,9 @@ export interface DefaultResourceLoaderOptions {
 	};
 	systemPromptOverride?: (base: string | undefined) => string | undefined;
 	appendSystemPromptOverride?: (base: string[]) => string[];
+	adaptations?: "on" | "off";
+	executionProfile?: ExecutionProfile;
+	namedAgentSession?: boolean;
 }
 
 export class DefaultResourceLoader implements ResourceLoader {
@@ -198,6 +205,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private settingsManager: SettingsManager;
 	private eventBus: EventBus;
 	private packageManager: DefaultPackageManager;
+	private adaptationsOption?: "on" | "off";
+	private executionProfile?: ExecutionProfile;
+	private namedAgentSession: boolean;
 	private additionalExtensionPaths: string[];
 	private additionalSkillPaths: string[];
 	private additionalPromptTemplatePaths: string[];
@@ -268,6 +278,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 			agentDir: this.agentDir,
 			settingsManager: this.settingsManager,
 		});
+		this.adaptationsOption = options.adaptations;
+		this.executionProfile = options.executionProfile;
+		this.namedAgentSession = Boolean(options.namedAgentSession);
 		this.additionalExtensionPaths = options.additionalExtensionPaths ?? [];
 		this.additionalSkillPaths = options.additionalSkillPaths ?? [];
 		this.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? [];
@@ -476,7 +489,48 @@ export class DefaultResourceLoader implements ResourceLoader {
 			? cliEnabledExtensions
 			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
 
+		const selfLearningActive = isSelfLearningActive({
+			settings: this.settingsManager.getSettings(),
+			executionProfile: this.executionProfile,
+			adaptationsFlag: this.adaptationsOption,
+		});
+
+		const adaptationResources = selfLearningActive
+			? discoverAdaptationResources({
+					cwd: this.cwd,
+					agentDir: this.agentDir,
+					isProjectTrusted: this.settingsManager.isProjectTrusted(),
+				})
+			: { skillPaths: [], rolePaths: [], toolPaths: [], hookPaths: [] };
+
 		const extensionsResult = await this.loadFinalExtensionSet(extensionPaths, preTrustExtensions);
+		if (selfLearningActive && !this.namedAgentSession) {
+			const adaptationToolHookPaths = [...adaptationResources.toolPaths, ...adaptationResources.hookPaths];
+			for (const p of adaptationToolHookPaths) {
+				try {
+					const { extension, error } = await loadExtension(
+						p,
+						this.cwd,
+						this.eventBus,
+						extensionsResult.runtime,
+					);
+					if (extension) {
+						extension.sourceInfo = createSyntheticSourceInfo(extension.path, {
+							source: "adaptation",
+							scope: "user",
+						});
+						for (const tool of extension.tools.values()) {
+							tool.sourceInfo = extension.sourceInfo;
+						}
+						extensionsResult.extensions.push(extension);
+					} else if (error) {
+						console.warn(chalk.yellow(`Warning: Could not load adaptation ${p}: ${error}`));
+					}
+				} catch (err) {
+					console.warn(chalk.yellow(`Warning: Exception loading adaptation ${p}: ${err}`));
+				}
+			}
+		}
 		for (const p of this.additionalExtensionPaths) {
 			if (isLocalPath(p)) {
 				const resolved = this.resolveResourcePath(p);
@@ -493,7 +547,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			: this.mergePaths([...cliEnabledSkills, ...enabledSkills], this.additionalSkillPaths);
 
 		this.lastSkillPaths = skillPaths;
-		this.updateSkillsFromPaths(skillPaths, metadataByPath);
+		this.updateSkillsFromPaths(skillPaths, metadataByPath, adaptationResources.skillPaths);
 		for (const p of this.additionalSkillPaths) {
 			if (isLocalPath(p)) {
 				const resolved = this.resolveResourcePath(p);
@@ -540,7 +594,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			: this.mergePaths([], this.additionalAgentPaths);
 
 		this.lastAgentPaths = agentPaths;
-		this.updateAgentsFromPaths(agentPaths, metadataByPath);
+		this.updateAgentsFromPaths(agentPaths, metadataByPath, adaptationResources.rolePaths);
 		for (const p of this.additionalAgentPaths) {
 			if (isLocalPath(p)) {
 				const resolved = this.resolveResourcePath(p);
@@ -705,7 +759,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 		});
 	}
 
-	private updateSkillsFromPaths(skillPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
+	private updateSkillsFromPaths(
+		skillPaths: string[],
+		metadataByPath?: Map<string, PathMetadata>,
+		adaptationSkillPaths?: string[],
+	): void {
 		let skillsResult: { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noSkills && skillPaths.length === 0) {
 			skillsResult = { skills: [], diagnostics: [] };
@@ -714,6 +772,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				cwd: this.cwd,
 				agentDir: this.agentDir,
 				skillPaths,
+				adaptationSkillPaths,
 				includeDefaults: false,
 				includeBuiltins: !this.noSkills,
 			});
@@ -775,7 +834,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.themeDiagnostics = resolvedThemes.diagnostics;
 	}
 
-	private updateAgentsFromPaths(agentPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
+	private updateAgentsFromPaths(
+		agentPaths: string[],
+		metadataByPath?: Map<string, PathMetadata>,
+		adaptationAgentPaths?: string[],
+	): void {
 		let agentsResult: { agents: AgentDefinition[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noAgents && agentPaths.length === 0) {
 			agentsResult = { agents: [], diagnostics: [] };
@@ -784,6 +847,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				cwd: this.cwd,
 				agentDir: this.agentDir,
 				agentPaths,
+				adaptationAgentPaths,
 				includeBuiltins: !this.noAgents,
 			});
 		}

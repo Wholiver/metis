@@ -109,7 +109,7 @@ describe('desktop tool file diff rendering', () => {
     expect(buildToolExpandedView({
       type: 'toolCall',
       id: 'm1',
-      name: 'query_memory_db',
+      name: 'custom_tool',
       arguments: { query: 'auth' },
       result: { content: 'found 2 memories' },
     })).toEqual({ kind: 'output', text: 'found 2 memories', format: 'markdown' });
@@ -182,7 +182,7 @@ describe('desktop tool file diff rendering', () => {
     const text = toolResultText({
       type: 'toolCall',
       id: 'json-1',
-      name: 'query_memory_db',
+      name: 'custom_tool',
       arguments: { query: 'x' },
       result: { content: payload as unknown as string },
     });

@@ -104,23 +104,6 @@ describe("instruction stack", () => {
 		}
 	});
 
-	test("keeps memoryOverview out of the compiled prompt while preserving its provenance", () => {
-		const overviewContent = "# Memory Overview\n\n- [tech_stack]: Node.js with TypeScript\n- [user_preferences]: Prefers concise explanations";
-		const stack = buildInstructionStack({ cwd: "/workspace", memoryOverview: overviewContent });
-
-		// The overview is the one privileged input that changes mid-session. Compiling it
-		// into the system prompt made every new memory invalidate the cached request
-		// prefix, so WorkflowRuntime appends it as a runtime-context block instead.
-		expect(stack.memoryOverview?.content).toBe(overviewContent);
-		expect(compileInstructionStack(stack)).not.toContain(overviewContent);
-		expect(buildSystemPrompt({ cwd: "/workspace", memoryOverview: overviewContent })).toBe(
-			buildSystemPrompt({ cwd: "/workspace" }),
-		);
-		expect(instructionStackHash(stack)).toBe(instructionStackHash(buildInstructionStack({ cwd: "/workspace" })));
-
-		expect(buildInstructionStack({ cwd: "/workspace", memoryOverview: "   \n  " }).memoryOverview).toBeUndefined();
-	});
-
 	test("named children get a ChildResult worker contract instead of the root Build closed loop", () => {
 		const childPrompt = buildSystemPrompt({
 			cwd: "/workspace",

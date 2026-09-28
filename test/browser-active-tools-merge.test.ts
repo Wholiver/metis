@@ -23,7 +23,6 @@ describe("browser active tool merge", () => {
 			"read_plan",
 			"performance_admit",
 			"performance_gate",
-			"query_memory_db",
 		];
 		const browserToolNames = [...BROWSER_TOOL_NAMES];
 		const merged = [...new Set([...sdkDefaults, ...browserToolNames])];

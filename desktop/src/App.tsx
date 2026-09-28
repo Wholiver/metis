@@ -146,7 +146,7 @@ const TOOL_GROUP_CAPTURE_MESSAGES: Message[] = [{
   parts: [
     { type: 'thinking', id: 'capture-tools-thinking', thinking: 'Inspecting and updating the Desktop tool presentation.', durationMs: 4200 },
     { type: 'text', id: 'capture-tools-status', text: 'Keeping the existing reasoning narrative between tool activity.' },
-    { type: 'toolCall', id: 'capture-tool-memory', name: 'query_memory_db', arguments: { query: 'desktop tool rendering' }, result: { content: 'Found relevant session memory.' } },
+    { type: 'toolCall', id: 'capture-tool-adapt', name: 'adapt', arguments: { action: 'list' }, result: { content: 'Adaptations: 0 loaded.' } },
     { type: 'toolCall', id: 'capture-tool-read-1', name: 'read', arguments: { path: 'desktop/src/components/chat/AssistantWork.tsx' }, result: { content: 'Loaded file.' } },
     { type: 'toolCall', id: 'capture-tool-read-2', name: 'read', arguments: { path: 'desktop/src/components/chat/ToolCard.tsx' }, result: { content: 'Loaded file.' } },
     { type: 'toolCall', id: 'capture-tool-read-3', name: 'read', arguments: { path: 'desktop/src/index.css' }, result: { content: 'Loaded file.' } },
@@ -328,10 +328,6 @@ export function App() {
     isLoadingSessions,
     isLoadingMessages,
     sessionError,
-    memoryState,
-    runMemory,
-    abortMemory,
-    refreshMemory,
     request,
     refresh,
     removeConversation,
@@ -383,7 +379,7 @@ export function App() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => (
     captureSettledSend || captureExtensionUi || captureInspectorTabs || capturePlanPreview || captureWorkflowPlan || capturePlanPoints || capturePlanPointsEmpty || captureTools || captureThinkingOverflow ? false : shouldShowOnboarding()
   ));
-  const [settingsTab, setSettingsTab] = useState<'general' | 'shortcuts' | 'server' | 'model' | 'agent' | 'security' | 'session' | 'about'>('general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'shortcuts' | 'server' | 'model' | 'agent' | 'security' | 'session' | 'about' | 'adaptations'>('general');
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
   const [skillCommands, setSkillCommands] = useState<SkillCommand[]>([]);
   const [activeResizer, setActiveResizer] = useState<'sidebar' | 'inspector' | null>(null);
@@ -392,11 +388,6 @@ export function App() {
     if (typeof localStorage === 'undefined') return {};
     return parseSubagentHistory(localStorage.getItem(SUBAGENT_HISTORY_STORAGE_KEY));
   });
-
-  const handleOpenMemorySettings = useCallback(() => {
-    setSettingsTab('agent');
-    setIsSettingsOpen(true);
-  }, []);
 
   const handleOpenSettings = useCallback(() => {
     setIsSettingsOpen(true);
@@ -407,25 +398,14 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const onMemoryFinished = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail?.status === 'completed') {
-        const msg = `Memory consolidation completed: ${detail.processed} processed, ${detail.added} added, ${detail.skipped} skipped${detail.fallbackUsed ? ' (safe fallback used)' : ''}.`;
-        setToast({ message: msg, tone: 'success' });
-      } else if (detail?.status === 'failed') {
-        setToast({ message: `Memory consolidation failed: ${detail.error || 'Unknown error'}`, tone: 'error' });
-      }
-    };
     const onExtensionNotice = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (detail?.message) {
         setToast({ message: detail.message, tone: detail.tone || 'info' });
       }
     };
-    window.addEventListener('metis:memory-finished', onMemoryFinished);
     window.addEventListener('metis:extension-notify', onExtensionNotice);
     return () => {
-      window.removeEventListener('metis:memory-finished', onMemoryFinished);
       window.removeEventListener('metis:extension-notify', onExtensionNotice);
     };
   }, []);
@@ -435,6 +415,27 @@ export function App() {
     const timer = window.setTimeout(() => setToast(null), 5000);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!isConnected) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await request<{ enabled: boolean; unnotifiedCount: number }>('/adaptations');
+        if (cancelled || !result || !result.enabled || !result.unnotifiedCount) return;
+        setToast({
+          message: `Learned ${result.unnotifiedCount} new adaptation(s) during idle.`,
+          tone: 'info',
+        });
+        await request('/adaptations/clear-notifications', 'POST').catch(() => null);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnected, request]);
   const thinkingCaptureMessages: Message[] = captureThinkingState === 'thinking' ? [{
     id: 'capture-thinking-progress',
     role: 'assistant',
@@ -1252,8 +1253,6 @@ export function App() {
         onOpenPlan={openInspectorPlan}
         pendingUserInput={captureAsk ? ASK_CAPTURE : pendingUserInput}
         onRespondToUserInput={captureAsk ? async () => true : respondToUserInput}
-        memoryState={memoryState}
-        onOpenMemorySettings={handleOpenMemorySettings}
         contextUsage={contextUsage}
         tokenBreakdown={tokenBreakdown}
         isOAuth={isOAuthModel}

@@ -476,7 +476,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					pendingUserInput: session.pendingUserInput,
 					instructionSources: session.instructionSources,
 					instructionDiagnostics: session.instructionDiagnostics,
-					memoryState: session.memoryState,
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,
 					sessionName: session.sessionName,
@@ -487,20 +486,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				};
 				return success(id, "get_state", state);
 			}
-
-			case "get_memory":
-				return success(id, "get_memory", session.memoryState);
-			case "set_memory_enabled":
-				return success(id, "set_memory_enabled", session.setMemoryEnabled(command.enabled));
-			case "run_memory":
-				return success(id, "run_memory", await session.runMemory());
-			case "search_memory":
-				return success(id, "search_memory", session.searchMemory(command.query));
-			case "forget_memory":
-				return success(id, "forget_memory", { forgotten: session.forgetMemory(command.memoryId) });
-			case "reset_memory":
-				session.resetMemory(command.confirm);
-				return success(id, "reset_memory", undefined);
 
 			// =================================================================
 			// Model

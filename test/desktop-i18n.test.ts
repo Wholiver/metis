@@ -57,6 +57,9 @@ const legitimateCognates = new Set([
 	"agentMilliseconds",
 	"toolTitleGrep",
 	"toolTitleGlob",
+	"selfLearningRollback",
+	"reactUiPlanTodos",
+	"adaptations",
 ]);
 
 describe("Desktop translation catalogs", () => {
@@ -144,11 +147,8 @@ describe("Desktop translation coverage", () => {
 		visit(file);
 		for (const value of [
 			"Unknown source",
-			"Memory enabled",
-			"Memory is ready to collect reusable knowledge from completed work.",
 			"No sources reported",
 			"Loading version…",
-			"Remove this memory?",
 			"Delete {provider}?",
 			"{name} is unavailable in this Desktop build.",
 		]) add(value);

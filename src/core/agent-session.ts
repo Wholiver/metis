@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { getAgentDir } from "../config.ts";
+import { isSelfLearningActive } from "./adaptations/activation.ts";
 import type {
 	Agent,
 	AgentEvent,
@@ -110,6 +111,8 @@ import { formatProgressNudge, resolveProgressNudge } from "./progress-narration.
 import { getGlobalSpawnGuard } from "./spawn-guard.ts";
 import { isGitRepositoryRoot } from "./worktree.ts";
 import { SharedMutatingOwnerRegistry, isMutatingChildRole, isReliableHeadlessProfile } from "./workspace-probe.ts";
+import { getEffectiveArchitecture, getEffectiveProfile } from "./adaptations/effective.ts";
+import { CONTROL_PLANE_TOOLS } from "./adaptations/types.ts";
 import {
 	extractProposedPlan,
 	resolveWorkflowProposal,
@@ -127,7 +130,6 @@ import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts"
 import { createBrowserToolDefinitions } from "./tools/browser.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
-import { type MemoryCoordinator, type MemoryRecordSummary, type MemorySearchOptions, type MemoryState } from "./memory-coordinator.ts";
 import {
 	PerformanceRuntime,
 	summarizePerformanceRun,
@@ -189,8 +191,6 @@ export type AgentSessionEvent =
 	  }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
 	| { type: "collaboration_mode_changed"; mode: CollaborationMode }
-	| { type: "memory_state_changed"; state: MemoryState }
-	| { type: "memory_records_changed" }
 	| { type: "user_input_request"; request: AskUserRequest }
 	| { type: "subagent_status"; runningCount: number; runningJobIds: readonly string[] }
 	| {
@@ -202,7 +202,9 @@ export type AgentSessionEvent =
 			errorMessage?: string;
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
-	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
+	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+	| { type: "adaptation_changed"; action?: string; kind?: string; name?: string; scope?: string }
+	| { type: "self_learning_changed"; enabled: boolean };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -260,8 +262,10 @@ export interface AgentSessionConfig {
 	askUserHandler?: AskUserHandler;
 	/** Whether native Performance prompts may ask the operator for run knobs. */
 	performanceAttendance?: PerformanceAttendance;
-	/** Durable advisory memory; omitted for ephemeral and subagent sessions. */
-	memoryCoordinator?: MemoryCoordinator;
+	/** Self-learning adaptations CLI override: "on" | "off" */
+	adaptations?: "on" | "off";
+	/** Execution profile (e.g. "reliable-headless") */
+	executionProfile?: string;
 }
 
 export interface ExtensionBindings {
@@ -412,6 +416,9 @@ export class AgentSession {
 	private _customTools: ToolDefinition[];
 	private _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
 	private _cwd: string;
+	private _agentDir: string;
+	private _adaptations?: "on" | "off";
+	private _executionProfile?: string;
 	private _extensionRunnerRef?: { current?: ExtensionRunner };
 	private _initialActiveToolNames?: string[];
 	private _allowedToolNames?: Set<string>;
@@ -455,8 +462,6 @@ export class AgentSession {
 	private _namedAgentSession = false;
 	/** Configured Build tool set. Plan mode derives a read-only view without replacing it. */
 	private _buildToolNames: string[] | undefined;
-
-	private _memoryCoordinator?: MemoryCoordinator;
 	private _askUserHandler?: AskUserHandler;
 	private _performanceAttendance: PerformanceAttendance;
 	private _pendingUserInput?: AskUserRequest;
@@ -477,7 +482,14 @@ export class AgentSession {
 		this._resourceLoader = config.resourceLoader;
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
-		this._performanceRuntime = new PerformanceRuntime(config.agentDir ?? getAgentDir());
+		this._agentDir = config.agentDir ?? getAgentDir();
+		this._adaptations = config.adaptations;
+		this._executionProfile = config.executionProfile;
+		this._performanceRuntime = new PerformanceRuntime(this._agentDir, process.env, {
+			executionProfile: this._executionProfile,
+			settings: this.settingsManager.getSettings(),
+			adaptationsFlag: this._adaptations,
+		});
 		this._modelRegistry = config.modelRegistry;
 		this._autoSessionName = config.autoSessionName ?? false;
 		this._collaborationMode = config.collaborationMode ?? "build";
@@ -488,11 +500,8 @@ export class AgentSession {
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
-		this._memoryCoordinator = config.memoryCoordinator;
 		this._askUserHandler = config.askUserHandler;
 		this._performanceAttendance = config.performanceAttendance ?? "unattended";
-		this._memoryCoordinator?.on((event) => this._emit(event));
-		this._memoryCoordinator?.start();
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -630,14 +639,6 @@ export class AgentSession {
 				}
 
 				const effectiveIsError = hookResult?.isError ?? isError;
-					if ((toolCall.name === "log" || toolCall.name === "remember_user_intent") && typeof input.content === "string") {
-						this._memoryCoordinator?.recordCheckpoint({
-							sessionId: this.sessionManager.getSessionId(), reason: effectiveIsError ? "error" : "step_completed", timestamp: new Date().toISOString(),
-							errors: effectiveIsError ? [input.content] : undefined,
-							verification: !effectiveIsError && toolCall.name === "log" ? [input.content] : undefined,
-							constraints: !effectiveIsError && toolCall.name === "remember_user_intent" ? [input.content] : undefined,
-						});
-				}
 				if (effectiveIsError) {
 					this._appendWorkflowCheckpoint("error");
 				}
@@ -715,10 +716,7 @@ export class AgentSession {
 				}
 			}
 			const baseInstructions = this._activeRunInstructionStack ?? this._instructionStack;
-			const instructions: InstructionStack = {
-				...baseInstructions,
-				context: baseInstructions.context.filter((entry) => entry.trust !== "memory"),
-			};
+			const instructions: InstructionStack = baseInstructions;
 			const snapshot = this._freezeStepSnapshot(messages, instructions);
 
 			return {
@@ -1214,7 +1212,6 @@ export class AgentSession {
 		);
 		this._disconnectFromAgent();
 		this._eventListeners = [];
-		this._memoryCoordinator?.dispose();
 		cleanupSessionResources(this.sessionId);
 	}
 
@@ -1251,40 +1248,6 @@ export class AgentSession {
 		return this._workflowRuntime.currentContextWindowId;
 	}
 
-	/** Typed state shared by TUI, Desktop, JSON, RPC and Server. */
-	get memoryState(): MemoryState {
-		return this._memoryCoordinator?.getState() ?? {
-			enabled: false, phase: "disabled", globalCount: 0, projectCount: 0, pendingJobs: 0,
-		};
-	}
-
-	setMemoryEnabled(enabled: boolean): MemoryState {
-		if (this.isStreaming) throw new Error("Memory settings can only change while the session is idle.");
-		this.settingsManager.setMemoryEnabled(enabled);
-		return this._memoryCoordinator?.setEnabled(enabled) ?? this.memoryState;
-	}
-
-	async runMemory(): Promise<MemoryState> {
-		if (this.isStreaming) throw new Error("Memory can only run while the session is idle.");
-		return (await this._memoryCoordinator?.run(true)) ?? this.memoryState;
-	}
-
-	abortMemory(): MemoryState {
-		this._memoryCoordinator?.abort();
-		return this.memoryState;
-	}
-
-	searchMemory(query?: string, limit?: number, filterOptions?: MemorySearchOptions): MemoryRecordSummary[] { return this._memoryCoordinator?.search(query, limit, filterOptions) ?? []; }
-	queryMemoryDb(sql: string, params?: Array<string | number | null | undefined>): Array<Record<string, unknown>> { return this._memoryCoordinator?.query(sql, params) ?? []; }
-	forgetMemory(id: string): boolean {
-		if (this.isStreaming) throw new Error("Memory can only change while the session is idle.");
-		return this._memoryCoordinator?.forget(id) ?? false;
-	}
-	resetMemory(confirm: string): void {
-		if (this.isStreaming) throw new Error("Memory can only change while the session is idle.");
-		this._memoryCoordinator?.reset(confirm);
-	}
-
 	/** Content-free instruction provenance for TUI, Desktop, and RPC clients. */
 	get instructionSources(): InstructionSourceSummary[] {
 		return summarizeInstructionStack(this._instructionStack);
@@ -1293,6 +1256,23 @@ export class AgentSession {
 	/** Reserved for loader budget/trust diagnostics; never contains instruction content. */
 	get instructionDiagnostics(): string[] {
 		return [];
+	}
+
+	/** Whether self-learning runtime adaptations are active. */
+	isSelfLearningActive(): boolean {
+		return isSelfLearningActive({
+			adaptationsFlag: this._adaptations,
+			executionProfile: this._executionProfile,
+			settings: this.settingsManager.getSettings(),
+		});
+	}
+
+	get agentDir(): string {
+		return this._agentDir;
+	}
+
+	isPersistent(): boolean {
+		return this.sessionManager.isPersistent() && Boolean(this.sessionFile);
 	}
 
 	/** Latest persisted plan on the active branch, including legacy Markdown recovery. */
@@ -1313,6 +1293,11 @@ export class AgentSession {
 	/** Safe transport view; mission text and gate evidence stay in governance files. */
 	get performanceRunSummary(): PerformanceRunSummary | undefined {
 		return summarizePerformanceRun(this._performanceRuntime.state);
+	}
+
+	/** Returns true when a performance run is currently active. */
+	isPerformanceRunActive(): boolean {
+		return this._performanceRuntime.hasActiveRun();
 	}
 
 	private _appendPerformanceRunEntry(state: PerformanceRunState): void {
@@ -1853,8 +1838,6 @@ export class AgentSession {
 		const loadedAgents = this._resourceLoader.getAgents ? this._resourceLoader.getAgents().agents : [];
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles ? this._resourceLoader.getAgentsFiles().agentsFiles : [];
 
-		const memoryOverview = this._memoryCoordinator?.getMemoryOverview();
-
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
 			sessionId: this.sessionManager.getSessionId(),
@@ -1868,7 +1851,6 @@ export class AgentSession {
 			promptGuidelines,
 			collaborationMode: this._collaborationMode,
 			namedAgentSession: this._namedAgentSession,
-			memoryOverview,
 		};
 		this._instructionStack = buildInstructionStack(this._baseSystemPromptOptions);
 		return buildSystemPrompt(this._baseSystemPromptOptions);
@@ -1907,10 +1889,6 @@ export class AgentSession {
 				: String(message.content ?? "");
 			return content.trim() ? [{ role: message.role, content }] : [];
 		}).slice(-12);
-		this._memoryCoordinator?.recordCheckpoint({
-			sessionId: this.sessionManager.getSessionId(), reason, timestamp: new Date().toISOString(), goal,
-			workflowPlan: this.workflowPlan, workflowProposal: this.workflowProposal ? { revision: this.workflowProposal.revision, updatedAt: this.workflowProposal.updatedAt } : undefined, contextWindowId: this.contextWindowId, recentTurn,
-		});
 	}
 
 	// =========================================================================
@@ -2140,6 +2118,31 @@ export class AgentSession {
 				}
 			}
 
+			let effectiveArch: ReturnType<typeof getEffectiveArchitecture> | undefined;
+			let effectiveProfile: string | undefined;
+			if (this.isSelfLearningActive() && !this._namedAgentSession) {
+				effectiveArch = getEffectiveArchitecture({
+					cwd: this._cwd,
+					agentDir: this._agentDir,
+					isProjectTrusted: this.settingsManager.isProjectTrusted(),
+				});
+				effectiveProfile = getEffectiveProfile({
+					cwd: this._cwd,
+					agentDir: this._agentDir,
+					isProjectTrusted: this.settingsManager.isProjectTrusted(),
+				});
+				if (effectiveArch?.hiddenTools?.length) {
+					const hidden = new Set(effectiveArch.hiddenTools.filter((t) => !CONTROL_PLANE_TOOLS.includes(t as any)));
+					if (hidden.size > 0) {
+						const remaining = this.getActiveToolNames().filter((t) => !hidden.has(t) || CONTROL_PLANE_TOOLS.includes(t as any));
+						this.setActiveToolsByName(remaining);
+						if (this._collaborationMode === "build") {
+							this._buildToolNames = this.getActiveToolNames();
+						}
+					}
+				}
+			}
+
 			let proposalForExecution: WorkflowProposalState | undefined;
 			this._performanceAdmissionRequired = false;
 			this._pendingPerformanceMission = undefined;
@@ -2182,14 +2185,6 @@ export class AgentSession {
 				this._pendingPerformanceInvocation = directInvocation;
 				this._performanceAdmissionRequired = hasNativePerformanceGate && hasNativePerformanceAdmit && requestsNativeBuild;
 			}
-			const memoryOverview = this._memoryCoordinator?.getMemoryOverview();
-			const memoryOverviewBlock = memoryOverview ? {
-				id: "metis:memory-overview",
-				channel: "developer" as const,
-				content: memoryOverview,
-				source: "memory:overview",
-				trust: "memory" as const,
-			} : undefined;
 			// Both blocks are stable for the life of a run (protocol text and run identity),
 			// so they are injected once and then served from the provider's cached prefix.
 			// Live gate state rides the performance_gate / read_plan results instead.
@@ -2199,7 +2194,6 @@ export class AgentSession {
 
 			const stepInstructions: InstructionStack = {
 				base: this._instructionStack.base,
-				memoryOverview: memoryOverviewBlock,
 				developer: [
 					...this._instructionStack.developer,
 					...(beforeStep?.developerInstructions ?? []).map((entry, index) => ({
@@ -2227,17 +2221,33 @@ export class AgentSession {
 				],
 			};
 
+			if (effectiveArch?.customGuidelines?.length) {
+				for (let i = 0; i < effectiveArch.customGuidelines.length; i++) {
+					stepInstructions.developer.push({
+						id: `adaptation:guideline:${i}`,
+						channel: "developer",
+						content: effectiveArch.customGuidelines[i]!,
+						source: "adaptation:architecture",
+						trust: "runtime",
+					});
+				}
+			}
+			if (effectiveProfile) {
+				stepInstructions.context.push({
+					id: "adaptation:profile",
+					channel: "context",
+					content: effectiveProfile,
+					source: "adaptation:profile",
+					trust: "runtime",
+				});
+			}
+
 			// Build messages with runtime/extension context before the actual user
 			// message. User authority remains last in the model-visible input.
 			// History is append-only: a block whose exact content is already present is
-			// skipped so the cached prefix keeps matching byte-for-byte. The memory
-			// overview rides this channel too — it is the one privileged input that
-			// changes mid-session, and delivering it here keeps a new memory from
-			// invalidating the system prompt and with it the whole conversation.
+			// skipped so the cached prefix keeps matching byte-for-byte.
 			messages = [];
-			const contextBlocks = stepInstructions.memoryOverview
-				? [stepInstructions.memoryOverview, ...stepInstructions.context]
-				: stepInstructions.context;
+			const contextBlocks = stepInstructions.context;
 			for (const entry of contextBlocks) {
 				const content = `[Runtime context from ${entry.source}; not user instructions]\n${entry.content}`;
 				if (this._hasRuntimeContextBlock(content)) continue;
@@ -2612,7 +2622,6 @@ export class AgentSession {
 	 */
 	async abort(): Promise<void> {
 		this.abortRetry();
-		this._memoryCoordinator?.abort();
 		this.abortSubagents();
 		this._workflowRuntime.abortAllToolCalls();
 		this.agent.abort();
@@ -3762,6 +3771,10 @@ export class AgentSession {
 								mission,
 								workspaceRoot: this._cwd,
 								admission,
+								executionProfile: this._executionProfile,
+								settings: this.settingsManager.getSettings(),
+								adaptationsFlag: this._adaptations,
+								env: process.env,
 								capabilities: {
 									read: activeTools.has("read"),
 									write: activeTools.has("write") || activeTools.has("edit"),
@@ -3779,7 +3792,15 @@ export class AgentSession {
 						},
 					},
 					askUser: { handler: () => (request, signal) => this._askUser(request, signal) },
-					queryMemoryDb: { query: (sql, params) => this._memoryCoordinator?.query(sql, params) ?? [] },
+					adapt: {
+						agentDir: this._agentDir,
+						isProjectTrusted: () => this.settingsManager.isProjectTrusted(),
+						getCollaborationMode: () => this._collaborationMode,
+						isNamedAgentSession: () => Boolean(this._namedAgentSession),
+						onRefreshAdaptations: async (event) => {
+							await this.refreshAdaptations(event);
+						},
+					},
 				});
 
 		const toolDefinitionRecord = baseToolDefinitions as Record<string, ToolDefinition>;
@@ -3810,6 +3831,7 @@ export class AgentSession {
 			this.sessionManager,
 			this._modelRegistry,
 		);
+		this._extensionRunner.isPerformanceRunActive = () => this.isPerformanceRunActive();
 		if (this._extensionRunnerRef) {
 			this._extensionRunnerRef.current = this._extensionRunner;
 		}
@@ -3833,7 +3855,6 @@ export class AgentSession {
 					"read_plan",
 					"performance_admit",
 					"performance_gate",
-					"query_memory_db",
 					...browserToolNames,
 				];
 		// SDK passes initialActiveToolNames without dynamic browser_* tools; always merge them in
@@ -3841,6 +3862,16 @@ export class AgentSession {
 		const baseActiveToolNames = [
 			...new Set([...(options.activeToolNames ?? defaultActiveToolNames), ...browserToolNames]),
 		];
+		if (this.isSelfLearningActive() && !this._namedAgentSession) {
+			if (!baseActiveToolNames.includes("adapt")) {
+				baseActiveToolNames.push("adapt");
+			}
+		} else {
+			const adaptIdx = baseActiveToolNames.indexOf("adapt");
+			if (adaptIdx !== -1) {
+				baseActiveToolNames.splice(adaptIdx, 1);
+			}
+		}
 		if (browserHost) {
 			const bashDefinition = toolDefinitionRecord.bash;
 			if (bashDefinition) {
@@ -3883,6 +3914,39 @@ export class AgentSession {
 			await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
 			await this.extendResourcesFromExtensions("reload");
 		}
+	}
+
+	/**
+	 * Dynamically refresh learned adaptations (skills, roles, tools, hooks, architecture, workflow, profile)
+	 * and notify listeners.
+	 */
+	async refreshAdaptations(event?: { action?: string; kind?: string; name?: string; scope?: string }): Promise<void> {
+		if (!this.isSelfLearningActive()) {
+			return;
+		}
+		await this._resourceLoader.reload();
+		this._buildRuntime({
+			activeToolNames: this.getActiveToolNames(),
+			flagValues: this._extensionRunner.getFlagValues(),
+			includeAllExtensionTools: true,
+		});
+		this._emit({
+			type: "adaptation_changed",
+			action: event?.action,
+			kind: event?.kind,
+			name: event?.name,
+			scope: event?.scope,
+		});
+	}
+
+	/**
+	 * Update self-learning enabled setting and reload session runtime.
+	 * Active Performance runs retain their existing admission snapshot until completion.
+	 */
+	async setSelfLearningEnabled(enabled: boolean): Promise<void> {
+		this.settingsManager.setSelfLearningEnabled(enabled);
+		await this.reload();
+		this._emit({ type: "self_learning_changed", enabled });
 	}
 
 	/**

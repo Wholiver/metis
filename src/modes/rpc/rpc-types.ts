@@ -15,7 +15,7 @@ import type { SourceInfo } from "../../core/source-info.ts";
 import type { CollaborationMode, WorkflowPlanState, WorkflowProposalState } from "../../core/workflow-runtime.ts";
 import type { AskUserRequest } from "../../core/ask-user.ts";
 import type { InstructionSourceSummary } from "../../core/system-prompt.ts";
-import type { MemoryRecordSummary, MemoryState } from "../../core/memory-coordinator.ts";
+
 import type { PerformanceRunSummary } from "../../core/performance-runtime.ts";
 
 export type RpcModelInfo = Model<any> & { thinkingLevels: ThinkingLevel[]; thinkingOptions: ThinkingOption[] };
@@ -48,12 +48,6 @@ export type RpcCommand =
 	| { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }
 	| { id?: string; type: "set_follow_up_mode"; mode: "all" | "one-at-a-time" }
 	| { id?: string; type: "set_collaboration_mode"; mode: CollaborationMode }
-	| { id?: string; type: "get_memory" }
-	| { id?: string; type: "set_memory_enabled"; enabled: boolean }
-	| { id?: string; type: "run_memory" }
-	| { id?: string; type: "search_memory"; query: string }
-	| { id?: string; type: "forget_memory"; memoryId: string }
-	| { id?: string; type: "reset_memory"; confirm: string }
 
 	// Compaction
 	| { id?: string; type: "compact"; customInstructions?: string }
@@ -123,7 +117,6 @@ export interface RpcSessionState {
 	pendingUserInput?: AskUserRequest;
 	instructionSources: InstructionSourceSummary[];
 	instructionDiagnostics: string[];
-	memoryState: MemoryState;
 	sessionFile?: string;
 	sessionId: string;
 	sessionName?: string;
@@ -186,12 +179,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "set_steering_mode"; success: true }
 	| { id?: string; type: "response"; command: "set_follow_up_mode"; success: true }
 	| { id?: string; type: "response"; command: "set_collaboration_mode"; success: true }
-	| { id?: string; type: "response"; command: "get_memory"; success: true; data: MemoryState }
-	| { id?: string; type: "response"; command: "set_memory_enabled"; success: true; data: MemoryState }
-	| { id?: string; type: "response"; command: "run_memory"; success: true; data: MemoryState }
-	| { id?: string; type: "response"; command: "search_memory"; success: true; data: MemoryRecordSummary[] }
-	| { id?: string; type: "response"; command: "forget_memory"; success: true; data: { forgotten: boolean } }
-	| { id?: string; type: "response"; command: "reset_memory"; success: true }
+
 
 	// Compaction
 	| { id?: string; type: "response"; command: "compact"; success: true; data: CompactionResult }

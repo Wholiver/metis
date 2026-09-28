@@ -420,7 +420,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 	};
 }
 
-async function loadExtension(
+export async function loadExtension(
 	extensionPath: string,
 	cwd: string,
 	eventBus: EventBus,

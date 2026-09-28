@@ -14,9 +14,9 @@ interface ToolGroupProps {
   preserveExistingItems?: boolean;
 }
 
-function toolKind(name: string): 'memory' | 'read' | 'edit' | 'command' | 'search' | 'agent' | 'other' {
+function toolKind(name: string): 'adaptation' | 'read' | 'edit' | 'command' | 'search' | 'agent' | 'other' {
   const normalized = name.toLowerCase();
-  if (/memory/.test(normalized)) return 'memory';
+  if (normalized === 'adapt') return 'adaptation';
   if (normalized === 'read_plan' || normalized === 'read' || /read_file|view_file|read_resource/.test(normalized)) return 'read';
   if (normalized === 'write' || normalized === 'edit' || /write_to_file|replace_file|edit_file|apply_patch/.test(normalized)) return 'edit';
   if (normalized === 'bash' || normalized === 'exec' || /run_command|exec_command/.test(normalized)) return 'command';
@@ -26,7 +26,7 @@ function toolKind(name: string): 'memory' | 'read' | 'edit' | 'command' | 'searc
 }
 
 function groupPhrase(kind: ReturnType<typeof toolKind>, active: boolean): string {
-  if (kind === 'memory') return active ? 'Querying memory' : 'Queried memory';
+  if (kind === 'adaptation') return active ? 'Adapting architecture' : 'Adapted architecture';
   if (kind === 'read') return active ? 'Reading files' : 'Read files';
   if (kind === 'edit') return active ? 'Editing files' : 'Edited files';
   if (kind === 'command') return active ? 'Running commands' : 'Ran commands';

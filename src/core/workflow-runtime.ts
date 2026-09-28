@@ -276,7 +276,6 @@ const BUILTIN_CAPABILITIES: Record<string, ToolCapabilities> = {
 	edit: { effect: "write", parallelSafe: false },
 	write: { effect: "write", parallelSafe: false },
 	log: { effect: "write", parallelSafe: false },
-	remember_user_intent: { effect: "write", parallelSafe: false },
 	user_intent: { effect: "read", parallelSafe: false },
 	ask_user: { effect: "read", parallelSafe: false },
 	read_plan: { effect: "read", parallelSafe: true },

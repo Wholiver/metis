@@ -24,7 +24,6 @@ function createRuntimeFixture() {
 		sessionName: "Server test",
 		autoCompactionEnabled: true,
 		autoRetryEnabled: true,
-		memoryState: { enabled: true, recordCount: 1, pendingJobs: 0 },
 		get pendingMessageCount() {
 			return session.steeringMessages.length + session.followUpMessages.length;
 		},
@@ -44,7 +43,7 @@ function createRuntimeFixture() {
 				logout: vi.fn(),
 			},
 		},
-		extensionRunner: { getRegisteredCommands: vi.fn(() => [{ name: "dream", description: "Dream mode" }]) },
+		extensionRunner: { getRegisteredCommands: vi.fn(() => [{ name: "custom-ext", description: "Custom extension" }]) },
 		sessionManager: {
 			getCwd: vi.fn(() => "/tmp"),
 			getSessionDir: vi.fn(() => "/tmp/metis-server-test-sessions"),
@@ -108,19 +107,18 @@ function createRuntimeFixture() {
 			clearDefaultModelAndProvider: vi.fn(),
 			setDefaultThinkingLevel: vi.fn(),
 			clearDefaultThinkingLevel: vi.fn(),
+			_selfLearning: false,
+			getSettings: vi.fn(() => ({ selfLearning: { enabled: session.settingsManager._selfLearning } })),
+			getSelfLearningEnabled: vi.fn(() => session.settingsManager._selfLearning),
+			setSelfLearningEnabled: vi.fn((enabled: boolean) => {
+				session.settingsManager._selfLearning = enabled;
+			}),
 		},
 		setSteeringMode: vi.fn((mode: "all" | "one-at-a-time") => {
 			session.steeringMode = mode;
 		}),
 		setFollowUpMode: vi.fn((mode: "all" | "one-at-a-time") => {
 			session.followUpMode = mode;
-		}),
-		setMemoryEnabled: vi.fn((enabled: boolean) => ({ ...session.memoryState, enabled })),
-		runMemory: vi.fn(async () => ({ ...session.memoryState, lastRunProcessed: 1 })),
-		searchMemory: vi.fn((query: string) => query ? [{ id: "memory-1", content: `match:${query}` }] : []),
-		forgetMemory: vi.fn((id: string) => id === "memory-1"),
-		resetMemory: vi.fn((confirmation: string) => {
-			if (confirmation !== "RESET_MEMORY") throw new Error("confirmation required");
 		}),
 		setSessionName: vi.fn(),
 		syncModelFromRegistry: vi.fn(),
@@ -276,9 +274,9 @@ describe("server mode", () => {
 		const commandData = (await fetch(`${handle.address.url}/commands`).then((response) => response.json())) as {
 			commands: Array<{ name: string; source: string }>;
 		};
-		expect(commandData.commands.filter((command) => command.source === "builtin")).toHaveLength(27);
+		expect(commandData.commands.filter((command) => command.source === "builtin")).toHaveLength(26);
 		expect(commandData.commands.map((command) => command.name)).not.toContain("performance");
-		expect(commandData.commands.map((command) => command.name)).toEqual(expect.arrayContaining(["settings", "model", "compact", "memory", "quit", "agents"]));
+		expect(commandData.commands.map((command) => command.name)).toEqual(expect.arrayContaining(["settings", "model", "compact", "self-learning", "quit", "agents"]));
 
 		const settingsCommandResponse = await fetch(`${handle.address.url}/session/command`, {
 			method: "POST",
@@ -546,43 +544,50 @@ describe("server mode", () => {
 		});
 	});
 
-	test("serves every Memory control used by Desktop settings", async () => {
+	test("serves self-learning endpoints and slash commands", async () => {
 		const fixture = createRuntimeFixture();
 		handle = await startServerMode(fixture.runtime, { port: 0 });
 
-		const stateResponse = await fetch(`${handle.address.url}/memory`);
-		expect(stateResponse.status).toBe(200);
-		expect(await stateResponse.json()).toMatchObject({ enabled: true, recordCount: 1 });
+		const initialResponse = await fetch(`${handle.address.url}/self-learning`);
+		expect(initialResponse.status).toBe(200);
+		expect(await initialResponse.json()).toEqual({ enabled: false });
 
-		const settingResponse = await fetch(`${handle.address.url}/memory/settings`, {
+		const enableResponse = await fetch(`${handle.address.url}/self-learning`, {
 			method: "PUT",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ enabled: false }),
+			body: JSON.stringify({ enabled: true }),
 		});
-		expect(settingResponse.status).toBe(200);
-		expect(fixture.session.setMemoryEnabled).toHaveBeenCalledWith(false);
+		expect(enableResponse.status).toBe(200);
+		expect(await enableResponse.json()).toEqual({ enabled: true });
+		expect(fixture.session.settingsManager.setSelfLearningEnabled).toHaveBeenCalledWith(true);
 
-		const runResponse = await fetch(`${handle.address.url}/memory/run`, { method: "POST" });
-		expect(runResponse.status).toBe(200);
-		expect(fixture.session.runMemory).toHaveBeenCalledOnce();
+		const updatedResponse = await fetch(`${handle.address.url}/self-learning`);
+		expect(updatedResponse.status).toBe(200);
+		expect(await updatedResponse.json()).toEqual({ enabled: true });
 
-		const searchResponse = await fetch(`${handle.address.url}/memory/search?q=needle`);
-		expect(searchResponse.status).toBe(200);
-		expect(await searchResponse.json()).toEqual([{ id: "memory-1", content: "match:needle" }]);
-		expect(fixture.session.searchMemory).toHaveBeenCalledWith("needle");
-
-		const forgetResponse = await fetch(`${handle.address.url}/memory/memory-1`, { method: "DELETE" });
-		expect(forgetResponse.status).toBe(200);
-		expect(await forgetResponse.json()).toEqual({ forgotten: true });
-		expect(fixture.session.forgetMemory).toHaveBeenCalledWith("memory-1");
-
-		const resetResponse = await fetch(`${handle.address.url}/memory/reset`, {
+		const statusCommandResponse = await fetch(`${handle.address.url}/session/command`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ confirm: "RESET_MEMORY" }),
+			body: JSON.stringify({ command: "/self-learning status" }),
 		});
-		expect(resetResponse.status).toBe(200);
-		expect(fixture.session.resetMemory).toHaveBeenCalledWith("RESET_MEMORY");
+		expect(statusCommandResponse.status).toBe(200);
+		expect(await statusCommandResponse.json()).toMatchObject({ command: "self-learning", enabled: true });
+
+		const offCommandResponse = await fetch(`${handle.address.url}/session/command`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ command: "/self-learning off" }),
+		});
+		expect(offCommandResponse.status).toBe(200);
+		expect(await offCommandResponse.json()).toMatchObject({ command: "self-learning", enabled: false });
+		expect(fixture.session.settingsManager.setSelfLearningEnabled).toHaveBeenCalledWith(false);
+
+		const invalidResponse = await fetch(`${handle.address.url}/self-learning`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ enabled: "not-a-boolean" }),
+		});
+		expect(invalidResponse.status).toBe(400);
 	});
 
 	test("preserves active work when a client tries to replace the session", async () => {
@@ -777,23 +782,6 @@ describe("server mode", () => {
 		expect(response.status).toBe(202);
 		expect(fixture.session.ensureSessionName).toHaveBeenCalledWith({ prompt: "首个用户 prompt" });
 		expect(order).toEqual(["title-start:首个用户 prompt", "title-done:首个用户 prompt", "prompt"]);
-	});
-
-	test("returns Dream migration guidance without generating a title", async () => {
-		const fixture = createRuntimeFixture();
-		fixture.session.sessionName = undefined as unknown as string;
-		fixture.session.messages = [];
-		handle = await startServerMode(fixture.runtime, { port: 0 });
-
-		const response = await fetch(`${handle.address.url}/session/command`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ command: "/dream on" }),
-		});
-
-		expect(response.status).toBe(200);
-		expect(fixture.session.prompt).not.toHaveBeenCalled();
-		expect(fixture.session.ensureSessionName).not.toHaveBeenCalled();
 	});
 
 	test("waits for the localhost OAuth callback before showing fallback input", async () => {

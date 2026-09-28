@@ -410,6 +410,8 @@ export interface LoadSkillsOptions {
 	agentDir?: string;
 	/** Explicit skill paths (files or directories) */
 	skillPaths?: string[];
+	/** Learned adaptation skill paths */
+	adaptationSkillPaths?: string[];
 	/** Include default skills directories. */
 	includeDefaults?: boolean;
 	/** Include built-in skills. Default: false for raw loadSkills, true for ResourceLoader */
@@ -421,7 +423,7 @@ export interface LoadSkillsOptions {
  * Returns skills and any validation diagnostics.
  */
 export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
-	const { agentDir, skillPaths = [], includeDefaults, includeBuiltins } = options;
+	const { agentDir, skillPaths = [], adaptationSkillPaths = [], includeDefaults, includeBuiltins } = options;
 
 	// Resolve agentDir - if not provided, use default from config
 	const resolvedCwd = resolvePath(options.cwd);
@@ -519,6 +521,30 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 	if (includeDefaults) {
 		addSkills(loadSkillsFromDirInternal(resolve(resolvedCwd, CONFIG_DIR_NAME, "skills"), "project", true));
 		addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", true));
+	}
+
+	// 2.5 Learned adaptation skills (lower priority than handwritten custom skills, higher than builtins)
+	if (adaptationSkillPaths && adaptationSkillPaths.length > 0) {
+		for (const rawPath of adaptationSkillPaths) {
+			const resolvedPath = resolvePath(rawPath, resolvedCwd, { trim: true });
+			if (!existsSync(resolvedPath)) continue;
+			try {
+				const stats = statSync(resolvedPath);
+				const loadRes = stats.isDirectory()
+					? loadSkillsFromDirInternal(resolvedPath, "adaptation", true)
+					: stats.isFile() && resolvedPath.endsWith(".md")
+						? (loadSkillFromFile(resolvedPath, "adaptation").skill ? { skills: [loadSkillFromFile(resolvedPath, "adaptation").skill!], diagnostics: [] } : { skills: [], diagnostics: [] })
+						: { skills: [], diagnostics: [] };
+				for (const skill of loadRes.skills) {
+					// Handwritten custom skills strictly take precedence
+					if (skillMap.has(skill.name)) {
+						continue;
+					}
+					skill.sourceInfo = createSyntheticSourceInfo(skill.filePath, { source: "adaptation", scope: "user" });
+					addSkill(skill);
+				}
+			} catch {}
+		}
 	}
 
 	// 3. Built-in skills (lowest priority, added if not overridden by custom skills)

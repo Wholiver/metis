@@ -27,7 +27,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import type { CollaborationMode, MemoryState, ModelOption, ProjectItem, ProviderCatalogEntry, ThinkingOption } from '../../types';
+import type { AdaptationSummaryItem, CollaborationMode, ModelOption, ProjectItem, ProviderCatalogEntry, ThinkingOption } from '../../types';
 import type { ArchivedSessionRecord } from '../../lib/archived-sessions';
 import { RELEASES_URL, type UpdateCheckState } from '../../hooks/useUpdateCheck';
 import { translateExact } from '../../i18n';
@@ -40,13 +40,12 @@ import { AddModelModal } from './AddModelModal';
 
 type Request = <T>(path: string, method?: string, body?: unknown, timeoutMs?: number) => Promise<T>;
 
-export type SettingsTab = 'general' | 'model' | 'agent' | 'server' | 'about';
+export type SettingsTab = 'general' | 'model' | 'agent' | 'adaptations' | 'server' | 'about';
 export type AnySettingsTab = SettingsTab | 'shortcuts' | 'security' | 'session';
 
 type SettingsDialogProps = {
   open: boolean;
   initialTab?: AnySettingsTab;
-  memoryState?: MemoryState;
   onClose: () => void;
   request: Request;
   refresh: () => Promise<void>;
@@ -110,6 +109,7 @@ const tabMap: Record<string, SettingsTab> = {
   model: 'model',
   security: 'model',
   agent: 'agent',
+  adaptations: 'adaptations',
   server: 'server',
   session: 'about',
   about: 'about',
@@ -124,6 +124,7 @@ const tabs: Array<{ id: SettingsTab; label: string; icon: typeof Settings2 }> = 
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'model', label: 'Models & Providers', icon: Bot },
   { id: 'agent', label: 'Agent & Workflow', icon: Sparkles },
+  { id: 'adaptations', label: 'Self-Learning', icon: SlidersHorizontal },
   { id: 'server', label: 'Workspace & Server', icon: Server },
   { id: 'about', label: 'Data & About', icon: FileArchive },
 ];
@@ -247,7 +248,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [error, setError] = useState('');
   const [session, setSession] = useState<Record<string, any>>({});
   const [defaults, setDefaults] = useState<Record<string, any>>({});
-  const [memory, setMemory] = useState<Record<string, any>>({});
   const [appInfo, setAppInfo] = useState<Record<string, any>>({});
   const [workspace, setWorkspace] = useState<Record<string, any>>({});
   const [trust, setTrust] = useState<string>('');
@@ -266,6 +266,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [language, setLanguagePreference] = useState('auto');
   const [languageOptions, setLanguageOptions] = useState<LanguageOption[]>(fallbackLanguageOptions);
   const [deletingArchivedId, setDeletingArchivedId] = useState<string | null>(null);
+  const [selfLearningEnabled, setSelfLearningEnabled] = useState(false);
+  const [adaptations, setAdaptations] = useState<AdaptationSummaryItem[]>([]);
+  const [adaptationScopeFilter, setAdaptationScopeFilter] = useState<'all' | 'project' | 'user'>('all');
+  const [rollingBackId, setRollingBackId] = useState<string | null>(null);
+  const [retiringCheckId, setRetiringCheckId] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
   const translate = (value: string) => translateExact(value, language);
 
@@ -302,22 +307,31 @@ export function SettingsDialog(props: SettingsDialogProps) {
       setServerUsername(typeof nextConnection?.username === 'string' ? nextConnection.username : 'metis');
       setServerHasPassword(Boolean(nextConnection?.hasPassword));
       if (!props.isConnected) return;
-      const [nextSession, nextDefaults, nextMemory, nextTrust, nextLogin, nextCredentials, nextLanguage] = await Promise.all([
+      const [nextSession, nextDefaults, nextTrust, nextLogin, nextCredentials, nextLanguage, nextAdaptations, nextSelfLearning] = await Promise.all([
         props.request<Record<string, any>>('/session'),
         props.request<Record<string, any>>('/settings/defaults'),
-        props.request<Record<string, any>>('/memory'),
         props.request<Record<string, any>>('/session/command', 'POST', { command: '/trust' }),
         props.request<Record<string, any>>('/session/command', 'POST', { command: '/login' }),
         props.request<Record<string, any>>('/session/command', 'POST', { command: '/logout' }),
         props.request<Record<string, any>>('/session/command', 'POST', { command: '/language' }),
+        props.request<{ enabled: boolean; adaptations: AdaptationSummaryItem[]; unnotifiedCount: number }>('/adaptations').catch(() => null),
+        props.request<{ enabled: boolean }>('/self-learning').catch(() => null),
       ]);
-      setSession(nextSession || {}); setDefaults(nextDefaults || {}); setMemory(nextMemory || {});
+      setSession(nextSession || {}); setDefaults(nextDefaults || {});
       setTrust(typeof nextTrust?.decision === 'string' ? nextTrust.decision : '');
       setLoginInfo(nextLogin || {}); setCredentialInfo(nextCredentials || {});
       setSessionName(String(nextSession?.sessionName || nextSession?.name || ''));
       setLanguageOptions(Array.isArray(nextLanguage?.options)
         ? nextLanguage.options.filter((item: unknown): item is LanguageOption => Boolean(item && typeof (item as LanguageOption).code === 'string' && typeof (item as LanguageOption).nativeName === 'string'))
         : languageOptions);
+      if (nextSelfLearning && typeof nextSelfLearning.enabled === 'boolean') {
+        setSelfLearningEnabled(nextSelfLearning.enabled);
+      } else if (nextAdaptations && typeof nextAdaptations.enabled === 'boolean') {
+        setSelfLearningEnabled(nextAdaptations.enabled);
+      }
+      if (nextAdaptations && Array.isArray(nextAdaptations.adaptations)) {
+        setAdaptations(nextAdaptations.adaptations);
+      }
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally {
       hasLoadedRef.current = true;
@@ -393,14 +407,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
       : 'Compare this build against the published release manifest.';
 
   const instructionSources = Array.isArray(session.instructionSources) ? session.instructionSources.map(instructionSourceLabel) : [];
-  const currentMemory = {
-    ...memory,
-    ...(props.memoryState || {}),
-  };
-  const isConsolidating = currentMemory.phase === 'extracting' || currentMemory.phase === 'consolidating';
-  const totalJobs = currentMemory.extractingTotal || currentMemory.pendingJobs || 0;
-  const processedJobs = currentMemory.extractingProcessed ?? 0;
-  const progressPercent = totalJobs > 0 ? Math.min(100, Math.round((processedJobs / totalJobs) * 100)) : (currentMemory.phase === 'consolidating' ? 100 : 0);
 
   // Section 1: General (Language, Onboarding, Shortcuts)
   const general = (
@@ -712,137 +718,227 @@ export function SettingsDialog(props: SettingsDialogProps) {
             </Button>
           </Row>
         </Card>
-        <div>
-          <Card>
-            <Row label="Memory" description="Optional advisory knowledge. It never changes Plan or Build permissions.">
-              <Switch label="Memory" checked={Boolean(currentMemory.enabled)} onChange={() => void run(() => props.request('/memory/settings', 'PUT', { enabled: !currentMemory.enabled }), 'Memory setting saved.')} disabled={disabled} />
-            </Row>
-          </Card>
-          <div className="mt-2.5 rounded-card bg-inset p-4 shadow-hairline">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                {isConsolidating ? (
-                  <Status tone="success">
-                    <LoaderCircle className="h-3 w-3 animate-spin text-green" />
-                    {currentMemory.phase === 'consolidating' ? 'Saving memory' : 'Extracting memory'}
-                  </Status>
-                ) : (
-                  <Status tone={currentMemory.enabled ? 'success' : 'neutral'}>
-                    {currentMemory.enabled ? 'Memory enabled' : 'Memory off'}
-                  </Status>
-                )}
-                <p className="mt-2.5 max-w-lg text-pretty text-[12.5px] leading-5 text-ink-2">
-                  {isConsolidating
-                    ? (currentMemory.phase === 'consolidating'
-                        ? 'New candidates are being validated, deduplicated, and saved.'
-                        : 'The background model is reviewing completed work and extracting reusable knowledge.')
-                    : (currentMemory.summary || (currentMemory.enabled ? 'Memory is ready to collect reusable knowledge from completed work.' : 'Enable Memory to collect reusable knowledge from completed work.'))}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                {isConsolidating ? (
-                  <Button type="button" variant="danger" size="sm" disabled={saving} onClick={() => void run(() => props.request('/memory/abort', 'POST'), 'Memory extraction stopped.')}>
-                    <Square className="h-3.5 w-3.5 fill-current" />Stop
-                  </Button>
-                ) : (
-                  <Button type="button" variant="secondary" size="sm" disabled={disabled || !currentMemory.enabled} onClick={() => void run(() => props.request('/memory/run', 'POST', undefined, 10 * 60_000), 'Memory extraction started.')}>
-                    <RefreshCw className="h-3.5 w-3.5" />Run now
-                  </Button>
-                )}
-                <Button type="button" variant="secondary" size="sm" disabled={disabled || isConsolidating} onClick={async () => {
-                  const query = await requestApproval({
-                    title: translate('Search memory'),
-                    message: translate('Find a stored memory record by content.'),
-                    inputLabel: translate('Search query'),
-                    confirmLabel: translate('Search'),
-                  });
-                  if (!query?.trim()) return;
-                  void run(async () => {
-                    const records = await props.request<any[]>(`/memory/search?q=${encodeURIComponent(query)}`);
-                    const record = records[0];
-                    if (!record) return;
-                    const approved = await requestApproval({
-                      title: translate('Remove memory'),
-                      message: `${record.content}\n\n${translate('Remove this memory?')}`,
-                      confirmLabel: translate('Remove'),
-                      danger: true,
-                    });
-                    if (approved !== null) await props.request(`/memory/${encodeURIComponent(record.id)}`, 'DELETE');
-                  }, 'Memory search completed.');
-                }}>
-                  <Gauge className="h-3.5 w-3.5" />Search
-                </Button>
-              </div>
-            </div>
-            {isConsolidating && (
-              <div className="mt-4 rounded-chip border border-green/30 bg-green-tint p-3.5">
-                <div className="flex items-center justify-between text-[12px]">
-                  <span className="font-semibold text-green">
-                    {currentMemory.phase === 'consolidating'
-                      ? 'Consolidating & saving records…'
-                      : `Extracting checkpoints (${processedJobs} / ${totalJobs})`}
-                  </span>
-                  <span className="font-semibold tabular-nums text-green">{progressPercent}%</span>
-                </div>
-                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-green/25">
-                  <div className="h-full rounded-full bg-green transition-all duration-300 ease-out" style={{ width: `${progressPercent}%` }} />
-                </div>
-                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-green">
-                  <div className="flex items-center gap-3">
-                    <span className="font-medium text-green">+{currentMemory.extractingAdded ?? 0} added</span>
-                    <span className="text-green">{currentMemory.extractingSkipped ?? 0} skipped</span>
-                  </div>
-                  {currentMemory.fallbackUsed && <span className="font-medium text-orange">Safe fallback active</span>}
-                </div>
-              </div>
-            )}
-            <dl className="mt-4 grid grid-cols-2 gap-3 text-[12px] sm:grid-cols-4">
-              <div><dt className="text-ink-3">Records</dt><dd className="mt-0.5 font-semibold tabular-nums text-ink-2">{currentMemory.recordCount ?? (currentMemory.globalCount !== undefined ? currentMemory.globalCount + (currentMemory.projectCount || 0) : 0)}</dd></div>
-              <div><dt className="text-ink-3">Pending</dt><dd className="mt-0.5 font-semibold tabular-nums text-ink-2">{currentMemory.pendingJobs ?? 0}</dd></div>
-              <div><dt className="text-ink-3">Last run</dt><dd className="mt-0.5 font-semibold text-ink-2">{currentMemory.lastRunAt || currentMemory.lastExtractedAt ? new Date(currentMemory.lastRunAt || currentMemory.lastExtractedAt).toLocaleString() : '—'}</dd></div>
-              <div><dt className="text-ink-3">Method</dt><dd className="mt-0.5 font-semibold text-ink-2">{currentMemory.extractionMethod || currentMemory.lastExtractionMethod || '—'}</dd></div>
-            </dl>
-            {currentMemory.lastRunProcessed !== undefined && currentMemory.lastRunProcessed > 0 && !isConsolidating && (
-              <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 rounded-chip bg-hover-2/90 dark:bg-hover-2 px-3 py-2 text-[12px] text-ink-2">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-3.5 w-3.5 text-ink-3" />
-                  <span>
-                    Last run: {currentMemory.lastRunProcessed} processed · {currentMemory.lastRunAdded ?? 0} added · {currentMemory.lastRunSkipped ?? 0} skipped
-                    {currentMemory.fallbackUsed ? ' (safe fallback used)' : ''}
-                  </span>
-                </div>
-                {currentMemory.modelFailureReason && (
-                  <span className="max-w-xs truncate text-[11px] text-orange" title={currentMemory.modelFailureReason}>{currentMemory.modelFailureReason}</span>
-                )}
-              </div>
-            )}
-            {currentMemory.error && !isConsolidating && (
-              <div className="mt-3 rounded-chip border border-red/30 bg-red-tint p-3 text-[12px] text-red">
-                Last failure: {currentMemory.error}
-                {currentMemory.nextRetryAt && ` (Retry scheduled at ${new Date(currentMemory.nextRetryAt).toLocaleTimeString()})`}
-              </div>
-            )}
-            <div className="mt-4 border-t border-line pt-3.5">
-              <Button type="button" variant="danger" size="sm" disabled={disabled || isConsolidating} onClick={async () => {
-                const approved = await requestApproval({
-                  title: translate('Reset Memory'),
-                  message: translate('Reset all stored Memory records? This cannot be undone.'),
-                  confirmLabel: translate('Reset'),
-                  danger: true,
-                });
-                if (approved !== null) void run(() => props.request('/memory/reset', 'POST', { confirm: 'RESET_MEMORY' }), 'Memory reset.');
-              }}>
-                <Trash2 className="h-3.5 w-3.5" />Reset Memory…
-              </Button>
-            </div>
-          </div>
-        </div>
         <Card>
           <Row label="Loaded instructions" description="The active session’s trusted context and instruction sources.">
             <span className="max-w-72 truncate text-right text-[12px] text-ink-3" title={instructionSources.join(', ')}>{instructionSources.length ? instructionSources.join(', ') : 'No sources reported'}</span>
           </Row>
         </Card>
       </div>
+  );
+
+  const handleToggleSelfLearning = async (enabled: boolean) => {
+    await run(async () => {
+      await props.request('/self-learning', 'PUT', { enabled });
+      setSelfLearningEnabled(enabled);
+    }, enabled ? (translate('selfLearningEnabled') || 'Self-learning enabled.') : (translate('selfLearningOff') || 'Self-learning disabled.'));
+  };
+
+  const handleRollbackAdaptation = async (item: AdaptationSummaryItem) => {
+    const title = translate('selfLearningRollbackConfirmTitle') || 'Rollback adaptation';
+    const message = (translate('selfLearningRollbackConfirmMessage') || 'Roll back adaptation {name} to previous revision?').replace('{name}', item.name || item.kind);
+    const confirmed = await requestApproval({
+      title,
+      message,
+      confirmLabel: translate('selfLearningRollback') || 'Rollback',
+      danger: false,
+    });
+    if (confirmed === null) return;
+    setRollingBackId(item.id);
+    try {
+      await run(async () => {
+        await props.request('/adaptations/rollback', 'POST', {
+          scope: item.scope,
+          kind: item.kind,
+          name: item.name,
+          targetRevision: item.revision - 1,
+        });
+      }, translate('selfLearningRollbackSuccess') || 'Adaptation rolled back successfully.');
+    } finally {
+      setRollingBackId(null);
+    }
+  };
+
+  const handleRetireCheck = async (checkId: string) => {
+    setRetiringCheckId(checkId);
+    try {
+      await run(async () => {
+        await props.request(`/adaptations/checks/${encodeURIComponent(checkId)}/retire`, 'POST');
+      }, translate('selfLearningRetireCheckSuccess') || 'Check retired successfully.');
+    } finally {
+      setRetiringCheckId(null);
+    }
+  };
+
+  const filteredAdaptations = useMemo(() => {
+    if (adaptationScopeFilter === 'all') return adaptations;
+    return adaptations.filter((item) => item.scope === adaptationScopeFilter);
+  }, [adaptations, adaptationScopeFilter]);
+
+  // Section 3b: Self-Learning Adaptations
+  const adaptationsSection = (
+    <div className="space-y-4">
+      <SectionHeading
+        title={translate('selfLearning') || 'Self-Learning'}
+        description={translate('selfLearningDescription') || 'Runtime architecture adapts from experience. Disabling reverts to default architecture.'}
+      />
+      <Card>
+        <Row
+          label={translate('selfLearningEnabled') || 'Self-learning enabled'}
+          description={translate('selfLearningDescription')}
+        >
+          <div className="flex items-center gap-2.5">
+            <Status tone={selfLearningEnabled ? 'success' : 'neutral'}>
+              {selfLearningEnabled ? (translate('selfLearningActive') || 'Active') : (translate('selfLearningDisabled') || 'Disabled')}
+            </Status>
+            <Switch
+              label={translate('selfLearningShort') || 'Self-learning'}
+              checked={selfLearningEnabled}
+              disabled={disabled}
+              onChange={() => void handleToggleSelfLearning(!selfLearningEnabled)}
+            />
+          </div>
+        </Row>
+      </Card>
+
+      {!selfLearningEnabled && (
+        <div className="flex items-center gap-2.5 rounded-card border border-line bg-inset/70 px-4 py-3 text-[12.5px] text-ink-2">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-ink-3" />
+          <p className="min-w-0 flex-1 leading-5">
+            {translate('selfLearningDisabledBanner') || 'Self-learning is currently disabled. Learned adaptations remain on disk but will not take effect.'}
+          </p>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between pt-1">
+        <h3 className="text-[14px] font-semibold text-ink">
+          {`${translate('learnedAdaptations') || 'Learned Adaptations'} (${filteredAdaptations.length})`}
+        </h3>
+        <div className="flex items-center gap-1 rounded-chip bg-field p-0.5 border border-line">
+          {(['all', 'project', 'user'] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setAdaptationScopeFilter(s)}
+              className={`rounded-chip px-2.5 py-1 text-[11.5px] font-medium transition-colors ${
+                adaptationScopeFilter === s ? 'bg-surface text-ink shadow-sm' : 'text-ink-3 hover:text-ink'
+              }`}
+            >
+              {s === 'all'
+                ? (translate('selfLearningScopeAll') || 'All')
+                : s === 'project'
+                ? (translate('selfLearningScopeProject') || 'Project')
+                : (translate('selfLearningScopeUser') || 'User')}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filteredAdaptations.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-card border border-dashed border-line-strong bg-inset/50 dark:bg-surface/50 py-10 px-6 text-center">
+          <p className="text-[13.5px] font-semibold text-ink-2">
+            {translate('selfLearningEmpty') || 'No adaptations recorded yet.'}
+          </p>
+          <p className="mt-1.5 max-w-md text-[12px] text-ink-3 leading-normal">
+            {translate('selfLearningEmptyHint') || 'Metis learns adaptations from task outcomes, corrections, and user preferences automatically when self-learning is enabled.'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {filteredAdaptations.map((item) => {
+            const isRollingBack = rollingBackId === item.id;
+            return (
+              <Card key={item.id}>
+                <div className="p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      <span className="text-[13.5px] font-medium text-ink truncate">
+                        {item.name || item.kind}
+                      </span>
+                      <ValuePill tone="accent" className="text-[10.5px] uppercase">{item.kind}</ValuePill>
+                      <ValuePill className="text-[10.5px]">
+                        {item.scope === 'project' ? (translate('selfLearningScopeProject') || 'Project') : (translate('selfLearningScopeUser') || 'User')}
+                      </ValuePill>
+                      <ValuePill className="text-[10.5px]">{`Rev ${item.revision}`}</ValuePill>
+                      {!selfLearningEnabled && (
+                        <Status tone="neutral">{translate('notApplied') || 'Not Applied'}</Status>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={disabled || Boolean(rollingBackId) || item.revision <= 1}
+                        title={item.revision <= 1 ? (translate('noPreviousRevision') || 'No previous revision') : (translate('selfLearningRollback') || 'Rollback')}
+                        onClick={() => void handleRollbackAdaptation(item)}
+                      >
+                        {isRollingBack ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        )}
+                        <span>{translate('selfLearningRollback') || 'Rollback'}</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-[11.5px] text-ink-3 flex-wrap">
+                    <span>
+                      {(translate('selfLearningAppliedCount') || 'Applied: {count} times').replace('{count}', String(item.appliedCount ?? 0))}
+                    </span>
+                    {item.lastOutcome && (
+                      <span className="flex items-center gap-1">
+                        {`${translate('selfLearningLastOutcome') || 'Last outcome'}:`}
+                        <Status tone={item.lastOutcome === 'success' ? 'success' : 'danger'}>
+                          {item.lastOutcome}
+                        </Status>
+                      </span>
+                    )}
+                    {(item.recurredCorrections ?? 0) > 0 && (
+                      <span className="flex items-center gap-1 text-ink-2">
+                        {(translate('selfLearningRecurringCorrections') || 'Recurring corrections: {count}').replace('{count}', String(item.recurredCorrections))}
+                      </span>
+                    )}
+                    <span className="truncate max-w-[260px] font-mono text-[10.5px]" title={item.filePath}>
+                      {item.filePath.replace(/^\/Users\/[^/]+/, '~')}
+                    </span>
+                  </div>
+
+                  {Array.isArray(item.pendingChecks) && item.pendingChecks.length > 0 && (
+                    <div className="rounded-control bg-field p-2.5 space-y-1.5 border border-line">
+                      <div className="text-[11.5px] font-medium text-ink-2">
+                        {`${translate('selfLearningPendingChecks') || 'Pending checks'}:`}
+                      </div>
+                      <div className="space-y-1">
+                        {item.pendingChecks.map((checkId) => (
+                          <div key={checkId} className="flex items-center justify-between text-[11.5px]">
+                            <span className="font-mono text-ink-3 truncate mr-2">{checkId}</span>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              disabled={disabled || retiringCheckId === checkId}
+                              onClick={() => void handleRetireCheck(checkId)}
+                            >
+                              {retiringCheckId === checkId ? (
+                                <LoaderCircle className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3 w-3" />
+                              )}
+                              <span>{translate('selfLearningRetireCheck') || 'Retire Check'}</span>
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 
   // Section 4: Workspace & Server (Connection, Workspace, Trust)
@@ -1034,6 +1130,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
     general,
     model,
     agent,
+    adaptations: adaptationsSection,
     server,
     about,
   };
@@ -1046,12 +1143,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
     { id: 'custom-models', tab: 'model' as SettingsTab, title: 'Custom Models', desc: 'Manage local custom model configurations written to models.json.', keywords: 'custom model models.json openai token plan coding plan 自定义 模型 接口 服务商 本地配置' },
     { id: 'add-model', tab: 'model' as SettingsTab, title: 'Add Model', desc: 'Add OpenAI-compatible custom model providers and plans.', keywords: 'add model new provider preset token plan coding plan 添加模型' },
     { id: 'collaboration-mode', tab: 'agent' as SettingsTab, title: 'Collaboration mode', desc: 'Plan uses read-only tools. Build can make changes; neither mode is an OS sandbox.', keywords: 'collaboration mode plan build 协作模式 计划 构建' },
+    { id: 'self-learning', tab: 'adaptations' as SettingsTab, title: 'Self-Learning', desc: 'Runtime architecture adapts from experience. Disabling reverts to default architecture.', keywords: 'self learning adaptation 自我学习 适配 架构 工作流 角色 技能' },
+    { id: 'adaptations-list', tab: 'adaptations' as SettingsTab, title: 'Learned Adaptations', desc: 'Inspect, manage, and rollback learned profiles, skills, roles, tools, and hooks.', keywords: 'learned adaptations rollback 回滚 适配列表 检查项 淘汰' },
     { id: 'steering-messages', tab: 'agent' as SettingsTab, title: 'Steering messages', desc: 'How Agent receives instructions while working.', keywords: 'steering queue message 转向 指导 消息' },
     { id: 'follow-up-messages', tab: 'agent' as SettingsTab, title: 'Follow-up messages', desc: 'How Agent handles queued messages after it completes.', keywords: 'follow up queue message 排队 消息' },
     { id: 'auto-retry', tab: 'agent' as SettingsTab, title: 'Automatic retry', desc: 'Retry transient model and transport failures.', keywords: 'auto retry 自动重试 重试' },
     { id: 'auto-compact', tab: 'agent' as SettingsTab, title: 'Auto-compact context', desc: 'Consolidate the current session as it approaches its context limit.', keywords: 'auto compact context 上下文 自动压缩 压缩' },
     { id: 'compact-now', tab: 'agent' as SettingsTab, title: 'Compact now', desc: 'Consolidate the current session without changing auto-compact.', keywords: 'compact now 手动压缩 立即压缩' },
-    { id: 'memory', tab: 'agent' as SettingsTab, title: 'Memory', desc: 'Optional advisory knowledge. It never changes Plan or Build permissions.', keywords: 'memory long term dream 记忆 长期记忆' },
     { id: 'instruction-sources', tab: 'agent' as SettingsTab, title: 'Instruction sources', desc: 'The active session’s trusted context and instruction sources.', keywords: 'instruction prompt source 指令源' },
     { id: 'server-connection', tab: 'server' as SettingsTab, title: 'Server configuration', desc: 'Configure address and optional authentication.', keywords: 'server connection url username password 服务端 连接' },
     { id: 'workspace', tab: 'server' as SettingsTab, title: 'Workspace', desc: 'Manage Desktop connection and the workspace used by the active session.', keywords: 'workspace folder project 工作区 目录 项目' },

@@ -230,7 +230,6 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 					workflowPlan: session.workflowPlan,
 					instructionSources: session.instructionSources,
 					instructionDiagnostics: session.instructionDiagnostics,
-					memoryState: session.memoryState,
 					executionProfile,
 				},
 				activeTraceContext,

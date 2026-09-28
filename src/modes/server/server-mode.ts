@@ -25,6 +25,18 @@ import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import { ProjectTrustStore } from "../../core/trust-manager.ts";
 import { isUiLanguage, SUPPORTED_UI_LANGUAGES } from "../../core/ui-language.ts";
 import { ensureReliableExecutionEnv } from "../../core/execution-types.ts";
+import { isSelfLearningActive } from "../../core/adaptations/activation.ts";
+import {
+	listAdaptations,
+	rollbackAdaptation,
+	getLearnerState,
+	saveLearnerState,
+	getScopeDir,
+	retireExtraCheck,
+	scheduleIdleLearning,
+	type AdaptationKind,
+	type AdaptationScope,
+} from "../../core/adaptations/index.ts";
 import { resolveTaskPathsFromEnv } from "../../core/task-execution-controller.ts";
 import { runReliableTurn } from "../../core/reliable-headless-runners.ts";
 import { getGlobalTraceCollector } from "../../core/trace-collector.ts";
@@ -88,6 +100,8 @@ export async function startServerMode(
 	const password = options.password ?? process.env.METIS_SERVER_PASSWORD;
 	const allowedOrigins = new Set(options.cors ?? []);
 	let advertisedPort = port;
+	let currentAdaptations = options.adaptations;
+	const executionProfile = options.executionProfile;
 
 	if (!isLoopbackHostname(hostname) && !password) {
 		throw new Error("Refusing non-loopback server without METIS_SERVER_PASSWORD");
@@ -328,6 +342,7 @@ export async function startServerMode(
 				}, boundSessionId);
 			},
 		});
+		void scheduleIdleLearning({ session: boundSession, mode: "server" });
 		unsubscribe?.();
 		unsubscribe = boundSession.subscribe((event) => {
 			broadcast(event, boundSessionId);
@@ -417,8 +432,39 @@ export async function startServerMode(
 		}
 		if (method === "GET" && url.pathname === "/session") return sendJson(response, 200, getSessionState());
 		if (method === "GET" && url.pathname === "/settings/defaults") return sendJson(response, 200, getDefaultsState());
-		if (method === "GET" && url.pathname === "/memory") return sendJson(response, 200, session.memoryState);
-		if (method === "GET" && url.pathname === "/memory/search") return sendJson(response, 200, session.searchMemory(url.searchParams.get("q") ?? ""));
+		if (method === "GET" && url.pathname === "/self-learning") {
+			const enabled = isSelfLearningActive({
+				adaptationsFlag: currentAdaptations,
+				executionProfile,
+				settings: session.settingsManager.getSettings(),
+			});
+			return sendJson(response, 200, { enabled });
+		}
+		if (method === "GET" && url.pathname === "/adaptations") {
+			const scope = url.searchParams.get("scope") as "user" | "project" | null;
+			const agentDir = runtimeHost.services.agentDir;
+			const cwd = session.sessionManager.getCwd();
+			const isProjectTrusted = session.settingsManager.isProjectTrusted();
+			let adaptations = listAdaptations(agentDir, cwd, { projectTrusted: isProjectTrusted });
+			if (scope) {
+				adaptations = adaptations.filter((a) => a.scope === scope);
+			}
+			const enabled = isSelfLearningActive({
+				adaptationsFlag: currentAdaptations,
+				executionProfile,
+				settings: session.settingsManager.getSettings(),
+			});
+			const userScopeDir = getScopeDir(agentDir, cwd, "user");
+			const userLearnerState = getLearnerState(userScopeDir);
+			const projectScopeDir = getScopeDir(agentDir, cwd, "project");
+			const projectLearnerState = getLearnerState(projectScopeDir);
+			const unnotifiedCount = userLearnerState.unnotifiedLearnedCount + projectLearnerState.unnotifiedLearnedCount;
+			return sendJson(response, 200, {
+				enabled,
+				adaptations,
+				unnotifiedCount,
+			});
+		}
 		if (method === "GET" && url.pathname === "/desktop/work-stats") {
 			return sendJson(response, 200, await getDesktopWorkStats());
 		}
@@ -682,28 +728,7 @@ export async function startServerMode(
 				return sendError(response, 409, "session_busy", error instanceof Error ? error.message : String(error));
 			}
 		}
-		if (method === "PUT" && url.pathname === "/memory/settings") {
-			const body = await readJsonBody<{ enabled?: unknown }>(request);
-			if (typeof body?.enabled !== "boolean") return sendError(response, 400, "invalid_request", "enabled must be a boolean");
-			try { return sendJson(response, 200, session.setMemoryEnabled(body.enabled)); }
-			catch (error) { return sendError(response, 409, "session_busy", error instanceof Error ? error.message : String(error)); }
-		}
-		if (method === "POST" && url.pathname === "/memory/run") {
-			try { return sendJson(response, 200, await session.runMemory()); }
-			catch (error) { return sendError(response, 409, "session_busy", error instanceof Error ? error.message : String(error)); }
-		}
-		if (method === "POST" && url.pathname === "/memory/abort") {
-			return sendJson(response, 200, session.abortMemory());
-		}
-		if (method === "DELETE" && /^\/memory\/[^/]+$/.test(url.pathname)) {
-			try { return sendJson(response, 200, { forgotten: session.forgetMemory(decodeURIComponent(url.pathname.slice("/memory/".length))) }); }
-			catch (error) { return sendError(response, 409, "session_busy", error instanceof Error ? error.message : String(error)); }
-		}
-		if (method === "POST" && url.pathname === "/memory/reset") {
-			const body = await readJsonBody<{ confirm?: unknown }>(request);
-			try { session.resetMemory(typeof body?.confirm === "string" ? body.confirm : ""); return sendJson(response, 200, { success: true }); }
-			catch (error) { return sendError(response, 400, "invalid_request", error instanceof Error ? error.message : String(error)); }
-		}
+
 		if (method === "PUT" && url.pathname === "/session/settings") {
 			const body = await readJsonBody<{
 				autoCompactionEnabled?: unknown;
@@ -782,6 +807,92 @@ export async function startServerMode(
 				}
 			}
 			return sendJson(response, 200, getDefaultsState());
+		}
+		if (method === "PUT" && url.pathname === "/self-learning") {
+			const body = await readJsonBody<{ enabled?: unknown }>(request);
+			if (typeof body?.enabled !== "boolean") {
+				return sendError(response, 400, "invalid_request", "Body must include boolean 'enabled'");
+			}
+			session.settingsManager.setSelfLearningEnabled(body.enabled);
+			currentAdaptations = body.enabled ? "on" : "off";
+			const enabled = isSelfLearningActive({
+				adaptationsFlag: currentAdaptations,
+				executionProfile,
+				settings: session.settingsManager.getSettings(),
+			});
+			broadcast({ type: "self_learning_changed", enabled });
+			return sendJson(response, 200, { enabled });
+		}
+		if (method === "POST" && url.pathname === "/adaptations/rollback") {
+			const body = await readJsonBody<{
+				scope?: unknown;
+				kind?: unknown;
+				name?: unknown;
+				targetRevision?: unknown;
+			}>(request);
+			if (!body || typeof body.kind !== "string" || typeof body.targetRevision !== "number") {
+				return sendError(response, 400, "invalid_request", "Body must include 'kind' and 'targetRevision'");
+			}
+			const agentDir = runtimeHost.services.agentDir;
+			const cwd = session.sessionManager.getCwd();
+			const scope = (body.scope === "user" ? "user" : "project") as AdaptationScope;
+			const isProjectTrusted = session.settingsManager.isProjectTrusted();
+			try {
+				const result = await rollbackAdaptation({
+					agentDir,
+					cwd,
+					scope,
+					kind: body.kind as AdaptationKind,
+					name: typeof body.name === "string" ? body.name : undefined,
+					targetRevision: body.targetRevision,
+					projectTrusted: isProjectTrusted,
+				});
+				await session.refreshAdaptations?.({
+					action: "rollback",
+					kind: body.kind,
+					name: typeof body.name === "string" ? body.name : undefined,
+					scope,
+				});
+				broadcast({ type: "adaptation_changed", action: "rollback", kind: body.kind, scope });
+				return sendJson(response, 200, result);
+			} catch (err) {
+				return sendError(response, 400, "rollback_failed", err instanceof Error ? err.message : String(err));
+			}
+		}
+		if (method === "POST" && url.pathname.startsWith("/adaptations/checks/") && url.pathname.endsWith("/retire")) {
+			const parts = url.pathname.split("/");
+			const checkId = decodeURIComponent(parts[3] ?? "");
+			if (!checkId) {
+				return sendError(response, 400, "invalid_request", "Check id is required");
+			}
+			const body = await readJsonBody<{ scope?: unknown }>(request).catch(() => ({}));
+			const scope = (body && typeof body === "object" && "scope" in body && (body as { scope?: unknown }).scope === "user" ? "user" : "project") as AdaptationScope;
+			const agentDir = runtimeHost.services.agentDir;
+			const cwd = session.sessionManager.getCwd();
+			const isProjectTrusted = session.settingsManager.isProjectTrusted();
+			const result = await retireExtraCheck({
+				agentDir,
+				cwd,
+				scope,
+				checkId,
+				isProjectTrusted,
+			});
+			await session.refreshAdaptations?.({ action: "retire", kind: "workflow", name: checkId, scope });
+			broadcast({ type: "adaptation_changed", action: "retire", kind: "workflow", name: checkId, scope });
+			return sendJson(response, 200, result);
+		}
+		if (method === "POST" && url.pathname === "/adaptations/clear-notifications") {
+			const agentDir = runtimeHost.services.agentDir;
+			const cwd = session.sessionManager.getCwd();
+			const userScopeDir = getScopeDir(agentDir, cwd, "user");
+			const userLearnerState = getLearnerState(userScopeDir);
+			userLearnerState.unnotifiedLearnedCount = 0;
+			saveLearnerState(userScopeDir, userLearnerState);
+			const projectScopeDir = getScopeDir(agentDir, cwd, "project");
+			const projectLearnerState = getLearnerState(projectScopeDir);
+			projectLearnerState.unnotifiedLearnedCount = 0;
+			saveLearnerState(projectScopeDir, projectLearnerState);
+			return sendJson(response, 200, { success: true });
 		}
 		if (method === "PUT" && url.pathname === "/session/name") {
 			const body = await readJsonBody<{ name?: string }>(request);
@@ -954,18 +1065,7 @@ export async function startServerMode(
 			}
 			case "session":
 				return { command: name, state: getSessionState(), stats: session.getSessionStats() };
-			case "dream":
-				return { command: name, message: "Dream moved into Memory. Use /memory run, /memory status, or /memory on|off." };
-			case "memory": {
-				const [action = "status", ...rest] = argument.split(/\s+/).filter(Boolean);
-				if (action === "status") return { command: name, state: session.memoryState };
-				if (action === "on" || action === "off") return { command: name, state: session.setMemoryEnabled(action === "on") };
-				if (action === "run") return { command: name, state: await session.runMemory() };
-				if (action === "search") return { command: name, records: session.searchMemory(rest.join(" ")) };
-				if (action === "forget") return { command: name, forgotten: session.forgetMemory(rest[0] ?? "") };
-				if (action === "reset") { session.resetMemory(rest[0] ?? ""); return { command: name, reset: true }; }
-				throw new HttpError(400, "invalid_memory_command", "Usage: /memory status|on|off|run|search|forget|reset");
-			}
+
 			case "changelog":
 				return { command: name, changelog: fs.readFileSync(getChangelogPath(), "utf8") };
 			case "hotkeys":
@@ -997,6 +1097,37 @@ export async function startServerMode(
 				if (decision === undefined) throw new HttpError(400, "invalid_trust", "Use trusted, untrusted, or clear");
 				store.set(cwd, decision);
 				return { command: name, decision, message: "项目信任设置已保存，重启 Agent 后生效" };
+			}
+			case "self-learning": {
+				const arg = argument.toLowerCase();
+				if (arg === "on") {
+					session.settingsManager.setSelfLearningEnabled(true);
+					currentAdaptations = "on";
+					const enabled = isSelfLearningActive({
+						adaptationsFlag: currentAdaptations,
+						executionProfile,
+						settings: session.settingsManager.getSettings(),
+					});
+					broadcast({ type: "self_learning_changed", enabled });
+					return { command: name, enabled, message: "自我学习已开启" };
+				}
+				if (arg === "off") {
+					session.settingsManager.setSelfLearningEnabled(false);
+					currentAdaptations = "off";
+					const enabled = isSelfLearningActive({
+						adaptationsFlag: currentAdaptations,
+						executionProfile,
+						settings: session.settingsManager.getSettings(),
+					});
+					broadcast({ type: "self_learning_changed", enabled });
+					return { command: name, enabled, message: "自我学习已关闭" };
+				}
+				const enabled = isSelfLearningActive({
+					adaptationsFlag: currentAdaptations,
+					executionProfile,
+					settings: session.settingsManager.getSettings(),
+				});
+				return { command: name, enabled, usage: "/self-learning on|off|status", message: `自我学习当前状态: ${enabled ? "已开启" : "已关闭"}` };
 			}
 			case "login": {
 				const authStorage: any = session.modelRegistry.authStorage;
@@ -1124,7 +1255,6 @@ export async function startServerMode(
 			pendingUserInput: session.pendingUserInput,
 			instructionSources: session.instructionSources,
 			instructionDiagnostics: session.instructionDiagnostics,
-			memoryState: session.memoryState,
 			sessionFile: session.sessionFile,
 			sessionId: session.sessionId,
 			sessionName: session.sessionName,

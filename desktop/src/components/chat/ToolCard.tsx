@@ -144,7 +144,6 @@ const TOOL_TITLE_KEYS: Record<string, string> = {
   websearch: 'toolTitleWebSearch',
   search_web: 'toolTitleWebSearch',
   webfetch: 'toolTitleFetch',
-  query_memory_db: 'toolTitleMemory',
   task: 'toolTitleTask',
   todo: 'toolTitleTodo',
   todowrite: 'toolTitleTodo',
@@ -167,8 +166,7 @@ const TOOL_TITLE_KEYS: Record<string, string> = {
   wait_agent: 'toolTitleWaitAgent',
   kill_agent: 'toolTitleKillAgent',
   message_agent: 'toolTitleMessageAgent',
-  remember_user_intent: 'toolTitleRememberIntent',
-  user_intent: 'toolTitleUserIntent',
+  adapt: 'toolTitleAdapt',
   skill: 'toolTitleSkill',
 };
 
@@ -199,7 +197,7 @@ const OPEN_CODE_TITLE_FALLBACK: Record<string, string> = {
   toolTitleList: 'List',
   toolTitleFetch: 'Fetch',
   toolTitleWebSearch: 'WebSearch',
-  toolTitleMemory: 'Memory',
+  toolTitleAdapt: 'Adapt',
   toolTitleTask: 'Task',
   toolTitleTodo: 'Todo',
   toolTitlePerformanceAdmit: 'Performance Admit',
@@ -221,8 +219,6 @@ const OPEN_CODE_TITLE_FALLBACK: Record<string, string> = {
   toolTitleWaitAgent: 'Wait agent',
   toolTitleKillAgent: 'Stop agent',
   toolTitleMessageAgent: 'Message agent',
-  toolTitleRememberIntent: 'Remember intent',
-  toolTitleUserIntent: 'User intent',
   toolTitleSkill: 'Skill',
 };
 

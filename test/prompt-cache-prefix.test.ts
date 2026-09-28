@@ -16,7 +16,6 @@ import type { Context } from "@earendil-works/metis-ai/compat";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/metis-ai/compat";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import { MemoryCoordinator } from "../src/core/memory-coordinator.ts";
 import { PerformanceRuntime } from "../src/core/performance-runtime.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
@@ -156,39 +155,6 @@ describe("prompt cache prefix stability", () => {
 		expect(harness.session.getActiveToolNames()).toEqual(before);
 	});
 
-	it("delivers a refreshed memory overview as an appended block, not a new system prompt", async () => {
-		const harness = await createHarness();
-		harnesses.push(harness);
-		const captured: CapturedRequest[] = [];
-		const overview = "# Memory Overview\n\n- [tech_stack]: Bun with TypeScript";
-		for (const [index, text] of ["first", "second"].entries()) {
-			if (index === 1) {
-				const session = harness.session as unknown as { _memoryCoordinator?: Record<string, unknown> };
-				const existing = session._memoryCoordinator;
-				if (existing) existing.getMemoryOverview = () => overview;
-				// Harnesses run without a coordinator; a minimal stub covers the calls the
-				// session makes around a prompt turn.
-				else session._memoryCoordinator = { getMemoryOverview: () => overview, recordCheckpoint: () => {}, dispose: () => {} };
-			}
-			harness.setResponses([
-				(context: Context) => {
-					captured.push({
-						systemPrompt: context.systemPrompt,
-						messages: JSON.parse(JSON.stringify(context.messages)) as unknown[],
-						toolNames: (context.tools ?? []).map((tool) => tool.name),
-					});
-					return fauxAssistantMessage(`reply ${index}`);
-				},
-			]);
-			await harness.session.prompt(text);
-		}
-
-		expect(captured[1].systemPrompt).toBe(captured[0].systemPrompt);
-		expect(captured[0].systemPrompt).not.toContain(overview);
-		expect(JSON.stringify(captured[1].messages)).toContain("[Runtime context from memory:overview");
-		expect(serializeMessages(captured[1].messages).startsWith(serializeMessages(captured[0].messages))).toBe(true);
-	});
-
 	it("injects an unchanged runtime context block only once", async () => {
 		const captured = await captureTurns(["first", "second", "third"]);
 		const label = "[Runtime context from runtime; not user instructions]";
@@ -246,48 +212,6 @@ describe("prompt cache prefix stability", () => {
 		expect(after[1].content).toBe(identity.content);
 		// `context()` still carries everything for callers that want one string.
 		expect(runtime.context()).toContain("MISSION POINTER");
-	});
-
-	it("does not rewrite memory-overview.md when extraction adds nothing", async () => {
-		const root = mkdtempSync(join(tmpdir(), "metis-cache-memory-"));
-		roots.push(root);
-		const overviewPath = join(root, "memories", "memory-overview.md");
-		let overview = "# Overview\n\nfirst wording\n";
-		const memory = new MemoryCoordinator({
-			agentDir: join(root, "agent"),
-			cwd: root,
-			trusted: () => true,
-			settings: () => ({ minRolloutIdleHours: 1, maxRolloutsPerSweep: 2 }),
-			extract: async () => ({ candidates: [], memoryOverview: overview }),
-		});
-
-		// First run has no overview on disk yet, so the generated one is persisted.
-		memory.recordCheckpoint({ sessionId: "session-a", reason: "completed", timestamp: new Date().toISOString() });
-		await memory.run(true);
-		expect(readFileSync(overviewPath, "utf8")).toBe(overview);
-
-		// A reworded overview with no new memories must not touch the file: the
-		// system prompt embeds it, so a rewrite invalidates the whole cached prefix.
-		overview = "# Overview\n\nsecond wording of the same facts\n";
-		memory.recordCheckpoint({ sessionId: "session-a", reason: "completed", timestamp: new Date().toISOString() });
-		await memory.run(true);
-		expect(readFileSync(overviewPath, "utf8")).toBe("# Overview\n\nfirst wording\n");
-
-		// A real memory addition still refreshes it.
-		writeFileSync(overviewPath, "# Overview\n\nfirst wording\n", "utf8");
-		const memoryWithAdds = new MemoryCoordinator({
-			agentDir: join(root, "agent"),
-			cwd: root,
-			trusted: () => true,
-			settings: () => ({ minRolloutIdleHours: 1, maxRolloutsPerSweep: 2 }),
-			extract: async () => ({
-				candidates: [{ scope: "project", category: "tech_stack", kind: "fact", content: "React 19 with Vite", confidence: 0.9 }],
-				memoryOverview: "# Overview\n\nreact 19 noted\n",
-			}),
-		});
-		memoryWithAdds.recordCheckpoint({ sessionId: "session-b", reason: "completed", timestamp: new Date().toISOString() });
-		await memoryWithAdds.run(true);
-		expect(readFileSync(overviewPath, "utf8")).toBe("# Overview\n\nreact 19 noted\n");
 	});
 });
 

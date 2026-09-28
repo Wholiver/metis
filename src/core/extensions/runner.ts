@@ -11,6 +11,7 @@ import type { KeybindingsConfig } from "../keybindings.ts";
 import type { ModelRegistry } from "../model-registry.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { BuildSystemPromptOptions } from "../system-prompt.ts";
+import { CONTROL_PLANE_TOOLS } from "../adaptations/types.ts";
 import type {
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
@@ -313,6 +314,7 @@ export class ExtensionRunner {
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 	private commandDiagnostics: ResourceDiagnostic[] = [];
 	private staleMessage: string | undefined;
+	isPerformanceRunActive?: () => boolean;
 
 	constructor(
 		extensions: Extension[],
@@ -773,6 +775,9 @@ export class ExtensionRunner {
 		let result: SessionBeforeEventResult | undefined;
 
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation" && this.isPerformanceRunActive?.()) {
+				continue;
+			}
 			const handlers = ext.handlers.get(event.type);
 			if (!handlers || handlers.length === 0) continue;
 
@@ -808,6 +813,9 @@ export class ExtensionRunner {
 		let modified = false;
 
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation" && this.isPerformanceRunActive?.()) {
+				continue;
+			}
 			const handlers = ext.handlers.get("message_end");
 			if (!handlers || handlers.length === 0) continue;
 
@@ -850,6 +858,14 @@ export class ExtensionRunner {
 		let modified = false;
 
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation") {
+				if (CONTROL_PLANE_TOOLS.includes(event.toolName as any)) {
+					continue;
+				}
+				if (this.isPerformanceRunActive?.()) {
+					continue;
+				}
+			}
 			const handlers = ext.handlers.get("tool_result");
 			if (!handlers || handlers.length === 0) continue;
 
@@ -899,6 +915,14 @@ export class ExtensionRunner {
 		let result: ToolCallEventResult | undefined;
 
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation") {
+				if (CONTROL_PLANE_TOOLS.includes(event.toolName as any)) {
+					continue;
+				}
+				if (this.isPerformanceRunActive?.()) {
+					continue;
+				}
+			}
 			const handlers = ext.handlers.get("tool_call");
 			if (!handlers || handlers.length === 0) continue;
 
@@ -921,6 +945,9 @@ export class ExtensionRunner {
 		const ctx = this.createContext();
 
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation" && this.isPerformanceRunActive?.()) {
+				continue;
+			}
 			const handlers = ext.handlers.get("user_bash");
 			if (!handlers || handlers.length === 0) continue;
 
@@ -952,6 +979,9 @@ export class ExtensionRunner {
 		let currentMessages = structuredClone(messages);
 
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation" && this.isPerformanceRunActive?.()) {
+				continue;
+			}
 			const handlers = ext.handlers.get("context");
 			if (!handlers || handlers.length === 0) continue;
 
@@ -989,6 +1019,9 @@ export class ExtensionRunner {
 		let currentPayload = payload;
 
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation" && this.isPerformanceRunActive?.()) {
+				continue;
+			}
 			const handlers = ext.handlers.get("before_provider_request");
 			if (!handlers || handlers.length === 0) continue;
 
@@ -1024,6 +1057,9 @@ export class ExtensionRunner {
 		const context: NonNullable<BeforeStepEventResult["context"]> = [];
 		const toolNames = new Set<string>();
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation" && this.isPerformanceRunActive?.()) {
+				continue;
+			}
 			for (const handler of ext.handlers.get("before_step") ?? []) {
 				try {
 					const result = (await handler({ type: "before_step", prompt, collaborationMode } satisfies BeforeStepEvent, ctx)) as
@@ -1053,6 +1089,9 @@ export class ExtensionRunner {
 		let timeoutMs = event.timeoutMs;
 		let providerTuning = event.providerTuning ? { ...event.providerTuning } : undefined;
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation" && this.isPerformanceRunActive?.()) {
+				continue;
+			}
 			for (const handler of ext.handlers.get("before_transport_request") ?? []) {
 				try {
 					const result = (await handler(
@@ -1095,6 +1134,9 @@ export class ExtensionRunner {
 		let systemPromptModified = false;
 
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation" && this.isPerformanceRunActive?.()) {
+				continue;
+			}
 			const handlers = ext.handlers.get("before_agent_start");
 			if (!handlers || handlers.length === 0) continue;
 
@@ -1156,6 +1198,9 @@ export class ExtensionRunner {
 		const themePaths: Array<{ path: string; extensionPath: string }> = [];
 
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation" && this.isPerformanceRunActive?.()) {
+				continue;
+			}
 			const handlers = ext.handlers.get("resources_discover");
 			if (!handlers || handlers.length === 0) continue;
 
@@ -1202,6 +1247,9 @@ export class ExtensionRunner {
 		let currentImages = images;
 
 		for (const ext of this.extensions) {
+			if (ext.sourceInfo?.source === "adaptation" && this.isPerformanceRunActive?.()) {
+				continue;
+			}
 			for (const handler of ext.handlers.get("input") ?? []) {
 				try {
 					const event: InputEvent = {

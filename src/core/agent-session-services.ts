@@ -66,6 +66,8 @@ export interface CreateAgentSessionFromServicesOptions {
 	autoSessionName?: CreateAgentSessionOptions["autoSessionName"];
 	collaborationMode?: CreateAgentSessionOptions["collaborationMode"];
 	namedAgentSession?: CreateAgentSessionOptions["namedAgentSession"];
+	adaptations?: CreateAgentSessionOptions["adaptations"];
+	executionProfile?: CreateAgentSessionOptions["executionProfile"];
 }
 
 /**
@@ -210,6 +212,8 @@ export async function createAgentSessionFromServices(
 		collaborationMode: options.collaborationMode,
 		namedAgentSession: options.namedAgentSession,
 		sessionStartEvent: options.sessionStartEvent,
+		adaptations: options.adaptations,
+		executionProfile: options.executionProfile,
 	});
 }
 

@@ -20,9 +20,9 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "language", description: "Select interface language" },
 	{ name: "model", description: "Select model (opens selector UI)" },
 	{ name: "mode", description: "Switch workflow mode: build or read-only plan" },
+	{ name: "self-learning", description: "View or toggle self-learning adaptations (on|off|status)" },
 	{ name: "agents", description: "List loaded and built-in agent roles and permissions" },
-	{ name: "memory", description: "Manage durable advisory memory" },
-	{ name: "dream", description: "Deprecated: use /memory run" },
+
 	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
 	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
 	{ name: "import", description: "Import and resume a session from a JSONL file" },

@@ -10,6 +10,9 @@ import {
 } from "./performance-roadmap.ts";
 import { frameworkProtocolForPrompt, getPerformanceFramework } from "./performance-frameworks.ts";
 import { isHostDispatchActive } from "./host-dispatch.ts";
+import { getEffectiveWorkflow } from "./adaptations/effective.ts";
+import { isSelfLearningActive, type SelfLearningActivationOptions } from "./adaptations/activation.ts";
+import type { WorkflowAdaptation } from "./adaptations/workflow-schema.ts";
 
 /**
  * Runtime control plane for the Codex variant of Performance.
@@ -114,6 +117,7 @@ export interface PerformanceRunState {
 	admission?: PerformanceAdmission;
 	admissionSha256?: string;
 	workspaceRoot?: string;
+	workflowSnapshot?: WorkflowAdaptation;
 	routePolicy?: {
 		implementation: "root" | "serial-shared" | "parallel-isolated";
 		assuranceWorkspace: "integrated-shared";
@@ -156,10 +160,28 @@ export interface PerformanceStartInvocation {
 	capabilities?: { read: boolean; write: boolean; run: boolean };
 }
 
+export interface PerformanceRuntimeOptions {
+	executionProfile?: string;
+	settings?: {
+		selfLearning?: {
+			enabled?: boolean;
+		};
+	};
+	adaptationsFlag?: "on" | "off";
+}
+
 export interface PerformanceAdmitInvocation extends Omit<PerformanceStartInvocation, "kind"> {
 	kind: "admit";
 	workspaceRoot: string;
 	admission: PerformanceAdmission;
+	executionProfile?: string;
+	settings?: {
+		selfLearning?: {
+			enabled?: boolean;
+		};
+	};
+	adaptationsFlag?: "on" | "off";
+	env?: Record<string, string | undefined>;
 }
 
 export interface PerformanceSpawnRequest {
@@ -597,12 +619,20 @@ export function validatePerformanceSpawn(
 
 export class PerformanceRuntime {
 	private readonly agentDir: string;
+	private readonly environment: NodeJS.ProcessEnv;
+	private readonly options?: PerformanceRuntimeOptions;
 	private readonly boundLaneId?: string;
 	private readonly boundGate?: string;
 	private stateValue: PerformanceRunState | undefined;
 
-	constructor(agentDir: string, environment: NodeJS.ProcessEnv = process.env) {
+	constructor(
+		agentDir: string,
+		environment: NodeJS.ProcessEnv = process.env,
+		options?: PerformanceRuntimeOptions,
+	) {
 		this.agentDir = agentDir;
+		this.environment = environment;
+		this.options = options;
 		this.boundLaneId = environment.METIS_PERFORMANCE_LANE_ID;
 		this.boundGate = environment.METIS_PERFORMANCE_GATE;
 		const governanceRoot = environment.METIS_PERFORMANCE_GOVERNANCE_ROOT;
@@ -612,6 +642,10 @@ export class PerformanceRuntime {
 		if (this.stateValue && !this.matchesWorkerBinding(environment)) this.stateValue = undefined;
 	}
 
+	hasActiveRun(): boolean {
+		return this.stateValue?.status === "active";
+	}
+
 	get state(): Readonly<PerformanceRunState> | undefined {
 		return this.stateValue;
 	}
@@ -619,6 +653,29 @@ export class PerformanceRuntime {
 	/** Start or revise a v2 run from a validated, typed admission contract. */
 	admit(invocation: PerformanceAdmitInvocation): PerformanceRunState {
 		const admission = normalizedAdmission(invocation.admission);
+		const activationOpts: SelfLearningActivationOptions = {
+			executionProfile: invocation.executionProfile ?? this.options?.executionProfile,
+			settings: invocation.settings ?? this.options?.settings,
+			adaptationsFlag: invocation.adaptationsFlag ?? this.options?.adaptationsFlag,
+			env: (invocation.env ?? this.environment) as Record<string, string | undefined>,
+		};
+		const isSelfLearning = isSelfLearningActive(activationOpts);
+		const effectiveWf = isSelfLearning
+			? getEffectiveWorkflow({
+					cwd: invocation.workspaceRoot,
+					agentDir: this.agentDir,
+					isProjectTrusted: true,
+					...activationOpts,
+				})
+			: undefined;
+		if (effectiveWf?.extraChecks?.length) {
+			for (const lane of admission.lanes) {
+				const extraCmds = effectiveWf.extraChecks
+					.filter((c) => (!c.gate || c.gate === "G6") && typeof c.command === "string")
+					.map((c) => c.command as string);
+				lane.verificationCommands = Array.from(new Set([...lane.verificationCommands, ...extraCmds]));
+			}
+		}
 		const admissionSha256 = hash(JSON.stringify(admission));
 		if (this.stateValue && (this.stateValue.status === "completed" || this.stateValue.status === "aborted")) {
 			this.stateValue = undefined;
@@ -647,6 +704,7 @@ export class PerformanceRuntime {
 				admission,
 				admissionSha256,
 				workspaceRoot: resolve(invocation.workspaceRoot),
+				workflowSnapshot: isSelfLearning ? effectiveWf : undefined,
 				routePolicy: routePolicyForAdmission(admission),
 				roadmapItems,
 				completedItemIds: [],
@@ -705,6 +763,7 @@ export class PerformanceRuntime {
 			admission,
 			admissionSha256,
 			workspaceRoot: resolve(invocation.workspaceRoot),
+			workflowSnapshot: isSelfLearning ? effectiveWf : undefined,
 			routePolicy: routePolicyForAdmission(admission),
 		};
 		writeFileSync(join(governanceRoot, "PROMPTS.txt"), `MISSION\n${state.mission}\n`, "utf8");
@@ -726,7 +785,14 @@ ${line(state, `FRONTIER ${state.frontier}`)}
 
 	allowedSpawnRoles(): string[] {
 		const tier = this.stateValue?.admission?.tier;
-		return tier ? [...TIER_ROLES[tier]] : [...KNOWN_ROLES];
+		const baseRoles = tier ? [...TIER_ROLES[tier]] : [...KNOWN_ROLES];
+		const effectiveWf = this.stateValue?.workflowSnapshot;
+		if (effectiveWf?.routeBias && typeof effectiveWf.routeBias === "object") {
+			const biased = Object.values(effectiveWf.routeBias)
+				.filter((role) => baseRoles.includes(role));
+			return Array.from(new Set([...biased, ...baseRoles]));
+		}
+		return baseRoles;
 	}
 
 	/** Build a complete, hash-bound child brief from canonical v2 admission state. */
@@ -904,6 +970,7 @@ ${line(state, "FRONTIER G2")}
 				capabilityProbe: state.capabilityProbe ?? { read: false, write: false, run: false, evidence: "missing", at: state.createdAt },
 				reports: Array.isArray(state.reports) ? state.reports : [],
 				leases: Array.isArray(state.leases) ? state.leases : [],
+				workflowSnapshot: state.workflowSnapshot,
 			};
 		} catch {
 			return undefined;
@@ -1156,6 +1223,39 @@ ${line(state, "FRONTIER G2")}
 			const deliveryActors = new Set(state.reports.filter((report) => ["G4", "G5", "G6", "G7"].includes(report.gate)).map((report) => report.actor));
 			if (deliveryActors.has(input.actor) || state.leases.length > 0) throw new Error("Goal check must be independent of delivery gates and requires zero live subagents.");
 			this.assertGoalEvidence(evidence);
+		}
+		if (input.verdict === "pass" && state.workspaceRoot) {
+			const effectiveWf = state.workflowSnapshot;
+			if (effectiveWf?.extraChecks?.length) {
+				const gateChecks = effectiveWf.extraChecks.filter((c) => c.gate === input.gate && c.command);
+				for (const check of gateChecks) {
+					if (!check.command) continue;
+					try {
+						const proc = spawnSync(check.command, {
+							shell: true,
+							cwd: state.workspaceRoot,
+							encoding: "utf8",
+							timeout: 30000,
+						});
+						if (proc.error || proc.status === 127) {
+							check.status = "pending";
+							this.log(`EXTRA_CHECK ${check.id} status=pending reason=environment_failure error=${JSON.stringify(proc.error?.message || "command_not_found")}`);
+						} else if (proc.status !== 0) {
+							if (check.blocking) {
+								throw new Error(`Extra check ${check.id} failed (${check.command}): ${proc.stderr || proc.stdout || "exit code " + proc.status}`);
+							}
+							this.log(`EXTRA_CHECK ${check.id} status=failed exit_code=${proc.status}`);
+						} else {
+							this.log(`EXTRA_CHECK ${check.id} status=passed`);
+						}
+					} catch (err: any) {
+						if (check.blocking) {
+							throw err;
+						}
+						check.status = "pending";
+					}
+				}
+			}
 		}
 		const report: PerformanceGateReport = { ...input, itemId: activeItem?.id, evidence, at: now() };
 		this.stateValue = { ...state, reports: [...state.reports, report], updatedAt: now() };

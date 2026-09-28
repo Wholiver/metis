@@ -95,6 +95,8 @@ import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
+import { isSelfLearningActive } from "../../core/adaptations/activation.ts";
+import { scheduleIdleLearning } from "../../core/adaptations/learner.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
@@ -660,6 +662,17 @@ export class InteractiveMode {
 						value: mode,
 						label: mode,
 						description: mode === "plan" ? "Read-only tools; no shell, edits, or writes" : "Full configured tool access",
+					}));
+		}
+		const selfLearningCommand = slashCommands.find((command) => command.name === "self-learning");
+		if (selfLearningCommand) {
+			selfLearningCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] =>
+				["on", "off", "status"]
+					.filter((opt) => opt.startsWith(prefix.toLowerCase()))
+					.map((opt) => ({
+						value: opt,
+						label: opt,
+						description: opt === "status" ? "Check self-learning adaptation status" : `Turn self-learning ${opt}`,
 					}));
 		}
 
@@ -1818,6 +1831,8 @@ export class InteractiveMode {
 			},
 		});
 
+		void scheduleIdleLearning({ session: this.session, mode: "tui" });
+
 		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
 		this.setupAutocompleteProvider();
 
@@ -2937,46 +2952,27 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/memory" || text.startsWith("/memory ")) {
-				const [action = "status", ...rest] = text.slice(7).trim().split(/\s+/).filter(Boolean);
+
+			if (text === "/self-learning" || text.startsWith("/self-learning ")) {
+				const arg = text.slice(14).trim().toLowerCase();
+				if (arg === "on") {
+					this.settingsManager.setSelfLearningEnabled(true);
+					this.showStatus("Self-learning enabled.");
+				} else if (arg === "off") {
+					this.settingsManager.setSelfLearningEnabled(false);
+					this.showStatus("Self-learning disabled.");
+				} else if (arg === "status" || !arg) {
+					const active = isSelfLearningActive({
+						settings: this.settingsManager.getSettings(),
+					});
+					this.showStatus(`Self-learning is currently ${active ? "active (on)" : "inactive (off)"}.`);
+				} else {
+					this.showStatus("Usage: /self-learning on|off|status");
+				}
 				this.editor.setText("");
-				try {
-					switch (action) {
-						case "status": {
-							const memory = this.session.memoryState;
-							const zeroReason = memory.globalCount + memory.projectCount === 0
-								? memory.pendingJobs > 0 ? " No records yet: extraction pending." : memory.lastRunProcessed === 0 ? " No eligible checkpoints in last run." : " No durable high-confidence records extracted yet."
-								: "";
-							this.showStatus(`Memory ${memory.enabled ? memory.phase : "off"}: ${memory.globalCount} global, ${memory.projectCount} project, ${memory.pendingJobs} pending${memory.nextEligibleAt ? ` (eligible ${memory.nextEligibleAt})` : ""}. Last run: ${memory.lastRunProcessed ?? 0} processed, ${memory.lastRunAdded ?? 0} added, ${memory.lastRunSkipped ?? 0} skipped; method ${memory.lastExtractionMethod ?? "none"}${memory.fallbackUsed ? " (fallback)" : ""}.${memory.modelFailureReason ? ` Model failure: ${memory.modelFailureReason}.` : ""}${zeroReason}`);
-							break;
-						}
-						case "on": this.session.setMemoryEnabled(true); this.showStatus("Memory enabled."); break;
-						case "off": this.session.setMemoryEnabled(false); this.showStatus("Memory disabled."); break;
-						case "run": {
-							const memory = await this.session.runMemory();
-							this.showStatus(`Memory run completed: ${memory.lastRunProcessed ?? 0} processed, ${memory.lastRunAdded ?? 0} added, ${memory.lastRunSkipped ?? 0} skipped${memory.fallbackUsed ? " (fallback used)" : ""}.`);
-							break;
-						}
-						case "search": {
-							const query = rest.join(" ");
-							if (!query) throw new Error("Usage: /memory search <query>");
-							const records = this.session.searchMemory(query);
-							this.showStatus(records.length ? records.map((record) => `[${record.scope}/${record.kind}] ${record.content}`).join("\n") : "No matching memory.");
-							break;
-						}
-						case "forget": if (!rest[0]) throw new Error("Usage: /memory forget <id>"); this.showStatus(this.session.forgetMemory(rest[0]) ? "Memory forgotten." : "Memory not found."); break;
-						case "reset": if (rest[0] !== "RESET_MEMORY") throw new Error("Usage: /memory reset RESET_MEMORY"); this.session.resetMemory("RESET_MEMORY"); this.showStatus("Memory reset."); break;
-						default: throw new Error("Usage: /memory status|on|off|run|search|forget|reset");
-					}
-					this.footer.invalidate();
-				} catch (error) { this.showError(error instanceof Error ? error.message : String(error)); }
 				return;
 			}
-			if (text === "/dream" || text.startsWith("/dream ")) {
-				this.editor.setText("");
-				this.showStatus("Dream moved into Memory. Use /memory run, /memory status, or /memory on|off.");
-				return;
-			}
+
 			if (text === "/language") {
 				this.showLanguageSelector();
 				this.editor.setText("");
@@ -6115,8 +6111,6 @@ export class InteractiveMode {
 		info += `${theme.fg("dim", "ID:")} ${stats.sessionId}\n\n`;
 		info += `${theme.bold("Workflow")}\n`;
 		info += `${theme.fg("dim", "Mode:")} ${this.session.collaborationMode}\n`;
-		const memory = this.session.memoryState;
-		info += `${theme.fg("dim", "Memory:")} ${memory.enabled ? memory.phase : "off"} · ${memory.globalCount} global / ${memory.projectCount} project · ${memory.pendingJobs} pending\n`;
 		const instructionSources = this.session.instructionSources;
 		if (instructionSources.length) {
 			info += `${theme.fg("dim", "Instructions:")} ${instructionSources.map((source) => `${source.channel}:${source.source} (${source.trust})`).join(", ")}\n`;

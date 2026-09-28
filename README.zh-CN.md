@@ -72,9 +72,9 @@ git diff | metis -p "审查这个 diff"
 
 | Agent 框架 | 评测模型 | 评测基准 | 解决率 (准确率) | 架构与 Harness 核心优势 |
 | :--- | :--- | :--- | :---: | :--- |
-| 🏆 **Metis** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 任务) | **73 / 89 (82.02%)** | ✅ 递归 5 角色多智能体 + SQLite 持久记忆 + Plan/Build 分离 |
+| 🏆 **Metis** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 任务) | **73 / 89 (82.02%)** | ✅ 递归 5 角色多智能体 + 自我学习适配 + Plan/Build 分离 |
 | **OpenCode** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 任务) | 60 / 89 (67.42%) | ⚠️ 单线程扁平工具执行流 |
-| 📈 *提升幅度* | *同等模型与预算* | *完全一致的执行环境* | **+14.6% (+13 项任务)** | 🚀 *纯 Agent Harness、记忆与验证门禁带来的性能跃升* |
+| 📈 *提升幅度* | *同等模型与预算* | *完全一致的执行环境* | **+14.6% (+13 项任务)** | 🚀 *纯 Agent Harness、适配演进与验证门禁带来的性能跃升* |
 
 ### 全维度特性对比矩阵
 
@@ -85,7 +85,7 @@ git diff | metis -p "审查这个 diff"
 | **客户端界面** | ✅ **终端 TUI + React 桌面端** | ⚠️ 仅终端 | ⚠️ 仅终端 | ⚠️ 仅 IDE 插件 |
 | **工作流控制** | ✅ **Plan 规划 ↔ Build 构建** | ⚠️ 单一线性流 | ⚠️ 单一线性流 | ⚠️ 对话/行内 |
 | **多智能体架构** | ✅ **递归 L0→L4 (5 具名角色)** | ⚠️ 扁平子 Agent | ⚠️ 基础支持 | ❌ 无 |
-| **持久记忆系统** | ✅ **SQLite 状态 + 向量检索** | ❌ 临时上下文 | ❌ 临时上下文 | ⚠️ 代码 Embeddings |
+| **自我学习适配** | ✅ **文件系统画像与工作流演化** | ❌ 临时上下文 | ❌ 临时上下文 | ⚠️ 代码 Embeddings |
 | **验证与证据门禁** | ✅ **测试门禁 + 视频证据** | ⚠️ 手工 Bash | ⚠️ 手工 Bash | ⚠️ 基础 Linter |
 | **无头基准评测** | ✅ **Python 适配器 + 全链路 Trace** | ❌ 无原生适配 | ⚠️ 部分支持 | ❌ 无 |
 
@@ -94,7 +94,7 @@ git diff | metis -p "审查这个 diff"
 - **Plan 与 Build 双工作流** — 在只读 Plan 模式中安全调查并生成方案；在 Build 模式下按已确认方案与动态清单可靠执行。
 - **终端 TUI 与桌面端双界面** — 既可在终端使用交互式全功能 TUI，也可在 macOS 和 Windows 上使用基于 React/Vite 的可视化桌面工作区。
 - **原生命名递归多智能体体系** — 内置具名 Agent 角色（`coordinator`、`planner`、`implementer`、`reviewer`、`verifier`），支持 L0→L4 递归委派与 Git Worktree 隔离。
-- **持久记忆与会话恢复** — 跨重载、上下文压缩与分支操作，在 SQLite 中持久保留项目经验与决策结论。
+- **自我学习适配与会话恢复** — 项目画像、工作流演进与定制检查在用户目录安全生效，支持透明审查与精确回滚。
 - **全模型自由与高可扩展性** — 支持 OpenAI、Anthropic、DeepSeek、OrcaRouter、Gemini、Groq、Ollama 等任意端点，支持 TypeScript 插件、Agent Skills 与 MCP。
 - **评测级可靠性与验证门禁** — 自动化验证检查、视频证据分析，全面适配 Terminal-Bench 2.1 与 Harbor 自动化评测。
 

@@ -4,6 +4,16 @@ This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier dev
 
 ## Unreleased
 
+### Self-Learning / Dynamic Runtime Architecture Adaptation System
+
+- Replace the legacy memory system with the Self-Learning Runtime Adaptation System (`selfLearning.enabled`, default `false`).
+- Learned adaptations stored as files under user scope (`~/.metis/agent/adaptations/`) and project scope (`~/.metis/agent/adaptations/projects/<projectKey>/`).
+- Strict baseline safety: control-plane tools (`performance_admit`, `performance_gate`, `update_plan`, `read_plan`, `spawn_agent`, `ask_user`, `adapt`) can never be hidden, intercepted, or removed.
+- In-turn `adapt` tool (`apply`, `rollback`, `list`) available to root sessions with full journal tracking and revision snapshots.
+- Idle background learner with zero-token local heuristic filters, strict 6,000 token budget cap, and daily per-scope invocation limits.
+- Outcome ledger tracking runtime adaptation effectiveness, preventing duplicate additions, and triggering rewrites on recurring corrections.
+- Server endpoints (`GET /adaptations`, `POST /adaptations/rollback`, `POST /adaptations/checks/:id/retire`, `POST /adaptations/clear-notifications`) and Desktop settings UI with bilingual i18n support.
+
 ## [1.3.4] - 2026-09-24
 
 ### Desktop Streaming Heat, Browser Fit & Performance Gate Hardening

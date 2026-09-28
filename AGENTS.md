@@ -32,6 +32,7 @@ If `.codegraph/` exists and its tools work, use CodeGraph before broad text sear
 | Agent session and SDK | `src/core/agent-session.ts`, `src/core/agent-session-runtime.ts`, `src/core/sdk.ts` | Session lifecycle, compaction, cancellation, history persistence |
 | Models & Providers | `src/core/model-registry.ts`, `src/core/model-resolver.ts`, `src/core/providers/` | Model registry, auto-detection, custom providers, streaming |
 | Built-in model tools | `src/core/tools/` | Standard coding tools (`read`, `edit`, `write`, `bash`, `grep`, `find`, `ls`), `update-plan`, `browser`, `video`, etc. |
+| Self-Learning Adaptations | `src/core/adaptations/`, `src/core/tools/adapt.ts` | Dynamic runtime architecture adaptation, outcome ledger, idle learner, journal/snapshots |
 | Multi-Agent & Orchestration | `src/core/tools/spawn_agent.ts`, `src/core/agent-definition.ts` | Recursive subagent delegation, worktrees, roles, and capability scoping |
 | Performance & Plan Runtime | `src/core/performance-runtime.ts`, `src/core/workflow-runtime.ts`, `src/core/tools/update-plan.ts` | Execution plan tracking, roadmap gates, progress narration |
 | Server mode (Backend API) | `src/modes/server/`, `src/modes/server/server-mode.ts` | Metis HTTP & SSE server used by Desktop and external clients |
@@ -120,6 +121,40 @@ When implementing or modifying model tools (`src/core/tools/`):
   - Step descriptions and explanations must match the language of the user's latest prompt.
   - Guard against false completion: do not allow marking all steps completed while a performance run or active subtask is unfinished.
 - **Filesystem mutations**: Coordinate multi-file edits safely; do not overwrite or discard uncommitted working tree changes.
+
+## Self-Learning Runtime Adaptations
+
+Metis supports continuous self-learning through runtime adaptations (`src/core/adaptations/`):
+
+- **Activation & Precedence**:
+  - Global config toggle `selfLearning.enabled` (default: `false`).
+  - Command-line flag `--adaptations on|off` and environment variable `METIS_ADAPTATIONS` (`on` | `off` | `1` | `0` | `true` | `false`).
+  - Precedence: explicit `off` > explicit `on` > benchmark profile `reliable-headless` (default `false`) > config `selfLearning.enabled`.
+  - **Clean Baseline Guarantee**: When `selfLearning.enabled` is `false` (and not forced on via CLI/env), behavior, tools, system prompt, and roles are 100% byte-identical to a clean baseline with no adaptations directory.
+- **Storage & Isolation**:
+  - User-scoped adaptations: `~/.metis/agent/adaptations/`
+  - Project-scoped adaptations: `~/.metis/agent/adaptations/projects/<projectKey>/` (governance files never in project `cwd`).
+  - Untrusted projects cannot load project-scoped adaptations until approved.
+- **Safety Baselines**:
+  - Control-plane tools (`CONTROL_PLANE_TOOLS`: `performance_admit`, `performance_gate`, `update_plan`, `read_plan`, `spawn_agent`, `ask_user`, `adapt`) are strictly protected. Adaptations cannot hide, intercept, or modify control-plane tools.
+  - Subagents and active Performance runs are isolated from mutating adaptations; adaptation hooks never receive control-plane events and never run during active Performance runs.
+- **In-Turn `adapt` Tool**:
+  - Root sessions can dynamically inspect (`list`), apply (`apply`), or revert (`rollback`) adaptations.
+  - Plan mode allows data-only adaptations without requiring performance admission.
+  - Every change is recorded in `journal.jsonl` with full revision snapshots in `history/<id>`.
+- **Idle Learner & Outcome Ledger**:
+  - Triggers on session idle for interactive sessions: scheduled after `bindExtensions` in `interactive-mode.ts` (`mode: "tui"`) and `server-mode.ts` (`mode: "server"`).
+  - Automatically bails out without running when self-learning is inactive, when mode is non-interactive (`print` / `json`), or when session is non-persistent (`--no-session`).
+  - Dispatched as fire-and-forget (does not await, logs on error, never blocks session startup).
+  - Successful synthesis applies data adaptations, calls `refreshAdaptations()`, and broadcasts `adaptation_changed`.
+  - Zero-token local heuristic filters: only runs when real user corrections, repeated command failures, or pending checks exist.
+  - Strict 6,000 token budget cap, daily quota limits (max 1 LLM call and 3 writes per day per scope), data products only (profile, skills, architecture, workflow).
+  - Outcome ledger records active adaptations, execution results, and user corrections. Recurring corrections trigger rewriting instead of stacking new adaptations.
+- **Workflow & Performance Run Snapshot Isolation**:
+  - `getEffectiveWorkflow()` checks `isSelfLearningActive(options)` first and returns `undefined` immediately when inactive without reading disk files.
+  - `PerformanceRuntime.admit()` records an immutable `workflowSnapshot` into the run state when active (or `undefined` when off).
+  - `allowedSpawnRoles()` and gate verification extraChecks strictly read `workflowSnapshot` from the active run state without querying disk.
+  - Modifying `workflow.json` on disk or toggling self-learning flags mid-run has zero impact on the active run; changes only take effect upon the next `admit()`.
 
 ## Recursive Multi-Agent System
 

@@ -16,7 +16,6 @@ const TOOL_NAMES = [
 	"edit",
 	"write",
 	"log",
-	"remember_user_intent",
 	"user_intent",
 	"websearch",
 	"webfetch",

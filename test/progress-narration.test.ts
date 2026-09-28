@@ -34,7 +34,7 @@ describe("classifyProgressTool", () => {
 	it("maps explore, admit, mutate, verify, and delegate tools", () => {
 		expect(classifyProgressTool("ls")).toBe("explore");
 		expect(classifyProgressTool("read_plan")).toBe("explore");
-		expect(classifyProgressTool("query_memory_db")).toBe("explore");
+		expect(classifyProgressTool("websearch")).toBe("explore");
 		expect(classifyProgressTool("browser_snapshot")).toBe("explore");
 		expect(classifyProgressTool("browser_navigate")).toBe("mutate");
 		expect(classifyProgressTool("browser_tabs", { action: "list" })).toBe("explore");
@@ -74,12 +74,12 @@ describe("resolveProgressNudge", () => {
 		)).toBeUndefined();
 	});
 
-	it("does not nag a grounding sequence of list, plan, inspect bash, read, and memory", () => {
+	it("does not nag a grounding sequence of list, plan, inspect bash, read, and websearch", () => {
 		const ls = toolResult("ls-1", "ls");
 		const plan = toolResult("plan-1", "read_plan");
 		const git = toolResult("bash-1", "bash");
 		const read = toolResult("read-1", "read");
-		const memory = toolResult("mem-1", "query_memory_db");
+		const search = toolResult("search-1", "websearch");
 		const history = [
 			user("看看当前工作区"),
 			assistant("我先检查当前工作目录的状态。", [{ id: "ls-1", name: "ls" }]),
@@ -90,14 +90,14 @@ describe("resolveProgressNudge", () => {
 			git,
 			assistant("", [{ id: "read-1", name: "read" }]),
 			read,
-			assistant("", [{ id: "mem-1", name: "query_memory_db" }]),
-			memory,
+			assistant("", [{ id: "search-1", name: "websearch" }]),
+			search,
 		];
 		expect(resolveProgressNudge(history.slice(0, 3), [ls])).toBeUndefined();
 		expect(resolveProgressNudge(history.slice(0, 5), [plan])).toBeUndefined();
 		expect(resolveProgressNudge(history.slice(0, 7), [git])).toBeUndefined();
 		expect(resolveProgressNudge(history.slice(0, 9), [read])).toBeUndefined();
-		expect(resolveProgressNudge(history, [memory])).toBeUndefined();
+		expect(resolveProgressNudge(history, [search])).toBeUndefined();
 	});
 
 	it("does not nag later explore-only batches", () => {
