@@ -4073,7 +4073,7 @@ export class InteractiveMode {
 		}
 
 		const currentText = this.editor.getExpandedText?.() ?? this.editor.getText();
-		const tmpFile = path.join(os.tmpdir(), `metis-editor-${Date.now()}.metis.md`);
+		const tmpFile = path.join(os.tmpdir(), `metis-editor-${crypto.randomUUID()}.metis.md`);
 
 		try {
 			// Write current content to temp file
@@ -5903,7 +5903,7 @@ export class InteractiveMode {
 		}
 
 		// Export to a temp file
-		const tmpFile = path.join(os.tmpdir(), "session.html");
+		const tmpFile = path.join(os.tmpdir(), `session-${crypto.randomUUID()}.html`);
 		try {
 			await this.session.exportToHtml(tmpFile);
 		} catch (error: unknown) {
