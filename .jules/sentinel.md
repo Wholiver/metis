@@ -1,5 +1,4 @@
-## 2024-05-18 - CWE-377: Insecure Temporary File Creation
-
-**Vulnerability:** The application was generating predictable temporary file names using `Date.now()` and static strings like `session.html` within shared directories like `os.tmpdir()`. This predictability exposes the application to Symlink Attacks (CWE-377), where an attacker could create a symbolic link with the expected name beforehand, potentially causing the application to overwrite critical files or expose sensitive data.
-**Learning:** Hardcoded strings or predictable values (like timestamps) should never be used for temporary file names in shared directories. Attackers can easily guess the filename and create malicious links.
-**Prevention:** Always use cryptographically secure random identifiers, such as `crypto.randomUUID()`, when creating temporary files in shared directories to ensure the file names are unpredictable and mitigate the risk of Symlink Attacks.
+## 2024-05-24 - Fixed Predictable Temporary File Creation (CWE-377)
+**Vulnerability:** Predictable temporary files were created using `Date.now()` and static names (e.g., `session.html`) in shared directories like `os.tmpdir()`. This allowed local attackers to potentially overwrite arbitrary files by creating symbolic links or to disclose/tamper with sensitive application data.
+**Learning:** Using predictable attributes to construct temporary files in universally writable directories compromises the integrity and confidentiality of those files. The application's temporary files, particularly exported sessions and editor buffers, are susceptible.
+**Prevention:** Always employ cryptographically strong random identifiers such as `crypto.randomUUID()` when generating temporary files in non-dedicated or shared directories.

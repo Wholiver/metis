@@ -16,7 +16,7 @@ function createRuntimeFixture() {
 		followUpMode: "all",
 		collaborationMode: "build",
 		contextWindowId: "window-1",
-		workflowPlan: { plan: [{ step: "Inspect", status: "in_progress" }], updatedAt: "2027-07-27T16:00:00.000Z" },
+		workflowPlan: { plan: [{ step: "Inspect", status: "in_progress" }], updatedAt: "2026-07-26T16:00:00.000Z" },
 		instructionSources: [{ id: "base", channel: "base", source: "metis", trust: "builtin", byteCount: 12, truncated: false }],
 		instructionDiagnostics: [],
 		sessionFile: "/tmp/session.jsonl",
@@ -42,7 +42,7 @@ function createRuntimeFixture() {
 			getBranch: vi.fn(() => [{
 				id: "entry-1",
 				type: "message",
-				timestamp: "2027-07-27T16:00:05.000Z",
+				timestamp: "2026-07-26T16:00:05.000Z",
 				message: { role: "assistant", timestamp: 1785081600000, content: [] },
 			}]),
 			getLeafId: vi.fn(() => "entry-1"),
@@ -263,7 +263,7 @@ describe("server mode", () => {
 		expect(messageData.serverSequence).toBeGreaterThan(0);
 		expect(messageData.messageTimings).toEqual([{
 			messageTimestamp: 1785081600000,
-			completedAt: Date.parse("2027-07-27T16:00:05.000Z"),
+			completedAt: Date.parse("2026-07-26T16:00:05.000Z"),
 		}]);
 
 		const promoteResponse = await fetch(`${handle.address.url}/session/queue/promote`, {
