@@ -218,7 +218,7 @@ describe("server mode", () => {
 		const commandData = (await fetch(`${handle.address.url}/commands`).then((response) => response.json())) as {
 			commands: Array<{ name: string; source: string }>;
 		};
-		expect(commandData.commands.filter((command) => command.source === "builtin")).toHaveLength(26);
+		expect(commandData.commands.filter((command) => command.source === "builtin")).toHaveLength(27);
 		expect(commandData.commands.map((command) => command.name)).toEqual(expect.arrayContaining(["settings", "model", "compact", "memory", "quit"]));
 
 		const settingsCommandResponse = await fetch(`${handle.address.url}/session/command`, {
