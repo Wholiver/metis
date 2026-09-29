@@ -1,0 +1,4 @@
+## 2024-05-24 - Insecure Temporary File Creation
+**Vulnerability:** Found predictable temporary file generation using `Date.now()` and static filenames (e.g., `session.html`) in shared directories like `os.tmpdir()` in `src/modes/interactive/interactive-mode.ts` and `src/modes/interactive/components/extension-editor.ts`. This allows symlink attacks (CWE-377) and potential data leakage/overwrite.
+**Learning:** Developers often use `Date.now()` or static strings for temp files, assuming uniqueness or that shared tmp directories are private, which isn't the case on multi-user systems.
+**Prevention:** Always use cryptographically secure random identifiers (like `crypto.randomUUID()`) when creating temporary files in shared directories to ensure unpredictable filenames and prevent collision or symlink attacks.
