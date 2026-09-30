@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	checkForNewMetisVersion,
 	comparePackageVersions,
+	getGiteeReleaseUrl,
 	getLatestMetisRelease,
 	getLatestMetisVersion,
+	isMainlandChinaUser,
 	isNewerPackageVersion,
+	parseGiteeRelease,
 	parseReleaseManifest,
 	RELEASE_MANIFEST_SOURCES,
 	resolveManifestSources,
@@ -17,6 +20,7 @@ const MIRROR_B = "https://mirror.test/b.json";
 const originalSkipVersionCheck = process.env.METIS_SKIP_VERSION_CHECK;
 const originalOffline = process.env.METIS_OFFLINE;
 const originalManifestUrls = process.env.METIS_VERSION_MANIFEST_URLS;
+const originalForceChinaMirror = process.env.METIS_FORCE_CHINA_MIRROR;
 
 function restoreEnv(key: string, value: string | undefined): void {
 	if (value === undefined) {
@@ -45,11 +49,16 @@ function manifestResponse(body: unknown, contentType = "text/plain"): Response {
 	});
 }
 
+beforeEach(() => {
+	process.env.METIS_FORCE_CHINA_MIRROR = "0";
+});
+
 afterEach(() => {
 	vi.unstubAllGlobals();
 	restoreEnv("METIS_SKIP_VERSION_CHECK", originalSkipVersionCheck);
 	restoreEnv("METIS_OFFLINE", originalOffline);
 	restoreEnv("METIS_VERSION_MANIFEST_URLS", originalManifestUrls);
+	restoreEnv("METIS_FORCE_CHINA_MIRROR", originalForceChinaMirror);
 });
 
 describe("version comparison", () => {
@@ -79,13 +88,42 @@ describe("manifest parsing", () => {
 		expect(parseReleaseManifest(null)).toBeUndefined();
 		expect(parseReleaseManifest("1.2.4")).toBeUndefined();
 	});
+
+	it("parses gitee release payload", () => {
+		expect(parseGiteeRelease({
+			tag_name: "v1.4.0-rc.1",
+			name: "Metis 1.4.0-rc.1",
+			body: "Release notes here",
+		})).toEqual({
+			version: "1.4.0-rc.1",
+			note: "Release notes here",
+		});
+
+		expect(parseGiteeRelease({
+			tag_name: "1.3.5",
+			name: "Metis 1.3.5",
+		})).toEqual({
+			version: "1.3.5",
+			note: "Metis 1.3.5",
+		});
+
+		expect(parseGiteeRelease({ tag_name: "" })).toBeUndefined();
+		expect(parseGiteeRelease({ not_a_release: true })).toBeUndefined();
+	});
 });
 
 describe("manifest sources", () => {
-	it("defaults to the GitHub manifest", () => {
+	it("defaults to the GitHub manifest when not in China mirror mode", () => {
 		expect(RELEASE_MANIFEST_SOURCES.map((source) => source.url)).toEqual([GITHUB_URL]);
 		expect(RELEASE_MANIFEST_SOURCES.map((source) => source.id)).toEqual(["github"]);
-		expect(resolveManifestSources()).toBe(RELEASE_MANIFEST_SOURCES);
+		expect(resolveManifestSources({ isMainlandChina: false })).toBe(RELEASE_MANIFEST_SOURCES);
+	});
+
+	it("includes Gitee release endpoint when mainland China is detected or forced", () => {
+		const sources = resolveManifestSources({ isMainlandChina: true });
+		expect(sources[0].id).toBe("gitee");
+		expect(sources[0].url).toBe(getGiteeReleaseUrl());
+		expect(sources[1].id).toBe("github");
 	});
 
 	it("honours METIS_VERSION_MANIFEST_URLS and ignores invalid entries", () => {
@@ -98,7 +136,7 @@ describe("manifest sources", () => {
 
 	it("falls back to the default when the override has no valid URL", () => {
 		process.env.METIS_VERSION_MANIFEST_URLS = "not-a-url, also-bad";
-		expect(resolveManifestSources()).toBe(RELEASE_MANIFEST_SOURCES);
+		expect(resolveManifestSources({ isMainlandChina: false })).toBe(RELEASE_MANIFEST_SOURCES);
 	});
 });
 
@@ -202,6 +240,38 @@ describe("release lookup", () => {
 
 		await expect(getLatestMetisVersion("1.2.3")).resolves.toBeUndefined();
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("queries Gitee release API and parses version when in mainland China mode", async () => {
+		process.env.METIS_FORCE_CHINA_MIRROR = "1";
+		const giteeUrl = getGiteeReleaseUrl();
+		const fetchMock = stubMirrors({
+			[giteeUrl]: () => manifestResponse({ tag_name: "v1.4.0", body: "Gitee update notes" }),
+			[GITHUB_URL]: () => manifestResponse({ version: "1.3.5" }),
+		});
+
+		const release = await getLatestMetisRelease("1.3.5");
+		expect(release).toEqual({
+			version: "1.4.0",
+			note: "Gitee update notes",
+			source: "gitee",
+		});
+	});
+
+	it("falls back to GitHub when Gitee release fails in China mode", async () => {
+		process.env.METIS_FORCE_CHINA_MIRROR = "1";
+		const giteeUrl = getGiteeReleaseUrl();
+		stubMirrors({
+			[giteeUrl]: () => new Response("Rate limit exceeded", { status: 403 }),
+			[GITHUB_URL]: () => manifestResponse({ version: "1.4.0", note: "GitHub notes" }),
+		});
+
+		const release = await getLatestMetisRelease("1.3.5");
+		expect(release).toEqual({
+			version: "1.4.0",
+			note: "GitHub notes",
+			source: "github",
+		});
 	});
 });
 

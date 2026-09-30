@@ -28,6 +28,7 @@ import { resetTimings } from "./timings.ts";
 import { AgentRegistry, type AgentDefinition, loadAgents } from "./agent-definition.ts";
 import { isSelfLearningActive } from "./adaptations/activation.ts";
 import { discoverAdaptationResources } from "./adaptations/effective.ts";
+import { handleAdaptationLoadFailure } from "./adaptations/ledger.ts";
 import type { ExecutionProfile } from "./execution-types.ts";
 
 export interface ResourceExtensionPaths {
@@ -525,9 +526,21 @@ export class DefaultResourceLoader implements ResourceLoader {
 						extensionsResult.extensions.push(extension);
 					} else if (error) {
 						console.warn(chalk.yellow(`Warning: Could not load adaptation ${p}: ${error}`));
+						await handleAdaptationLoadFailure({
+							agentDir: this.agentDir,
+							cwd: this.cwd,
+							filePath: p,
+							error,
+						}).catch(() => null);
 					}
 				} catch (err) {
 					console.warn(chalk.yellow(`Warning: Exception loading adaptation ${p}: ${err}`));
+					await handleAdaptationLoadFailure({
+						agentDir: this.agentDir,
+						cwd: this.cwd,
+						filePath: p,
+						error: err,
+					}).catch(() => null);
 				}
 			}
 		}

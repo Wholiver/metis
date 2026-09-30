@@ -15,8 +15,18 @@ export interface CompactionSettings {
 	keepRecentTokens?: number; // default: 20000
 }
 
+export const DEFAULT_MAX_LEARNED_SKILLS = 30;
+
 export interface SelfLearningSettings {
 	enabled?: boolean; // default: false
+	dailyCallBudget?: number; // optional daily budget limit
+	learnerModel?: string; // optional cheaper model for self-learning
+	maxLearnedSkills?: number; // default: 30
+}
+
+export interface WorkingMemorySettings {
+	enabled?: boolean; // default: true
+	checkpointInterval?: number; // default: 8 non-log tool calls
 }
 
 export interface BranchSummarySettings {
@@ -96,6 +106,7 @@ export interface Settings {
 	theme?: string;
 	uiLanguage?: UiLanguage; // global-only TUI language preference; default: "auto"
 	compaction?: CompactionSettings;
+	workingMemory?: WorkingMemorySettings;
 	selfLearning?: SelfLearningSettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
@@ -847,9 +858,19 @@ export class SettingsManager {
 		return this.settings.selfLearning?.enabled ?? false;
 	}
 
+	getMaxLearnedSkills(): number {
+		const configured = this.settings.selfLearning?.maxLearnedSkills;
+		return configured !== undefined && Number.isFinite(configured) && configured >= 1
+			? Math.floor(configured)
+			: DEFAULT_MAX_LEARNED_SKILLS;
+	}
+
 	getSelfLearningSettings(): Required<SelfLearningSettings> {
 		return {
 			enabled: this.getSelfLearningEnabled(),
+			dailyCallBudget: this.settings.selfLearning?.dailyCallBudget ?? Infinity,
+			learnerModel: this.settings.selfLearning?.learnerModel ?? "",
+			maxLearnedSkills: this.getMaxLearnedSkills(),
 		};
 	}
 
@@ -858,6 +879,29 @@ export class SettingsManager {
 		this.globalSettings.selfLearning.enabled = enabled;
 		this.markModified("selfLearning", "enabled");
 		this.save();
+	}
+
+	setMaxLearnedSkills(maxLearnedSkills: number): void {
+		if (!this.globalSettings.selfLearning) this.globalSettings.selfLearning = {};
+		this.globalSettings.selfLearning.maxLearnedSkills = Math.max(1, Math.floor(maxLearnedSkills));
+		this.markModified("selfLearning", "maxLearnedSkills");
+		this.save();
+	}
+
+	getWorkingMemoryEnabled(): boolean {
+		return this.settings.workingMemory?.enabled ?? true;
+	}
+
+	getWorkingMemoryCheckpointInterval(): number {
+		const configured = this.settings.workingMemory?.checkpointInterval;
+		return configured !== undefined && Number.isFinite(configured) && configured >= 1 ? Math.floor(configured) : 8;
+	}
+
+	getWorkingMemorySettings(): { enabled: boolean; checkpointInterval: number } {
+		return {
+			enabled: this.getWorkingMemoryEnabled(),
+			checkpointInterval: this.getWorkingMemoryCheckpointInterval(),
+		};
 	}
 
 	getBranchSummarySettings(): { reserveTokens: number; skipPrompt: boolean } {

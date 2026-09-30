@@ -78,6 +78,64 @@ type SessionMessagesResponse = {
   messageTimings?: Array<{ messageTimestamp: number; completedAt: number }>;
 };
 
+export interface LearningProgressState {
+  active: boolean;
+  phase?: 'observe' | 'review' | 'guard' | 'write' | 'evaluate';
+  step?: number;
+  total?: number;
+  summary?: string;
+  trigger?: 'turn' | 'idle';
+  status?: 'running' | 'completed' | 'skipped' | 'failed';
+  learnedCount?: number;
+  learnedSummary?: string;
+  progressKey?: 'selfLearningConsolidating' | 'selfLearningReviewingTurn';
+}
+
+export function applyLearningProgressEvent(
+  arg1: any,
+  arg2?: any,
+): LearningProgressState {
+  const event = (arg2 && typeof arg2 === 'object' && ('status' in arg2 || 'phase' in arg2)) ? arg2 : arg1;
+  const { phase, step, total, status, summary, trigger } = event || {};
+  if (status === 'running') {
+    return {
+      active: true,
+      phase,
+      step,
+      total,
+      summary,
+      trigger,
+      status: 'running',
+      progressKey: trigger === 'idle' ? 'selfLearningConsolidating' : 'selfLearningReviewingTurn',
+    };
+  }
+  if (status === 'completed') {
+    return {
+      active: false,
+      phase,
+      step,
+      total,
+      summary,
+      trigger,
+      status: 'completed',
+      learnedSummary: summary,
+    };
+  }
+  return {
+    active: false,
+    phase,
+    step,
+    total,
+    summary,
+    trigger,
+    status: status === 'failed' ? 'failed' : 'skipped',
+  };
+}
+
+export function getLearningProgressKey(state?: LearningProgressState): 'selfLearningConsolidating' | 'selfLearningReviewingTurn' {
+  return state?.trigger === 'idle' ? 'selfLearningConsolidating' : 'selfLearningReviewingTurn';
+}
+
 type MetisEvent = {
   type?: string;
   id?: string;
@@ -106,6 +164,11 @@ type MetisEvent = {
   result?: unknown;
   isError?: boolean;
   session?: SessionState;
+  phase?: 'observe' | 'review' | 'guard' | 'write' | 'evaluate';
+  step?: number;
+  total?: number;
+  summary?: string;
+  trigger?: 'turn' | 'idle';
 };
 
 const EMPTY_AGENT: Agent = {
@@ -1068,6 +1131,8 @@ export function useMetisServer(activeProject?: ProjectItem) {
   const [contextUsage, setContextUsage] = useState<ContextUsage>();
   const [extensionUiRequests, setExtensionUiRequests] = useState<ExtensionUiRequest[]>([]);
   const [isRespondingToExtensionUi, setIsRespondingToExtensionUi] = useState(false);
+  const [learningProgress, setLearningProgress] = useState<LearningProgressState>({ active: false });
+  const learningProgressTimerRef = useRef<number>();
   const activeProjectRef = useRef(activeProject);
   const agentsRef = useRef<Agent[]>([]);
   const projectAgentsByPathRef = useRef<Record<string, Agent[]>>({});
@@ -1704,6 +1769,21 @@ export function useMetisServer(activeProject?: ProjectItem) {
         if (type === 'session_info_changed' && event.session) void refreshModels();
         return;
       }
+      if (type === 'learning_progress') {
+        const nextState = applyLearningProgressEvent(event);
+        window.clearTimeout(learningProgressTimerRef.current);
+        setLearningProgress(nextState);
+        if (nextState.status === 'completed') {
+          learningProgressTimerRef.current = window.setTimeout(() => {
+            setLearningProgress({ active: false });
+          }, 8000);
+        } else if (nextState.status === 'skipped' || nextState.status === 'failed') {
+          learningProgressTimerRef.current = window.setTimeout(() => {
+            setLearningProgress({ active: false });
+          }, 5000);
+        }
+        return;
+      }
     });
     const unsubscribeDisconnect = desktop.metis.onDisconnect(() => {
       flushPendingStream();
@@ -2275,6 +2355,11 @@ export function useMetisServer(activeProject?: ProjectItem) {
     }
   }, [extensionUiRequests, request]);
 
+  const dismissLearningProgress = useCallback(() => {
+    window.clearTimeout(learningProgressTimerRef.current);
+    setLearningProgress({ active: false });
+  }, []);
+
   return {
     agents,
     projectAgentsByPath,
@@ -2325,5 +2410,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     respondToExtensionUi,
     contextUsage,
     tokenBreakdown,
+    learningProgress,
+    dismissLearningProgress,
   };
 }

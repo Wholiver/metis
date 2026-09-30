@@ -17,7 +17,7 @@ import {
   upsertConversationMessage,
   type PendingStreamBatch,
 } from '../desktop/src/hooks/useMetisServer';
-import { messageListContentEpoch } from '../desktop/src/components/chat/MessageList';
+import { INITIAL_VISIBLE_GROUPS, LOAD_MORE_GROUPS_STEP, messageListContentEpoch } from '../desktop/src/components/chat/MessageList';
 import { splitMarkdown } from '../desktop/src/components/chat/MarkdownContent';
 import { applyToolExecutionEnd, applyToolExecutionUpdate } from '../desktop/src/lib/tool-execution-update';
 import { isToolCallFinished, toolStatus, type ToolPart } from '../desktop/src/components/chat/ToolCard';
@@ -467,5 +467,11 @@ describe('desktop chat performance helpers', () => {
       ],
     }];
     expect(messageListContentEpoch(finished, true)).not.toBe(messageListContentEpoch(withTool, true));
+  });
+
+  it('configures sensible windowed history pagination batch sizes', () => {
+    expect(INITIAL_VISIBLE_GROUPS).toBeGreaterThanOrEqual(10);
+    expect(INITIAL_VISIBLE_GROUPS).toBeLessThanOrEqual(50);
+    expect(LOAD_MORE_GROUPS_STEP).toBeGreaterThanOrEqual(10);
   });
 });

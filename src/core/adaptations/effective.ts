@@ -64,10 +64,13 @@ export function getEffectiveArchitecture(options: AdaptationDiscoveryOptions): A
 	const hiddenTools = rawHidden.size > 0 ? Array.from(rawHidden) : undefined;
 
 	// Merge custom guidelines (user first, then project)
-	const customGuidelinesList = [
-		...(userArch?.customGuidelines ?? []),
-		...(projectArch?.customGuidelines ?? []),
-	];
+	const userGuidelines = (userArch?.customGuidelines ?? []).map((g) =>
+		typeof g === "object" && g !== null ? { ...g, scope: "user" } : g,
+	);
+	const projectGuidelines = (projectArch?.customGuidelines ?? []).map((g) =>
+		typeof g === "object" && g !== null ? { ...g, scope: "project" } : g,
+	);
+	const customGuidelinesList = [...userGuidelines, ...projectGuidelines];
 	const customGuidelines = customGuidelinesList.length > 0 ? customGuidelinesList : undefined;
 
 	// Preferred tools (project overrides user)
@@ -143,33 +146,176 @@ export function getEffectiveWorkflow(options: AdaptationDiscoveryOptions): Workf
 	};
 }
 
-/**
- * Read profile.md from user and project scopes.
- */
-export function getEffectiveProfile(options: AdaptationDiscoveryOptions): string | undefined {
-	const userScopeDir = getScopeDir(options.agentDir, options.cwd, "user");
-	const userProfilePath = path.join(userScopeDir, "profile.md");
-	let userProfile: string | undefined;
+export interface UserTrait {
+	dimension: "communication" | "rigor_and_acceptance" | "autonomy" | "coding_style" | "toolchain" | "domain_vocabulary";
+	statement: string;
+	confidence: number;
+	evidence: string[];
+	lastConfirmed: string;
+	status: "tentative" | "active" | "retired";
+	userStated?: boolean;
+}
 
-	if (fs.existsSync(userProfilePath)) {
-		try {
-			userProfile = fs.readFileSync(userProfilePath, "utf8").trim();
-		} catch {}
-	}
+export interface FollowUpPrediction {
+	triggerPattern: string;
+	prediction: string;
+	supportCount: number;
+	confidence: number;
+	lastTriggered?: string;
+}
 
-	let projectProfile: string | undefined;
-	if (options.isProjectTrusted) {
-		const projectScopeDir = getScopeDir(options.agentDir, options.cwd, "project");
-		const projectProfilePath = path.join(projectScopeDir, "profile.md");
-		if (fs.existsSync(projectProfilePath)) {
-			try {
-				projectProfile = fs.readFileSync(projectProfilePath, "utf8").trim();
-			} catch {}
+export interface UserProfileData {
+	version: 2;
+	traits: UserTrait[];
+	followUpPredictions: FollowUpPrediction[];
+	updatedAt: string;
+}
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function applyTraitDecay(traits: UserTrait[], nowMs = Date.now()): UserTrait[] {
+	return traits.map((trait) => {
+		if (trait.userStated || trait.status === "retired") return trait;
+		const lastConfirmedTime = trait.lastConfirmed ? new Date(trait.lastConfirmed).getTime() : 0;
+		if (lastConfirmedTime > 0 && nowMs - lastConfirmedTime > THIRTY_DAYS_MS) {
+			const daysOver30 = Math.floor((nowMs - lastConfirmedTime - THIRTY_DAYS_MS) / (24 * 60 * 60 * 1000));
+			const decay = Math.min(0.5, (daysOver30 / 10) * 0.05);
+			const newConfidence = Math.max(0.1, Number((trait.confidence - decay).toFixed(2)));
+			const newStatus = newConfidence < 0.3 ? "retired" : trait.status;
+			return {
+				...trait,
+				confidence: newConfidence,
+				status: newStatus,
+			};
+		}
+		return trait;
+	});
+}
+
+export function renderUserProfile(data: UserProfileData, holdoutStatements?: Set<string>): string {
+	const activeTraits = applyTraitDecay(data.traits).filter(
+		(t) => t.status !== "retired" && !(holdoutStatements?.has(t.statement)),
+	);
+	const lines: string[] = [];
+
+	if (activeTraits.length > 0) {
+		lines.push("### User Profile & Preferences");
+		for (const trait of activeTraits) {
+			lines.push(`- [${trait.dimension}] ${trait.statement} (confidence: ${trait.confidence})`);
 		}
 	}
 
-	const parts = [userProfile, projectProfile].filter(Boolean);
-	return parts.length > 0 ? parts.join("\n\n") : undefined;
+	const eligiblePredictions = (data.followUpPredictions ?? []).filter(
+		(p) => p.supportCount >= 3 && p.confidence >= 0.5,
+	);
+	if (eligiblePredictions.length > 0) {
+		lines.push("### Predicted Follow-Up Patterns");
+		for (const pred of eligiblePredictions) {
+			lines.push(`- When ${pred.triggerPattern}: ${pred.prediction} (supported by ${pred.supportCount} observations)`);
+		}
+	}
+
+	return lines.join("\n");
+}
+
+function readProfileFromDir(scopeDir: string): { data?: UserProfileData; rawText?: string } {
+	const jsonPath = path.join(scopeDir, "profile.json");
+	if (fs.existsSync(jsonPath)) {
+		try {
+			const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+			if (parsed && typeof parsed === "object" && (parsed.version === 2 || Array.isArray(parsed.traits))) {
+				return { data: parsed as UserProfileData };
+			}
+		} catch {}
+	}
+	const mdPath = path.join(scopeDir, "profile.md");
+	if (fs.existsSync(mdPath)) {
+		try {
+			const rawText = fs.readFileSync(mdPath, "utf8").trim();
+			return { rawText };
+		} catch {}
+	}
+	return {};
+}
+
+/**
+ * Read and merge structured UserProfileData from user and project scopes.
+ */
+export function getEffectiveUserProfileData(options: AdaptationDiscoveryOptions): UserProfileData | undefined {
+	const userScopeDir = getScopeDir(options.agentDir, options.cwd, "user");
+	const userProfile = readProfileFromDir(userScopeDir);
+
+	let projectProfile: { data?: UserProfileData; rawText?: string } | undefined;
+	if (options.isProjectTrusted) {
+		const projectScopeDir = getScopeDir(options.agentDir, options.cwd, "project");
+		projectProfile = readProfileFromDir(projectScopeDir);
+	}
+
+	const traitsMap = new Map<string, UserTrait>();
+	const predictionsMap = new Map<string, FollowUpPrediction>();
+
+	const addData = (data?: UserProfileData, rawText?: string) => {
+		if (data) {
+			for (const trait of data.traits ?? []) {
+				traitsMap.set(`${trait.dimension}:${trait.statement}`, trait);
+			}
+			for (const pred of data.followUpPredictions ?? []) {
+				predictionsMap.set(pred.triggerPattern, pred);
+			}
+		} else if (rawText) {
+			traitsMap.set(`communication:${rawText}`, {
+				dimension: "communication",
+				statement: rawText,
+				confidence: 1.0,
+				evidence: ["Migrated from legacy profile.md"],
+				lastConfirmed: new Date().toISOString(),
+				status: "active",
+				userStated: true,
+			});
+		}
+	};
+
+	addData(userProfile.data, userProfile.rawText);
+	if (projectProfile) {
+		addData(projectProfile.data, projectProfile.rawText);
+	}
+
+	if (traitsMap.size === 0 && predictionsMap.size === 0) {
+		return undefined;
+	}
+
+	return {
+		version: 2,
+		traits: Array.from(traitsMap.values()),
+		followUpPredictions: Array.from(predictionsMap.values()),
+		updatedAt: new Date().toISOString(),
+	};
+}
+
+/**
+ * Read profile from user and project scopes, rendering profile.json or profile.md.
+ */
+export function getEffectiveProfile(
+	options: AdaptationDiscoveryOptions,
+	holdoutStatements?: Set<string>,
+): string | undefined {
+	const userScopeDir = getScopeDir(options.agentDir, options.cwd, "user");
+	const userProfile = readProfileFromDir(userScopeDir);
+
+	let projectProfile: { data?: UserProfileData; rawText?: string } | undefined;
+	if (options.isProjectTrusted) {
+		const projectScopeDir = getScopeDir(options.agentDir, options.cwd, "project");
+		projectProfile = readProfileFromDir(projectScopeDir);
+	}
+
+	if (!userProfile.data && !projectProfile?.data && (userProfile.rawText || projectProfile?.rawText)) {
+		return [userProfile.rawText, projectProfile?.rawText].filter(Boolean).join("\n\n");
+	}
+
+	const data = getEffectiveUserProfileData(options);
+	if (!data) return undefined;
+	const rendered = renderUserProfile(data, holdoutStatements);
+	return rendered.trim() ? rendered.trim() : undefined;
 }
 
 export interface DiscoveredAdaptationResources {
@@ -263,4 +409,108 @@ export function discoverAdaptationResources(options: AdaptationDiscoveryOptions)
 		toolPaths,
 		hookPaths,
 	};
+}
+
+const SKILL_STOP_BIGRAMS = new Set(["一个", "一下", "这个", "我们", "什么", "怎么", "没有", "不是"]);
+
+/** User-language terms that should hit a skill description. */
+export function skillMatchesPrompt(description: string, userText: string): boolean {
+	const desc = description.toLowerCase();
+	const terms: string[] = [];
+	for (const run of userText.match(/[\u4e00-\u9fff]{2,}/g) ?? []) {
+		for (let i = 0; i < run.length - 1; i++) {
+			const bigram = run.slice(i, i + 2);
+			if (!SKILL_STOP_BIGRAMS.has(bigram)) terms.push(bigram);
+		}
+	}
+	for (const word of userText.match(/[A-Za-z][A-Za-z0-9_-]{3,}/g) ?? []) {
+		terms.push(word.toLowerCase());
+	}
+	return terms.some((term) => desc.includes(term.toLowerCase()));
+}
+
+function extractSkillMeta(content: string, defaultName: string): { name: string; description: string } {
+	const trimmed = content.trim();
+	let name = defaultName;
+	let description = "Learned project skill.";
+	if (trimmed.startsWith("---\n")) {
+		const fence = trimmed.indexOf("\n---", 4);
+		if (fence !== -1) {
+			const front = trimmed.slice(4, fence);
+			const nameMatch = front.match(/^name\s*:\s*(.+)$/m);
+			const descMatch = front.match(/^description\s*:\s*(.+)$/m);
+			if (nameMatch && nameMatch[1]) name = nameMatch[1].trim();
+			if (descMatch && descMatch[1]) description = descMatch[1].trim();
+		}
+	}
+	return { name, description };
+}
+
+/**
+ * Render a comprehensive summary of active learned adaptations (skills, rules, preferences)
+ * to be injected into the agent system prompt so the agent is explicitly aware of them.
+ */
+export function getLearnedAdaptationsPromptSummary(options: AdaptationDiscoveryOptions): string | undefined {
+	const sections: string[] = [];
+
+	// 1. Learned skills
+	const resources = discoverAdaptationResources(options);
+	if (resources.skillPaths.length > 0) {
+		const skillLines: string[] = [];
+		for (const skillPath of resources.skillPaths) {
+			try {
+				if (!fs.existsSync(skillPath)) continue;
+				const raw = fs.readFileSync(skillPath, "utf8");
+				const defaultName = path.basename(path.dirname(skillPath));
+				const meta = extractSkillMeta(raw, defaultName);
+				skillLines.push(`- \`${meta.name}\`: ${meta.description} (Location: ${skillPath})`);
+			} catch {}
+		}
+		if (skillLines.length > 0) {
+			sections.push(`### Learned Skills\n${skillLines.join("\n")}`);
+		}
+	}
+
+	// 2. Custom architecture guidelines
+	const arch = getEffectiveArchitecture(options);
+	if (arch?.customGuidelines && arch.customGuidelines.length > 0) {
+		const guideLines: string[] = [];
+		for (const g of arch.customGuidelines) {
+			if (typeof g === "string") {
+				guideLines.push(`- ${g}`);
+			} else if (g && typeof g === "object") {
+				const triggerInfo = g.trigger
+					? ` (trigger: ${g.trigger.keyword ? `keyword "${g.trigger.keyword}"` : g.trigger.regex ? `regex /${g.trigger.regex}/` : JSON.stringify(g.trigger)})`
+					: "";
+				guideLines.push(`- ${g.text}${triggerInfo}`);
+			}
+		}
+		if (guideLines.length > 0) {
+			sections.push(`### Learned Architectural Guidelines\n${guideLines.join("\n")}`);
+		}
+	}
+
+	// 3. User profile preferences
+	const profileData = getEffectiveUserProfileData(options);
+	if (profileData && profileData.traits && profileData.traits.length > 0) {
+		const activeTraits = applyTraitDecay(profileData.traits).filter((t) => t.status !== "retired");
+		if (activeTraits.length > 0) {
+			const traitLines = activeTraits.map(
+				(t) => `- [${t.dimension}] ${t.statement}${t.userStated ? " (user explicit preference)" : ""}`,
+			);
+			sections.push(`### Learned User Preferences\n${traitLines.join("\n")}`);
+		}
+	}
+
+	if (sections.length === 0) return undefined;
+
+	return [
+		"The following operational adaptations, procedures, and preferences were automatically learned from previous task executions, user corrections, and verified solutions in this workspace:",
+		"<learned_adaptations>",
+		sections.join("\n\n"),
+		"</learned_adaptations>",
+		"Instructions:",
+		"- Follow these learned procedures and rules when performing matching tasks in this workspace.",
+		"- When the user asks what you have learned or inquires about project conventions, answer directly using the adaptations above without needing to search the filesystem.",
+	].join("\n");
 }

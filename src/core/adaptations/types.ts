@@ -2,6 +2,8 @@
  * Types and constants for the self-learning runtime adaptation system.
  */
 
+export const DEFAULT_MAX_LEARNED_SKILLS = 30;
+
 export type AdaptationScope = "user" | "project";
 
 export type AdaptationKind =
@@ -52,7 +54,7 @@ export const PROTECTED_BUILTIN_ROLES: readonly string[] = Object.freeze([
 export interface JournalEntry {
 	id: string;
 	timestamp: string;
-	action: "apply" | "rollback" | "retire";
+	action: "apply" | "rollback" | "retire" | "reject";
 	scope: AdaptationScope;
 	kind: AdaptationKind;
 	name?: string;
@@ -60,6 +62,22 @@ export interface JournalEntry {
 	previousRevision?: number;
 	reason?: string;
 	snapshotId?: string;
+	actor?: "model" | "learner" | "evaluator";
+	trial?: boolean;
+}
+
+export interface GrowthReport {
+	date: string;
+	correctionRate?: number;
+	predictionHitRate?: number;
+	recurringErrorRate?: number;
+	toolErrorRate?: number;
+	totalEvaluatedRuns?: number;
+	adaptationSuccessRate?: number;
+	activeCount?: number;
+	trialCount?: number;
+	retiredCount?: number;
+	summary?: string;
 }
 
 export interface AdaptationStats {
@@ -67,6 +85,10 @@ export interface AdaptationStats {
 	lastOutcome?: "success" | "failure";
 	lastRunAt?: string;
 	recurredCorrections: number;
+	helped?: number;
+	hurt?: number;
+	trial?: boolean;
+	status?: "trial" | "tentative" | "active" | "retired";
 }
 
 export interface OutcomeLedger {
@@ -77,6 +99,8 @@ export interface OutcomeLedger {
 	recurredCorrections: number;
 	activeAdaptations: string[];
 	perAdaptationStats?: Record<string, AdaptationStats>;
+	growth?: GrowthReport;
+	tentativeWithholdRate?: number;
 }
 
 export interface AdaptationSummary {
@@ -92,5 +116,11 @@ export interface AdaptationSummary {
 	appliedCount?: number;
 	lastOutcome?: "success" | "failure";
 	recurredCorrections?: number;
+	helped?: number;
+	hurt?: number;
+	trial?: boolean;
+	status?: "trial" | "tentative" | "active" | "retired";
 	pendingChecks?: string[];
+	description?: string;
+	reason?: string;
 }

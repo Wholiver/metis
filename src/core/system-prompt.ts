@@ -63,6 +63,7 @@ export interface BuildSystemPromptOptions {
 	skills?: Skill[];
 	agents?: AgentDefinition[];
 	sessionId?: string;
+	learnedAdaptationsText?: string;
 }
 
 export const DEFAULT_BASE_INSTRUCTIONS = `You are Metis, a coding agent.
@@ -187,6 +188,10 @@ export function buildInstructionStack(options: BuildSystemPromptOptions): Instru
 	}
 	if (options.skills?.length && (!options.selectedTools || options.selectedTools.includes("read"))) {
 		const entry = block("runtime:skills", "developer", formatSkillsForPrompt(options.skills), "skill registry", "runtime");
+		if (entry) developer.push(entry);
+	}
+	if (options.learnedAdaptationsText) {
+		const entry = block("runtime:learned-adaptations", "developer", options.learnedAdaptationsText, "self-learning runtime", "runtime");
 		if (entry) developer.push(entry);
 	}
 	if (options.agents?.length && (!options.selectedTools || options.selectedTools.includes("spawn_agent"))) {

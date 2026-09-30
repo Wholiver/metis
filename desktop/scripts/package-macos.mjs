@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { packager } from "@electron/packager";
 import { HELP_FILE_NAME, HELP_FOLDER_NAME, getOpenHelpText } from "./dmg-help-content.mjs";
+import { pruneBundledRuntime, pruneElectronLocales } from "./prune-packaged-app.mjs";
 
 const execFileAsync = promisify(execFile);
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -78,6 +79,8 @@ async function buildBundledRuntime() {
 	await run(process.execPath, [path.join(runtimeDir, "dist", "cli.js"), "--version"], {
 		env: { ...process.env, METIS_SKIP_VIDEO_TRANSCRIPTION_PREPARE: "1" },
 	});
+	const pruned = await pruneBundledRuntime(runtimeDir, process.platform, architecture);
+	console.log(`已裁剪内置运行时 ${pruned.length} 项（仅保留 ${process.platform}/${architecture} 的 ONNX 原生库）`);
 }
 
 async function buildDmgBackground() {
@@ -144,6 +147,8 @@ try {
 		recursive: true,
 		verbatimSymlinks: true,
 	});
+	const prunedLocales = await pruneElectronLocales(appPath);
+	console.log(`已移除 ${prunedLocales.length} 个未使用的 Electron 语言包`);
 	await run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", appPath]);
 
 	console.log("[6/6] 生成 DMG");

@@ -6,6 +6,7 @@ import {
 	type AdaptationKind,
 	type AdaptationScope,
 	PROTECTED_BUILTIN_ROLES,
+	CONTROL_PLANE_TOOLS,
 } from "./types.ts";
 
 export class AdaptationValidationError extends Error {
@@ -96,6 +97,57 @@ export function assertProjectTrusted(projectTrusted: boolean, scope: AdaptationS
 	if (scope === "project" && !projectTrusted) {
 		throw new AdaptationValidationError(
 			"Cannot load or apply project-level adaptations in an untrusted project.",
+		);
+	}
+}
+
+const FORBIDDEN_GATE_REGEX = /\b(?:G[0-7]|G3\.5)(?:-assurance)?\b/i;
+const FORBIDDEN_RECEIPT_REGEX = /\b(?:verificationReceipt|independentVerificationReceipt|receipt)\b/i;
+const FORBIDDEN_BYPASS_PATTERNS = [
+	/跳过.*(?:验证|gate|检查|核验)/i,
+	/绕过.*(?:验证|gate|检查|核验)/i,
+	/直接完成/i,
+	/无需.*(?:验证|核验|测试|检查)/i,
+	/skip.*(?:verification|receipt|gate|check)/i,
+	/bypass.*(?:verification|receipt|gate|check)/i,
+	/finish.*directly/i,
+	/complete.*without.*verification/i,
+];
+
+/**
+ * Content guard to ensure adaptations never influence or tamper with the main reliable-headless workflow.
+ * Any content mentioning control plane tools, performance gate numbers, receipt fields,
+ * or intent to bypass/skip verification is rejected immediately.
+ */
+export function assertMainWorkflowInvariance(content: string): void {
+	if (!content || typeof content !== "string") return;
+
+	for (const tool of CONTROL_PLANE_TOOLS) {
+		const regex = new RegExp(`\\b${tool}\\b`, "i");
+		if (regex.test(content)) {
+			throw new AdaptationValidationError(
+				`Content violation: mentions control-plane tool '${tool}'. Main workflow cannot be influenced.`,
+			);
+		}
+	}
+
+	if (FORBIDDEN_GATE_REGEX.test(content)) {
+		throw new AdaptationValidationError(
+			"Content violation: mentions performance gate identifiers (e.g. G0-G7). Main workflow gates cannot be modified.",
+		);
+	}
+
+	for (const pattern of FORBIDDEN_BYPASS_PATTERNS) {
+		if (pattern.test(content)) {
+			throw new AdaptationValidationError(
+				"Content violation: contains intent to bypass, skip, or force completion without verification.",
+			);
+		}
+	}
+
+	if (FORBIDDEN_RECEIPT_REGEX.test(content)) {
+		throw new AdaptationValidationError(
+			"Content violation: mentions performance receipt fields. Verification receipts are strictly protected.",
 		);
 	}
 }

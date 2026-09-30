@@ -114,6 +114,7 @@ git diff | metis -p "审查这个 diff"
 | 视频检查 | [Video tool](docs/video.md) |
 | 安全与配置 | [Security](docs/security.md) · [Settings](docs/settings.md) |
 | 平台与隔离 | [Windows](docs/windows.md) · [Termux](docs/termux.md) · [tmux](docs/tmux.md) · [Containers](docs/containerization.md) |
+| 自主自我学习与运行时自适应 | [自主自我学习闭环](docs/self-learning.md) |
 
 全部指南见[文档索引](docs/index.md)。
 

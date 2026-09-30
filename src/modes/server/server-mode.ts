@@ -34,6 +34,10 @@ import {
 	getScopeDir,
 	retireExtraCheck,
 	scheduleIdleLearning,
+	getOutcomeLedger,
+	getEffectiveUserProfileData,
+	generateDailyGrowthReport,
+	readTurnOutcomes,
 	type AdaptationKind,
 	type AdaptationScope,
 } from "../../core/adaptations/index.ts";
@@ -446,14 +450,21 @@ export async function startServerMode(
 				executionProfile,
 				settings: session.settingsManager.getSettings(),
 			});
-			return sendJson(response, 200, { enabled });
+			const maxLearnedSkills = typeof session.settingsManager.getMaxLearnedSkills === "function"
+				? session.settingsManager.getMaxLearnedSkills()
+				: undefined;
+			return sendJson(response, 200, {
+				enabled,
+				...(maxLearnedSkills !== undefined ? { maxLearnedSkills } : {}),
+			});
 		}
 		if (method === "GET" && url.pathname === "/adaptations") {
 			const scope = url.searchParams.get("scope") as "user" | "project" | null;
 			const agentDir = runtimeHost.services.agentDir;
 			const cwd = session.sessionManager.getCwd();
 			const isProjectTrusted = session.settingsManager.isProjectTrusted();
-			let adaptations = listAdaptations(agentDir, cwd, { projectTrusted: isProjectTrusted });
+			let allAdaptations = listAdaptations(agentDir, cwd, { projectTrusted: isProjectTrusted });
+			let adaptations = allAdaptations;
 			if (scope) {
 				adaptations = adaptations.filter((a) => a.scope === scope);
 			}
@@ -467,10 +478,27 @@ export async function startServerMode(
 			const projectScopeDir = getScopeDir(agentDir, cwd, "project");
 			const projectLearnerState = getLearnerState(projectScopeDir);
 			const unnotifiedCount = userLearnerState.unnotifiedLearnedCount + projectLearnerState.unnotifiedLearnedCount;
+
+			// Generate real-time growth report matching the freshly scanned adaptations
+			const growth = generateDailyGrowthReport(projectScopeDir, undefined, "project", allAdaptations);
+			if ((growth.totalEvaluatedRuns ?? 0) === 0) {
+				const userOutcomes = readTurnOutcomes(userScopeDir, 100);
+				if (userOutcomes.length > 0) {
+					const userGrowth = generateDailyGrowthReport(userScopeDir, undefined, "user", allAdaptations);
+					growth.totalEvaluatedRuns = userGrowth.totalEvaluatedRuns;
+					growth.adaptationSuccessRate = userGrowth.adaptationSuccessRate;
+					growth.correctionRate = userGrowth.correctionRate;
+					growth.summary = userGrowth.summary;
+				}
+			}
+
+			const profile = getEffectiveUserProfileData({ agentDir, cwd, isProjectTrusted });
 			return sendJson(response, 200, {
 				enabled,
 				adaptations,
 				unnotifiedCount,
+				growth,
+				profile,
 			});
 		}
 		if (method === "GET" && url.pathname === "/desktop/work-stats") {
@@ -817,19 +845,30 @@ export async function startServerMode(
 			return sendJson(response, 200, getDefaultsState());
 		}
 		if (method === "PUT" && url.pathname === "/self-learning") {
-			const body = await readJsonBody<{ enabled?: unknown }>(request);
-			if (typeof body?.enabled !== "boolean") {
-				return sendError(response, 400, "invalid_request", "Body must include boolean 'enabled'");
+			const body = await readJsonBody<{ enabled?: unknown; maxLearnedSkills?: unknown }>(request);
+			if (typeof body?.enabled !== "boolean" && typeof body?.maxLearnedSkills !== "number") {
+				return sendError(response, 400, "invalid_request", "Body must include boolean 'enabled' or number 'maxLearnedSkills'");
 			}
-			session.settingsManager.setSelfLearningEnabled(body.enabled);
-			currentAdaptations = body.enabled ? "on" : "off";
+			if (typeof body?.enabled === "boolean") {
+				session.settingsManager.setSelfLearningEnabled(body.enabled);
+				currentAdaptations = body.enabled ? "on" : "off";
+			}
+			if (typeof body?.maxLearnedSkills === "number" && Number.isFinite(body.maxLearnedSkills)) {
+				session.settingsManager.setMaxLearnedSkills(body.maxLearnedSkills);
+			}
 			const enabled = isSelfLearningActive({
 				adaptationsFlag: currentAdaptations,
 				executionProfile,
 				settings: session.settingsManager.getSettings(),
 			});
 			broadcast({ type: "self_learning_changed", enabled });
-			return sendJson(response, 200, { enabled });
+			const maxLearnedSkills = typeof session.settingsManager.getMaxLearnedSkills === "function"
+				? session.settingsManager.getMaxLearnedSkills()
+				: undefined;
+			return sendJson(response, 200, {
+				enabled,
+				...(maxLearnedSkills !== undefined ? { maxLearnedSkills } : {}),
+			});
 		}
 		if (method === "POST" && url.pathname === "/adaptations/rollback") {
 			const body = await readJsonBody<{

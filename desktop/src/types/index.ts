@@ -255,4 +255,10 @@ export interface AdaptationSummaryItem {
   lastOutcome?: 'success' | 'failure';
   recurredCorrections?: number;
   pendingChecks?: string[];
+  helped?: number;
+  hurt?: number;
+  trial?: boolean;
+  status?: 'active' | 'trial' | 'retired';
+  description?: string;
+  reason?: string;
 }

@@ -58,6 +58,7 @@ const legitimateCognates = new Set([
 	"toolTitleGrep",
 	"toolTitleGlob",
 	"selfLearningRollback",
+	"selfLearningBadgeArchitecture",
 	"reactUiPlanTodos",
 	"adaptations",
 ]);
@@ -115,6 +116,20 @@ describe("Desktop translation catalogs", () => {
 		expect(translateExact("Copy of file.txt", "zh-CN")).toBe("Copy of file.txt");
 		expect(translateExact("1 of 3", "zh-CN")).toBe("第 1 / 3 项");
 		expect(translateExact("2 of 10", "zh-TW")).toBe("第 2 / 10 項");
+	});
+
+	it("resolves catalog keys and variable placeholders directly in translateExact", async () => {
+		const { translateExact } = await import("../desktop/src/i18n.tsx");
+		expect(translateExact("selfLearning", "zh-CN")).toBe("自我学习");
+		expect(translateExact("selfLearning", "en")).toBe("Self-Learning");
+		expect(translateExact("selfLearningEnabled", "zh-CN")).toBe("自我学习已启用");
+		expect(translateExact("selfLearningDisabledBanner", "zh-CN")).toBe("自我学习已关闭。已学到的内容保留在磁盘上未被删除，但当前不会生效。");
+		expect(translateExact("learnedAdaptations", "zh-CN")).toBe("已学到的适配");
+		expect(translateExact("selfLearningScopeAll", "zh-CN")).toBe("全部");
+		expect(translateExact("selfLearningEmpty", "zh-CN")).toBe("暂无已学到的适配。");
+		expect(translateExact("selfLearningOff", "zh-CN")).toBe("自我学习已关闭");
+		expect(translateExact("selfLearningAppliedCount", "zh-CN", { count: 3 })).toBe("生效：3 次");
+		expect(translateExact("selfLearningAppliedCount", "en", { count: 3 })).toBe("Applied: 3 times");
 	});
 
 });

@@ -62,6 +62,12 @@ export const adaptSchema = Type.Object({
 				"Expected current revision for optimistic concurrency control when action is 'apply'.",
 		}),
 	),
+	trial: Type.Optional(
+		Type.Boolean({
+			description:
+				"Whether to mark this adaptation as experimental/trial. Tools and hooks are automatically placed on trial until verified by the evaluator.",
+		}),
+	),
 });
 
 export type AdaptToolInput = Static<typeof adaptSchema>;
@@ -91,8 +97,10 @@ export function createAdaptToolDefinition(
 		promptSnippet: "Inspect or modify self-learning runtime adaptations (skills, roles, architecture, workflow, profile)",
 		promptGuidelines: [
 			"Use adapt to persist learned patterns, preferences, extra verification checks, or customized roles/skills.",
+			"When you identify a reusable user preference, tool trick, or error recovery pattern during the session, proactively use adapt to record it.",
 			"Control plane tools (performance_admit, performance_gate, update_plan, read_plan, spawn_agent, ask_user, adapt) can never be hidden or removed.",
 			"In Plan mode, only data-only adaptations (profile, skill, role, architecture, workflow, proposal) can be modified without performance admission. Tools and hooks require Build mode.",
+			"New tools and hooks automatically enter a trial phase, subject to automatic rollback by the evaluator if errors occur.",
 			"Every change is tracked in journal.jsonl with revision snapshots and can be rolled back anytime.",
 		],
 		capabilities: { effect: "write", parallelSafe: false },
@@ -133,6 +141,9 @@ export function createAdaptToolDefinition(
 						throw new Error(`name is required for '${input.kind}' adaptations.`);
 					}
 
+					const isToolOrHook = input.kind === "tool" || input.kind === "hook";
+					const trial = isToolOrHook ? true : (input.trial ?? false);
+
 					const result = await writeAdaptation({
 						agentDir,
 						cwd,
@@ -142,6 +153,8 @@ export function createAdaptToolDefinition(
 						content: input.content,
 						expectedRevision: input.expectedRevision,
 						projectTrusted,
+						actor: "model",
+						trial,
 					});
 
 					await options.onRefreshAdaptations?.({
@@ -151,11 +164,12 @@ export function createAdaptToolDefinition(
 						scope,
 					});
 
+					const trialNotice = trial ? " [TRIAL MODE: active under evaluator supervision]" : "";
 					return {
 						content: [
 							{
 								type: "text",
-								text: `Successfully applied ${input.kind} adaptation${input.name ? ` '${input.name}'` : ""} (scope: ${scope}, revision: ${result.revision}) to ${result.filePath}. Runtime has been refreshed.`,
+								text: `Successfully applied ${input.kind} adaptation${input.name ? ` '${input.name}'` : ""}${trialNotice} (scope: ${scope}, revision: ${result.revision}) to ${result.filePath}. Runtime has been refreshed.`,
 							},
 						],
 						details: {
@@ -164,6 +178,7 @@ export function createAdaptToolDefinition(
 							scope,
 							kind: input.kind,
 							name: input.name,
+							trial,
 						},
 					};
 				}
@@ -187,6 +202,7 @@ export function createAdaptToolDefinition(
 						name: input.name,
 						targetRevision: input.targetRevision,
 						projectTrusted,
+						actor: "model",
 					});
 
 					await options.onRefreshAdaptations?.({
@@ -235,10 +251,15 @@ export function createAdaptToolDefinition(
 					}
 
 					const formatted = summaries
-						.map(
-							(s) =>
-								`- [${s.scope}] ${s.kind}${s.name ? `/${s.name}` : ""} (rev: ${s.revision}, ${s.sizeBytes} bytes, updated: ${s.updatedAt}): ${s.filePath}`,
-						)
+						.map((s) => {
+							const trialTag = s.trial ? " [TRIAL]" : "";
+							const statusTag = s.status ? ` [${s.status.toUpperCase()}]` : "";
+							const stats =
+								s.helped !== undefined || s.hurt !== undefined
+									? ` (helped: ${s.helped ?? 0}, hurt: ${s.hurt ?? 0})`
+									: "";
+							return `- [${s.scope}] ${s.kind}${s.name ? `/${s.name}` : ""}${trialTag}${statusTag} (rev: ${s.revision}, ${s.sizeBytes} bytes, updated: ${s.updatedAt})${stats}: ${s.filePath}`;
+						})
 						.join("\n");
 
 					return {

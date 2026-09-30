@@ -473,6 +473,8 @@ export class WorkflowRuntime {
 	canDispatchTool(name: string, definition: ToolDefinition | undefined, mode: CollaborationMode): boolean {
 		if (mode === "build") return true;
 		if (name === "update_plan") return false;
+		// Plan may persist data-only adaptations. The adapt tool itself rejects tool/hook writes.
+		if (name === "adapt") return true;
 		return getToolCapabilities(definition, name).effect === "read";
 	}
 

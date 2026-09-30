@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { packager } from "@electron/packager";
+import { pruneBundledRuntime, pruneElectronLocales } from "./prune-packaged-app.mjs";
 import { createMetisIco } from "./metis-icon.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -114,6 +115,8 @@ async function buildBundledRuntime() {
 	await run(process.execPath, [path.join(runtimeDir, "dist", "cli.js"), "--version"], {
 		env: { ...process.env, METIS_SKIP_VIDEO_TRANSCRIPTION_PREPARE: "1" },
 	});
+	const pruned = await pruneBundledRuntime(runtimeDir, process.platform, architecture);
+	console.log(`Pruned ${pruned.length} bundled runtime paths (kept ONNX native bins for ${process.platform}/${architecture})`);
 }
 
 async function writeOpenHelp() {
@@ -212,6 +215,8 @@ try {
 	});
 	const appDir = appPaths[0];
 	await copyTree(runtimeDir, path.join(appDir, "resources", "metis-runtime"));
+	const prunedLocales = await pruneElectronLocales(appDir);
+	console.log(`Removed ${prunedLocales.length} unused Electron locale packs`);
 
 	console.log("[6/7] Prepare NSIS stage");
 	await rm(stageDir, { recursive: true, force: true });

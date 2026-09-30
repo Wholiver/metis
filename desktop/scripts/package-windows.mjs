@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { packager } from "@electron/packager";
 import { createMetisIco } from "./metis-icon.mjs";
+import { pruneBundledRuntime, pruneElectronLocales } from "./prune-packaged-app.mjs";
 
 const execFileAsync = promisify(execFile);
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -96,6 +97,8 @@ async function buildBundledRuntime() {
 	await run(process.execPath, [path.join(runtimeDir, "dist", "cli.js"), "--version"], {
 		env: { ...process.env, METIS_SKIP_VIDEO_TRANSCRIPTION_PREPARE: "1" },
 	});
+	const pruned = await pruneBundledRuntime(runtimeDir, process.platform, architecture);
+	console.log(`Pruned ${pruned.length} bundled runtime paths (kept ONNX native bins for ${process.platform}/${architecture})`);
 }
 
 async function writeOpenHelp() {
@@ -148,6 +151,8 @@ try {
 	});
 	const appDir = appPaths[0];
 	await copyTree(runtimeDir, path.join(appDir, "resources", "metis-runtime"));
+	const prunedLocales = await pruneElectronLocales(appDir);
+	console.log(`Removed ${prunedLocales.length} unused Electron locale packs`);
 
 	console.log("[6/6] 生成 ZIP");
 	await rm(zipStageDir, { recursive: true, force: true });

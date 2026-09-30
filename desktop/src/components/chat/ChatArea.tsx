@@ -11,6 +11,7 @@ import { SkillCommand } from './SkillPicker';
 import { UserInputCard } from './UserInputCard';
 import { SubagentConversation } from './SubagentConversation';
 import { useI18n } from '../../i18n';
+import type { LearningProgressState } from '../../hooks/useMetisServer';
 
 interface ChatAreaProps {
   agent: Agent;
@@ -61,6 +62,9 @@ interface ChatAreaProps {
   subagentTrail?: SubagentItem[];
   onNavigateBreadcrumb?: (depth: number) => void;
   onBackToParent?: () => void;
+  learningProgress?: LearningProgressState;
+  onOpenSettingsTab?: (tab: string) => void;
+  onDismissLearningProgress?: () => void;
 }
 
 export const ChatArea = React.memo<ChatAreaProps>(({
@@ -112,6 +116,9 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   subagentTrail = [],
   onNavigateBreadcrumb,
   onBackToParent,
+  learningProgress,
+  onOpenSettingsTab,
+  onDismissLearningProgress,
 }) => {
   const { t } = useI18n();
   const [composerActivity, setComposerActivity] = useState(IDLE_COMPOSER_ACTIVITY);
@@ -169,6 +176,9 @@ export const ChatArea = React.memo<ChatAreaProps>(({
         onNewChat={onNewChat}
         breadcrumb={breadcrumb}
         onNavigateBreadcrumb={onNavigateBreadcrumb}
+        learningProgress={learningProgress}
+        onOpenSettingsTab={onOpenSettingsTab}
+        onDismissLearningProgress={onDismissLearningProgress}
       />
       {viewingSubagent ? (
         <SubagentConversation

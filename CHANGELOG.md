@@ -2,17 +2,17 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
-## Unreleased
+## [1.4.0] - 2026-09-30
 
-### Self-Learning / Dynamic Runtime Architecture Adaptation System
+### Self-Learning Runtime, Smaller Desktop Packages
 
-- Replace the legacy memory system with the Self-Learning Runtime Adaptation System (`selfLearning.enabled`, default `false`).
-- Learned adaptations stored as files under user scope (`~/.metis/agent/adaptations/`) and project scope (`~/.metis/agent/adaptations/projects/<projectKey>/`).
-- Strict baseline safety: control-plane tools (`performance_admit`, `performance_gate`, `update_plan`, `read_plan`, `spawn_agent`, `ask_user`, `adapt`) can never be hidden, intercepted, or removed.
-- In-turn `adapt` tool (`apply`, `rollback`, `list`) available to root sessions with full journal tracking and revision snapshots.
-- Idle background learner with zero-token local heuristic filters, strict 6,000 token budget cap, and daily per-scope invocation limits.
-- Outcome ledger tracking runtime adaptation effectiveness, preventing duplicate additions, and triggering rewrites on recurring corrections.
-- Server endpoints (`GET /adaptations`, `POST /adaptations/rollback`, `POST /adaptations/checks/:id/retire`, `POST /adaptations/clear-notifications`) and Desktop settings UI with bilingual i18n support.
+- Replace the legacy advisory memory system with an opt-in Self-Learning runtime (`selfLearning.enabled`, default `false`). When it is off, tools, prompts, and roles stay byte-identical to a clean baseline.
+- Store learned adaptations under `~/.metis/agent/adaptations/` (user scope) and `~/.metis/agent/adaptations/projects/<projectKey>/` (project scope). Control-plane tools cannot be hidden, intercepted, or removed.
+- Root sessions can `adapt` (`list`, `apply`, `rollback`) with a journal and revision snapshots. Idle consolidation and turn review learn skills, architecture guidelines, user-profile traits, roles, and workflow proposals, then merge updates into the existing item instead of stacking duplicates.
+- Learned skills are capped (default 30). Overflow is archived, snapshotted, and kept out of the prompt until restored. A 15% holdout measures trial adaptations, and the Desktop settings panel shows traits, growth, and helped/hurt counts.
+- Server endpoints: `GET /adaptations`, `POST /adaptations/rollback`, `POST /adaptations/checks/:id/retire`, `POST /adaptations/clear-notifications`.
+- Shrink Desktop installers by keeping only the current OS/CPU ONNX Runtime native library, dropping unused `onnxruntime-web` WASM and source maps from the bundled runtime, and removing Electron locales other than English and Chinese. ffmpeg/ffprobe stay bundled for the video tool.
+- Mainland China update checks race the Gitee release API with the GitHub version manifest. Set `METIS_GITEE_TOKEN` when the Gitee API requires an access token. Download links still point at GitHub releases.
 
 ## [1.3.5] - 2026-09-28
 

@@ -3,11 +3,41 @@ import { getMetisUserAgent } from "./metis-user-agent.ts";
 
 const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;
 
-export type ReleaseManifestSourceId = "github" | "custom";
+export type ReleaseManifestSourceId = "github" | "gitee" | "custom";
 
 export interface ReleaseManifestSource {
 	id: ReleaseManifestSourceId;
 	url: string;
+}
+
+export const GITEE_RELEASE_API_URL = "https://gitee.com/api/v5/repos/oliverhuchenrui/metis/releases/latest";
+
+export function getGiteeReleaseUrl(): string {
+	const token = process.env.METIS_GITEE_TOKEN?.trim();
+	if (!token) return GITEE_RELEASE_API_URL;
+	return `${GITEE_RELEASE_API_URL}?access_token=${encodeURIComponent(token)}`;
+}
+
+export function isMainlandChinaUser(): boolean {
+	try {
+		const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+		if (/^(Asia\/(Shanghai|Chongqing|Harbin|Urumqi)|PRC)$/i.test(tz)) {
+			return true;
+		}
+		const locale = Intl.DateTimeFormat().resolvedOptions().locale || "";
+		if (/^zh(-CN)?$/i.test(locale)) {
+			return true;
+		}
+		if (typeof process !== "undefined" && process.env) {
+			const lang = process.env.LANG || process.env.LC_ALL || process.env.LC_MESSAGES || "";
+			if (/zh_CN/i.test(lang)) {
+				return true;
+			}
+		}
+	} catch {
+		// Fallback safely
+	}
+	return false;
 }
 
 /**
@@ -64,27 +94,67 @@ export function parseReleaseManifest(data: unknown): LatestMetisRelease | undefi
 	};
 }
 
+/** Parse a release payload from Gitee API. Returns undefined when invalid. */
+export function parseGiteeRelease(data: unknown): LatestMetisRelease | undefined {
+	if (typeof data !== "object" || data === null) {
+		return undefined;
+	}
+	const release = data as { tag_name?: unknown; name?: unknown; body?: unknown };
+	if (typeof release.tag_name !== "string" || !release.tag_name.trim()) {
+		return undefined;
+	}
+	const rawVersion = release.tag_name.trim().replace(/^v/i, "");
+	if (!valid(rawVersion)) {
+		return undefined;
+	}
+	const note = typeof release.body === "string" && release.body.trim()
+		? release.body.trim()
+		: typeof release.name === "string" && release.name.trim()
+			? release.name.trim()
+			: undefined;
+	return {
+		version: rawVersion,
+		...(note ? { note } : {}),
+	};
+}
+
 /**
  * Override the manifest source list with a comma-separated URL list. Intended for
  * private mirrors and local testing; invalid entries fall back to the built-in source.
+ * When in mainland China, adds the Gitee release endpoint and races concurrently with GitHub.
  */
-export function resolveManifestSources(): ReadonlyArray<ReleaseManifestSource> {
+export function resolveManifestSources(options?: { isMainlandChina?: boolean }): ReadonlyArray<ReleaseManifestSource> {
 	const configured = process.env.METIS_VERSION_MANIFEST_URLS?.trim();
-	if (!configured) {
-		return RELEASE_MANIFEST_SOURCES;
-	}
-	const sources: ReleaseManifestSource[] = [];
-	for (const entry of configured.split(",")) {
-		const url = entry.trim();
-		if (!url) continue;
-		try {
-			new URL(url);
-		} catch {
-			continue;
+	if (configured) {
+		const sources: ReleaseManifestSource[] = [];
+		for (const entry of configured.split(",")) {
+			const url = entry.trim();
+			if (!url) continue;
+			try {
+				new URL(url);
+			} catch {
+				continue;
+			}
+			sources.push({ id: "custom", url });
 		}
-		sources.push({ id: "custom", url });
+		if (sources.length > 0) return sources;
 	}
-	return sources.length > 0 ? sources : RELEASE_MANIFEST_SOURCES;
+
+	const isChina = options?.isMainlandChina
+		?? (process.env.METIS_FORCE_CHINA_MIRROR === "1"
+			? true
+			: process.env.METIS_FORCE_CHINA_MIRROR === "0"
+				? false
+				: (process.env.VITEST ? false : isMainlandChinaUser()));
+
+	if (isChina) {
+		return [
+			{ id: "gitee", url: getGiteeReleaseUrl() },
+			...RELEASE_MANIFEST_SOURCES,
+		];
+	}
+
+	return RELEASE_MANIFEST_SOURCES;
 }
 
 async function fetchReleaseManifest(
@@ -105,7 +175,11 @@ async function fetchReleaseManifest(
 	}
 	// Raw file hosts do not reliably send a JSON content type, so parse the body
 	// text directly instead of relying on response.json().
-	const manifest = parseReleaseManifest(JSON.parse(await response.text()));
+	const text = await response.text();
+	const parsed = JSON.parse(text);
+	const manifest = source.id === "gitee"
+		? parseGiteeRelease(parsed)
+		: parseReleaseManifest(parsed);
 	if (!manifest) {
 		throw new Error(`${source.id} manifest is missing a usable version`);
 	}
@@ -114,11 +188,11 @@ async function fetchReleaseManifest(
 
 export async function getLatestMetisRelease(
 	currentVersion: string,
-	options: { timeoutMs?: number } = {},
+	options: { timeoutMs?: number; isMainlandChina?: boolean } = {},
 ): Promise<LatestMetisRelease | undefined> {
 	if (process.env.METIS_SKIP_VERSION_CHECK || process.env.METIS_OFFLINE) return undefined;
 
-	const sources = resolveManifestSources();
+	const sources = resolveManifestSources(options);
 	const controller = new AbortController();
 	const signal = AbortSignal.any([
 		controller.signal,
@@ -138,14 +212,17 @@ export async function getLatestMetisRelease(
 
 export async function getLatestMetisVersion(
 	currentVersion: string,
-	options: { timeoutMs?: number } = {},
+	options: { timeoutMs?: number; isMainlandChina?: boolean } = {},
 ): Promise<string | undefined> {
 	return (await getLatestMetisRelease(currentVersion, options))?.version;
 }
 
-export async function checkForNewMetisVersion(currentVersion: string): Promise<LatestMetisRelease | undefined> {
+export async function checkForNewMetisVersion(
+	currentVersion: string,
+	options: { timeoutMs?: number; isMainlandChina?: boolean } = {},
+): Promise<LatestMetisRelease | undefined> {
 	try {
-		const latestRelease = await getLatestMetisRelease(currentVersion);
+		const latestRelease = await getLatestMetisRelease(currentVersion, options);
 		if (latestRelease && isNewerPackageVersion(latestRelease.version, currentVersion)) {
 			return latestRelease;
 		}

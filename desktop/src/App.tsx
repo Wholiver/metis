@@ -343,6 +343,8 @@ export function App() {
     respondToExtensionUi,
     contextUsage,
     tokenBreakdown,
+    learningProgress,
+    dismissLearningProgress,
   } = useMetisServer(activeProject);
 
   const { updateCheck, checkForUpdates } = useUpdateCheck(isConnected);
@@ -393,6 +395,11 @@ export function App() {
     setIsSettingsOpen(true);
   }, []);
 
+  const handleOpenSettingsTab = useCallback((tab: string) => {
+    setSettingsTab(tab as any);
+    setIsSettingsOpen(true);
+  }, []);
+
   const handleCloseSettings = useCallback(() => {
     setIsSettingsOpen(false);
   }, []);
@@ -418,23 +425,15 @@ export function App() {
 
   useEffect(() => {
     if (!isConnected) return;
-    let cancelled = false;
     void (async () => {
       try {
         const result = await request<{ enabled: boolean; unnotifiedCount: number }>('/adaptations');
-        if (cancelled || !result || !result.enabled || !result.unnotifiedCount) return;
-        setToast({
-          message: `Learned ${result.unnotifiedCount} new adaptation(s) during idle.`,
-          tone: 'info',
-        });
+        if (!result || !result.enabled || !result.unnotifiedCount) return;
         await request('/adaptations/clear-notifications', 'POST').catch(() => null);
       } catch {
         // ignore
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [isConnected, request]);
   const thinkingCaptureMessages: Message[] = captureThinkingState === 'thinking' ? [{
     id: 'capture-thinking-progress',
@@ -1288,6 +1287,9 @@ export function App() {
         subagentTrail={subagentTrail}
         onNavigateBreadcrumb={handleNavigateBreadcrumb}
         onBackToParent={handleBackToParentAgent}
+        learningProgress={learningProgress}
+        onOpenSettingsTab={handleOpenSettingsTab}
+        onDismissLearningProgress={dismissLearningProgress}
       />
 
       {/* 3. Right Inspector Panel */}

@@ -3496,6 +3496,24 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 			}
+
+			case "learning_progress": {
+				if (event.status === "running") {
+					const progressText = event.step && event.total
+						? `学习中 ${event.step}/${event.total}`
+						: (event.summary ?? "学习中");
+					this.setExtensionStatus("learning", progressText);
+				} else if (event.status === "completed") {
+					this.setExtensionStatus("learning", event.summary ? `学习: ${event.summary}` : undefined);
+					setTimeout(() => {
+						this.setExtensionStatus("learning", undefined);
+					}, 5000);
+				} else {
+					this.setExtensionStatus("learning", undefined);
+				}
+				this.ui.requestRender();
+				break;
+			}
 		}
 	}
 

@@ -1,10 +1,13 @@
-import React, { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CollaborationMode, Message, ModelOption, PendingUserInput, SendMessageOptions, WorkflowProposalState } from '../../types';
 import { UserBubble } from './UserBubble';
 import { AssistantTurn } from './AssistantTurn';
 import LoadingState from '../primitives/LoadingState';
 import { useI18n } from '../../i18n';
 import { useAutoScroll } from '../../hooks/useAutoScroll';
+
+export const INITIAL_VISIBLE_GROUPS = 25;
+export const LOAD_MORE_GROUPS_STEP = 25;
 
 /**
  * Scroll-follow fingerprint for missed layout when tools/thinking appear.
@@ -74,6 +77,20 @@ export const MessageList = React.memo<MessageListProps>(({
     bottomThreshold: 10,
   });
 
+  const scrollElementRef = useRef<HTMLDivElement | null>(null);
+  const topSentinelRef = useRef<HTMLDivElement | null>(null);
+  const prevScrollHeightRef = useRef<number | null>(null);
+  const prevScrollTopRef = useRef<number | null>(null);
+  const loadingEarlierRef = useRef<boolean>(false);
+  const [visibleCount, setVisibleCount] = useState<number>(INITIAL_VISIBLE_GROUPS);
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_GROUPS);
+    prevScrollHeightRef.current = null;
+    prevScrollTopRef.current = null;
+    loadingEarlierRef.current = false;
+  }, [sessionId]);
+
   const onSendMessageRef = useRef(onSendMessage);
   onSendMessageRef.current = onSendMessage;
   const handleRetry = useCallback((promptText: string) => {
@@ -96,6 +113,7 @@ export const MessageList = React.memo<MessageListProps>(({
   const scrollFollowEpoch = messageListContentEpoch(messages, isStreaming);
 
   const bindScroll = useCallback((el: HTMLDivElement | null) => {
+    scrollElementRef.current = el;
     setScrollElement(el);
   }, [setScrollElement]);
 
@@ -113,6 +131,10 @@ export const MessageList = React.memo<MessageListProps>(({
     if (latestUserId !== previousUserIdRef.current) {
       previousUserIdRef.current = latestUserId;
       resume();
+      return;
+    }
+    // Do not force scroll-to-bottom when user is paging earlier history upwards
+    if (prevScrollHeightRef.current !== null) {
       return;
     }
     // Follow newly appended messages, tool start/end, and loading transitions.
@@ -154,6 +176,65 @@ export const MessageList = React.memo<MessageListProps>(({
     return groups;
   }, [messages]);
 
+  const totalGroups = renderGroups.length;
+  const hasHiddenEarlierGroups = totalGroups > visibleCount;
+  const visibleGroups = useMemo(() => {
+    if (!hasHiddenEarlierGroups) return renderGroups;
+    return renderGroups.slice(-visibleCount);
+  }, [hasHiddenEarlierGroups, renderGroups, visibleCount]);
+
+  const loadEarlierGroups = useCallback(() => {
+    if (!hasHiddenEarlierGroups || loadingEarlierRef.current) return;
+    const el = scrollElementRef.current;
+    if (!el) return;
+    loadingEarlierRef.current = true;
+    prevScrollHeightRef.current = el.scrollHeight;
+    prevScrollTopRef.current = el.scrollTop;
+    setVisibleCount((prev) => Math.min(totalGroups, prev + LOAD_MORE_GROUPS_STEP));
+  }, [hasHiddenEarlierGroups, totalGroups]);
+
+  // Adjust scroll position after prepending older messages so reading position does not jump
+  useLayoutEffect(() => {
+    if (prevScrollHeightRef.current !== null && scrollElementRef.current) {
+      const el = scrollElementRef.current;
+      const heightDiff = el.scrollHeight - prevScrollHeightRef.current;
+      if (heightDiff > 0 && prevScrollTopRef.current !== null) {
+        el.scrollTop = prevScrollTopRef.current + heightDiff;
+      }
+      prevScrollHeightRef.current = null;
+      prevScrollTopRef.current = null;
+    }
+    loadingEarlierRef.current = false;
+  }, [visibleGroups.length]);
+
+  const onContainerScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    handleScroll(e);
+    const target = e.currentTarget;
+    if (target.scrollTop < 120 && hasHiddenEarlierGroups && !loadingEarlierRef.current) {
+      loadEarlierGroups();
+    }
+  }, [handleScroll, hasHiddenEarlierGroups, loadEarlierGroups]);
+
+  // Observe top sentinel for silent auto-loading
+  useEffect(() => {
+    const sentinel = topSentinelRef.current;
+    if (!sentinel || !hasHiddenEarlierGroups) return;
+    const scrollContainer = scrollElementRef.current;
+    if (!scrollContainer) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting && !loadingEarlierRef.current) {
+          loadEarlierGroups();
+        }
+      },
+      { root: scrollContainer, rootMargin: '100px 0px 0px 0px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasHiddenEarlierGroups, loadEarlierGroups]);
+
   const activeAssistantGroup = renderGroups.at(-1)?.type === 'assistant' ? renderGroups.at(-1) : undefined;
   const showEmptyActiveTurn = (isStreaming || Boolean(pendingUserInput)) && !activeAssistantGroup;
   // Only the live assistant group (or the empty active turn below) may carry streaming/progress.
@@ -163,7 +244,7 @@ export const MessageList = React.memo<MessageListProps>(({
   return (
     <div
       ref={bindScroll}
-      onScroll={handleScroll}
+      onScroll={onContainerScroll}
       onMouseDown={handleInteraction}
       className="min-h-0 flex-1 overflow-y-auto px-4 py-4 flex flex-col items-center"
       style={{ scrollbarGutter: 'stable both-edges', overflowAnchor: 'none' }}
@@ -183,10 +264,13 @@ export const MessageList = React.memo<MessageListProps>(({
         )}
 
         <div className={`flex w-full min-w-0 max-w-full flex-col ${messages.length === 0 ? 'flex-1' : ''}`}>
+          {hasHiddenEarlierGroups && (
+            <div ref={topSentinelRef} className="h-px w-full pointer-events-none opacity-0" aria-hidden="true" />
+          )}
           {isLoading && messages.length === 0 && (
             <LoadingState className="mx-auto py-12" label={t('reactUiLoadingConversation') || 'Loading conversation…'} />
           )}
-          {renderGroups.map((group) =>
+          {visibleGroups.map((group) =>
             group.type === 'user' ? (
               <UserBubble key={group.key} message={group.message} />
             ) : (

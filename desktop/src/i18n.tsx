@@ -89,18 +89,38 @@ function matchTemplate(value: string): { key: string; variables: Record<string, 
   return undefined;
 }
 
-export function translateExact(value: string, preference: string): string {
+export function translateExact(value: string, preference: string, variables?: Record<string, string | number>): string {
   const whitespace = splitSurroundingWhitespace(value);
   if (whitespace.text && whitespace.text !== value) {
-    return `${whitespace.leading}${translateExact(whitespace.text, preference)}${whitespace.trailing}`;
+    return `${whitespace.leading}${translateExact(whitespace.text, preference, variables)}${whitespace.trailing}`;
   }
-  if (value.includes(' · ')) return value.split(' · ').map((item) => translateExact(item, preference)).join(' · ');
-  const key = reverseEnglishCatalog().get(value);
+  if (value.includes(' · ')) return value.split(' · ').map((item) => translateExact(item, preference, variables)).join(' · ');
   const target = catalogs()[resolveLanguage(preference)];
-  if (key) return target?.[key] || value;
-  const match = matchTemplate(value);
-  if (!match) return value;
-  return (target?.[match.key] || value).replace(/\{([a-zA-Z0-9_]+)\}/g, (_token, name) => translateExact(match.variables[name] || `{${name}}`, preference));
+  const enCatalog = catalogs().en;
+  let result: string;
+  if (target && Object.prototype.hasOwnProperty.call(target, value)) {
+    result = target[value];
+  } else if (enCatalog && Object.prototype.hasOwnProperty.call(enCatalog, value)) {
+    result = target?.[value] || enCatalog[value];
+  } else {
+    const key = reverseEnglishCatalog().get(value);
+    if (key) {
+      result = target?.[key] || value;
+    } else {
+      const match = matchTemplate(value);
+      if (!match) {
+        result = value;
+      } else {
+        result = (target?.[match.key] || value).replace(/\{([a-zA-Z0-9_]+)\}/g, (_token, name) => translateExact(match.variables[name] || `{${name}}`, preference));
+      }
+    }
+  }
+  if (variables) {
+    for (const [k, v] of Object.entries(variables)) {
+      result = result.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+    }
+  }
+  return result;
 }
 
 function nextLocalizedValue(current: string, previous: LocalizedValueState | undefined, preference: string): LocalizedValueState {
@@ -240,16 +260,9 @@ export function useI18n() {
   }, []);
 
   const language = resolveLanguage(preference);
-  const target = catalogs()[language] || catalogs().en || {};
 
   const t = (keyOrText: string, variables?: Record<string, string | number>): string => {
-    let value = target[keyOrText] || catalogs().en?.[keyOrText] || translateExact(keyOrText, preference);
-    if (variables) {
-      for (const [k, v] of Object.entries(variables)) {
-        value = value.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
-      }
-    }
-    return value;
+    return translateExact(keyOrText, preference, variables);
   };
 
   return { language, preference, t };

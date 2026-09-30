@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CONTROL_PLANE_TOOLS, PROTECTED_BUILTIN_ROLES } from "../src/core/adaptations/types.ts";
-import { getEffectiveArchitecture, getEffectiveProfile } from "../src/core/adaptations/effective.ts";
+import { getEffectiveArchitecture, getEffectiveProfile, getEffectiveUserProfileData, renderUserProfile } from "../src/core/adaptations/effective.ts";
 import { ExtensionRunner } from "../src/core/extensions/runner.ts";
 import type { Extension, ExtensionRuntime } from "../src/core/extensions/types.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
@@ -328,6 +328,187 @@ describe("Self-Learning Runtime Wiring & Safety", () => {
 			// helper (non-protected) is loaded from adaptation
 			const helperRole = agents.find((a) => a.name === "helper");
 			expect(helperRole?.description).toBe("Learned helper");
+		});
+	});
+
+	describe("Structured UserProfileData & Deterministic Holdout", () => {
+		it("renders structured user traits and predicted follow-up patterns", () => {
+			const profileData = {
+				version: 2 as const,
+				traits: [
+					{
+						dimension: "communication" as const,
+						statement: "Prefers concise, caveman-style summaries.",
+						confidence: 0.9,
+						evidence: ["User said be brief"],
+						lastConfirmed: new Date().toISOString(),
+						status: "active" as const,
+					},
+					{
+						dimension: "rigor_and_acceptance" as const,
+						statement: "Requires unit test verification before finishing.",
+						confidence: 0.85,
+						evidence: ["Always run vitest"],
+						lastConfirmed: new Date().toISOString(),
+						status: "tentative" as const,
+					},
+					{
+						dimension: "coding_style" as const,
+						statement: "Use TypeScript strict types.",
+						confidence: 0.95,
+						evidence: ["User explicitly stated"],
+						lastConfirmed: new Date().toISOString(),
+						status: "active" as const,
+						userStated: true,
+					},
+				],
+				followUpPredictions: [
+					{
+						triggerPattern: "repair_after_bug",
+						prediction: "Run independent verification before claiming fixed",
+						supportCount: 4,
+						confidence: 0.8,
+					},
+				],
+				updatedAt: new Date().toISOString(),
+			};
+
+			// Normal render without holdout
+			const renderedNormal = renderUserProfile(profileData);
+			expect(renderedNormal).toContain("Prefers concise, caveman-style summaries.");
+			expect(renderedNormal).toContain("Requires unit test verification before finishing.");
+			expect(renderedNormal).toContain("Use TypeScript strict types.");
+			expect(renderedNormal).toContain("Run independent verification before claiming fixed");
+
+			// Holdout: tentative traits are withheld, but userStated traits are NEVER withheld
+			const tentativeStatements = profileData.traits
+				.filter((t) => t.status === "tentative" && !t.userStated)
+				.map((t) => t.statement);
+			const renderedHoldout = renderUserProfile(profileData, new Set(tentativeStatements));
+			expect(renderedHoldout).toContain("Prefers concise, caveman-style summaries.");
+			expect(renderedHoldout).not.toContain("Requires unit test verification before finishing.");
+			expect(renderedHoldout).toContain("Use TypeScript strict types.");
+		});
+
+		it("correctly parses customGuidelines with trigger patterns", () => {
+			const userAdaptations = path.join(tempAgentDir, "adaptations");
+			fs.mkdirSync(userAdaptations, { recursive: true });
+			fs.writeFileSync(
+				path.join(userAdaptations, "architecture.json"),
+				JSON.stringify({
+					customGuidelines: [
+						"Always use ESM imports",
+						{
+							text: "Run vitest with --run flag for one-shot tests",
+							trigger: { commandPattern: "vitest|npm test", keyword: "test" },
+						},
+						{
+							text: "Check tsconfig when module resolution fails",
+							trigger: { errorPattern: "Cannot find module|TS2307" },
+						},
+					],
+				}),
+				"utf8",
+			);
+
+			const effective = getEffectiveArchitecture({
+				cwd: tempDir,
+				agentDir: tempAgentDir,
+				isProjectTrusted: true,
+			});
+
+			expect(effective?.customGuidelines?.length).toBe(3);
+			const g1 = effective!.customGuidelines![1] as any;
+			expect(g1.text).toContain("Run vitest");
+			expect(g1.trigger.command).toBe("vitest|npm test");
+			const g2 = effective!.customGuidelines![2] as any;
+			expect(g2.text).toContain("Check tsconfig");
+			expect(g2.trigger.error).toBe("Cannot find module|TS2307");
+		});
+
+		it("generates learned adaptations prompt summary and injects into system prompt", async () => {
+			const { getLearnedAdaptationsPromptSummary } = await import("../src/core/adaptations/effective.ts");
+			const { buildSystemPrompt } = await import("../src/core/system-prompt.ts");
+
+			// Initially empty
+			const emptySummary = getLearnedAdaptationsPromptSummary({
+				cwd: tempDir,
+				agentDir: tempAgentDir,
+				isProjectTrusted: true,
+			});
+			expect(emptySummary).toBeUndefined();
+
+			// Add a learned skill
+			const skillDir = path.join(tempAgentDir, "adaptations", "skills", "test-deploy");
+			fs.mkdirSync(skillDir, { recursive: true });
+			fs.writeFileSync(
+				path.join(skillDir, "SKILL.md"),
+				`---\nname: test-deploy\ndescription: Deployment procedures for test environment.\n---\n# Test Deploy\n`,
+				"utf8",
+			);
+
+			// Add architecture guidelines
+			fs.writeFileSync(
+				path.join(tempAgentDir, "adaptations", "architecture.json"),
+				JSON.stringify({
+					customGuidelines: [
+						{ text: "Always run pre-deploy checks", trigger: { keyword: "deploy" } },
+					],
+				}),
+				"utf8",
+			);
+
+			// Add user profile preferences
+			fs.writeFileSync(
+				path.join(tempAgentDir, "adaptations", "profile.json"),
+				JSON.stringify({
+					version: 2,
+					traits: [
+						{
+							dimension: "communication",
+							statement: "Use concise responses in Chinese",
+							confidence: 0.9,
+							status: "active",
+							userStated: true,
+						},
+					],
+				}),
+				"utf8",
+			);
+
+			const summary = getLearnedAdaptationsPromptSummary({
+				cwd: tempDir,
+				agentDir: tempAgentDir,
+				isProjectTrusted: true,
+			});
+
+			expect(summary).toBeDefined();
+			expect(summary).toContain("<learned_adaptations>");
+			expect(summary).toContain("### Learned Skills");
+			expect(summary).toContain("test-deploy");
+			expect(summary).toContain("Deployment procedures for test environment");
+			expect(summary).toContain("### Learned Architectural Guidelines");
+			expect(summary).toContain("Always run pre-deploy checks");
+			expect(summary).toContain("keyword \"deploy\"");
+			expect(summary).toContain("### Learned User Preferences");
+			expect(summary).toContain("Use concise responses in Chinese");
+			expect(summary).toContain("without needing to search the filesystem");
+
+			// Verify system prompt integration
+			const prompt = buildSystemPrompt({
+				cwd: tempDir,
+				learnedAdaptationsText: summary,
+			});
+			expect(prompt).toContain("<developer_instructions source=\"self-learning runtime\">");
+			expect(prompt).toContain("<learned_adaptations>");
+			expect(prompt).toContain("test-deploy");
+
+			// Clean baseline guarantee: when learnedAdaptationsText is undefined, prompt has no learned_adaptations
+			const baselinePrompt = buildSystemPrompt({
+				cwd: tempDir,
+			});
+			expect(baselinePrompt).not.toContain("<learned_adaptations>");
+			expect(baselinePrompt).not.toContain("source=\"self-learning runtime\"");
 		});
 	});
 });

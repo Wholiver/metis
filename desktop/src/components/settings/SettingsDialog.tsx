@@ -19,12 +19,13 @@ import {
   Search,
   Server,
   Settings2,
-  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Square,
   Trash2,
+  TrendingUp,
   Upload,
+  Brain,
   X,
 } from 'lucide-react';
 import type { AdaptationSummaryItem, CollaborationMode, ModelOption, ProjectItem, ProviderCatalogEntry, ThinkingOption } from '../../types';
@@ -267,12 +268,16 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [languageOptions, setLanguageOptions] = useState<LanguageOption[]>(fallbackLanguageOptions);
   const [deletingArchivedId, setDeletingArchivedId] = useState<string | null>(null);
   const [selfLearningEnabled, setSelfLearningEnabled] = useState(false);
+  const [maxLearnedSkills, setMaxLearnedSkills] = useState(30);
   const [adaptations, setAdaptations] = useState<AdaptationSummaryItem[]>([]);
+  const [userProfile, setUserProfile] = useState<any>();
+  const [growthReport, setGrowthReport] = useState<any>();
   const [adaptationScopeFilter, setAdaptationScopeFilter] = useState<'all' | 'project' | 'user'>('all');
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
   const [retiringCheckId, setRetiringCheckId] = useState<string | null>(null);
+  const [refreshingSelfLearning, setRefreshingSelfLearning] = useState(false);
   const hasLoadedRef = useRef(false);
-  const translate = (value: string) => translateExact(value, language);
+  const translate = (keyOrText: string, variables?: Record<string, string | number>) => translateExact(keyOrText, language, variables);
 
   const desktop = (window as any).metisDesktop;
   const disabled = !props.isConnected || props.isBusy || saving;
@@ -315,7 +320,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
         props.request<Record<string, any>>('/session/command', 'POST', { command: '/logout' }),
         props.request<Record<string, any>>('/session/command', 'POST', { command: '/language' }),
         props.request<{ enabled: boolean; adaptations: AdaptationSummaryItem[]; unnotifiedCount: number }>('/adaptations').catch(() => null),
-        props.request<{ enabled: boolean }>('/self-learning').catch(() => null),
+        props.request<{ enabled: boolean; maxLearnedSkills?: number }>('/self-learning').catch(() => null),
       ]);
       setSession(nextSession || {}); setDefaults(nextDefaults || {});
       setTrust(typeof nextTrust?.decision === 'string' ? nextTrust.decision : '');
@@ -324,13 +329,26 @@ export function SettingsDialog(props: SettingsDialogProps) {
       setLanguageOptions(Array.isArray(nextLanguage?.options)
         ? nextLanguage.options.filter((item: unknown): item is LanguageOption => Boolean(item && typeof (item as LanguageOption).code === 'string' && typeof (item as LanguageOption).nativeName === 'string'))
         : languageOptions);
-      if (nextSelfLearning && typeof nextSelfLearning.enabled === 'boolean') {
-        setSelfLearningEnabled(nextSelfLearning.enabled);
+      if (nextSelfLearning) {
+        if (typeof nextSelfLearning.enabled === 'boolean') {
+          setSelfLearningEnabled(nextSelfLearning.enabled);
+        }
+        if (typeof nextSelfLearning.maxLearnedSkills === 'number') {
+          setMaxLearnedSkills(nextSelfLearning.maxLearnedSkills);
+        }
       } else if (nextAdaptations && typeof nextAdaptations.enabled === 'boolean') {
         setSelfLearningEnabled(nextAdaptations.enabled);
       }
-      if (nextAdaptations && Array.isArray(nextAdaptations.adaptations)) {
-        setAdaptations(nextAdaptations.adaptations);
+      if (nextAdaptations) {
+        if (Array.isArray(nextAdaptations.adaptations)) {
+          setAdaptations(nextAdaptations.adaptations);
+        }
+        if ((nextAdaptations as any).growth) {
+          setGrowthReport((nextAdaptations as any).growth);
+        }
+        if ((nextAdaptations as any).profile) {
+          setUserProfile((nextAdaptations as any).profile);
+        }
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally {
@@ -338,6 +356,67 @@ export function SettingsDialog(props: SettingsDialogProps) {
       setLoading(false);
     }
   };
+
+  const loadAdaptations = useCallback(async (isManual = false) => {
+    if (!props.isConnected) return;
+    if (isManual) setRefreshingSelfLearning(true);
+    try {
+      const [nextAdaptations, nextSelfLearning] = await Promise.all([
+        props.request<{ enabled: boolean; adaptations: AdaptationSummaryItem[]; unnotifiedCount: number; growth?: any; profile?: any }>('/adaptations').catch(() => null),
+        props.request<{ enabled: boolean; maxLearnedSkills?: number }>('/self-learning').catch(() => null),
+      ]);
+      if (nextSelfLearning) {
+        if (typeof nextSelfLearning.enabled === 'boolean') {
+          setSelfLearningEnabled(nextSelfLearning.enabled);
+        }
+        if (typeof nextSelfLearning.maxLearnedSkills === 'number') {
+          setMaxLearnedSkills(nextSelfLearning.maxLearnedSkills);
+        }
+      } else if (nextAdaptations && typeof nextAdaptations.enabled === 'boolean') {
+        setSelfLearningEnabled(nextAdaptations.enabled);
+      }
+      if (nextAdaptations) {
+        if (Array.isArray(nextAdaptations.adaptations)) {
+          setAdaptations(nextAdaptations.adaptations);
+        }
+        if (nextAdaptations.growth) {
+          setGrowthReport(nextAdaptations.growth);
+        }
+        if (nextAdaptations.profile) {
+          setUserProfile(nextAdaptations.profile);
+        }
+      }
+    } catch {
+      // ignore transient load errors
+    } finally {
+      if (isManual) setRefreshingSelfLearning(false);
+    }
+  }, [props.isConnected, props.request]);
+
+  useEffect(() => {
+    if (!props.open || tab !== 'adaptations' || !props.isConnected) return;
+    void loadAdaptations();
+    const unsubscribe = desktop?.metis?.onEvent?.((payload: any) => {
+      try {
+        const event = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        if (
+          event?.type === 'adaptation_changed' ||
+          event?.type === 'turn_complete' ||
+          event?.type === 'session_state' ||
+          event?.type === 'message'
+        ) {
+          void loadAdaptations();
+        }
+      } catch {}
+    });
+    const interval = setInterval(() => {
+      void loadAdaptations();
+    }, 4000);
+    return () => {
+      unsubscribe?.();
+      clearInterval(interval);
+    };
+  }, [props.open, tab, props.isConnected, loadAdaptations, desktop]);
 
   useEffect(() => {
     if (!oauthProvider && oauthProviders[0]) setOauthProvider(oauthProviders[0]);
@@ -733,6 +812,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
     }, enabled ? (translate('selfLearningEnabled') || 'Self-learning enabled.') : (translate('selfLearningOff') || 'Self-learning disabled.'));
   };
 
+  const handleUpdateMaxSkills = async (val: number) => {
+    const clamped = Math.max(1, Math.min(100, Math.floor(val) || 30));
+    setMaxLearnedSkills(clamped);
+    await run(async () => {
+      await props.request('/self-learning', 'PUT', { maxLearnedSkills: clamped });
+    });
+  };
+
   const handleRollbackAdaptation = async (item: AdaptationSummaryItem) => {
     const title = translate('selfLearningRollbackConfirmTitle') || 'Rollback adaptation';
     const message = (translate('selfLearningRollbackConfirmMessage') || 'Roll back adaptation {name} to previous revision?').replace('{name}', item.name || item.kind);
@@ -774,38 +861,259 @@ export function SettingsDialog(props: SettingsDialogProps) {
     return adaptations.filter((item) => item.scope === adaptationScopeFilter);
   }, [adaptations, adaptationScopeFilter]);
 
+  const liveActiveCount = useMemo(() => {
+    return adaptations.filter((a) => a.status !== 'retired' && !a.isRetired && !a.trial && a.status !== 'trial' && a.status !== 'tentative').length;
+  }, [adaptations]);
+
+  const liveTrialCount = useMemo(() => {
+    return adaptations.filter((a) => a.trial || a.status === 'trial' || a.status === 'tentative').length;
+  }, [adaptations]);
+
+  const liveRetiredCount = useMemo(() => {
+    return adaptations.filter((a) => a.status === 'retired' || a.isRetired).length;
+  }, [adaptations]);
+
+  const getAdaptationDisplayName = (item: AdaptationSummaryItem) => {
+    if (item.name) return item.name;
+    if (item.kind === 'architecture') return translate('selfLearningKindArchitecture') || 'Architecture Guidelines';
+    if (item.kind === 'profile') return translate('selfLearningKindProfile') || 'User Preferences';
+    if (item.kind === 'workflow') return translate('selfLearningKindWorkflow') || 'Workflow Rules';
+    return item.kind;
+  };
+
+  const getAdaptationKindBadge = (kind: string) => {
+    switch (kind) {
+      case 'architecture': return translate('selfLearningBadgeArchitecture') || 'Architecture';
+      case 'skill': return translate('selfLearningBadgeSkill') || 'Skill';
+      case 'profile': return translate('selfLearningBadgeProfile') || 'Profile';
+      case 'workflow': return translate('selfLearningBadgeWorkflow') || 'Workflow';
+      case 'role': return translate('selfLearningBadgeRole') || 'Role';
+      case 'tool': return translate('selfLearningBadgeTool') || 'Tool';
+      case 'hook': return translate('selfLearningBadgeHook') || 'Hook';
+      default: return kind.toUpperCase();
+    }
+  };
+
   // Section 3b: Self-Learning Adaptations
   const adaptationsSection = (
     <div className="space-y-4">
-      <SectionHeading
-        title={translate('selfLearning') || 'Self-Learning'}
-        description={translate('selfLearningDescription') || 'Runtime architecture adapts from experience. Disabling reverts to default architecture.'}
-      />
       <Card>
         <Row
-          label={translate('selfLearningEnabled') || 'Self-learning enabled'}
-          description={translate('selfLearningDescription')}
+          label={translate('selfLearning') || 'Self-Learning'}
+          description={translate('selfLearningDescription') || 'Runtime architecture adapts from experience. Disabling reverts to default architecture.'}
         >
-          <div className="flex items-center gap-2.5">
-            <Status tone={selfLearningEnabled ? 'success' : 'neutral'}>
-              {selfLearningEnabled ? (translate('selfLearningActive') || 'Active') : (translate('selfLearningDisabled') || 'Disabled')}
-            </Status>
-            <Switch
-              label={translate('selfLearningShort') || 'Self-learning'}
-              checked={selfLearningEnabled}
-              disabled={disabled}
-              onChange={() => void handleToggleSelfLearning(!selfLearningEnabled)}
-            />
-          </div>
+          <Switch
+            label={translate('selfLearningEnabled') || 'Self-learning enabled'}
+            checked={selfLearningEnabled}
+            disabled={disabled}
+            onChange={() => void handleToggleSelfLearning(!selfLearningEnabled)}
+          />
         </Row>
+        {selfLearningEnabled && (
+          <Row
+            label={translate('selfLearningMaxSkills') || 'Learned Skills Limit'}
+            description={translate('selfLearningMaxSkillsDesc') || 'Maximum number of learned skills to retain. Exceeding skills are archived based on value or model replacement.'}
+          >
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={maxLearnedSkills}
+              disabled={disabled}
+              onChange={(e) => void handleUpdateMaxSkills(Number(e.target.value))}
+              className="w-20 rounded-control border border-line bg-surface px-2.5 py-1 text-right text-[13px] text-ink font-mono focus:border-accent focus:outline-none"
+            />
+          </Row>
+        )}
+        {!selfLearningEnabled && (
+          <div className="flex items-center gap-2.5 border-t border-line/60 bg-inset/30 px-3.5 py-2.5 text-[11.5px] text-ink-3">
+            <CircleHelp className="h-3.5 w-3.5 shrink-0 text-ink-3" />
+            <p className="min-w-0 flex-1 leading-normal">
+              {translate('selfLearningDisabledBanner') || 'Self-learning is currently disabled. Learned adaptations remain on disk but will not take effect.'}
+            </p>
+          </div>
+        )}
       </Card>
 
-      {!selfLearningEnabled && (
-        <div className="flex items-center gap-2.5 rounded-card border border-line bg-inset/70 px-4 py-3 text-[12.5px] text-ink-2">
-          <ShieldCheck className="h-4 w-4 shrink-0 text-ink-3" />
-          <p className="min-w-0 flex-1 leading-5">
-            {translate('selfLearningDisabledBanner') || 'Self-learning is currently disabled. Learned adaptations remain on disk but will not take effect.'}
-          </p>
+      {selfLearningEnabled && userProfile && Array.isArray(userProfile.traits) && userProfile.traits.length > 0 && (
+        <div className="overflow-hidden rounded-card bg-surface shadow-card">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-line/60">
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-control bg-accent-tint text-accent">
+                <Brain className="h-3.5 w-3.5" />
+              </div>
+              <h3 className="text-[13.5px] font-medium text-ink">
+                {translate('selfLearningUserModel') || 'User Model'}
+              </h3>
+            </div>
+            <span className="text-[11px] font-medium text-ink-3 tabular-nums font-mono">
+              {`${userProfile.traits.length} ${translate('selfLearningTraits') || 'Traits'}`}
+            </span>
+          </div>
+
+          <div className="p-3.5 space-y-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {userProfile.traits.map((trait: any, idx: number) => {
+                const statement = trait.statement || trait.trait || '';
+                const dimension = trait.dimension || trait.category || 'trait';
+                const confidence = Math.round((trait.confidence ?? 1) * 100);
+                const dimLabel =
+                  dimension === 'communication'
+                    ? (translate('selfLearningDimCommunication') || 'Communication')
+                    : dimension === 'coding_style'
+                    ? (translate('selfLearningDimCodingStyle') || 'Coding Style')
+                    : dimension === 'rigor_and_acceptance'
+                    ? (translate('selfLearningDimRigor') || 'Rigor & Testing')
+                    : dimension === 'toolchain'
+                    ? (translate('selfLearningDimToolchain') || 'Toolchain')
+                    : dimension === 'autonomy'
+                    ? (translate('selfLearningDimAutonomy') || 'Autonomy')
+                    : dimension === 'domain_vocabulary'
+                    ? (translate('selfLearningDimDomain') || 'Domain')
+                    : (translate('selfLearningTrait') || dimension);
+
+                return (
+                  <div
+                    key={idx}
+                    className="flex flex-col justify-between gap-2 rounded-control bg-inset/40 dark:bg-inset/25 p-3 border border-line/60 transition-colors hover:border-line-strong hover:bg-inset/60"
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <ValuePill tone="accent" className="text-[10px] uppercase font-mono tracking-wider px-1.5 py-0">
+                          {dimLabel}
+                        </ValuePill>
+                        {trait.userStated && (
+                          <ValuePill tone="green" className="text-[10px] px-1.5 py-0">
+                            {translate('selfLearningUserStated') || 'User Stated'}
+                          </ValuePill>
+                        )}
+                      </div>
+                      <span className="text-[10.5px] font-mono tabular-nums text-ink-3">
+                        {`${confidence}%`}
+                      </span>
+                    </div>
+
+                    <p className="text-[12.5px] text-ink font-medium leading-snug line-clamp-3" title={statement}>
+                      {statement}
+                    </p>
+
+                    {Array.isArray(trait.evidence) && trait.evidence.length > 0 && (
+                      <p className="text-[11px] text-ink-3 truncate" title={trait.evidence.join(' · ')}>
+                        {trait.evidence[0]}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {Array.isArray(userProfile.predictedFollowUps) && userProfile.predictedFollowUps.length > 0 && (
+              <div className="pt-2.5 border-t border-line/60 flex items-center gap-2 flex-wrap">
+                <span className="text-[11.5px] font-medium text-ink-3">
+                  {`${translate('selfLearningPredictedFollowUps') || 'Predicted Follow-ups'}:`}
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {userProfile.predictedFollowUps.map((p: any, idx: number) => (
+                    <span
+                      key={idx}
+                      className="rounded-chip bg-accent/10 border border-accent/20 px-2 py-0.5 text-[11px] text-accent font-medium"
+                    >
+                      {p.action || p.intent || p.prediction}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {selfLearningEnabled && growthReport && (
+        <div className="overflow-hidden rounded-card bg-surface shadow-card">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-line/60">
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-control bg-green-tint text-green">
+                <TrendingUp className="h-3.5 w-3.5" />
+              </div>
+              <h3 className="text-[13.5px] font-medium text-ink">
+                {translate('selfLearningGrowthTrend') || 'Growth Trend'}
+              </h3>
+            </div>
+            <div className="flex items-center gap-2">
+              {typeof growthReport.adaptationSuccessRate === 'number' && (growthReport.totalEvaluatedRuns ?? 0) > 0 ? (
+                <ValuePill tone="green" className="text-[11px]">
+                  {(translate('selfLearningWinRate') || 'Success: {rate}%').replace(
+                    '{rate}',
+                    String(Math.round(growthReport.adaptationSuccessRate * 100)),
+                  )}
+                </ValuePill>
+              ) : (
+                <ValuePill tone="neutral" className="text-[11px]">
+                  {translate('selfLearningNoEvaluations') || 'No evaluations yet'}
+                </ValuePill>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-ink-3 hover:text-ink cursor-pointer"
+                title={translate('selfLearningRefresh') || 'Refresh'}
+                disabled={refreshingSelfLearning}
+                onClick={() => void loadAdaptations(true)}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshingSelfLearning ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </div>
+
+          <div className="px-4 pt-2.5 pb-0.5">
+            <p className="text-[12px] text-ink-3 leading-relaxed">
+              {translate('selfLearningGrowthDesc') || 'Real-time evaluation of adaptation effectiveness in tasks and continuous optimization.'}
+            </p>
+          </div>
+
+          <div className="p-3.5 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="flex flex-col items-center justify-center rounded-control bg-inset/40 dark:bg-inset/25 py-2.5 px-3 border border-line/50 transition-colors">
+                <span className="text-[10.5px] font-medium text-ink-3 uppercase tracking-wider">
+                  {translate('selfLearningTotalRuns') || 'Total Runs'}
+                </span>
+                <span className="mt-1 font-semibold text-[17px] tabular-nums text-ink">
+                  {growthReport.totalEvaluatedRuns ?? 0}
+                </span>
+              </div>
+              <div className="flex flex-col items-center justify-center rounded-control bg-inset/40 dark:bg-inset/25 py-2.5 px-3 border border-line/50 transition-colors">
+                <span className="text-[10.5px] font-medium text-ink-3 uppercase tracking-wider">
+                  {translate('selfLearningActive') || 'Active'}
+                </span>
+                <span className="mt-1 font-semibold text-[17px] tabular-nums text-green">
+                  {typeof growthReport.activeCount === 'number' && growthReport.activeCount > 0
+                    ? growthReport.activeCount
+                    : liveActiveCount}
+                </span>
+              </div>
+              <div className="flex flex-col items-center justify-center rounded-control bg-inset/40 dark:bg-inset/25 py-2.5 px-3 border border-line/50 transition-colors">
+                <span className="text-[10.5px] font-medium text-ink-3 uppercase tracking-wider">
+                  {translate('selfLearningTrial') || 'Trial'}
+                </span>
+                <span className="mt-1 font-semibold text-[17px] tabular-nums text-orange">
+                  {typeof growthReport.trialCount === 'number' && growthReport.trialCount > 0
+                    ? growthReport.trialCount
+                    : liveTrialCount}
+                </span>
+              </div>
+              <div className="flex flex-col items-center justify-center rounded-control bg-inset/40 dark:bg-inset/25 py-2.5 px-3 border border-line/50 transition-colors">
+                <span className="text-[10.5px] font-medium text-ink-3 uppercase tracking-wider">
+                  {translate('selfLearningRetired') || 'Retired'}
+                </span>
+                <span className="mt-1 font-semibold text-[17px] tabular-nums text-ink-3">
+                  {typeof growthReport.retiredCount === 'number' && growthReport.retiredCount > 0
+                    ? growthReport.retiredCount
+                    : liveRetiredCount}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -813,14 +1121,16 @@ export function SettingsDialog(props: SettingsDialogProps) {
         <h3 className="text-[14px] font-semibold text-ink">
           {`${translate('learnedAdaptations') || 'Learned Adaptations'} (${filteredAdaptations.length})`}
         </h3>
-        <div className="flex items-center gap-1 rounded-chip bg-field p-0.5 border border-line">
+        <div className="flex items-center gap-0.5 rounded-chip bg-field p-0.5 border border-line">
           {(['all', 'project', 'user'] as const).map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => setAdaptationScopeFilter(s)}
-              className={`rounded-chip px-2.5 py-1 text-[11.5px] font-medium transition-colors ${
-                adaptationScopeFilter === s ? 'bg-surface text-ink shadow-sm' : 'text-ink-3 hover:text-ink'
+              className={`rounded-chip px-2.5 py-1 text-[11px] font-medium transition-all duration-150 outline-none focus:outline-none focus-visible:outline-none select-none active:scale-[0.97] ${
+                adaptationScopeFilter === s
+                  ? 'bg-surface text-ink shadow-xs ring-1 ring-black/5 dark:ring-white/10'
+                  : 'text-ink-3 hover:text-ink hover:bg-hover-2'
               }`}
             >
               {s === 'all'
@@ -834,11 +1144,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
       </div>
 
       {filteredAdaptations.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-card border border-dashed border-line-strong bg-inset/50 dark:bg-surface/50 py-10 px-6 text-center">
+        <div className="flex flex-col items-center justify-center rounded-card border border-dashed border-line-strong bg-inset/30 dark:bg-surface/30 py-10 px-6 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface shadow-xs border border-line/60 mb-3 text-ink-3">
+            <SlidersHorizontal className="h-4 w-4 text-ink-3" strokeWidth={1.75} aria-hidden="true" />
+          </div>
           <p className="text-[13.5px] font-semibold text-ink-2">
             {translate('selfLearningEmpty') || 'No adaptations recorded yet.'}
           </p>
-          <p className="mt-1.5 max-w-md text-[12px] text-ink-3 leading-normal">
+          <p className="mt-1.5 max-w-md text-[12px] text-ink-3 leading-relaxed">
             {translate('selfLearningEmptyHint') || 'Metis learns adaptations from task outcomes, corrections, and user preferences automatically when self-learning is enabled.'}
           </p>
         </div>
@@ -847,18 +1160,33 @@ export function SettingsDialog(props: SettingsDialogProps) {
           {filteredAdaptations.map((item) => {
             const isRollingBack = rollingBackId === item.id;
             return (
-              <Card key={item.id}>
-                <div className="p-3 space-y-2.5">
+              <div
+                key={item.id}
+                className="overflow-hidden rounded-card bg-surface shadow-card border border-line/40 transition-colors hover:border-line"
+              >
+                <div className="p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2 flex-wrap min-w-0">
                       <span className="text-[13.5px] font-medium text-ink truncate">
-                        {item.name || item.kind}
+                        {getAdaptationDisplayName(item)}
                       </span>
-                      <ValuePill tone="accent" className="text-[10.5px] uppercase">{item.kind}</ValuePill>
+                      <ValuePill tone="accent" className="text-[10.5px] font-medium">
+                        {getAdaptationKindBadge(item.kind)}
+                      </ValuePill>
                       <ValuePill className="text-[10.5px]">
                         {item.scope === 'project' ? (translate('selfLearningScopeProject') || 'Project') : (translate('selfLearningScopeUser') || 'User')}
                       </ValuePill>
                       <ValuePill className="text-[10.5px]">{`Rev ${item.revision}`}</ValuePill>
+                      {item.trial && (
+                        <ValuePill tone="orange" className="text-[10.5px] font-semibold">
+                          {translate('selfLearningTrial') || 'Trial'}
+                        </ValuePill>
+                      )}
+                      {item.status && item.status !== 'active' && (
+                        <Status tone={item.status === 'retired' ? 'neutral' : 'warning'}>
+                          {item.status === 'retired' ? (translate('selfLearningRetired') || 'Retired') : item.status}
+                        </Status>
+                      )}
                       {!selfLearningEnabled && (
                         <Status tone="neutral">{translate('notApplied') || 'Not Applied'}</Status>
                       )}
@@ -882,30 +1210,45 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4 text-[11.5px] text-ink-3 flex-wrap">
-                    <span>
-                      {(translate('selfLearningAppliedCount') || 'Applied: {count} times').replace('{count}', String(item.appliedCount ?? 0))}
-                    </span>
-                    {item.lastOutcome && (
-                      <span className="flex items-center gap-1">
-                        {`${translate('selfLearningLastOutcome') || 'Last outcome'}:`}
-                        <Status tone={item.lastOutcome === 'success' ? 'success' : 'danger'}>
-                          {item.lastOutcome}
-                        </Status>
+                  {(item.description || item.reason) && (
+                    <p className="text-[12px] text-ink-2 leading-relaxed font-normal">
+                      {item.description || item.reason}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between gap-3 text-[11.5px] text-ink-3 flex-wrap pt-0.5 border-t border-line/40">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="tabular-nums">
+                        {(translate('selfLearningAppliedCount') || 'Applied: {count} times').replace('{count}', String(item.appliedCount ?? 0))}
                       </span>
-                    )}
-                    {(item.recurredCorrections ?? 0) > 0 && (
-                      <span className="flex items-center gap-1 text-ink-2">
-                        {(translate('selfLearningRecurringCorrections') || 'Recurring corrections: {count}').replace('{count}', String(item.recurredCorrections))}
-                      </span>
-                    )}
-                    <span className="truncate max-w-[260px] font-mono text-[10.5px]" title={item.filePath}>
+                      {(item.helped !== undefined || item.hurt !== undefined) && (
+                        <span className="text-ink-2 font-mono text-[10.5px] tabular-nums">
+                          {(translate('selfLearningHelpedHurt') || 'Helped: {helped} · Hurt: {hurt}')
+                            .replace('{helped}', String(item.helped ?? 0))
+                            .replace('{hurt}', String(item.hurt ?? 0))}
+                        </span>
+                      )}
+                      {item.lastOutcome && (
+                        <span className="flex items-center gap-1.5">
+                          <span>{`${translate('selfLearningLastOutcome') || 'Last outcome'}:`}</span>
+                          <Status tone={item.lastOutcome === 'success' ? 'success' : 'danger'}>
+                            {item.lastOutcome}
+                          </Status>
+                        </span>
+                      )}
+                      {(item.recurredCorrections ?? 0) > 0 && (
+                        <span className="flex items-center gap-1 text-ink-2 tabular-nums">
+                          {(translate('selfLearningRecurringCorrections') || 'Recurring corrections: {count}').replace('{count}', String(item.recurredCorrections))}
+                        </span>
+                      )}
+                    </div>
+                    <span className="truncate max-w-[220px] font-mono text-[10.5px] text-ink-3/70 hover:text-ink-2 transition-colors cursor-default" title={item.filePath}>
                       {item.filePath.replace(/^\/Users\/[^/]+/, '~')}
                     </span>
                   </div>
 
                   {Array.isArray(item.pendingChecks) && item.pendingChecks.length > 0 && (
-                    <div className="rounded-control bg-field p-2.5 space-y-1.5 border border-line">
+                    <div className="rounded-control bg-inset/40 dark:bg-inset/25 p-2.5 space-y-1.5 border border-line/60">
                       <div className="text-[11.5px] font-medium text-ink-2">
                         {`${translate('selfLearningPendingChecks') || 'Pending checks'}:`}
                       </div>
@@ -933,7 +1276,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     </div>
                   )}
                 </div>
-              </Card>
+              </div>
             );
           })}
         </div>

@@ -10,6 +10,7 @@ import {
 	mkdirSync,
 	openSync,
 	readdirSync,
+	readFileSync,
 	readSync,
 	statSync,
 	writeFileSync,
@@ -558,11 +559,11 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
 	return entries;
 }
 
-function readSessionHeader(filePath: string): SessionHeader | null {
+export function readSessionHeader(filePath: string): SessionHeader | null {
 	try {
 		const fd = openSync(filePath, "r");
-		const buffer = Buffer.alloc(512);
-		const bytesRead = readSync(fd, buffer, 0, 512, 0);
+		const buffer = Buffer.alloc(4096);
+		const bytesRead = readSync(fd, buffer, 0, 4096, 0);
 		closeSync(fd);
 		const firstLine = buffer.toString("utf8", 0, bytesRead).split("\n")[0];
 		if (!firstLine) return null;
@@ -704,6 +705,78 @@ const sessionInfoCache = new Map<string, SessionInfoCacheEntry>();
 const MAX_CACHED_SESSION_INFOS = 4000;
 const MAX_CACHED_SESSION_INFO_BYTES = 256 * 1024 * 1024;
 let cachedSessionInfoBytes = 0;
+let diskCacheLoaded = false;
+let diskCacheSaveTimer: NodeJS.Timeout | undefined;
+
+function getSessionIndexCachePath(): string {
+	return join(getDefaultAgentDir(), "cache", "sessions-index-v1.json");
+}
+
+function ensureDiskCacheLoaded(): void {
+	if (diskCacheLoaded) return;
+	diskCacheLoaded = true;
+	try {
+		const cachePath = getSessionIndexCachePath();
+		if (!existsSync(cachePath)) return;
+		const raw = readFileSync(cachePath, "utf8");
+		const data = JSON.parse(raw);
+		if (Array.isArray(data)) {
+			for (const entry of data) {
+				if (
+					entry &&
+					typeof entry.path === "string" &&
+					typeof entry.mtimeMs === "number" &&
+					typeof entry.size === "number" &&
+					entry.info
+				) {
+					const info: SessionInfo = {
+						...entry.info,
+						created: new Date(entry.info.created),
+						modified: new Date(entry.info.modified),
+					};
+					sessionInfoCache.set(entry.path, {
+						mtimeMs: entry.mtimeMs,
+						size: entry.size,
+						hasMessageText: Boolean(entry.hasMessageText),
+						info,
+					});
+					cachedSessionInfoBytes += entry.size;
+				}
+			}
+		}
+	} catch {
+		// Non-fatal
+	}
+}
+
+function scheduleDiskCacheSave(): void {
+	if (diskCacheSaveTimer) return;
+	diskCacheSaveTimer = setTimeout(() => {
+		diskCacheSaveTimer = undefined;
+		try {
+			const cacheDir = join(getDefaultAgentDir(), "cache");
+			if (!existsSync(cacheDir)) {
+				mkdirSync(cacheDir, { recursive: true });
+			}
+			const serialized = [];
+			for (const [filePath, entry] of sessionInfoCache.entries()) {
+				// Don't persist bloated allMessagesText to keep index file small and fast
+				const { allMessagesText, ...persistedInfo } = entry.info;
+				serialized.push({
+					path: filePath,
+					mtimeMs: entry.mtimeMs,
+					size: entry.size,
+					hasMessageText: false,
+					info: persistedInfo,
+				});
+				if (serialized.length >= 2000) break;
+			}
+			writeFileSync(getSessionIndexCachePath(), JSON.stringify(serialized), "utf8");
+		} catch {
+			// Non-fatal
+		}
+	}, 500);
+}
 
 function readSessionInfoCache(
 	filePath: string,
@@ -711,6 +784,7 @@ function readSessionInfoCache(
 	size: number,
 	needsMessageText: boolean,
 ): SessionInfo | undefined {
+	ensureDiskCacheLoaded();
 	const cached = sessionInfoCache.get(filePath);
 	if (!cached || cached.mtimeMs !== mtimeMs || cached.size !== size) return undefined;
 	if (needsMessageText && !cached.hasMessageText) return undefined;
@@ -740,12 +814,18 @@ function writeSessionInfoCache(filePath: string, entry: SessionInfoCacheEntry): 
 		sessionInfoCache.delete(oldestPath);
 		cachedSessionInfoBytes -= oldestEntry.size;
 	}
+	scheduleDiskCacheSave();
 }
 
 /** Drop memoized session listings. Exported for tests and for explicit cache busting. */
 export function clearSessionInfoCache(): void {
 	sessionInfoCache.clear();
 	cachedSessionInfoBytes = 0;
+	diskCacheLoaded = true;
+	if (diskCacheSaveTimer) {
+		clearTimeout(diskCacheSaveTimer);
+		diskCacheSaveTimer = undefined;
+	}
 }
 
 async function buildSessionInfo(
@@ -1675,9 +1755,8 @@ export class SessionManager {
 	 */
 	static open(path: string, sessionDir?: string, cwdOverride?: string): SessionManager {
 		const resolvedPath = resolvePath(path);
-		// Extract cwd from session header if possible, otherwise use process.cwd()
-		const entries = loadEntriesFromFile(resolvedPath);
-		const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
+		// Extract cwd from session header without parsing entire file twice
+		const header = readSessionHeader(resolvedPath);
 		const cwd = cwdOverride ?? header?.cwd ?? process.cwd();
 		// If no sessionDir provided, derive from file's parent directory
 		const dir = sessionDir ? normalizePath(sessionDir) : resolve(resolvedPath, "..");

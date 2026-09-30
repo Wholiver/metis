@@ -179,6 +179,7 @@ describe("WorkflowRuntime", () => {
 		expect(runtime.canDispatchTool("write", undefined, "plan")).toBe(false);
 		expect(runtime.canDispatchTool("bash", undefined, "plan")).toBe(false);
 		expect(runtime.canDispatchTool("update_plan", undefined, "plan")).toBe(false);
+		expect(runtime.canDispatchTool("adapt", undefined, "plan")).toBe(true);
 		expect(runtime.canDispatchTool(extensionTool.name, extensionTool, "plan")).toBe(false);
 		expect(runtime.canDispatchTool("write", undefined, "build")).toBe(true);
 		expect(runtime.canDispatchTool("update_plan", undefined, "build")).toBe(true);

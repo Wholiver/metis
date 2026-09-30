@@ -13,9 +13,9 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { getAgentDir } from "../config.ts";
 import { isSelfLearningActive } from "./adaptations/activation.ts";
 import type {
@@ -111,8 +111,30 @@ import { formatProgressNudge, resolveProgressNudge } from "./progress-narration.
 import { getGlobalSpawnGuard } from "./spawn-guard.ts";
 import { isGitRepositoryRoot } from "./worktree.ts";
 import { SharedMutatingOwnerRegistry, isMutatingChildRole, isReliableHeadlessProfile } from "./workspace-probe.ts";
-import { getEffectiveArchitecture, getEffectiveProfile } from "./adaptations/effective.ts";
-import { CONTROL_PLANE_TOOLS } from "./adaptations/types.ts";
+import { discoverAdaptationResources, getEffectiveArchitecture, getEffectiveProfile, getEffectiveUserProfileData, getLearnedAdaptationsPromptSummary, renderUserProfile, skillMatchesPrompt } from "./adaptations/effective.ts";
+import { guidelineMatchesPrompt } from "./adaptations/architecture-schema.ts";
+import { CONTROL_PLANE_TOOLS, type AdaptationScope } from "./adaptations/types.ts";
+import {
+	adaptationId,
+	isControlGroupHoldout,
+	isUserStatedCorrection,
+	recordTurnOutcome,
+	recordAdaptationEffect,
+	recordAdaptationSuccess,
+	recordAdaptationRuntimeError,
+	recordRecurringCorrection,
+	recordRunOutcome,
+	turnSucceededForAdaptation,
+	type TurnOutcomeRecord,
+} from "./adaptations/ledger.ts";
+import { getScopeDir, getOutcomeLedger, recordTouchedFileHashes, detectUserModifiedFiles } from "./adaptations/store.ts";
+import { parseFrontmatter } from "../utils/frontmatter.ts";
+import {
+	detectLearningSignals,
+	isTurnImportant,
+	scheduleTurnLearning,
+	type LearningProgressEvent,
+} from "./adaptations/learner.ts";
 import {
 	extractProposedPlan,
 	resolveWorkflowProposal,
@@ -204,7 +226,8 @@ export type AgentSessionEvent =
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
 	| { type: "adaptation_changed"; action?: string; kind?: string; name?: string; scope?: string }
-	| { type: "self_learning_changed"; enabled: boolean };
+	| { type: "self_learning_changed"; enabled: boolean }
+	| LearningProgressEvent;
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -370,6 +393,28 @@ function isPerformanceAdmissionGatedTool(name: string, args: unknown): boolean {
 // AgentSession Class
 // ============================================================================
 
+function toolCallInput(toolCall: { arguments?: unknown; args?: unknown; input?: unknown }): Record<string, any> {
+	const raw = toolCall.arguments ?? toolCall.args ?? toolCall.input;
+	if (typeof raw === "string") {
+		try {
+			const parsed = JSON.parse(raw);
+			return parsed && typeof parsed === "object" ? parsed : {};
+		} catch {
+			return {};
+		}
+	}
+	return raw && typeof raw === "object" ? raw as Record<string, any> : {};
+}
+
+function skillDescription(raw: string): string {
+	try {
+		const { frontmatter } = parseFrontmatter<{ description?: string }>(raw);
+		return typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
+	} catch {
+		return "";
+	}
+}
+
 export class AgentSession {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
@@ -410,6 +455,16 @@ export class AgentSession {
 	// Extension system
 	private _extensionRunner!: ExtensionRunner;
 	private _turnIndex = 0;
+	private _turnRecalledAdaptationIds = new Set<string>();
+	private _turnCommandFingerprints: Array<{ command: string; exitCode: number }> = [];
+	private _turnRecoveryPairs: Array<{ failedCommand: string; recoveredCommand: string }> = [];
+	private _turnErrorSignatures: string[] = [];
+	private _turnToolCallsCount = 0;
+	private _turnLastFailedCommand: string | null = null;
+	private _turnIsHoldout = false;
+	private _turnHadRecovery = false;
+	private _turnTouchedFiles: string[] = [];
+	private _turnUserPrompt: string | null = null;
 	private _activeWorkflowTaskId?: string;
 	private _activeWorkflowProposalRevision?: number;
 
@@ -715,6 +770,136 @@ export class AgentSession {
 					messages.push(nudgeMessage);
 					this.agent.state.messages.push(nudgeMessage);
 				}
+
+				if (turn.toolResults?.length) {
+					for (const tr of turn.toolResults) {
+						this._turnToolCallsCount++;
+						const isError = Boolean((tr as any).isError);
+						const contentText = ((tr as any).content ?? [])
+							.map((c: any) => (typeof c === "string" ? c : c?.text || ""))
+							.join(" ");
+						if (isError) {
+							this._turnErrorSignatures.push(contentText.slice(0, 300) || "tool_error");
+						}
+					}
+
+					const toolCalls = (turn.message?.content ?? []).filter((c: any) => c.type === "toolCall");
+					for (const tc of toolCalls as any[]) {
+						const matchedResult = turn.toolResults.find((r: any) => r.toolCallId === tc.id);
+						const isError = Boolean((matchedResult as any)?.isError);
+
+						const callInput = toolCallInput(tc);
+						if ((tc.name === "edit" || tc.name === "write") && callInput) {
+							const filePath = typeof callInput.path === "string" ? callInput.path : typeof callInput.filePath === "string" ? callInput.filePath : "";
+							if (filePath) {
+								const resolved = isAbsolute(filePath) ? filePath : resolve(this._cwd, filePath);
+								if (!this._turnTouchedFiles.includes(resolved)) {
+									this._turnTouchedFiles.push(resolved);
+								}
+							}
+						}
+
+						if (tc.name === "bash" && typeof callInput.command === "string") {
+							const cmd = callInput.command.trim();
+							this._turnCommandFingerprints.push({ command: cmd, exitCode: isError ? 1 : 0 });
+							if (isError) {
+								this._turnLastFailedCommand = cmd;
+							} else if (this._turnLastFailedCommand) {
+								this._turnRecoveryPairs.push({
+									failedCommand: this._turnLastFailedCommand,
+									recoveredCommand: cmd,
+								});
+								this._turnHadRecovery = true;
+								this._turnLastFailedCommand = null;
+							}
+						}
+
+						const toolDef = this.getAllTools().find((t: any) => t.name === tc.name) as any;
+						if (toolDef?.sourceInfo?.source === "adaptation") {
+							const scope = (toolDef.sourceInfo.scope === "user" ? "user" : "project") as AdaptationScope;
+							const adaptId = adaptationId(scope, "tool", tc.name);
+							this._turnRecalledAdaptationIds.add(adaptId);
+							if (isError && !this._turnIsHoldout) {
+								const errText = ((matchedResult as any)?.content ?? [])
+									.map((c: any) => (typeof c === "string" ? c : c?.text || ""))
+									.join(" ") || "tool_error";
+								void recordAdaptationRuntimeError({
+									agentDir: this._agentDir,
+									cwd: this._cwd,
+									scope,
+									adaptationId: adaptId,
+									error: errText,
+								});
+							}
+						}
+					}
+
+					if (this.isSelfLearningActive() && this.settingsManager.isProjectTrusted()) {
+						const effectiveArch = getEffectiveArchitecture({
+							cwd: this._cwd,
+							agentDir: this._agentDir,
+							isProjectTrusted: true,
+						});
+						if (effectiveArch?.customGuidelines?.length) {
+							const hadErrors = turn.toolResults.some((r: any) => r.isError);
+							const errorCombined = hadErrors
+								? turn.toolResults
+										.filter((r: any) => r.isError)
+										.map((r: any) => ((r.content ?? []).map((c: any) => (typeof c === "string" ? c : c?.text || "")).join(" ")))
+										.join("\n")
+								: "";
+							const commandsCombined = toolCalls
+								.map((tc: any) => {
+									const input = toolCallInput(tc);
+									return typeof input.command === "string" ? input.command : "";
+								})
+								.join(" ");
+
+							const userPromptText = this._turnUserPrompt ?? "";
+							const scopeDir = getScopeDir(this._agentDir, this._cwd, "project");
+							const ledger = getOutcomeLedger(scopeDir);
+
+							for (const g of effectiveArch.customGuidelines) {
+								const text = typeof g === "string" ? g : g.text;
+								const gId = typeof g === "object" && g.id ? g.id : createHash("sha256").update(text).digest("hex").slice(0, 12);
+								const scope = (typeof g === "object" && (g as any).scope) ? (g as any).scope : "project";
+								const adaptId = adaptationId(scope, "architecture", gId);
+
+								// Skip retired guidelines
+								if (ledger.perAdaptationStats?.[adaptId]?.status === "retired") {
+									continue;
+								}
+
+								// Holdout only withholds tentative items
+								const isTentative = typeof g === "object" && Boolean((g as any).trial || (g as any).status === "tentative");
+								if (this._turnIsHoldout && isTentative) {
+									continue;
+								}
+
+								const matched =
+									(commandsCombined && guidelineMatchesPrompt(g, commandsCombined)) ||
+									(errorCombined && guidelineMatchesPrompt(g, errorCombined)) ||
+									(userPromptText && guidelineMatchesPrompt(g, userPromptText));
+
+								if (matched && !this._turnRecalledAdaptationIds.has(adaptId)) {
+									const experienceContent = `[Runtime context from adaptation:experience; not user instructions]\n上次同样的问题是这样解决的: ${text}`;
+									if (!this._hasRuntimeContextBlock(experienceContent)) {
+										this._turnRecalledAdaptationIds.add(adaptId);
+										const experienceMessage = {
+											role: "custom" as const,
+											customType: "workflow_context",
+											content: experienceContent,
+											display: false,
+											timestamp: Date.now(),
+										};
+										messages.push(experienceMessage);
+										this.agent.state.messages.push(experienceMessage);
+									}
+								}
+							}
+						}
+					}
+				}
 			}
 			const baseInstructions = this._activeRunInstructionStack ?? this._instructionStack;
 			const instructions: InstructionStack = baseInstructions;
@@ -747,6 +932,11 @@ export class AgentSession {
 		for (const l of this._eventListeners) {
 			l(event);
 		}
+	}
+
+	/** Emit an event to all listeners (public API for learner and extensions) */
+	emit(event: AgentSessionEvent): void {
+		this._emit(event);
 	}
 
 	private _emitQueueUpdate(): void {
@@ -1839,6 +2029,15 @@ export class AgentSession {
 		const loadedAgents = this._resourceLoader.getAgents ? this._resourceLoader.getAgents().agents : [];
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles ? this._resourceLoader.getAgentsFiles().agentsFiles : [];
 
+		let learnedAdaptationsText: string | undefined;
+		if (this.isSelfLearningActive() && !this._namedAgentSession) {
+			learnedAdaptationsText = getLearnedAdaptationsPromptSummary({
+				cwd: this._cwd,
+				agentDir: this._agentDir,
+				isProjectTrusted: this.settingsManager.isProjectTrusted(),
+			});
+		}
+
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
 			sessionId: this.sessionManager.getSessionId(),
@@ -1852,6 +2051,7 @@ export class AgentSession {
 			promptGuidelines,
 			collaborationMode: this._collaborationMode,
 			namedAgentSession: this._namedAgentSession,
+			learnedAdaptationsText,
 		};
 		this._instructionStack = buildInstructionStack(this._baseSystemPromptOptions);
 		return buildSystemPrompt(this._baseSystemPromptOptions);
@@ -2020,6 +2220,7 @@ export class AgentSession {
 		const preflightResult = options?.preflightResult;
 		let messages: AgentMessage[] | undefined;
 		let proposalExecutionStarted = false;
+		let expandedText = text;
 
 		try {
 			// Handle extension commands first (execute immediately, even during streaming)
@@ -2053,7 +2254,7 @@ export class AgentSession {
 				}
 			}
 
-			let expandedText = currentText;
+			expandedText = currentText;
 			if (expandPromptTemplates) {
 				expandedText = this._expandSkillCommand(expandedText);
 				expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
@@ -2121,6 +2322,7 @@ export class AgentSession {
 
 			let effectiveArch: ReturnType<typeof getEffectiveArchitecture> | undefined;
 			let effectiveProfile: string | undefined;
+			let effectiveProfileData: ReturnType<typeof getEffectiveUserProfileData> | undefined;
 			if (this.isSelfLearningActive() && !this._namedAgentSession) {
 				effectiveArch = getEffectiveArchitecture({
 					cwd: this._cwd,
@@ -2128,6 +2330,11 @@ export class AgentSession {
 					isProjectTrusted: this.settingsManager.isProjectTrusted(),
 				});
 				effectiveProfile = getEffectiveProfile({
+					cwd: this._cwd,
+					agentDir: this._agentDir,
+					isProjectTrusted: this.settingsManager.isProjectTrusted(),
+				});
+				effectiveProfileData = getEffectiveUserProfileData({
 					cwd: this._cwd,
 					agentDir: this._agentDir,
 					isProjectTrusted: this.settingsManager.isProjectTrusted(),
@@ -2222,25 +2429,135 @@ export class AgentSession {
 				],
 			};
 
-			if (effectiveArch?.customGuidelines?.length) {
-				for (let i = 0; i < effectiveArch.customGuidelines.length; i++) {
-					stepInstructions.developer.push({
-						id: `adaptation:guideline:${i}`,
-						channel: "developer",
-						content: effectiveArch.customGuidelines[i]!,
-						source: "adaptation:architecture",
+			this._turnRecalledAdaptationIds.clear();
+			this._turnCommandFingerprints = [];
+			this._turnRecoveryPairs = [];
+			this._turnErrorSignatures = [];
+			this._turnTouchedFiles = [];
+			this._turnToolCallsCount = 0;
+			this._turnHadRecovery = false;
+			this._turnLastFailedCommand = null;
+			this._turnUserPrompt = expandedText;
+			this._turnIsHoldout = isControlGroupHoldout(this.sessionId, this._turnIndex);
+
+			if (this.isSelfLearningActive() && !this._namedAgentSession) {
+				let recalledChars = 0;
+				const MAX_RECALLED_CHARS = 2400; // 600 tokens * ~4 chars
+
+				if (effectiveProfileData) {
+					let holdoutStatements: Set<string> | undefined;
+					if (this._turnIsHoldout) {
+						const tentativeStatements = effectiveProfileData.traits
+							.filter((t) => (t.status === "tentative" || (t as any).status === "trial") && !t.userStated)
+							.map((t) => t.statement);
+						holdoutStatements = new Set(tentativeStatements);
+					}
+					const renderedProfile = renderUserProfile(effectiveProfileData, holdoutStatements);
+					if (renderedProfile.trim()) {
+						stepInstructions.context.push({
+							id: "adaptation:profile",
+							channel: "context",
+							content: renderedProfile,
+							source: "adaptation:profile",
+							trust: "runtime",
+						});
+						this._turnRecalledAdaptationIds.add(adaptationId("project", "profile"));
+						recalledChars += renderedProfile.length;
+					}
+				} else if (effectiveProfile && !this._turnIsHoldout) {
+					stepInstructions.context.push({
+						id: "adaptation:profile",
+						channel: "context",
+						content: effectiveProfile,
+						source: "adaptation:profile",
 						trust: "runtime",
 					});
+					this._turnRecalledAdaptationIds.add(adaptationId("project", "profile"));
+					recalledChars += effectiveProfile.length;
 				}
-			}
-			if (effectiveProfile) {
-				stepInstructions.context.push({
-					id: "adaptation:profile",
-					channel: "context",
-					content: effectiveProfile,
-					source: "adaptation:profile",
-					trust: "runtime",
-				});
+
+				if (effectiveArch?.customGuidelines?.length) {
+					let recalledCount = 0;
+					const scopeDir = getScopeDir(this._agentDir, this._cwd, "project");
+					const ledger = getOutcomeLedger(scopeDir);
+
+					for (let i = 0; i < effectiveArch.customGuidelines.length; i++) {
+						if (recalledCount >= 3 || recalledChars >= MAX_RECALLED_CHARS) break;
+						const g = effectiveArch.customGuidelines[i]!;
+						const text = typeof g === "string" ? g : g.text;
+						const gId = typeof g === "object" && g.id ? g.id : createHash("sha256").update(text).digest("hex").slice(0, 12);
+						const scope = (typeof g === "object" && (g as any).scope) ? (g as any).scope : "project";
+						const adaptId = adaptationId(scope, "architecture", gId);
+
+						if (ledger.perAdaptationStats?.[adaptId]?.status === "retired") {
+							continue;
+						}
+
+						const isTentative = typeof g === "object" && Boolean((g as any).trial || (g as any).status === "tentative");
+						if (this._turnIsHoldout && isTentative) {
+							continue;
+						}
+
+						const shouldRecall = guidelineMatchesPrompt(g, expandedText);
+
+						if (shouldRecall && recalledChars + text.length <= MAX_RECALLED_CHARS) {
+							recalledCount++;
+							recalledChars += text.length;
+							stepInstructions.developer.push({
+								id: `adaptation:guideline:${i}`,
+								channel: "developer",
+								content: text,
+								source: "adaptation:architecture",
+								trust: "runtime",
+							});
+							this._turnRecalledAdaptationIds.add(adaptId);
+						}
+					}
+				}
+
+				if (recalledChars < MAX_RECALLED_CHARS) {
+					const learnedSkills = discoverAdaptationResources({
+						cwd: this._cwd,
+						agentDir: this._agentDir,
+						isProjectTrusted: this.settingsManager.isProjectTrusted(),
+					}).skillPaths;
+					const scopeDir = getScopeDir(this._agentDir, this._cwd, "project");
+					const ledger = getOutcomeLedger(scopeDir);
+
+					for (const skillPath of learnedSkills) {
+						if (recalledChars >= MAX_RECALLED_CHARS) break;
+						let raw = "";
+						try {
+							raw = readFileSync(skillPath, "utf8");
+						} catch {
+							continue;
+						}
+						const description = skillDescription(raw);
+						if (!description || !skillMatchesPrompt(description, expandedText)) continue;
+						const body = raw.trim();
+						if (!body || recalledChars + body.length > MAX_RECALLED_CHARS) continue;
+
+						const isProject = skillPath.includes("projects");
+						const scope = isProject ? "project" : "user";
+						const skillName = basename(dirname(skillPath));
+						const adaptId = adaptationId(scope, "skill", skillName);
+
+						if (ledger.perAdaptationStats?.[adaptId]?.status === "retired") {
+							continue;
+						}
+
+						recalledChars += body.length;
+						stepInstructions.context.push({
+							id: `adaptation:skill:${skillName}`,
+							channel: "context",
+							content: body,
+							source: "adaptation:skill",
+							trust: "runtime",
+						});
+						this._turnRecalledAdaptationIds.add(adaptId);
+						break;
+					}
+				}
 			}
 
 			// Build messages with runtime/extension context before the actual user
@@ -2304,10 +2621,148 @@ export class AgentSession {
 				// ensureSessionName applies a fallback title; continue to the chat turn.
 			}
 		}
+		let errorOccurred = false;
 		try {
 			await this._runAgentPrompt(messages);
+		} catch (promptError) {
+			errorOccurred = true;
+			throw promptError;
 		} finally {
 			if (proposalExecutionStarted) this._workflowRuntime.endProposalExecution();
+			try {
+				await this._finalizeTurnSelfLearning(expandedText, errorOccurred);
+			} catch {
+				// Autonomous learning failures must never affect the user prompt or session
+			}
+		}
+	}
+
+	private async _finalizeTurnSelfLearning(userPrompt: string, errorOccurred: boolean): Promise<void> {
+		if (!this.isSelfLearningActive() || this._namedAgentSession) {
+			return;
+		}
+		const agentDir = this._agentDir;
+		const cwd = this._cwd;
+		const isProjectTrusted = this.settingsManager.isProjectTrusted();
+		if (!isProjectTrusted) return;
+
+		// 1. Detect if any previously touched files were edited by user
+		const modifiedFiles = detectUserModifiedFiles({ agentDir, cwd });
+
+		// 2. Record touched file hashes for files touched in this turn
+		if (this._turnTouchedFiles.length > 0) {
+			recordTouchedFileHashes({ agentDir, cwd, filePaths: this._turnTouchedFiles });
+		}
+
+		const errorCount = this._turnErrorSignatures.length + (errorOccurred ? 1 : 0);
+		const perfStateEarly = this._performanceRuntime.state;
+		const success = turnSucceededForAdaptation({
+			errorOccurred,
+			errorCount,
+			performanceStatus: perfStateEarly?.status,
+		});
+
+		const { signals } = detectLearningSignals({
+			messages: this.agent.state.messages,
+			modifiedFiles,
+		});
+		const userCorrected = isUserStatedCorrection(signals);
+
+		// Performance readonly snapshot
+		const perfState = this._performanceRuntime.state;
+		const performanceSnapshot = perfState
+			? {
+					status: perfState.status,
+					frontier: perfState.frontier,
+					reportsCount: perfState.reports?.length ?? 0,
+				}
+			: undefined;
+
+		const record: TurnOutcomeRecord = {
+			id: randomUUID(),
+			turnIndex: this._turnIndex,
+			sessionId: this.sessionId,
+			timestamp: new Date().toISOString(),
+			commandFingerprints: this._turnCommandFingerprints,
+			recoveryPairs: this._turnRecoveryPairs,
+			errorSignatures: this._turnErrorSignatures,
+			recalledAdaptationIds: Array.from(this._turnRecalledAdaptationIds),
+			holdout: this._turnIsHoldout,
+			success,
+			userCorrected,
+			errorCount,
+			performanceSnapshot,
+		};
+
+		recordTurnOutcome({
+			agentDir,
+			cwd,
+			record,
+		});
+
+		// Record recurring correction if user corrected
+		if (userCorrected && this._turnRecalledAdaptationIds.size > 0) {
+			const activeAdaptationIds = Array.from(this._turnRecalledAdaptationIds).filter(
+				(id) => !id.endsWith(":profile") && id !== "profile",
+			);
+			if (activeAdaptationIds.length > 0) {
+				recordRecurringCorrection({
+					agentDir,
+					cwd,
+					activeAdaptationIds,
+				});
+			}
+		}
+
+		// When performance reaches terminal state, record run outcome to ledger
+		const perfStatus = performanceSnapshot?.status;
+		if (perfStatus === "completed" || perfStatus === "blocked" || perfStatus === "aborted") {
+			const activeAdaptationIds = Array.from(this._turnRecalledAdaptationIds).filter(
+				(id) => !id.endsWith(":profile") && id !== "profile",
+			);
+			if (activeAdaptationIds.length > 0) {
+				recordRunOutcome({
+					agentDir,
+					cwd,
+					outcome: perfStatus === "completed" ? "success" : "failure",
+					activeAdaptationIds,
+					isProjectTrusted,
+				});
+			}
+		}
+
+		// Evaluate recalled adaptations
+		if (!this._turnIsHoldout && this._turnRecalledAdaptationIds.size > 0) {
+			for (const id of this._turnRecalledAdaptationIds) {
+				if (id === "profile" || id.endsWith(":profile")) continue;
+				if (success && !userCorrected) {
+					recordAdaptationEffect({
+						agentDir,
+						cwd,
+						effect: "helped",
+						activeAdaptationIds: [id],
+					});
+				} else if (!success || userCorrected) {
+					recordAdaptationEffect({
+						agentDir,
+						cwd,
+						effect: "hurt",
+						activeAdaptationIds: [id],
+					});
+				}
+			}
+		}
+
+		// Trigger turn learning if important
+		if (isTurnImportant({ messages: this.agent.state.messages, toolCallsCount: this._turnToolCallsCount, hadRecovery: this._turnHadRecovery })) {
+			scheduleTurnLearning({
+				session: this,
+				mode: this._extensionMode,
+				toolCallsCount: this._turnToolCallsCount,
+				hadRecovery: this._turnHadRecovery,
+				recoveryPairs: this._turnRecoveryPairs,
+				commandFingerprints: this._turnCommandFingerprints,
+			});
 		}
 	}
 
@@ -3380,9 +3835,24 @@ export class AgentSession {
 		runner.bindCommandContext(this._extensionCommandContextActions);
 
 		this._extensionErrorUnsubscriber?.();
-		this._extensionErrorUnsubscriber = this._extensionErrorListener
-			? runner.onError(this._extensionErrorListener)
-			: undefined;
+		const listener: ExtensionErrorListener = (error) => {
+			this._extensionErrorListener?.(error);
+			if (this.isSelfLearningActive() && !this._turnIsHoldout && error.extensionPath?.includes("adaptations")) {
+				const isHook = error.extensionPath.includes("hooks");
+				const name = basename(error.extensionPath).replace(/\.(?:ts|js)$/, "");
+				const isProject = error.extensionPath.includes("projects");
+				const scope = isProject ? "project" : "user";
+				const adaptId = adaptationId(scope, isHook ? "hook" : "tool", name);
+				void recordAdaptationRuntimeError({
+					agentDir: this._agentDir,
+					cwd: this._cwd,
+					scope,
+					adaptationId: adaptId,
+					error: error.error,
+				});
+			}
+		};
+		this._extensionErrorUnsubscriber = runner.onError(listener);
 	}
 
 	private _refreshCurrentModelFromRegistry(): void {

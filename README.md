@@ -114,6 +114,7 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 | Video inspection | [Video tool](docs/video.md) |
 | Security and configuration | [Security](docs/security.md) · [Settings](docs/settings.md) |
 | Platforms and isolation | [Windows](docs/windows.md) · [Termux](docs/termux.md) · [tmux](docs/tmux.md) · [Containers](docs/containerization.md) |
+| Self-Learning & Adaptations | [Autonomous Self-Learning](docs/self-learning.md) |
 
 See the [documentation index](docs/index.md) for every guide.
 

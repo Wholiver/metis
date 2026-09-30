@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { resolveLocalizedSource, splitSurroundingWhitespace } from '../desktop/src/lib/i18n-state';
+import { applyLearningProgressEvent, getLearningProgressKey } from '../desktop/src/hooks/useMetisServer.ts';
 
 function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -214,5 +215,52 @@ describe('desktop React settings', () => {
     expect(settings).toContain('isScrolled');
     expect(settings).toContain('border-b border-line');
     expect(settings).not.toMatch(/<main[^>]*>[\s\S]*?<button[^>]*onClick=\{props\.onClose\}/);
+  });
+
+  it('localizes Self-Learning adaptations controls and scope filters', () => {
+    const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
+    expect(settings).toContain("translate('selfLearning')");
+    expect(settings).toContain("translate('selfLearningDescription')");
+    expect(settings).toContain("translate('selfLearningEnabled')");
+    expect(settings).toContain("translate('learnedAdaptations')");
+    expect(settings).toContain("translate('selfLearningScopeAll')");
+    expect(settings).toContain("translate('selfLearningScopeProject')");
+    expect(settings).toContain("translate('selfLearningScopeUser')");
+    expect(settings).toContain("translate('selfLearningEmpty')");
+    expect(settings).toContain("translate('selfLearningEmptyHint')");
+    expect(settings).toContain("translate('selfLearningDisabledBanner')");
+  });
+
+  it('updates learning progress state via applyLearningProgressEvent pure function', () => {
+    // 1. skipped leaves active false, summary is retained
+    const skippedState = applyLearningProgressEvent({
+      status: 'skipped',
+      summary: 'Daily call quota reached',
+    });
+    expect(skippedState.active).toBe(false);
+    expect(skippedState.summary).toBe('Daily call quota reached');
+    expect(skippedState.status).toBe('skipped');
+
+    // 2. completed sets active false and writes learnedSummary
+    const completedState = applyLearningProgressEvent({
+      status: 'completed',
+      summary: 'Learned 2 adaptations: formatting rules',
+    });
+    expect(completedState.active).toBe(false);
+    expect(completedState.learnedSummary).toBe('Learned 2 adaptations: formatting rules');
+    expect(completedState.status).toBe('completed');
+
+    // 3. running with trigger: "idle" uses selfLearningConsolidating key, not reviewing turn
+    const runningIdleState = applyLearningProgressEvent({
+      status: 'running',
+      trigger: 'idle',
+      step: 2,
+      total: 5,
+    });
+    expect(runningIdleState.active).toBe(true);
+    expect(runningIdleState.progressKey).toBe('selfLearningConsolidating');
+    expect(runningIdleState.progressKey).not.toBe('selfLearningReviewingTurn');
+    expect(getLearningProgressKey(runningIdleState)).toBe('selfLearningConsolidating');
+    expect(getLearningProgressKey(runningIdleState)).not.toBe('selfLearningReviewingTurn');
   });
 });
