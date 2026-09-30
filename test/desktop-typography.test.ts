@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 const root = process.cwd();
 const desktop = resolve(root, 'desktop');
 const requireDesktop = createRequire(join(desktop, 'package.json'));
-const electronArgs = process.platform === 'linux' && process.env.CI ? ['--no-sandbox', '--disable-gpu-sandbox'] : [];
+const electronArgs = process.platform === 'linux' && process.env.CI ? ['--no-sandbox', '--disable-gpu-sandbox', '--disable-gpu', '--disable-software-rasterizer'] : [];
 const source = (path: string) => readFileSync(resolve(root, path), 'utf8');
 
 describe('desktop OpenCode production typography (14px BasicTool scale)', () => {

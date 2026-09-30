@@ -8,7 +8,7 @@ import { expect, it } from 'vitest';
 
 const desktop = resolve(process.cwd(), 'desktop');
 const requireDesktop = createRequire(join(desktop, 'package.json'));
-const electronArgs = process.platform === 'linux' && process.env.CI ? ['--no-sandbox', '--disable-gpu-sandbox'] : [];
+const electronArgs = process.platform === 'linux' && process.env.CI ? ['--no-sandbox', '--disable-gpu-sandbox', '--disable-gpu', '--disable-software-rasterizer'] : [];
 
 it('keeps the Electron chat at the bottom without interrupting history reading', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'metis-chat-scroll-'));
