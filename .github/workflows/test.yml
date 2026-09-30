@@ -98,6 +98,21 @@ jobs:
       - name: Run build
         run: npm run build
 
+      - name: Install fd and ripgrep (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fd-find ripgrep
+          sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd
+
+      - name: Install fd and ripgrep (macOS)
+        if: runner.os == 'macOS'
+        run: brew install fd ripgrep
+
+      - name: Install fd and ripgrep (Windows)
+        if: runner.os == 'Windows'
+        run: choco install fd ripgrep -y
+
       - name: Run test suite (Unit & Mock E2E Integration)
         run: npm test
 
