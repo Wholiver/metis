@@ -98,11 +98,11 @@ jobs:
       - name: Run build
         run: npm run build
 
-      - name: Install fd and ripgrep (Linux)
+      - name: Install fd, ripgrep, and xvfb (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y fd-find ripgrep
+          sudo apt-get install -y fd-find ripgrep xvfb
           sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
       - name: Install fd and ripgrep (macOS)
@@ -114,5 +114,5 @@ jobs:
         run: choco install fd ripgrep -y
 
       - name: Run test suite (Unit & Mock E2E Integration)
-        run: npm test
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} npm test
 
