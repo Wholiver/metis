@@ -16,7 +16,8 @@
 </p>
 
 <p align="center">
-  <strong>A coding agent that searches, remembers, executes, and verifies across terminal and desktop.</strong>
+  <strong>Same model, verified harness lift for coding agents</strong><br />
+  <em>MIT · Multi-model · Terminal & Desktop · Terminal-Bench ~82% same model (vs OpenCode ~67%)</em>
 </p>
 
 <p align="center">

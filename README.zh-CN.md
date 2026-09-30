@@ -16,7 +16,8 @@
 </p>
 
 <p align="center">
-  <strong>贯穿终端与桌面的编程 Agent：搜索、记忆、执行、验证。</strong>
+  <strong>同模型下，harness 可验证拉高 coding agent 表现</strong><br />
+  <em>MIT · 多模型 · 终端/桌面 · Terminal-Bench 同模约 82%（vs OpenCode ~67%）</em>
 </p>
 
 <p align="center">
