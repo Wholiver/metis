@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 const root = process.cwd();
 const desktop = resolve(root, 'desktop');
 const requireDesktop = createRequire(join(desktop, 'package.json'));
+const electronArgs = process.platform === 'linux' && process.env.CI ? ['--no-sandbox', '--disable-gpu-sandbox'] : [];
 const source = (path: string) => readFileSync(resolve(root, path), 'utf8');
 
 describe('desktop chat paint and scroll isolation', () => {
@@ -168,7 +169,7 @@ describe('desktop chat paint and scroll isolation', () => {
 
       const env = { ...process.env };
       delete env.ELECTRON_RUN_AS_NODE;
-      const { stdout } = await promisify(execFile)(requireDesktop('electron'), [join(directory, 'main.cjs')], {
+      const { stdout } = await promisify(execFile)(requireDesktop('electron'), [...electronArgs, join(directory, 'main.cjs')], {
         env,
         timeout: 25_000,
         maxBuffer: 1024 * 1024,

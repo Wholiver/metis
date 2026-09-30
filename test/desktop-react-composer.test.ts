@@ -314,7 +314,8 @@ describe('desktop React multiline composer', () => {
 
       const env = { ...process.env };
       delete env.ELECTRON_RUN_AS_NODE;
-      const { stdout } = await promisify(execFile)(requireDesktop('electron'), [join(directory, 'main.cjs')], {
+      const electronArgs = process.platform === 'linux' && process.env.CI ? ['--no-sandbox', '--disable-gpu-sandbox'] : [];
+      const { stdout } = await promisify(execFile)(requireDesktop('electron'), [...electronArgs, join(directory, 'main.cjs')], {
         env,
         timeout: 25_000,
         maxBuffer: 1024 * 1024,
