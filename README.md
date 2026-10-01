@@ -138,6 +138,10 @@ The package exports the Node.js SDK from `@wholiver_hu/metis` and the RPC entry 
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development, Extension and Package integration, testing, and AI-assisted contribution guidance.
 
+## Acknowledgements
+
+Metis builds upon and is inspired by [pi](https://github.com/earendil-works/pi) by Mario Zechner.
+
 ## License
 
 Distributed under the [MIT License](LICENSE).

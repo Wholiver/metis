@@ -138,6 +138,10 @@ npm --prefix desktop run build # 构建 Renderer 与 Electron Artifact
 
 欢迎参与 Metis 开发。开发流程、Extension 与 Package 接入、测试及 AI 辅助贡献说明见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。
 
+## 致谢与上游
+
+Metis 基于并启发自 Mario Zechner 的 [pi](https://github.com/earendil-works/pi)。
+
 ## 许可证
 
 本项目使用 [MIT License](LICENSE)。
