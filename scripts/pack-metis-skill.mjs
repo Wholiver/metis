@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Pack Metis 插件版 (skill) as a standalone npm tarball for GitHub Releases.
+ * Pack Metis Skill as a standalone npm tarball for GitHub Releases.
  *
  * Bundles TypeScript with esbuild (Node refuses type-stripping under node_modules),
  * and ships contracts next to the package for runtime loading.
@@ -141,7 +141,7 @@ runCli().then((code) => {
       name: "metis-skill",
       version,
       description:
-        "Metis 插件版 (skill) — explicit routing, bounded multi-agent delegation, and evidence-backed verification for Codex, OpenCode, and DeepSeek Harness.",
+        "Metis Skill — explicit routing, bounded multi-agent delegation, and evidence-backed verification for Codex, OpenCode, and DeepSeek Harness.",
       license: "MIT",
       type: "module",
       bin: {
@@ -177,7 +177,7 @@ runCli().then((code) => {
     };
     writeFileSync(join(stage, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
 
-    const skillReadme = `# Metis Skill (插件版) ${version}
+    const skillReadme = `# Metis Skill ${version}
 
 Explicit-only Metis orchestration skill for Codex, OpenCode, and DeepSeek Harness.
 

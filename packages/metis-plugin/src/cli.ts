@@ -220,7 +220,7 @@ export function parseCliArgs(args: string[]): ParsedArgs {
 export function printHelp() {
   const version = getSkillVersion();
   console.log(`
-Metis 插件版 (skill) v${version} — Lifecycle CLI
+Metis Skill v${version} — Lifecycle CLI
 
 USAGE:
   metis-plugin                      Interactive installer (choose coding agent)
@@ -269,7 +269,7 @@ async function runInteractiveInstaller(): Promise<number> {
   const rl = createInterface({ input, output });
 
   try {
-    console.log(`\nMetis Skill (插件版) v${version}`);
+    console.log(`\nMetis Skill v${version}`);
     console.log("Install the Metis skill into a coding agent host.\n");
 
     const rows = SUPPORTED_INSTALL_PROVIDERS.map((id, index) => {
@@ -354,7 +354,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   }
 
   if (parsed.version) {
-    console.log(`metis-plugin v${getSkillVersion()} (Metis 插件版 / skill)`);
+    console.log(`metis-plugin v${getSkillVersion()} (Metis Skill)`);
     return 0;
   }
 
@@ -386,7 +386,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
           const receipt = await adapter.install(parsed.root);
           receipts.push(receipt);
           if (!parsed.json) {
-            console.log(`✅ Successfully installed Metis 插件版 for ${adapter.providerId} at ${receipt.installRoot}`);
+            console.log(`✅ Successfully installed Metis Skill for ${adapter.providerId} at ${receipt.installRoot}`);
             console.log(`   Launcher: ${receipt.launcherPath}`);
             console.log(`   Roles: ${receipt.roles.join(", ")}`);
             console.log(`   Files: ${receipt.files.length} registered in receipt`);
@@ -459,7 +459,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
           const res = await adapter.uninstall(parsed.root);
           uninstalled.push(res);
           if (!parsed.json) {
-            console.log(`🗑️  Uninstalled Metis 插件版 from ${adapter.providerId} (${res.removedFiles.length} files removed)`);
+            console.log(`🗑️  Uninstalled Metis Skill from ${adapter.providerId} (${res.removedFiles.length} files removed)`);
           }
         }
         if (parsed.json) {
@@ -515,7 +515,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
         if (parsed.json) {
           console.log(JSON.stringify(res, null, 2));
         } else {
-          console.log(`\n🚀 [Metis 插件版] Activation Complete:`);
+          console.log(`\n🚀 [Metis Skill] Activation Complete:`);
           console.log(`Provider:   ${res.provider}`);
           console.log(`Target:     ${res.targetDir}`);
           console.log(`Model:      ${res.resolvedModel.model} (${res.resolvedModel.source})`);

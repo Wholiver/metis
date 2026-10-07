@@ -60,32 +60,16 @@ Standalone application with built-in Metis CLI and Server runtime (no Node.js re
 - **macOS (Apple Silicon)**: Download `Metis-*-macos-arm64.dmg` from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest) and drag to **Applications**.
 - **Windows (x64)**: Download `Metis-*-win-x64-setup.exe` or `.zip` from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest).
 
-### Skill (插件版)
+### Skill
 
-Use Metis orchestration inside Codex / OpenCode / DeepSeek Harness. Requires [Node.js >= 22.19.0](https://nodejs.org/).
+Metis for Codex / OpenCode / DeepSeek Harness ([Node.js >= 22.19.0](https://nodejs.org/)):
 
 ```bash
 npm install -g https://github.com/Wholiver/metis/releases/download/skill-v0.0.1/metis-skill-0.0.1.tgz
 metis-plugin
 ```
 
-Choose your coding agent, confirm its path, and install. `N` skips; enter another path to override.
-
-Install one host without the interactive installer:
-
-```bash
-metis-plugin install codex
-metis-plugin install opencode
-metis-plugin install deepseek
-```
-
-Activate a mission:
-
-```bash
-metis-plugin activate codex --target /absolute/project -- "your mission"
-```
-
-You can also download `metis-skill-0.0.1.tgz` from the [skill-v0.0.1 release](https://github.com/Wholiver/metis/releases/tag/skill-v0.0.1) and run `npm install -g ./metis-skill-0.0.1.tgz`.
+Run `metis-plugin` to pick a host, or `metis-plugin install codex|opencode|deepseek`. See the [skill-v0.0.1 release](https://github.com/Wholiver/metis/releases/tag/skill-v0.0.1) for the offline `.tgz`.
 
 <details>
 <summary><strong>CLI installation (Node.js &gt;= 22.19.0)</strong></summary>

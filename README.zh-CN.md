@@ -58,32 +58,16 @@ Metis:      只读规划 ──> 5角色递归委派(隔离Worktree) ──> G0-
 - **macOS（Apple 芯片）**：从[最新 GitHub Release](https://github.com/Wholiver/metis/releases/latest) 下载 `Metis-*-macos-arm64.dmg`，将 **Metis.app** 拖入**应用程序**。
 - **Windows（x64）**：从[最新 GitHub Release](https://github.com/Wholiver/metis/releases/latest) 下载 `Metis-*-win-x64-setup.exe` 安装包或 `.zip` 解压使用。
 
-### Skill（插件版）
+### Skill
 
-在 Codex / OpenCode / DeepSeek Harness 中使用 Metis 编排能力。需要 [Node.js >= 22.19.0](https://nodejs.org/)。
+在 Codex / OpenCode / DeepSeek Harness 中使用 Metis（需 [Node.js >= 22.19.0](https://nodejs.org/)）：
 
 ```bash
 npm install -g https://github.com/Wholiver/metis/releases/download/skill-v0.0.1/metis-skill-0.0.1.tgz
 metis-plugin
 ```
 
-选择要安装的 coding agent，确认路径后安装。输入 `N` 跳过；直接输入其他路径可覆盖默认目录。
-
-也可跳过交互安装器，直接安装指定宿主：
-
-```bash
-metis-plugin install codex
-metis-plugin install opencode
-metis-plugin install deepseek
-```
-
-激活任务：
-
-```bash
-metis-plugin activate codex --target /absolute/project -- "你的任务"
-```
-
-也可从 [skill-v0.0.1 Release](https://github.com/Wholiver/metis/releases/tag/skill-v0.0.1) 下载 `metis-skill-0.0.1.tgz`，再执行 `npm install -g ./metis-skill-0.0.1.tgz`。
+运行 `metis-plugin` 选择宿主，或直接 `metis-plugin install codex|opencode|deepseek`。离线包见 [skill-v0.0.1 Release](https://github.com/Wholiver/metis/releases/tag/skill-v0.0.1)。
 
 <details>
 <summary><strong>CLI 安装（Node.js &gt;= 22.19.0）</strong></summary>

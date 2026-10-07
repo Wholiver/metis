@@ -1,7 +1,7 @@
 {
   "name": "metis-skill",
   "version": "0.0.1",
-  "description": "Metis 插件版 (skill) — Autoprompt-style host-agnostic orchestration for Codex, OpenCode, and DeepSeek Harness",
+  "description": "Metis Skill — Autoprompt-style host-agnostic orchestration for Codex, OpenCode, and DeepSeek Harness",
   "type": "module",
   "bin": {
     "metis-plugin": "./bin/metis-plugin.js",

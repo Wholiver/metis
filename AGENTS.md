@@ -225,9 +225,9 @@ When modifying plugins or role definitions (`bin/metis-plugin.js`, `contracts/`,
 - **Zero Contract Drift**: Always run `npm run check-contracts` to validate that `contracts/*.json` match BUILTIN definitions in `src/core/agent-definition.ts` and the 16 frameworks in `src/core/performance-frameworks.ts`.
 - **Role Projection**: Keep plugin role projections in parity across Codex, OpenCode, and DeepSeek environments.
 
-## Metis Skill (插件版) Release
+## Metis Skill Release
 
-Skill / plugin distribution is separate from Desktop and CLI (`@wholiver_hu/metis`) versioning.
+Skill distribution is separate from Desktop and CLI (`@wholiver_hu/metis`) versioning.
 
 - **Package**: `metis-skill` (CLI bins: `metis-plugin`, `metis-skill`)
 - **Pack**: `npm run pack:skill` → `scripts/pack-metis-skill.mjs` (esbuild-bundles TS; ships `contracts/`; Node cannot type-strip under `node_modules`)
