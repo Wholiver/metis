@@ -16,22 +16,34 @@
 </p>
 
 <p align="center">
-  <strong>A coding agent that searches, remembers, executes, and verifies across terminal and desktop.</strong>
+  <strong>The self-adaptive coding agent with evidence-backed verification gates.</strong><br />
+  <em>From terminal TUI to React desktop workspace — eliminating AI hallucinations with a 5-role recursive team and physical verification receipts.</em>
 </p>
 
 <p align="center">
-  <a href="#partners">Partners</a> ·
+  <a href="#why-metis">Why Metis</a> ·
   <a href="#quick-start">Quick start</a> ·
-  <a href="#benchmark--comparison">Benchmark & Comparison</a> ·
-  <a href="#key-features">Key features</a> ·
+  <a href="#flagship-capabilities">Flagship Capabilities</a> ·
+  <a href="#community--feedback">Community & Feedback</a> ·
+  <a href="#partners">Partners</a> ·
   <a href="#documentation">Documentation</a>
 </p>
 
-## Partners
+## Why Metis?
 
-| Logo | Partner | Link |
-| :---: | :--- | :--- |
-| <img src="docs/images/siliconflow-logo.png" alt="SiliconFlow" height="36" /> | **SiliconFlow (硅基流动)** — China's leading independent ecosystem token supply platform, providing Metis with efficient and flexible model inference. | [siliconflow.cn](https://siliconflow.cn) |
+Most AI coding assistants operate in a fragile loop: **single-thread chat → untested code edits → prematurely claiming "it is fixed" → forgetting everything next session**.
+
+Metis replaces this with engineering-grade rigor:
+
+```text
+Typical Agent:  Ask ──> Blind write ──> Hallucinate fixes ──> Claim "done" without tests ──> Forgotten next time
+Metis:          Read-only Plan ──> 5-Role Recursive Team (Git Worktrees) ──> G0-G7 Gate Receipts (Block Fake Done) ──> Evolve
+```
+
+1. **No False Completion (`FALSE_COMPLETION_BLOCKED`)**: Built-in G0–G7 verification state machine. Agents cannot declare victory without actual test outputs and exit-code-0 receipts.
+2. **Autonomous Self-Learning**: Silently distills your code diffs, recurring pitfalls, and domain skills in the background. Transparent, revisable, and roll-backable.
+3. **True Multi-Role Agent Team**: Dedicated roles (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`) isolated in clean Git Worktrees.
+4. **Dual Interfaces, Zero Setup**: Lightweight terminal TUI and standalone React/Vite Desktop application with bundled runtimes (no Node.js required).
 
 ## Quick start
 
@@ -43,9 +55,7 @@ Standalone application with built-in Metis CLI and Server runtime (no Node.js re
 - **Windows (x64)**: Download `Metis-*-win-x64-setup.exe` or `.zip` from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest).
 
 <details>
-<summary><strong>CLI installation</strong></summary>
-
-Requires Node.js `>=22.19.0`.
+<summary><strong>CLI installation (Node.js &gt;= 22.19.0)</strong></summary>
 
 ```bash
 npm install -g @wholiver_hu/metis
@@ -64,7 +74,30 @@ Use `/login` for subscription providers or configure an API key. See [Quickstart
 
 </details>
 
-## Benchmark & Comparison
+## Flagship Capabilities
+
+### 1. 🛡️ Evidence-Backed G0–G7 Verification Gates
+- **Eliminate AI Hallucinations**: Every task execution runs on an immutable performance state machine. Each milestone requires a structured governance receipt.
+- **Strict Anti-Premature-Exit**: Even if an LLM outputs "all tests passed", Metis verifies the exit code, test stdout, and diff boundaries. If receipts are missing, `FALSE_COMPLETION_BLOCKED` intercepts the completion and forces repair.
+- **Multimodal Proof**: Includes bundled ffmpeg/ffprobe video inspection and screenshot assertion tools to verify visual animations and interactive states objectively.
+
+### 2. 🧠 Autonomous Self-Learning Closed Loop
+- **Zero-Token Implicit Learning**: Learns your coding style, conventions, and recurring project architecture without nagging or tedious prompt injection.
+- **Local Profile & Skill Distillation**: Stored safely on disk under `~/.metis/agent/adaptations/`. Metis automatically creates, tests, and decays custom skills.
+- **Auditable & Reversible**: Review learned behaviors directly in the desktop settings panel, with complete history and one-click rollback.
+
+### 3. 👥 Recursive 5-Role Multi-Agent Architecture
+- **Purpose-Built Roles**: `coordinator` oversees strategy, `planner` computes roadmaps, `implementer` writes minimal diffs, `reviewer` conducts peer review, and `verifier` runs automated proof.
+- **Physical Git Worktree Isolation**: Subagents run inside temporary worktrees, preventing simultaneous edits from corrupting your branch.
+- **Bound Recursion Depth (L0→L4)**: Strict budget, spawn depth, and timeout enforcement avoid runaway token burns.
+
+### 4. ⚡ Plan ↔ Build Dual Workflow & Total Ecosystem Freedom
+- **Read-Only Plan Mode**: Deep codebase exploration and risk assessment with guaranteed zero writes.
+- **Dynamic Build Mode**: Live interactive checklists that adapt as subtasks complete.
+- **Universal Model Compatibility**: Bring any provider (OpenAI, Anthropic, DeepSeek, Gemini, Groq, Ollama, vLLM, OrcaRouter), plus full support for TypeScript extensions, Agent Skills, and MCP.
+
+<details>
+<summary><strong>Benchmark &amp; Comparison Matrix</strong></summary>
 
 ### Terminal-Bench 2.1 Benchmark Results
 
@@ -89,14 +122,13 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 | **Verification Gates** | ✅ **Test Gates + Video Evidence** | ⚠️ Manual Bash | ⚠️ Manual Bash | ⚠️ Basic Linter |
 | **Headless Benchmark** | ✅ **Python Adapter + Trace** | ❌ None | ⚠️ Partial | ❌ None |
 
-## Key Features
+</details>
 
-- **Plan & Build Dual Workflows** — Safely investigate in read-only Plan mode, then execute approved plans with a live-updating checklist in Build mode.
-- **Dual Interface for Terminal & Desktop** — Work directly in your terminal via the rich interactive TUI, or use the dedicated React/Vite Desktop workspace on macOS and Windows.
-- **Recursive Multi-Agent System** — Native named agents (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`) with L0→L4 recursive delegation and Git Worktree isolation.
-- **Self-Learning Adaptations & Resumable Sessions** — Project profiles, learned workflows, and custom checks adapt safely on disk across sessions with full rollback support.
-- **Extensible & Model-Agnostic** — Use any LLM provider (OpenAI, Anthropic, DeepSeek, OrcaRouter, Gemini, Groq, Ollama, vLLM) and extend with TypeScript plugins, Agent Skills, and MCP.
-- **Benchmark-Grade Reliability** — Automated verification gates, video evidence inspection, and full Terminal-Bench & Harbor evaluation readiness.
+## Partners
+
+| Logo | Partner | Link |
+| :---: | :--- | :--- |
+| <img src="docs/images/siliconflow-logo.png" alt="SiliconFlow" height="36" /> | **SiliconFlow (硅基流动)** — China's leading independent ecosystem token supply platform, providing Metis with efficient and flexible model inference. | [siliconflow.cn](https://siliconflow.cn) |
 
 ## Documentation
 
@@ -104,9 +136,10 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 | --- | --- |
 | Install, authenticate, and start | [Quickstart](docs/quickstart.md) |
 | Commands and terminal UI | [Using Metis](docs/usage.md) · [TUI](docs/tui.md) |
-| Providers and custom models | [Providers](docs/providers.md) · [Use SiliconFlow in Metis](docs/use-siliconcloud-in-metis.md) · [Custom models](docs/models.md) · [Custom providers](docs/custom-provider.md) |
+| Autonomous Self-Learning | [Autonomous Self-Learning](docs/self-learning.md) |
 | Multi-Agent System | [Named Agents & Delegation](docs/agents.md) |
 | Benchmark & Evaluation | [TerminalBench & Harbor](docs/terminalbench.md) |
+| Providers and custom models | [Providers](docs/providers.md) · [Use SiliconFlow in Metis](docs/use-siliconcloud-in-metis.md) · [Custom models](docs/models.md) · [Custom providers](docs/custom-provider.md) |
 | Sessions and compaction | [Sessions](docs/sessions.md) · [Compaction](docs/compaction.md) |
 | Extensions, skills, and packages | [Extensions](docs/extensions.md) · [Skills](docs/skills.md) · [Packages](docs/packages.md) |
 | Prompts and interface customization | [Prompt templates](docs/prompt-templates.md) · [Themes](docs/themes.md) · [Keybindings](docs/keybindings.md) |
@@ -114,7 +147,6 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 | Video inspection | [Video tool](docs/video.md) |
 | Security and configuration | [Security](docs/security.md) · [Settings](docs/settings.md) |
 | Platforms and isolation | [Windows](docs/windows.md) · [Termux](docs/termux.md) · [tmux](docs/tmux.md) · [Containers](docs/containerization.md) |
-| Self-Learning & Adaptations | [Autonomous Self-Learning](docs/self-learning.md) |
 
 See the [documentation index](docs/index.md) for every guide.
 
@@ -133,6 +165,18 @@ npm --prefix desktop run build # Build the renderer and Electron artifact
 The package exports the Node.js SDK from `@wholiver_hu/metis` and the RPC entry point from `@wholiver_hu/metis/rpc-entry`.
 
 </details>
+
+## Community & Feedback
+
+Join the Metis developer community! Whether discussing use cases, reporting bugs, proposing new features, or sharing multi-agent ideas, everyone is welcome:
+
+<p align="center">
+  <img src="docs/images/metis-community-qq.png" width="220" alt="Metis QQ Group" /><br />
+  <strong>Metis Community Group (QQ): 801193315</strong>
+</p>
+
+- 🐛 **Bug Reports & Feature Requests**: Open an issue on [GitHub Issues](https://github.com/Wholiver/metis/issues).
+- 💡 **Discussions & Ideas**: Join conversations on [GitHub Discussions](https://github.com/Wholiver/metis/discussions).
 
 ## Contributing
 
