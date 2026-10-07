@@ -1,26 +1,46 @@
 {
-  "name": "metis-plugin",
-  "version": "1.0.0",
-  "description": "Metis 插件版 — Autoprompt-style host-agnostic orchestration plugin for Codex, OpenCode, and DeepSeek Harness",
+  "name": "metis-skill",
+  "version": "0.0.1",
+  "description": "Metis 插件版 (skill) — Autoprompt-style host-agnostic orchestration for Codex, OpenCode, and DeepSeek Harness",
   "type": "module",
   "bin": {
-    "metis-plugin": "./bin/metis-plugin.js"
+    "metis-plugin": "./bin/metis-plugin.js",
+    "metis-skill": "./bin/metis-plugin.js"
   },
   "main": "./src/index.ts",
+  "files": [
+    "bin/",
+    "src/",
+    "contracts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "project": "node ./bin/metis-plugin.js project",
     "doctor": "node ./bin/metis-plugin.js doctor",
+    "pack:skill": "node ../../scripts/pack-metis-skill.mjs --version 0.0.1",
     "check-contracts": "node ../../scripts/check-contracts.mjs"
   },
   "keywords": [
     "metis",
+    "metis-skill",
     "metis-plugin",
     "codex",
     "opencode",
     "deepseek",
+    "agent-skill",
     "orchestration",
     "multi-agent"
   ],
   "author": "Metis Team",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Wholiver/metis.git",
+    "directory": "packages/metis-plugin"
+  },
+  "homepage": "https://github.com/Wholiver/metis#readme"
 }

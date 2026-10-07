@@ -89,6 +89,8 @@ describe("instruction stack", () => {
 		for (const collaborationMode of ["plan", "build", undefined] as const) {
 			const prompt = buildSystemPrompt({ cwd: "/workspace", collaborationMode });
 			expect(prompt).toContain("user's latest-message language");
+			expect(prompt).toContain("strictly forbid switching to English");
+			expect(prompt).toContain("Strict language consistency");
 			expect(prompt).toContain("Default is silence between tools");
 			expect(prompt).toContain("never emit because a tool result arrived");
 			expect(prompt).toContain("what you found or what is wrong, and what you will do next");

@@ -102,13 +102,16 @@ export function findContractsDir(explicitDir?: string): string {
   if (process.env.METIS_CONTRACTS_DIR && existsSync(process.env.METIS_CONTRACTS_DIR)) {
     return process.env.METIS_CONTRACTS_DIR;
   }
-  // Try relative to this file
-  const candidate1 = resolve(__dirname, "../../../contracts");
-  if (existsSync(candidate1)) return candidate1;
-  const candidate2 = resolve(__dirname, "../contracts");
-  if (existsSync(candidate2)) return candidate2;
-  const candidate3 = resolve(process.cwd(), "contracts");
-  if (existsSync(candidate3)) return candidate3;
+  // Try relative to this file (monorepo src, packed skill, or package-local copy)
+  const candidates = [
+    resolve(__dirname, "../../../contracts"),
+    resolve(__dirname, "../contracts"),
+    resolve(__dirname, "../../contracts"),
+    resolve(process.cwd(), "contracts"),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
   throw new Error(`Cannot locate contracts directory. Set METIS_CONTRACTS_DIR or run from repo root.`);
 }
 

@@ -747,23 +747,49 @@ function mergeSnapshotMetadata(live: Message, snapshot: Message): Message {
   return { ...live, ...patch };
 }
 
+function messageRoleTimestampKey(message: Message): string | undefined {
+  if (message.serverTimestamp === undefined) return undefined;
+  return `${message.role}:${String(message.serverTimestamp)}`;
+}
+
 /**
  * Keep in-flight SSE/rAF content when a snapshot is shorter or older.
  * Still accepts snapshot metadata (usage, completion) and trailing live messages.
+ *
+ * SSE `toMessage` synthesizes ids as `role-<timestamp>` when the model message has no
+ * id (metis-ai UserMessage/AssistantMessage). `/session/messages` overlays session
+ * `entry.id`. Match by role+serverTimestamp so agent_end reconcile does not append a
+ * second identical turn.
  */
 export function adoptSnapshotWithoutRegressing(live: Message[], snapshot: Message[]): Message[] {
   if (live.length === 0) return snapshot;
   if (snapshot.length === 0) return live;
   const liveById = new Map(live.map((message) => [message.id, message]));
+  const liveByRoleTs = new Map<string, Message>();
+  for (const message of live) {
+    const key = messageRoleTimestampKey(message);
+    if (key && !liveByRoleTs.has(key)) liveByRoleTs.set(key, message);
+  }
   const snapshotIds = new Set(snapshot.map((message) => message.id));
+  const snapshotRoleTs = new Set(
+    snapshot.map(messageRoleTimestampKey).filter((key): key is string => Boolean(key)),
+  );
   const snapshotHasUser = snapshot.some((message) => message.role === 'user');
+  const coveredLiveIds = new Set<string>();
   const merged = snapshot.map((incoming) => {
-    const prior = liveById.get(incoming.id);
+    const prior = liveById.get(incoming.id)
+      ?? (() => {
+        const key = messageRoleTimestampKey(incoming);
+        return key ? liveByRoleTs.get(key) : undefined;
+      })();
     if (!prior) return incoming;
+    coveredLiveIds.add(prior.id);
     return messageIsStrictlyAhead(prior, incoming) ? mergeSnapshotMetadata(prior, incoming) : incoming;
   });
   const extra = live.filter((message) => {
-    if (snapshotIds.has(message.id)) return false;
+    if (snapshotIds.has(message.id) || coveredLiveIds.has(message.id)) return false;
+    const key = messageRoleTimestampKey(message);
+    if (key && snapshotRoleTs.has(key)) return false;
     if (message.optimistic && snapshotHasUser) return false;
     return true;
   });

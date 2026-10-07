@@ -1,10 +1,36 @@
-import { resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadContracts, assertProviderSupported } from "./contracts.ts";
 import { Projector } from "./projector.ts";
 import { OpenCodeAdapter } from "./adapters/opencode.ts";
 import { CodexAdapter, parseCodexEnvelope } from "./adapters/codex.ts";
 import { DeepSeekAdapter } from "./adapters/deepseek.ts";
 import { ExternalController } from "./controller.ts";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+export function getSkillVersion(): string {
+  const candidates = [
+    resolve(__dirname, "../package.json"),
+    resolve(__dirname, "../../package.json"),
+  ];
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    try {
+      const pkg = JSON.parse(readFileSync(candidate, "utf-8")) as { name?: string; version?: string };
+      if (pkg.name === "metis-skill" && pkg.version) return pkg.version;
+      if (pkg.name === "metis-plugin" && pkg.version) return pkg.version;
+    } catch {
+      // keep looking
+    }
+  }
+  return "0.0.1";
+}
+
+const SUPPORTED_INSTALL_PROVIDERS = ["codex", "opencode", "deepseek"] as const;
 
 export interface ParsedArgs {
   command: string;
@@ -192,10 +218,12 @@ export function parseCliArgs(args: string[]): ParsedArgs {
 }
 
 export function printHelp() {
+  const version = getSkillVersion();
   console.log(`
-Metis 插件版 — Lifecycle CLI
+Metis 插件版 (skill) v${version} — Lifecycle CLI
 
 USAGE:
+  metis-plugin                      Interactive installer (choose coding agent)
   metis-plugin <command> [provider] [options]
 
 COMMANDS:
@@ -225,6 +253,7 @@ OPTIONS:
   --version, -v         Show version
 
 EXAMPLES:
+  metis-plugin
   metis-plugin install opencode
   metis-plugin activate opencode --target /path/to/project -- "Fix authentication token leak"
   metis-plugin activate codex --target /path/to/project -- path=light --concurrency tokensaver "add retries"
@@ -233,17 +262,104 @@ EXAMPLES:
 `);
 }
 
+async function runInteractiveInstaller(): Promise<number> {
+  const version = getSkillVersion();
+  const contracts = loadContracts();
+  const controller = new ExternalController(contracts);
+  const rl = createInterface({ input, output });
+
+  try {
+    console.log(`\nMetis Skill (插件版) v${version}`);
+    console.log("Install the Metis skill into a coding agent host.\n");
+
+    const rows = SUPPORTED_INSTALL_PROVIDERS.map((id, index) => {
+      const adapter = controller.getAdapter(id);
+      let root = "";
+      let detected = false;
+      try {
+        root = adapter.resolveInstallRoot();
+        detected = existsSync(root);
+      } catch {
+        root = "(unavailable)";
+      }
+      const cfg = contracts.providers[id];
+      return {
+        index: index + 1,
+        id,
+        name: cfg?.name || id,
+        root,
+        detected,
+        adapter,
+      };
+    });
+
+    console.log("Detected coding agents:");
+    for (const row of rows) {
+      const mark = row.detected ? "found" : "missing";
+      console.log(`  ${row.index}. ${row.name.padEnd(18)} ${mark.padEnd(8)} ${row.root}`);
+    }
+    console.log(`  A. Install all supported agents`);
+    console.log(`  Q. Quit\n`);
+
+    const choice = (await rl.question("Choose agent [1-3 / A / Q]: ")).trim().toLowerCase();
+    if (!choice || choice === "q" || choice === "quit") {
+      console.log("Cancelled.");
+      return 0;
+    }
+
+    let selected = rows;
+    if (choice !== "a" && choice !== "all") {
+      const n = Number(choice);
+      const row = rows.find((r) => r.index === n);
+      if (!row) {
+        console.error("Invalid choice.");
+        return 1;
+      }
+      selected = [row];
+    }
+
+    for (const row of selected) {
+      console.log(`\n→ ${row.name}`);
+      console.log(`  Default path: ${row.root}`);
+      const answer = (await rl.question("  Install here? [Y/n/path]: ")).trim();
+      let root = row.root;
+      if (answer.toLowerCase() === "n" || answer.toLowerCase() === "no") {
+        console.log("  Skipped.");
+        continue;
+      }
+      if (answer && answer.toLowerCase() !== "y" && answer.toLowerCase() !== "yes") {
+        root = resolve(answer.replace(/^~/, process.env.HOME || ""));
+      }
+
+      const receipt = await row.adapter.install(root);
+      console.log(`  ✅ Installed at ${receipt.installRoot}`);
+      console.log(`     Launcher: ${receipt.launcherPath}`);
+      console.log(`     Roles: ${receipt.roles.join(", ")}`);
+    }
+
+    console.log("\nDone. Activate with:");
+    console.log(`  metis-plugin activate <provider> --target /absolute/project -- "your mission"`);
+    return 0;
+  } finally {
+    rl.close();
+  }
+}
+
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   const parsed = parseCliArgs(argv);
 
-  if (parsed.help || (!parsed.command && !parsed.version)) {
+  if (parsed.help) {
     printHelp();
     return 0;
   }
 
   if (parsed.version) {
-    console.log("metis-plugin v1.0.0 (Metis 插件版)");
+    console.log(`metis-plugin v${getSkillVersion()} (Metis 插件版 / skill)`);
     return 0;
+  }
+
+  if (!parsed.command) {
+    return runInteractiveInstaller();
   }
 
   const contracts = loadContracts();

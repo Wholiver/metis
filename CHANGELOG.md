@@ -2,6 +2,13 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.4.6] - 2026-10-07
+
+### Desktop Turn Deduplication & Language Consistency Enforcement
+
+- **Desktop Conversation Deduplication**: Fix turn duplication in `useMetisServer.ts` during snapshot reconciliation (`adoptSnapshotWithoutRegressing`) when snapshot IDs differ from synthesized SSE IDs after abort or session reload.
+- **Strict Language Consistency Enforcement**: Enforce user language match across Plan/Build collaboration mode system prompts and milestone progress narration, strictly forbidding spontaneous switches to English when the user's latest prompt is Chinese.
+
 ## [1.4.5] - 2026-10-07
 
 ### Scheduled Routines System, Plugin Contracts, Self-Learning Fast Loop & Desktop UX

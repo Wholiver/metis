@@ -382,6 +382,48 @@ describe('desktop chat performance helpers', () => {
     expect(next[1].content).toBe('Working');
   });
 
+  // Repro: SSE toMessage synthesizes role-timestamp ids; /session/messages uses entry.id.
+  // After abort → agent_end → loadMessages, mismatched ids must not append a second turn.
+  it('does not duplicate a completed turn when snapshot ids differ from SSE-synthesized ids', () => {
+    const liveUser = toMessage({
+      role: 'user',
+      timestamp: 1000,
+      content: '构建一个复杂的 blog 系统，需要具备大部分功能',
+    })!;
+    const liveAssistant = toMessage({
+      role: 'assistant',
+      timestamp: 2000,
+      content: [{ type: 'text', text: "I'll start by inspecting the workspace and toolchain before admitting the build." }],
+      stopReason: 'aborted',
+      errorMessage: 'Request was aborted',
+    })!;
+    const snapUser = toMessage({
+      id: 'entry-uuid-user',
+      role: 'user',
+      timestamp: 1000,
+      content: '构建一个复杂的 blog 系统，需要具备大部分功能',
+    })!;
+    const snapAssistant = toMessage({
+      id: 'entry-uuid-assistant',
+      role: 'assistant',
+      timestamp: 2000,
+      content: [{ type: 'text', text: "I'll start by inspecting the workspace and toolchain before admitting the build." }],
+      stopReason: 'aborted',
+      errorMessage: 'Request was aborted',
+    })!;
+
+    expect(liveUser.id).toBe('user-1000');
+    expect(liveAssistant.id).toBe('assistant-2000');
+    expect(snapUser.id).toBe('entry-uuid-user');
+
+    const next = adoptSnapshotWithoutRegressing(
+      [liveUser, liveAssistant],
+      [snapUser, snapAssistant],
+    );
+    expect(next.map((message) => message.role)).toEqual(['user', 'assistant']);
+    expect(next.map((message) => message.id)).toEqual(['entry-uuid-user', 'entry-uuid-assistant']);
+  });
+
   it('reuses message identity until usage fields the token bar shows actually change', () => {
     const first = toMessage({
       role: 'assistant',
