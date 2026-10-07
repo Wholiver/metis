@@ -21,8 +21,14 @@ export function getSkillVersion(): string {
     if (!existsSync(candidate)) continue;
     try {
       const pkg = JSON.parse(readFileSync(candidate, "utf-8")) as { name?: string; version?: string };
-      if (pkg.name === "metis-skill" && pkg.version) return pkg.version;
-      if (pkg.name === "metis-plugin" && pkg.version) return pkg.version;
+      if (
+        (pkg.name === "@wholiver_hu/metis-skill" ||
+          pkg.name === "metis-skill" ||
+          pkg.name === "metis-plugin") &&
+        pkg.version
+      ) {
+        return pkg.version;
+      }
     } catch {
       // keep looking
     }
