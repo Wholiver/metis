@@ -22,10 +22,10 @@
 
 <p align="center">
   <a href="#why-metis">Why Metis</a> ·
+  <a href="#partners">Partners</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#flagship-capabilities">Flagship Capabilities</a> ·
   <a href="#community--feedback">Community & Feedback</a> ·
-  <a href="#partners">Partners</a> ·
   <a href="#documentation">Documentation</a>
 </p>
 
@@ -44,6 +44,12 @@ Metis:          Read-only Plan ──> 5-Role Recursive Team (Git Worktrees) ─
 2. **Autonomous Self-Learning**: Silently distills your code diffs, recurring pitfalls, and domain skills in the background. Transparent, revisable, and roll-backable.
 3. **True Multi-Role Agent Team**: Dedicated roles (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`) isolated in clean Git Worktrees.
 4. **Dual Interfaces, Zero Setup**: Lightweight terminal TUI and standalone React/Vite Desktop application with bundled runtimes (no Node.js required).
+
+## Partners
+
+| Logo | Partner | Link |
+| :---: | :--- | :--- |
+| <img src="docs/images/siliconflow-logo.png" alt="SiliconFlow" height="36" /> | **SiliconFlow (硅基流动)** — China's leading independent ecosystem token supply platform, providing Metis with efficient and flexible model inference. | [siliconflow.cn](https://siliconflow.cn) |
 
 ## Quick start
 
@@ -91,11 +97,6 @@ Use `/login` for subscription providers or configure an API key. See [Quickstart
 - **Physical Git Worktree Isolation**: Subagents run inside temporary worktrees, preventing simultaneous edits from corrupting your branch.
 - **Bound Recursion Depth (L0→L4)**: Strict budget, spawn depth, and timeout enforcement avoid runaway token burns.
 
-### 4. ⚡ Plan ↔ Build Dual Workflow & Total Ecosystem Freedom
-- **Read-Only Plan Mode**: Deep codebase exploration and risk assessment with guaranteed zero writes.
-- **Dynamic Build Mode**: Live interactive checklists that adapt as subtasks complete.
-- **Universal Model Compatibility**: Bring any provider (OpenAI, Anthropic, DeepSeek, Gemini, Groq, Ollama, vLLM, OrcaRouter), plus full support for TypeScript extensions, Agent Skills, and MCP.
-
 <details>
 <summary><strong>Benchmark &amp; Comparison Matrix</strong></summary>
 
@@ -124,11 +125,17 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 
 </details>
 
-## Partners
+## Community & Feedback
 
-| Logo | Partner | Link |
-| :---: | :--- | :--- |
-| <img src="docs/images/siliconflow-logo.png" alt="SiliconFlow" height="36" /> | **SiliconFlow (硅基流动)** — China's leading independent ecosystem token supply platform, providing Metis with efficient and flexible model inference. | [siliconflow.cn](https://siliconflow.cn) |
+Join the Metis developer community! Whether discussing use cases, reporting bugs, proposing new features, or sharing multi-agent ideas, everyone is welcome:
+
+<p align="center">
+  <img src="docs/images/metis-community-qq.png" width="220" alt="Metis QQ Group" /><br />
+  <strong>Metis Community Group (QQ): 801193315</strong>
+</p>
+
+- 🐛 **Bug Reports & Feature Requests**: Open an issue on [GitHub Issues](https://github.com/Wholiver/metis/issues).
+- 💡 **Discussions & Ideas**: Join conversations on [GitHub Discussions](https://github.com/Wholiver/metis/discussions).
 
 ## Documentation
 
@@ -142,7 +149,7 @@ In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same
 | Providers and custom models | [Providers](docs/providers.md) · [Use SiliconFlow in Metis](docs/use-siliconcloud-in-metis.md) · [Custom models](docs/models.md) · [Custom providers](docs/custom-provider.md) |
 | Sessions and compaction | [Sessions](docs/sessions.md) · [Compaction](docs/compaction.md) |
 | Extensions, skills, and packages | [Extensions](docs/extensions.md) · [Skills](docs/skills.md) · [Packages](docs/packages.md) |
-| Prompts and interface customization | [Prompt templates](docs/prompt-templates.md) · [Themes](docs/themes.md) · [Keybindings](docs/keybindings.md) |
+| Prompt 与界面定制 | [Prompt templates](docs/prompt-templates.md) · [Themes](docs/themes.md) · [Keybindings](docs/keybindings.md) |
 | Programmatic integration | [SDK](docs/sdk.md) · [RPC](docs/rpc.md) · [JSON](docs/json.md) |
 | Video inspection | [Video tool](docs/video.md) |
 | Security and configuration | [Security](docs/security.md) · [Settings](docs/settings.md) |
@@ -165,18 +172,6 @@ npm --prefix desktop run build # Build the renderer and Electron artifact
 The package exports the Node.js SDK from `@wholiver_hu/metis` and the RPC entry point from `@wholiver_hu/metis/rpc-entry`.
 
 </details>
-
-## Community & Feedback
-
-Join the Metis developer community! Whether discussing use cases, reporting bugs, proposing new features, or sharing multi-agent ideas, everyone is welcome:
-
-<p align="center">
-  <img src="docs/images/metis-community-qq.png" width="220" alt="Metis QQ Group" /><br />
-  <strong>Metis Community Group (QQ): 801193315</strong>
-</p>
-
-- 🐛 **Bug Reports & Feature Requests**: Open an issue on [GitHub Issues](https://github.com/Wholiver/metis/issues).
-- 💡 **Discussions & Ideas**: Join conversations on [GitHub Discussions](https://github.com/Wholiver/metis/discussions).
 
 ## Contributing
 

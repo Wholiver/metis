@@ -22,10 +22,10 @@
 
 <p align="center">
   <a href="#为什么选择-metis">核心差异</a> ·
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#四大杀手锏能力">杀手锏特性</a> ·
-  <a href="#交流与社区">交流与社区</a> ·
   <a href="#合作伙伴">合作伙伴</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#三大核心能力">核心能力</a> ·
+  <a href="#交流与社区">交流与社区</a> ·
   <a href="#文档">文档</a>
 </p>
 
@@ -42,6 +42,12 @@ Metis:      只读规划 ──> 5角色递归委派(隔离Worktree) ──> G0-
 2. **越用越聪明的自我学习闭环**：无需手动写提示词注入，Metis 在后台自主提炼你的编码偏好、项目踩坑经验与可复用 Skill，透明可回滚。
 3. **真正的工程级多智能体团队**：`coordinator`、`planner`、`implementer`、`reviewer`、`verifier` 五大具名角色，支持独立 Git Worktree 隔离并发执行。
 4. **双形态统一生产力**：轻量沉浸的终端 TUI 与全功能 React/Vite 桌面端（内置独立运行时，免配置 Node.js 随开随用）。
+
+## 合作伙伴
+
+| 商标 | 合作方 | 链接 |
+| :---: | :--- | :--- |
+| <img src="docs/images/siliconflow-logo.png" alt="硅基流动" height="36" /> | **硅基流动（SiliconFlow）** — 国内领先的独立生态词元（Token）供应平台，为Metis提供高效、灵活的模型推理能力。 | [siliconflow.cn](https://siliconflow.cn) |
 
 ## 快速开始
 
@@ -72,7 +78,7 @@ git diff | metis -p "审查这个 diff"
 
 </details>
 
-## 四大杀手锏能力
+## 三大核心能力
 
 ### 1. 🛡️ G0~G7 硬核验证门禁（Evidence-Backed Verification）
 - **根治 AI 幻觉与早退**：Metis 将任务拆解为严格的状态机推进（Frontier）。每一步都绑定对应的治理凭证收据（Receipt）。
@@ -88,11 +94,6 @@ git diff | metis -p "审查这个 diff"
 - **分工明确的专业团队**：由 `coordinator` 统筹全局、`planner` 架构推导、`implementer` 编写代码、`reviewer` 交叉代码审查、`verifier` 执行真实测试与门禁核验。
 - **Git Worktree 物理隔离**：子 Agent 在独立的 Git 临时分支/工作区中并行推演，互不冲突，避免多处改动污染工作树。
 - **L0→L4 递归委派控制**：精准限制派生深度与 Token 消耗，防止无序递归膨胀，同时在最终聚合完整的推理链路与耗时成本树。
-
-### 4. ⚡ Plan ↔ Build 双模与全生态自由
-- **只读 Plan 模式**：严禁任何文件修改，专供深度代码走读、架构梳理与技术方案产出，零破坏风险。
-- **动态 Build 模式**：按照已审阅的 Roadmap 动态推进任务清单，实时感知进度与剩余工单。
-- **不被任何厂商锁定**：原生支持 OpenAI、Anthropic、DeepSeek、Gemini、Groq、Ollama、vLLM 以及 OrcaRouter，同时完整支持 TypeScript 插件扩展、Agent Skills 标准与 MCP 协议。
 
 <details>
 <summary><strong>基准评测实测数据与主流 Agent 矩阵对比</strong></summary>
@@ -122,11 +123,17 @@ git diff | metis -p "审查这个 diff"
 
 </details>
 
-## 合作伙伴
+## 交流与社区
 
-| 商标 | 合作方 | 链接 |
-| :---: | :--- | :--- |
-| <img src="docs/images/siliconflow-logo.png" alt="硅基流动" height="36" /> | **硅基流动（SiliconFlow）** — 国内领先的独立生态词元（Token）供应平台，为Metis提供高效、灵活的模型推理能力。 | [siliconflow.cn](https://siliconflow.cn) |
+欢迎加入 Metis 开发者与用户交流群！无论是日常使用踩坑、Bug 反馈、新特性想法交流，还是探讨多智能体前沿实践，都欢迎一起探讨：
+
+<p align="center">
+  <img src="docs/images/metis-community-qq.png" width="220" alt="Metis 交流群" /><br />
+  <strong>Metis 交流群（QQ）：801193315</strong>
+</p>
+
+- 🐛 **Bug 提交与功能建议**：欢迎在 [GitHub Issues](https://github.com/Wholiver/metis/issues) 提交反馈与追踪进度。
+- 💡 **方案与话题讨论**：欢迎参与 [GitHub Discussions](https://github.com/Wholiver/metis/discussions) 共同交流。
 
 ## 文档
 
@@ -163,18 +170,6 @@ npm --prefix desktop run build # 构建 Renderer 与 Electron Artifact
 软件包从 `@wholiver_hu/metis` 导出 Node.js SDK，并从 `@wholiver_hu/metis/rpc-entry` 导出 RPC 入口。
 
 </details>
-
-## 交流与社区
-
-欢迎加入 Metis 开发者与用户交流群！无论是日常使用踩坑、Bug 反馈、新特性想法交流，还是探讨多智能体前沿实践，都欢迎一起探讨：
-
-<p align="center">
-  <img src="docs/images/metis-community-qq.png" width="220" alt="Metis 交流群" /><br />
-  <strong>Metis 交流群（QQ）：801193315</strong>
-</p>
-
-- 🐛 **Bug 提交与功能建议**：欢迎在 [GitHub Issues](https://github.com/Wholiver/metis/issues) 提交反馈与追踪进度。
-- 💡 **方案与话题讨论**：欢迎参与 [GitHub Discussions](https://github.com/Wholiver/metis/discussions) 共同交流。
 
 ## 参与贡献
 
