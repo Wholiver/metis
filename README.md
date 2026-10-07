@@ -65,11 +65,11 @@ Standalone application with built-in Metis CLI and Server runtime (no Node.js re
 Metis for Codex / OpenCode / DeepSeek Harness ([Node.js >= 22.19.0](https://nodejs.org/)):
 
 ```bash
-npm install -g https://github.com/Wholiver/metis/releases/download/skill-v0.0.1/metis-skill-0.0.1.tgz
+npm install -g metis-skill
 metis-plugin
 ```
 
-Run `metis-plugin` to pick a host, or `metis-plugin install codex|opencode|deepseek`. See the [skill-v0.0.1 release](https://github.com/Wholiver/metis/releases/tag/skill-v0.0.1) for the offline `.tgz`.
+Run `metis-plugin` to pick a host, or `metis-plugin install codex|opencode|deepseek`.
 
 <details>
 <summary><strong>CLI installation (Node.js &gt;= 22.19.0)</strong></summary>

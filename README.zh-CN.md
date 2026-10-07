@@ -63,11 +63,11 @@ Metis:      只读规划 ──> 5角色递归委派(隔离Worktree) ──> G0-
 在 Codex / OpenCode / DeepSeek Harness 中使用 Metis（需 [Node.js >= 22.19.0](https://nodejs.org/)）：
 
 ```bash
-npm install -g https://github.com/Wholiver/metis/releases/download/skill-v0.0.1/metis-skill-0.0.1.tgz
+npm install -g metis-skill
 metis-plugin
 ```
 
-运行 `metis-plugin` 选择宿主，或直接 `metis-plugin install codex|opencode|deepseek`。离线包见 [skill-v0.0.1 Release](https://github.com/Wholiver/metis/releases/tag/skill-v0.0.1)。
+运行 `metis-plugin` 选择宿主，或直接 `metis-plugin install codex|opencode|deepseek`。
 
 <details>
 <summary><strong>CLI 安装（Node.js &gt;= 22.19.0）</strong></summary>

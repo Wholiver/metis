@@ -225,16 +225,15 @@ When modifying plugins or role definitions (`bin/metis-plugin.js`, `contracts/`,
 - **Zero Contract Drift**: Always run `npm run check-contracts` to validate that `contracts/*.json` match BUILTIN definitions in `src/core/agent-definition.ts` and the 16 frameworks in `src/core/performance-frameworks.ts`.
 - **Role Projection**: Keep plugin role projections in parity across Codex, OpenCode, and DeepSeek environments.
 
-## Metis Skill Release
+## Metis Skill Distribution
 
-Skill distribution is separate from Desktop and CLI (`@wholiver_hu/metis`) versioning.
+Skill distribution is separate from Desktop and CLI (`@wholiver_hu/metis`) versioning. Do **not** create a GitHub Release for skill-only bumps.
 
-- **Package**: `metis-skill` (CLI bins: `metis-plugin`, `metis-skill`)
+- **Package**: `metis-skill` on npm (CLI bins: `metis-plugin`, `metis-skill`)
 - **Pack**: `npm run pack:skill` → `scripts/pack-metis-skill.mjs` (esbuild-bundles TS; ships `contracts/`; Node cannot type-strip under `node_modules`)
-- **Tag / asset**: `skill-vX.Y.Z` + `metis-skill-X.Y.Z.tgz` on GitHub Releases (do not reuse the Desktop/CLI `vX.Y.Z` latest tag for skill-only bumps)
-- **Install (README Quick start, below Desktop, not collapsed)**:
-  `npm install -g https://github.com/Wholiver/metis/releases/download/skill-vX.Y.Z/metis-skill-X.Y.Z.tgz` then `metis-plugin`
-- **Smoke**: after pack, `npm install -g --prefix /tmp/metis-skill-smoke ./metis-skill-X.Y.Z.tgz` and `metis-plugin --version` / `metis-plugin install codex --root <tmpdir>`
+- **Publish**: `npm publish ./metis-skill-X.Y.Z.tgz --access public` (no `skill-v*` GitHub Release / tag)
+- **Install (README Quick start, below Desktop, not collapsed)**: `npm install -g metis-skill` then `metis-plugin`
+- **Smoke**: `npm install -g --prefix /tmp/metis-skill-smoke metis-skill` and `metis-plugin --version` / `metis-plugin install codex --root <tmpdir>`
 
 ## Recursive Multi-Agent System
 

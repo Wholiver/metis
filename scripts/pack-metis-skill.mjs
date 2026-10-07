@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * Pack Metis Skill as a standalone npm tarball for GitHub Releases.
+ * Pack Metis Skill as a standalone npm tarball (publish to npm; no GitHub Release).
  *
  * Bundles TypeScript with esbuild (Node refuses type-stripping under node_modules),
  * and ships contracts next to the package for runtime loading.
  *
  * Usage:
  *   node scripts/pack-metis-skill.mjs [--version 0.0.1] [--out-dir .]
+ *   npm publish ./metis-skill-<version>.tgz --access public
  *
  * Produces: metis-skill-<version>.tgz
  */
@@ -184,7 +185,7 @@ Explicit-only Metis orchestration skill for Codex, OpenCode, and DeepSeek Harnes
 ## Install
 
 \`\`\`bash
-npm install -g https://github.com/Wholiver/metis/releases/download/skill-v${version}/metis-skill-${version}.tgz
+npm install -g metis-skill
 metis-plugin
 \`\`\`
 
