@@ -89,5 +89,17 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 			return () => ipcRenderer.removeListener("browser:host-busy", handler);
 		},
 	},
+	routines: {
+		list: () => ipcRenderer.invoke("routine:list"),
+		create: (payload) => ipcRenderer.invoke("routine:create", payload),
+		update: (id, patch) => ipcRenderer.invoke("routine:update", { id, patch }),
+		delete: (id) => ipcRenderer.invoke("routine:delete", { id }),
+		runNow: (id) => ipcRenderer.invoke("routine:run-now", { id }),
+		onUpdated: (listener) => {
+			const handler = (_event, payload) => listener(payload);
+			ipcRenderer.on("routine:updated", handler);
+			return () => ipcRenderer.removeListener("routine:updated", handler);
+		},
+	},
 });
 

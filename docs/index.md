@@ -83,4 +83,5 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 ## Development
 
 - [Development](development.md) - local setup, project structure, and debugging.
+- [原版与 Skill 正常运行](metis-runtime-expected.md) - T0–T3 在原版和插件 skill 上的预期轨迹，供对照验收。
 

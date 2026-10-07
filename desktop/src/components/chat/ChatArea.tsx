@@ -10,6 +10,7 @@ import { Composer } from './Composer';
 import { SkillCommand } from './SkillPicker';
 import { UserInputCard } from './UserInputCard';
 import { SubagentConversation } from './SubagentConversation';
+import { Square } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import type { LearningProgressState } from '../../hooks/useMetisServer';
 
@@ -58,6 +59,7 @@ interface ChatAreaProps {
   quota5h?: RateLimitWindow;
   quota7d?: RateLimitWindow;
   onOpenSubagent?: (partId: string) => void;
+  onStopSubagent?: (subagentId: string) => void;
   viewingSubagent?: SubagentItem | null;
   subagentTrail?: SubagentItem[];
   onNavigateBreadcrumb?: (depth: number) => void;
@@ -112,6 +114,7 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   quota5h,
   quota7d,
   onOpenSubagent,
+  onStopSubagent,
   viewingSubagent = null,
   subagentTrail = [],
   onNavigateBreadcrumb,
@@ -196,6 +199,7 @@ export const ChatArea = React.memo<ChatAreaProps>(({
           projectName={projectName}
           isLoading={isLoading}
           isStreaming={showActiveProgress}
+          isCompacting={isCompacting}
           isHomeEmpty={isHomeEmpty}
           workflowProposal={workflowProposal}
           onOpenPlan={onOpenPlan}
@@ -208,7 +212,7 @@ export const ChatArea = React.memo<ChatAreaProps>(({
       )}
       {viewingSubagent ? (
         <div
-          className="flex-shrink-0 border-t border-line px-4 py-3 flex items-center justify-center bg-page"
+          className="flex-shrink-0 border-t border-line px-4 py-3 flex items-center justify-center gap-3 bg-page"
           data-subagent-composer-bar=""
         >
           <button
@@ -219,6 +223,19 @@ export const ChatArea = React.memo<ChatAreaProps>(({
           >
             {t('backToParent', { name: parentLabel })}
           </button>
+          {viewingSubagent.status === 'running' && onStopSubagent && (
+            <button
+              type="button"
+              onClick={() => onStopSubagent(viewingSubagent.agentId || viewingSubagent.id)}
+              className="rounded-chip px-3 py-1.5 text-[13px] font-medium text-red hover:bg-red/10 transition-colors flex items-center gap-1.5"
+              data-subagent-stop-button=""
+              title={t('stopSubagent')}
+              aria-label={t('stopSubagent')}
+            >
+              <Square className="h-3 w-3 fill-current" aria-hidden="true" />
+              <span>{t('stopSubagent')}</span>
+            </button>
+          )}
         </div>
       ) : pendingUserInput ? (
         <UserInputCard

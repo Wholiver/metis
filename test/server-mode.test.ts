@@ -83,6 +83,8 @@ function createRuntimeFixture() {
 			return { text, timestamp: Date.now() };
 		}),
 		abort: vi.fn(async () => {}),
+		abortSubagent: vi.fn((_subagentId: string) => true),
+		abortSubagents: vi.fn(),
 		compact: vi.fn(async () => ({ summary: "done" })),
 		setModel: vi.fn(async () => {}),
 		getAvailableThinkingLevels: vi.fn(() => ["off", "low", "medium", "high"]),
@@ -356,10 +358,17 @@ describe("server mode", () => {
 		const messageData = (await fetch(`${handle.address.url}/session/messages`).then((response) => response.json())) as {
 			serverInstanceId: string;
 			serverSequence: number;
+			messages: Array<{ id: string; role: string }>;
 			messageTimings: Array<{ messageTimestamp: number; completedAt: number }>;
 		};
 		expect(messageData.serverInstanceId).toBeTypeOf("string");
 		expect(messageData.serverSequence).toBeGreaterThan(0);
+		expect(messageData.messages).toEqual([{
+			id: "entry-1",
+			role: "assistant",
+			timestamp: 1785081600000,
+			content: [],
+		}]);
 		expect(messageData.messageTimings).toEqual([{
 			messageTimestamp: 1785081600000,
 			completedAt: Date.parse("2026-07-26T16:00:05.000Z"),
@@ -530,6 +539,15 @@ describe("server mode", () => {
 		const abortResponse = await fetch(`${handle.address.url}/session/abort`, { method: "POST" });
 		expect(abortResponse.status).toBe(200);
 		expect(fixture.session.abort).toHaveBeenCalledOnce();
+
+		const abortSubagentResponse = await fetch(`${handle.address.url}/session/abort`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ subagentId: "child-worker-1" }),
+		});
+		expect(abortSubagentResponse.status).toBe(200);
+		expect(fixture.session.abortSubagent).toHaveBeenCalledWith("child-worker-1");
+		expect(await abortSubagentResponse.json()).toEqual({ success: true });
 
 		const newWorkspaceResponse = await fetch(`${handle.address.url}/session/new`, {
 			method: "POST",

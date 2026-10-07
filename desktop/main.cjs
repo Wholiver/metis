@@ -18,6 +18,7 @@ const {
 const { createSseIpcBridge } = require("./sse-ipc-bridge.cjs");
 const desktopI18n = require("./i18n.cjs");
 const { createBrowserHostController } = require("./browser-host.cjs");
+const { createRoutineHostController } = require("./routine-host.cjs");
 const { WorkspaceCreateError, createWorkspaceDirectory } = require("./workspace-create.cjs");
 const workspaceGit = require("./workspace-git.cjs");
 
@@ -42,6 +43,15 @@ let browserHostController = createBrowserHostController({
 	getWorkspaceRoot: () => workspaceRoot,
 });
 let browserHostReady;
+let routineHostController = createRoutineHostController({
+	getServerBaseUrl: () => metisServer.baseUrl,
+	onRoutineUpdated: (routine, allRoutines) => {
+		if (mainWindow && !mainWindow.isDestroyed()) {
+			mainWindow.webContents.send("routine:updated", { routine, routines: allRoutines });
+		}
+	},
+});
+let routineHostReady;
 
 function nativeText(key, variables) {
 	return desktopI18n.t(key, desktopLanguage, variables, [app.getLocale()]);
@@ -216,7 +226,9 @@ async function startLocalMetisServer(target) {
 	if (health?.healthy === true) {
 		const needsBrowserHost = Boolean(browserHostController.baseUrl);
 		const serverHasBrowserHost = health.browserHostConfigured === true;
-		if (!needsBrowserHost || serverHasBrowserHost) {
+		const needsRoutineHost = Boolean(routineHostController.baseUrl);
+		const serverHasRoutineHost = health.routineHostConfigured === true;
+		if ((!needsBrowserHost || serverHasBrowserHost) && (!needsRoutineHost || serverHasRoutineHost)) {
 			if (autoServerProcess && autoServerTarget?.baseUrl !== target.baseUrl) stopAutoServer();
 			cancelAutoServerRestart();
 			autoServerRestartDelay = 500;
@@ -248,6 +260,10 @@ async function startLocalMetisServer(target) {
 	if (browserHostController.baseUrl) {
 		serverEnv.METIS_BROWSER_HOST = browserHostController.baseUrl;
 		serverEnv.METIS_BROWSER_HOST_TOKEN = browserHostController.token;
+	}
+	if (routineHostController.baseUrl) {
+		serverEnv.METIS_ROUTINE_HOST = routineHostController.baseUrl;
+		serverEnv.METIS_ROUTINE_HOST_TOKEN = routineHostController.token;
 	}
 	const serverProcess = utilityProcess.fork(cliPath, ["server", "--hostname", target.hostname, "--port", String(target.port)], {
 		cwd: workspaceRoot,
@@ -2075,6 +2091,15 @@ app.whenReady().then(async () => {
 	} catch (error) {
 		console.error("[desktop] Failed to start browser host:", error);
 	}
+	try {
+		routineHostReady = routineHostController.start();
+		await routineHostReady;
+		process.env.METIS_ROUTINE_HOST = routineHostController.baseUrl;
+		process.env.METIS_ROUTINE_HOST_TOKEN = routineHostController.token;
+		process.stderr.write(`[desktop] routine host listening on ${routineHostController.baseUrl}\n`);
+	} catch (error) {
+		console.error("[desktop] Failed to start routine host:", error);
+	}
 	void ensureLocalMetisServer();
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) {
@@ -2092,6 +2117,7 @@ app.on("before-quit", () => {
 	appIsQuitting = true;
 	metisEventController?.abort();
 	browserHostController.stop();
+	routineHostController.stop();
 	stopAutoServer();
 });
 
@@ -2289,6 +2315,22 @@ function registerIpc() {
 			title: payload.title,
 		});
 		return true;
+	});
+
+	ipcMain.handle("routine:list", () => {
+		return { ok: true, routines: routineHostController.list() };
+	});
+	ipcMain.handle("routine:create", (_event, payload) => {
+		return routineHostController.create(payload);
+	});
+	ipcMain.handle("routine:update", (_event, { id, patch } = {}) => {
+		return routineHostController.update(id, patch);
+	});
+	ipcMain.handle("routine:delete", (_event, { id } = {}) => {
+		return routineHostController.delete(id);
+	});
+	ipcMain.handle("routine:run-now", (_event, { id } = {}) => {
+		return routineHostController.runNow(id);
 	});
 }
 

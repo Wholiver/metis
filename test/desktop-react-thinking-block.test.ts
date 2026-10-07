@@ -43,4 +43,15 @@ describe('desktop React thinking block', () => {
     expect(first?.parts?.[0].id).toBe('msg-1-thinking-0');
     expect(second?.parts?.[0].id).toBe('msg-2-thinking-0');
   });
+
+  it('supports compacting state to replace thinking shimmer with compacting shimmer', () => {
+    const thinking = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/ThinkingBlock.tsx'), 'utf8');
+    const work = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/AssistantWork.tsx'), 'utf8');
+    const i18n = readFileSync(resolve(process.cwd(), 'desktop/i18n-source.cjs'), 'utf8');
+    expect(thinking).toContain("compacting ? t('sessionCompacting') : t('sessionThinking')");
+    expect(thinking).toContain("data-compacting");
+    expect(work).toContain("compacting={isCompacting}");
+    expect(i18n).toContain('"sessionCompacting": "压缩中"');
+    expect(i18n).toContain('"sessionCompacting": "Compacting"');
+  });
 });

@@ -117,7 +117,7 @@ export class SharedMutatingOwnerRegistry {
 		if (overlap) {
 			return `OVERLAPPING_OWNED_PATHS: mutating owners ${overlap[0]!.ownerId} and ${overlap[1]!.ownerId} claim overlapping paths`;
 		}
-		if (this.active.size > 0 && isBroadClaim(next.ownedPaths) && [...this.active.values()].some((c) => isBroadClaim(c.ownedPaths))) {
+		if (this.active.size > 0 && (isBroadClaim(next.ownedPaths) || [...this.active.values()].some((c) => isBroadClaim(c.ownedPaths)))) {
 			return `OVERLAPPING_OWNED_PATHS: only one shared-cwd mutating owner may run at a time`;
 		}
 		this.active.set(ownerId, next);

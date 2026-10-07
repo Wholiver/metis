@@ -136,6 +136,10 @@ export interface Message {
   attachments?: MessageAttachment[];
   tags?: string[];
   usage?: MessageUsage;
+  compaction?: {
+    tokensBefore: number;
+    summary: string;
+  };
 }
 
 export interface WorkflowProposalState {
@@ -218,8 +222,18 @@ export interface ProviderCatalogEntry {
 export interface RoutineItem {
   id: string;
   title: string;
-  scheduleText: string;
+  cron: string;
+  scheduleText?: string;
+  prompt: string;
+  projectPath?: string;
   status: 'active' | 'paused';
+  createdAt?: string;
+  lastRunAt?: string;
+  lastSessionId?: string;
+  lastStatus?: 'success' | 'failed' | 'running';
+  lastError?: string;
+  nextRunAt?: string;
+  source?: 'manual' | 'self_learning';
 }
 
 export interface ProjectItem {
@@ -261,4 +275,48 @@ export interface AdaptationSummaryItem {
   status?: 'active' | 'trial' | 'retired';
   description?: string;
   reason?: string;
+}
+
+export interface UserPreferenceItem {
+  id: string;
+  value: string;
+  confidence: number;
+  updatedAt: string;
+  evidence?: string;
+  status?: 'active' | 'overridden' | 'retired';
+}
+
+export interface UserPreferencesProfileData {
+  communication?: Record<string, UserPreferenceItem>;
+  engineering?: Record<string, UserPreferenceItem>;
+  interaction?: Record<string, UserPreferenceItem>;
+  updatedAt?: string;
+  version?: number;
+}
+
+export interface TacticalPlaybookData {
+  id: string;
+  name: string;
+  description: string;
+  triggerKeywords: string[];
+  strategy: string;
+  verificationSteps?: string[];
+  confidence: number;
+  updatedAt: string;
+  status?: 'active' | 'tentative' | 'retired';
+}
+
+export interface MacroWorkflowData {
+  id: string;
+  name: string;
+  description: string;
+  steps: Array<{ tool: string; argsTemplate?: Record<string, any>; description?: string }>;
+  updatedAt: string;
+}
+
+export interface ArchitectureEvolutionData {
+  playbooks?: TacticalPlaybookData[];
+  macroWorkflows?: MacroWorkflowData[];
+  projectTools?: Array<{ name: string; description: string; runtime: string }>;
+  updatedAt?: string;
 }

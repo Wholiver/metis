@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, useReducer } 
 import { Sparkles, X } from 'lucide-react';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { ChatArea } from './components/chat/ChatArea';
+import { RoutinesManager } from './components/routines/RoutinesManager';
 import { Inspector } from './components/inspector/Inspector';
 import {
   createInspectorTabsState,
@@ -38,6 +39,7 @@ import { Onboarding, shouldShowOnboarding } from './components/onboarding/Onboar
 import { SkillCommand } from './components/chat/SkillPicker';
 import { Agent, AssistantContentPart, Message, ModelOption, PendingUserInput, ProjectItem, ThinkingOption, WorkflowPlanState } from './types';
 import { resolveBrowserShineActive } from './lib/browser-control';
+import { useI18n } from './i18n';
 
 const PROJECTS_STORAGE_KEY = 'metis.desktop.projects.v1';
 const ACTIVE_PROJECT_STORAGE_KEY = 'metis.desktop.activeProject.v1';
@@ -267,6 +269,7 @@ const EXTENSION_UI_CAPTURE_REQUEST: ExtensionUiRequest = {
 
 export function App() {
   useSystemTheme();
+  const { t } = useI18n();
   const captureParams = new URLSearchParams(window.location.search);
   const capturePlanPreview = captureParams.has('capture-plan-preview');
   const captureWorkflowPlan = captureParams.has('capture-workflow-plan');
@@ -303,6 +306,7 @@ export function App() {
     messages,
     sendMessage,
     abortTurn,
+    abortSubagent,
     models,
     providerCatalog,
     refreshModels,
@@ -355,6 +359,7 @@ export function App() {
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
   const [browserHostBusy, setBrowserHostBusy] = useState(false);
   const [browserShineLatched, setBrowserShineLatched] = useState(false);
+  const [isRoutinesViewActive, setIsRoutinesViewActive] = useState(false);
   const [inspectorTabsState, dispatchInspectorTabs] = useReducer(
     inspectorTabsReducer,
     undefined,
@@ -579,6 +584,25 @@ export function App() {
   useEffect(() => {
     setViewingSubagentStack([]);
   }, [activeAgentId]);
+
+  const handleStopSubagent = useCallback(async (subagentId: string) => {
+    void abortSubagent(subagentId);
+    if (!activeAgentId) return;
+    setSubagentHistory((current) => {
+      const existing = current[activeAgentId] || [];
+      const updated = existing.map((item) => {
+        if (item.id === subagentId || item.agentId === subagentId) {
+          return {
+            ...item,
+            status: 'failed' as const,
+            error: t('subagentStopped') || 'Subagent stopped',
+          };
+        }
+        return item;
+      });
+      return { ...current, [activeAgentId]: updated };
+    });
+  }, [abortSubagent, activeAgentId, t]);
 
   useEffect(() => {
     if (!activeAgentId || !messagesSessionId || messagesSessionId !== activeAgentId) return;
@@ -835,6 +859,7 @@ export function App() {
   }, [activeAgent?.sessionPath, activeAgentId, archivedSessions, removeConversation, request]);
 
   const handleSelectProject = useCallback((id: string) => {
+    setIsRoutinesViewActive(false);
     const targetProj = projects.find((p) => p.id === id);
     if (!targetProj || targetProj.id === activeProjectId) return;
     setActiveProjectId(id);
@@ -871,6 +896,7 @@ export function App() {
   }, []);
 
   const handleSelectAgent = useCallback(async (agentId: string) => {
+    setIsRoutinesViewActive(false);
     setViewingSubagentStack([]);
     const switching = selectConversation(agentId);
     let ownerPath: string | undefined;
@@ -1052,9 +1078,38 @@ export function App() {
   }, []);
 
   const handleNewChat = useCallback(() => {
+    setIsRoutinesViewActive(false);
     setViewingSubagentStack([]);
     void newConversation();
   }, [newConversation]);
+
+  const handleOpenRoutines = useCallback(() => {
+    setIsRoutinesViewActive(true);
+  }, []);
+
+  const handleCloseRoutines = useCallback(() => {
+    setIsRoutinesViewActive(false);
+  }, []);
+
+  const handleJumpToRoutineSession = useCallback(async (sessionId: string, projectPath?: string) => {
+    setIsRoutinesViewActive(false);
+    if (projectPath && (!activeProject || !pathsEqual(projectPath, activeProject.path))) {
+      const targetProject = projects.find((p) => pathsEqual(p.path, projectPath));
+      if (targetProject) {
+        setActiveProjectId(targetProject.id);
+        const desktop = (window as any).metisDesktop;
+        if (desktop?.workspace?.set) {
+          void desktop.workspace.set(targetProject.path).catch((err: unknown) => {
+            console.warn('[desktop] Failed to set workspace:', err);
+          });
+        }
+        await selectProject(targetProject);
+      }
+    } else {
+      await refresh();
+    }
+    await handleSelectAgent(sessionId);
+  }, [activeProject, handleSelectAgent, projects, refresh, selectProject]);
 
   const handleOpenInspectorTab = useCallback((kind: InspectorTabKind) => {
     setIsInspectorOpen(true);
@@ -1214,6 +1269,8 @@ export function App() {
             onPrefetchProjectSessions={captureConversationIcons ? undefined : prefetchProjectSessions}
             onAddProject={handleAddProject}
             onNewChat={handleNewChat}
+            isRoutinesOpen={isRoutinesViewActive}
+            onOpenRoutines={handleOpenRoutines}
             onArchiveAgent={captureConversationIcons ? undefined : handleArchiveAgent}
             onOpenSettings={handleOpenSettings}
             onToggleSidebar={handleCloseSidebar}
@@ -1233,7 +1290,18 @@ export function App() {
           />
       </div>
 
-      {/* 2. Center Main Chat Area */}
+      {/* 2. Center Main Workspace Area: Routines Manager or Chat Area */}
+      {isRoutinesViewActive ? (
+        <RoutinesManager
+          projects={projects}
+          activeProjectPath={activeProject?.path}
+          onClose={handleCloseRoutines}
+          onSelectSession={handleJumpToRoutineSession}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={handleToggleSidebar}
+          onNewChat={handleNewChat}
+        />
+      ) : (
       <ChatArea
         agent={activeAgent}
         messages={displayedMessages}
@@ -1283,6 +1351,7 @@ export function App() {
         quota5h={quota5h}
         quota7d={quota7d}
         onOpenSubagent={handleOpenSubagent}
+        onStopSubagent={handleStopSubagent}
         viewingSubagent={viewingSubagent}
         subagentTrail={subagentTrail}
         onNavigateBreadcrumb={handleNavigateBreadcrumb}
@@ -1291,6 +1360,7 @@ export function App() {
         onOpenSettingsTab={handleOpenSettingsTab}
         onDismissLearningProgress={dismissLearningProgress}
       />
+      )}
 
       {/* 3. Right Inspector Panel */}
       <div className={isInspectorOpen ? 'contents' : 'hidden'} aria-hidden={!isInspectorOpen || undefined} data-inspector-shell="">
@@ -1321,6 +1391,7 @@ export function App() {
             onMoveTab={handleMoveInspectorTab}
             onUpdateTab={handleUpdateInspectorTab}
             onOpenSubagent={handleOpenRootSubagent}
+            onStopSubagent={handleStopSubagent}
             onClose={handleCloseInspector}
             onCollapse={handleCloseInspector}
             activeSessionId={activeAgentId || messagesSessionId || null}

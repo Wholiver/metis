@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": "1.0.0",
+  "description": "Metis 插件版 - Source of Truth Frameworks Contract (16 Core Frameworks)",
+  "frameworks": [
+    {
+      "id": "apply",
+      "name": "Targeted Apply Framework",
+      "category": "any",
+      "tier": "T0/T1",
+      "description": "Mechanically apply a fully specified change without design decisions."
+    },
+    {
+      "id": "backend-build",
+      "name": "Backend Build Framework",
+      "category": "backend",
+      "tier": "T1/T2",
+      "description": "Compile, bundle, and resolve dependencies for backend systems."
+    },
+    {
+      "id": "backend-fix",
+      "name": "Backend Defect Repair Framework",
+      "category": "backend",
+      "tier": "T1/T2",
+      "description": "Root-cause diagnosis, test reproduction, and verified defect repair."
+    },
+    {
+      "id": "backend-implement",
+      "name": "Backend Implementation Framework",
+      "category": "backend",
+      "tier": "T1/T2",
+      "description": "Implement new backend services, models, and endpoints."
+    },
+    {
+      "id": "composition",
+      "name": "Architectural Composition Framework",
+      "category": "architecture",
+      "tier": "T2/T3",
+      "description": "Multi-module architecture, service wiring, and cross-cutting concerns."
+    },
+    {
+      "id": "docs",
+      "name": "Documentation Framework",
+      "category": "docs",
+      "tier": "T0/T1",
+      "description": "Author, update, and audit technical documentation."
+    },
+    {
+      "id": "frontend-build",
+      "name": "Frontend Build Framework",
+      "category": "frontend",
+      "tier": "T1/T2",
+      "description": "Compile, bundle, and resolve UI assets and client applications."
+    },
+    {
+      "id": "frontend-fix",
+      "name": "Frontend Defect Repair Framework",
+      "category": "frontend",
+      "tier": "T1/T2",
+      "description": "Diagnose and fix UI/UX bugs, layout breaks, and client state issues."
+    },
+    {
+      "id": "frontend-implement",
+      "name": "Frontend Implementation Framework",
+      "category": "frontend",
+      "tier": "T1/T2",
+      "description": "Build responsive UI components, state management, and user interactions."
+    },
+    {
+      "id": "frontend-review",
+      "name": "Frontend Review Framework",
+      "category": "frontend",
+      "tier": "T1/T2",
+      "description": "Visual, accessibility, performance, and code quality review for UI."
+    },
+    {
+      "id": "generation",
+      "name": "Code Generation Framework",
+      "category": "generation",
+      "tier": "T1/T2",
+      "description": "Generate scaffolding, boilerplate, schemas, and typed contracts."
+    },
+    {
+      "id": "plan-design",
+      "name": "Architecture Design Planning Framework",
+      "category": "planning",
+      "tier": "T1/T2",
+      "description": "System design, interfaces, tradeoffs, and structural planning."
+    },
+    {
+      "id": "plan-research",
+      "name": "Deep Codebase Research Planning Framework",
+      "category": "planning",
+      "tier": "T1/T2",
+      "description": "Ground truth discovery, dependency analysis, and exploration."
+    },
+    {
+      "id": "plan-scope",
+      "name": "Scope Decomposition Planning Framework",
+      "category": "planning",
+      "tier": "T1/T2",
+      "description": "Decompose complex mission into disjoint bounded lanes and roadmaps."
+    },
+    {
+      "id": "polish",
+      "name": "Quality Polish Framework",
+      "category": "polish",
+      "tier": "T0/T1",
+      "description": "Code aesthetics, comments, formatting, typing, and cleanup."
+    },
+    {
+      "id": "refactor",
+      "name": "Safe Refactoring Framework",
+      "category": "refactoring",
+      "tier": "T1/T2",
+      "description": "Restructure existing code safely with invariant protection."
+    }
+  ]
+}

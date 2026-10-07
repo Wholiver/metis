@@ -44,6 +44,8 @@ export interface ReliableSessionLike {
 	collaborationMode?: string;
 	/** Optional: latest assistant text / stopReason collection for outcomes. */
 	collectAssistantOutcome?: () => AgentRunOutcome;
+	/** Optional: wait for active subagents and follow-up turns to complete before ending. */
+	waitForSubagentsAndTurns?: (signal?: AbortSignal, timeoutMs?: number) => Promise<void>;
 }
 
 /** Adapters/headless oracles set task path env or explicit taskPaths. */
@@ -123,6 +125,9 @@ async function promptOriginalWorkflow(options: RunReliableTurnOptions): Promise<
 	if (!options.rootPromptText && (options.followUpMessages?.length ?? 0) === 0 && options.instruction.trim()) {
 		await promptOnce(options.session, options.instruction, options.images);
 	}
+	if (options.session.waitForSubagentsAndTurns) {
+		await options.session.waitForSubagentsAndTurns(options.signal);
+	}
 }
 
 function failingOrPassingFromOutcome(outcome: AgentRunOutcome, contract = EMPTY_TASK_CONTRACT): ExecutionResult {
@@ -199,9 +204,15 @@ export function buildReliableControllerDeps(args: {
 			for (const message of args.followUpMessages ?? []) {
 				await promptOnce(args.session, message);
 			}
+			if (args.session.waitForSubagentsAndTurns) {
+				await args.session.waitForSubagentsAndTurns();
+			}
 			return args.collectAssistantOutcome();
 		},
 		runRepair: async (repair) => {
+			if (args.session.waitForSubagentsAndTurns) {
+				await args.session.waitForSubagentsAndTurns();
+			}
 			const repairPrompt = [
 				"Host verification failed. Repair the workspace using the exact failure evidence.",
 				`Failure code: ${repair.failure.code}`,
@@ -212,6 +223,9 @@ export function buildReliableControllerDeps(args: {
 				.filter(Boolean)
 				.join("\n");
 			await args.session.prompt(repairPrompt);
+			if (args.session.waitForSubagentsAndTurns) {
+				await args.session.waitForSubagentsAndTurns();
+			}
 			return args.collectAssistantOutcome();
 		},
 		runPlanner: namedRunners.runPlanner,

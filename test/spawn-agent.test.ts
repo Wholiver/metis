@@ -27,6 +27,8 @@ import {
 	SPAWN_AGENT_GUIDANCE,
 	spawnAgentSchema,
 	type ChildAgentResultPayload,
+	extractChildResultFromOutput,
+	normalizeChildResult,
 } from "../src/core/tools/spawn_agent.ts";
 import { setGlobalSpawnGuard, SpawnGuard } from "../src/core/spawn-guard.ts";
 import { PerformanceRuntime } from "../src/core/performance-runtime.ts";
@@ -118,6 +120,87 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			itemId: "lane-a",
 		});
 		expect(payload.error).toContain("review blocked");
+	});
+
+	it("host-records G5 from ChildResult through spawn_agent and returns nextAction", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-host-gate-"));
+		tempDirs.push(tempDir);
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-spawn-host-perf-"));
+		tempDirs.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({
+			kind: "admit",
+			mission: "Draw pelican",
+			workspaceRoot: tempDir,
+			admission: {
+				tier: "T1",
+				taskShape: "bounded",
+				deliverables: ["pelican.svg"],
+				acceptanceCriteria: ["SVG renders"],
+				verificationCommands: ["browser screenshot"],
+				sharedMutableState: false,
+				lanes: [{
+					id: "pelican-svg",
+					objective: "Make pelican.svg",
+					framework: "frontend-build",
+					ownedPaths: ["pelican.svg"],
+					deliverables: ["pelican.svg"],
+					acceptanceCriteria: ["SVG renders"],
+					verificationCommands: ["browser screenshot"],
+					dependsOn: [],
+				}],
+			},
+		});
+		const g4Path = join(state.governanceRoot, "artifacts", "g4.md");
+		writeFileSync(
+			g4Path,
+			"# g4\n- changedFiles: pelican.svg\n- testCommand: browser screenshot\n- testOutput: pass\n- exitCode: 0\n- visualStatus: pass\n",
+			"utf8",
+		);
+		runtime.recordGateReport({
+			gate: "G4",
+			actor: "root",
+			role: "root",
+			verdict: "pass",
+			evidence: "artifacts/g4.md",
+		});
+		expect(runtime.state?.frontier).toBe("G4-assurance");
+
+		const definition = createSpawnAgentToolDefinition(tempDir, {
+			recordChildGate: (input) =>
+				runtime.recordChildGateFromResult({
+					agentId: input.agentId,
+					role: input.role,
+					gate: input.gate as "G5" | "G6",
+					itemId: input.itemId,
+					outcome: input.outcome,
+					childResult: input.childResult,
+				}),
+		});
+		const execution = definition.execute(
+			"host-g5",
+			{ agent: "reviewer", task: "Review pelican", laneId: "pelican-svg", gate: "G5" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+		await vi.waitFor(() => expect(mockChild.stdout.listenerCount("data")).toBeGreaterThan(0));
+		mockChild.stdout.emit("data", Buffer.from(childResultLine("G5 PASS pelican.svg")));
+		mockChild.emit("close", 0);
+		const result = await execution;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload).toMatchObject({
+			status: "success",
+			outcome: "pass",
+			gate: "G5",
+			frontier: "G4-assurance",
+		});
+		expect(payload.hostGate?.evidence).toMatch(/host-g5-/);
+		expect(payload.nextAction).toMatch(/G6|verifier/);
+		expect(runtime.state?.frontier).toBe("G4-assurance");
+		expect(runtime.state?.reports.some((report) => report.gate === "G5" && report.actor.startsWith("reviewer-"))).toBe(true);
 	});
 
 	it("returns no_verdict when a governed child exits zero without its gate", async () => {
@@ -718,5 +801,205 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 			if (previous === undefined) delete process.env.METIS_EXECUTION_PROFILE;
 			else process.env.METIS_EXECUTION_PROFILE = previous;
 		}
+	});
+
+	it("passes lane or explicit ownedPaths to claimMutatingOwner instead of root default", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-owned-"));
+		tempDirs.push(tempDir);
+		const claimedPaths: string[][] = [];
+		const definition = createSpawnAgentToolDefinition(tempDir, {
+			claimMutatingOwner: (_id, _role, ownedPaths) => {
+				claimedPaths.push(ownedPaths);
+				return undefined;
+			},
+			getLaneOwnedPaths: (laneId) => {
+				if (laneId === "lane-ui") return ["public", "tests/ui"];
+				return undefined;
+			},
+		});
+
+		const call = definition.execute(
+			"call-1",
+			{ agent: "implementer", task: "build ui", laneId: "lane-ui" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+		await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(1));
+		mockChild.emit("close", 0);
+		await call;
+
+		expect(claimedPaths).toEqual([["public", "tests/ui"]]);
+	});
+
+	it("does not duplicate parts across multiple streaming message_update events", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-stream-"));
+		tempDirs.push(tempDir);
+
+		const definition = createSpawnAgentToolDefinition(tempDir, {
+			runtimeContext: {
+				currentDepth: 0,
+				currentAgentId: "root",
+				rootRunId: "run-stream-dedupe",
+			},
+		});
+
+		const executePromise = definition.execute(
+			"tool-call-stream",
+			{ agent: "implementer", task: "Implement feature" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+
+		await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
+
+		const events = [
+			JSON.stringify({ type: "message_start", message: { role: "assistant", content: [] } }),
+			JSON.stringify({
+				type: "message_update",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "text", text: "I will read" },
+						{ type: "toolCall", id: "cmd-1", name: "bash", arguments: { command: "cat pointer" } },
+					],
+				},
+			}),
+			JSON.stringify({
+				type: "message_update",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "text", text: "I will read the pointer" },
+						{ type: "toolCall", id: "cmd-1", name: "bash", arguments: { command: "cat pointer" } },
+					],
+				},
+			}),
+			JSON.stringify({
+				type: "message_update",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "text", text: "I will read the canonical pointer" },
+						{ type: "toolCall", id: "cmd-1", name: "bash", arguments: { command: "cat pointer" } },
+					],
+				},
+			}),
+			JSON.stringify({
+				type: "message_end",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "text", text: "I will read the canonical pointer" },
+						{ type: "toolCall", id: "cmd-1", name: "bash", arguments: { command: "cat pointer" } },
+					],
+				},
+			}),
+			childResultLine("Read successfully"),
+		].join("\n");
+
+		mockChild.stdout.emit("data", Buffer.from(events));
+		mockChild.emit("close", 0);
+
+		const rawResult = await executePromise;
+		const payload = JSON.parse(rawResult.content[0].text) as ChildAgentResultPayload & { parts: any[] };
+
+		expect(payload.parts).toBeDefined();
+		// Must only have 2 parts (1 toolCall, 1 text), NOT 2 * 4 = 8 duplicated parts!
+		expect(payload.parts).toHaveLength(2);
+		expect(payload.parts[0].type).toBe("text");
+		expect(payload.parts[0].text).toBe("I will read the canonical pointer");
+		expect(payload.parts[1].type).toBe("toolCall");
+		expect(payload.parts[1].name).toBe("bash");
+	});
+
+	it("extracts ChildResult from markdown fenced code blocks and normalizes fields", () => {
+		const fenced = [
+			"Here is my final report after testing:",
+			"```json",
+			"{",
+			'  "status": "completed",',
+			'  "summary": "All tests pass",',
+			'  "changedFiles": ["src/app.ts"],',
+			'  "commands": [{ "argv": ["npm", "test"], "cwd": ".", "exitCode": 0 }]',
+			"}",
+			"```",
+		].join("\n");
+
+		const result = extractChildResultFromOutput(fenced);
+		expect(result).toBeDefined();
+		expect(result?.status).toBe("completed");
+		expect(result?.summary).toBe("All tests pass");
+		expect(result?.filesChanged).toEqual(["src/app.ts"]);
+		expect(result?.commands).toHaveLength(1);
+		expect(result?.findings).toEqual([]);
+	});
+
+	it("normalizes verdict pass and testOutput into completed ChildResult", () => {
+		const raw = JSON.stringify({
+			verdict: "pass",
+			testCommand: "node test.mjs",
+			testOutput: "5 passed, 0 failed",
+			files: ["dist/index.js"],
+		});
+
+		const result = extractChildResultFromOutput(raw);
+		expect(result).toBeDefined();
+		expect(result?.status).toBe("completed");
+		expect(result?.summary).toBe("5 passed, 0 failed");
+		expect(result?.filesChanged).toEqual(["dist/index.js"]);
+		expect(result?.commands).toEqual([{ argv: ["node", "test.mjs"], cwd: ".", exitCode: 0 }]);
+	});
+
+	it("extracts multiline ChildResult without code fences", () => {
+		const multiline = `
+Task completed successfully.
+{
+  "status": "completed",
+  "summary": "Pipeline refactor finished",
+  "changedFiles": ["tools/cms.mjs"]
+}
+`;
+		const result = extractChildResultFromOutput(multiline);
+		expect(result).toBeDefined();
+		expect(result?.status).toBe("completed");
+		expect(result?.summary).toBe("Pipeline refactor finished");
+		expect(result?.filesChanged).toEqual(["tools/cms.mjs"]);
+	});
+
+	it("returns undefined for bare status without any child result indicators", () => {
+		expect(extractChildResultFromOutput('{"status": "success"}')).toBeUndefined();
+		expect(extractChildResultFromOutput('{"status": "ok"}')).toBeUndefined();
+		expect(extractChildResultFromOutput('{"result": "pass"}')).toBeUndefined();
+	});
+
+	it("rejects completed G4 implementer when filesChanged is empty", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-g4-empty-"));
+		tempDirs.push(tempDir);
+		const definition = createSpawnAgentToolDefinition(tempDir);
+		const execution = definition.execute(
+			"governed-g4-empty",
+			{ agent: "implementer", task: "Implement feature without saving files", gate: "G4" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+		await vi.waitFor(() => expect(mockChild.stdout.listenerCount("data")).toBeGreaterThan(0));
+		mockChild.stdout.emit("data", Buffer.from(childResultLine("Finished thinking", "completed")));
+		mockChild.emit("close", 0);
+		const result = await execution;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload.status).toBe("error");
+		expect(payload.outcome).toBe("invalid");
+		expect(payload.errorCode).toBe("CHILD_RESULT_INVALID");
+		expect(payload.error).toContain("mutating implementer completed G4 without any changed files");
 	});
 });

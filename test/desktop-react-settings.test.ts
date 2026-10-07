@@ -45,7 +45,7 @@ describe('desktop React settings', () => {
     for (const legacyTab of ['shortcuts', 'security', 'session']) {
       expect(settings).toContain(`${legacyTab}:`);
     }
-    for (const endpoint of ['/settings/defaults', '/session/settings', '/session/name', '/session/compact']) {
+    for (const endpoint of ['/settings/defaults', '/session/name']) {
       expect(settings).toContain(endpoint);
     }
     expect(settings).toContain('data-archived-sessions-list');
@@ -150,7 +150,7 @@ describe('desktop React settings', () => {
     expect(settings).toContain('builtin?: boolean');
     expect(hook).toContain('setProviderCatalog(Array.isArray(result.providers) ? result.providers : [])');
     expect(app).toContain('providerCatalog={providerCatalog}');
-    expect(settings).toContain("desktop.openExternal(result.url)");
+    expect(settings).toContain("desktop.openExternal(RELEASES_URL)");
     expect(settings).toContain("if (!file) return false");
     expect(settings).toContain("if (!target) return false");
     expect(settings).toContain("disabled={disabled || !sessionName.trim()}");
@@ -194,15 +194,17 @@ describe('desktop React settings', () => {
     expect(hook).not.toContain("'/memory/abort'");
   });
 
-  it('renders Concurrency strategy options and binds them to session settings', () => {
+  it('streamlines the Agent & Workflow settings tab to keep only active controls', () => {
     const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
-    expect(settings).toContain('label="Concurrency strategy"');
-    expect(settings).toContain("value={session.concurrencyStrategy || 'tokensaver'}");
-    expect(settings).toContain("concurrencyStrategy: e.target.value");
-    expect(settings).toContain('value="tokensaver"');
-    expect(settings).toContain('value="wide"');
-    expect(settings).toContain('value="custom"');
-    expect(settings).toContain('label="Concurrency limit"');
+    expect(settings).toContain('label="Collaboration mode"');
+    expect(settings).not.toContain('label="Concurrency strategy"');
+    expect(settings).not.toContain('label="Steering messages"');
+    expect(settings).not.toContain('label="Follow-up messages"');
+    expect(settings).not.toContain('label="Automatic retry"');
+    expect(settings).not.toContain('label="Auto-compact context"');
+    expect(settings).not.toContain('label="Compact now"');
+    expect(settings).not.toContain('label="Loaded instructions"');
+    expect(settings).not.toContain('label="Share session"');
   });
 
   it('separates the settings top bar into a fixed header outside the scrollable content container', () => {

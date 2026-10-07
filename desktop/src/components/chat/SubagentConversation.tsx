@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { CollaborationMode, Message, ModelOption } from '../../types';
-import { SubagentItem } from '../../lib/subagents';
+import { deduplicateRepeatingParts, stripChildResultFromText, SubagentItem } from '../../lib/subagents';
 import { UserBubble } from './UserBubble';
 import { AssistantTurn } from './AssistantTurn';
 
@@ -26,11 +26,41 @@ export function buildSubagentTaskMessage(subagent: SubagentItem): Message {
 export function buildSubagentAssistantMessage(subagent: SubagentItem): Message {
   const streaming = subagent.status === 'running';
   const failed = subagent.status === 'failed';
-  const parts = subagent.parts.length > 0
+  let parts = subagent.parts.length > 0
     ? subagent.parts
     : (!streaming && subagent.result
       ? [{ type: 'text' as const, id: `${subagent.id}-result`, text: subagent.result }]
       : []);
+
+  parts = parts.map((part) => {
+    if (part.type === 'text') {
+      const { cleanText } = stripChildResultFromText(part.text);
+      return { ...part, text: cleanText || subagent.childResult?.summary || part.text };
+    }
+    return part;
+  });
+
+  const hasToolCalls = parts.some((p) => p.type === 'toolCall');
+  if (!hasToolCalls && subagent.childResult?.commands && subagent.childResult.commands.length > 0) {
+    const cmdParts = subagent.childResult.commands.map((cmd, idx) => ({
+      type: 'toolCall' as const,
+      id: `${subagent.id}-cmd-${idx}`,
+      name: 'bash',
+      arguments: { command: cmd.argv.join(' ') },
+      result: {
+        content: `exitCode: ${cmd.exitCode ?? 0}`,
+        isError: cmd.exitCode !== 0 && cmd.exitCode !== null,
+      },
+      progress: {
+        jobId: `cmd-${idx}`,
+        state: (cmd.exitCode === 0 || cmd.exitCode === null ? 'completed' : 'failed') as const,
+      },
+    }));
+    parts = [...cmdParts, ...parts];
+  }
+
+  parts = deduplicateRepeatingParts(parts);
+
   return {
     id: subagent.id,
     role: 'assistant',

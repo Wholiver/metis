@@ -2,6 +2,16 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [1.4.5] - 2026-10-07
+
+### Scheduled Routines System, Plugin Contracts, Self-Learning Fast Loop & Desktop UX
+
+- **Scheduled Routines System**: Introduce the background `RoutineHost` scheduler and model-facing `routine` tool (`list`, `create`, `update`, `delete`, `toggle`, `run`), supporting standard 5-field cron expressions, interval scheduling, persistent execution status, and an interactive Routines management panel in Desktop Settings & Sidebar.
+- **Plugin Architecture & Strict Contract Checking**: Add the `metis-plugin` CLI (`bin/metis-plugin.js`) and contract validation suite (`scripts/check-contracts.mjs`, `packages/`) enforcing strict zero-drift contracts across BUILTIN roles, 16 evaluation frameworks, performance gates, and route providers.
+- **Self-Learning Fast Loop & Adaptations Acceleration**: Expand runtime adaptations with the Prompt Compiler (`compiler.ts`), Architecture Rule Engine (`architecture-engine.ts`), Preference Engine (`preference-engine.ts`), and Schedule Learner (`schedule-learner.ts`) to converge multi-turn adaptations rapidly while preserving clean baseline execution when inactive.
+- **Multi-Agent Isolation & Subagent Experience**: Strengthen recursive delegation boundaries, session barriers, and spawn guard protections; improve Desktop Inspector Subagents list and live transcript rendering with real-time status and graceful error handling.
+- **Desktop UI & Localization Polish**: Fully update and regenerate bilingual i18n catalogs (English & Chinese); refine Settings dialog layout and metric tiles; improve thinking block streaming lifecycle and plan progress point narration.
+
 ## [1.4.0] - 2026-09-30
 
 ### Self-Learning Runtime, Smaller Desktop Packages

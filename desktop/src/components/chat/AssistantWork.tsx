@@ -10,6 +10,7 @@ import { CommandToolGroup, isCommandGroupTool } from './CommandToolGroup';
 interface AssistantWorkProps {
   items: AssistantContentPart[];
   streaming?: boolean;
+  isCompacting?: boolean;
   durationMs?: number;
   preserveExistingItems?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
@@ -117,6 +118,7 @@ export function groupAssistantWorkItems(items: AssistantContentPart[]): Assistan
 
 function areAssistantWorkPropsEqual(prev: AssistantWorkProps, next: AssistantWorkProps): boolean {
   if (prev.streaming !== next.streaming) return false;
+  if (prev.isCompacting !== next.isCompacting) return false;
   if (prev.onExpandedChange !== next.onExpandedChange) return false;
   if (prev.onOpenSubagent !== next.onOpenSubagent) return false;
   // durationMs is unused in the live work tree; ignore Date.now() ticks.
@@ -126,6 +128,7 @@ function areAssistantWorkPropsEqual(prev: AssistantWorkProps, next: AssistantWor
 const AssistantWorkComponent: React.FC<AssistantWorkProps> = ({
   items,
   streaming = false,
+  isCompacting = false,
   preserveExistingItems: _preserveExistingItems = false,
   onExpandedChange,
   onOpenSubagent,
@@ -203,6 +206,12 @@ const AssistantWorkComponent: React.FC<AssistantWorkProps> = ({
               );
             })}
           {streaming && <ThinkingBlock streaming active />}
+          {isCompacting && (
+            <ThinkingBlock
+              active
+              compacting={isCompacting}
+            />
+          )}
         </div>
       </div>
     </section>

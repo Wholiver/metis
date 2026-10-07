@@ -9,7 +9,11 @@ import {
 	type JournalEntry,
 	type OutcomeLedger,
 	DEFAULT_MAX_LEARNED_SKILLS,
+	type UserPreferencesProfile,
+	type ArchitectureEvolution,
 } from "./types.ts";
+import { createEmptyPreferencesProfile } from "./preference-engine.ts";
+import { createEmptyArchitectureEvolution } from "./architecture-engine.ts";
 import {
 	assertNoHandwrittenCollision,
 	assertNoPathTraversal,
@@ -47,6 +51,67 @@ export function getScopeDir(agentDir: string, cwd: string, scope: AdaptationScop
 	}
 	const identity = resolveProjectIdentity(cwd);
 	return getProjectAdaptationsDir(agentDir, identity.projectKey);
+}
+
+/** Get structured user preferences profile from user adaptations directory. */
+export function getUserPreferences(agentDir: string): UserPreferencesProfile {
+	const userDir = getUserAdaptationsDir(agentDir);
+	const prefPath = path.join(userDir, "preferences.json");
+	if (!fs.existsSync(prefPath)) {
+		return createEmptyPreferencesProfile();
+	}
+	try {
+		const raw = fs.readFileSync(prefPath, "utf8");
+		const parsed = JSON.parse(raw);
+		if (parsed && typeof parsed === "object") {
+			return {
+				communication: parsed.communication || {},
+				engineering: parsed.engineering || {},
+				interaction: parsed.interaction || {},
+				updatedAt: parsed.updatedAt || new Date().toISOString(),
+				version: parsed.version || 1,
+			};
+		}
+	} catch {}
+	return createEmptyPreferencesProfile();
+}
+
+/** Save structured user preferences profile to user adaptations directory. */
+export function saveUserPreferences(agentDir: string, profile: UserPreferencesProfile): void {
+	const userDir = getUserAdaptationsDir(agentDir);
+	fs.mkdirSync(userDir, { recursive: true });
+	const prefPath = path.join(userDir, "preferences.json");
+	fs.writeFileSync(prefPath, JSON.stringify(profile, null, 2), "utf8");
+}
+
+/** Get architecture evolution (playbooks, workflows, tools) for project scope. */
+export function getArchitectureEvolution(agentDir: string, cwd: string): ArchitectureEvolution {
+	const projDir = getScopeDir(agentDir, cwd, "project");
+	const archPath = path.join(projDir, "architecture-evolution.json");
+	if (!fs.existsSync(archPath)) {
+		return createEmptyArchitectureEvolution();
+	}
+	try {
+		const raw = fs.readFileSync(archPath, "utf8");
+		const parsed = JSON.parse(raw);
+		if (parsed && typeof parsed === "object") {
+			return {
+				playbooks: Array.isArray(parsed.playbooks) ? parsed.playbooks : [],
+				macroWorkflows: Array.isArray(parsed.macroWorkflows) ? parsed.macroWorkflows : [],
+				projectTools: Array.isArray(parsed.projectTools) ? parsed.projectTools : [],
+				updatedAt: parsed.updatedAt || new Date().toISOString(),
+			};
+		}
+	} catch {}
+	return createEmptyArchitectureEvolution();
+}
+
+/** Save architecture evolution (playbooks, workflows, tools) for project scope. */
+export function saveArchitectureEvolution(agentDir: string, cwd: string, evolution: ArchitectureEvolution): void {
+	const projDir = getScopeDir(agentDir, cwd, "project");
+	fs.mkdirSync(projDir, { recursive: true });
+	const archPath = path.join(projDir, "architecture-evolution.json");
+	fs.writeFileSync(archPath, JSON.stringify(evolution, null, 2), "utf8");
 }
 
 /** Resolve relative path inside scope directory for an adaptation kind and name. */

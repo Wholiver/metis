@@ -855,6 +855,54 @@ describe("desktop browser-host controller", () => {
 		).toBe(true);
 	});
 
+	it("retries full-page screenshot when cropped capture throws", async () => {
+		const send = vi.fn();
+		const controller = createBrowserHostController({
+			token: "tok",
+			getMainWindow: () => ({ webContents: { send } }),
+		});
+		controllers.push(controller);
+		await controller.start();
+
+		const capturePage = vi.fn(async (rect?: { x: number; y: number; width: number; height: number }) => {
+			if (rect) {
+				throw new Error("UnknownVizError");
+			}
+			return { toPNG: () => Buffer.from("full-page-png") };
+		});
+		const guest = {
+			id: 77,
+			isDestroyed: () => false,
+			getURL: () => "file:///tmp/pelican.svg",
+			getTitle: () => "pelican.svg",
+			getSize: () => ({ width: 1700, height: 1736 }),
+			once: vi.fn(),
+			executeJavaScript: vi.fn(async (script: string) => {
+				if (script.includes("viewBox") || script.includes("standalone")) {
+					return {
+						x: 0,
+						y: 0,
+						width: 1700,
+						height: 1736,
+						viewBox: { width: 1200, height: 800 },
+						standalone: true,
+					};
+				}
+				return true;
+			}),
+			capturePage,
+		};
+		controller.registerGuest(guest);
+		expect(controller.bindTab("browser-retry", 77, { url: "file:///tmp/pelican.svg", title: "pelican.svg" }).ok).toBe(true);
+
+		const screenshot = await controller.handleCommand({ op: "screenshot" });
+		expect(screenshot.ok).toBe(true);
+		expect(screenshot.screenshotBase64).toBe(Buffer.from("full-page-png").toString("base64"));
+		expect(capturePage).toHaveBeenCalledTimes(2);
+		expect(capturePage.mock.calls[0]?.[0]).toMatchObject({ width: expect.any(Number), height: expect.any(Number) });
+		expect(capturePage.mock.calls[1]?.[0]).toBeUndefined();
+	});
+
 	it("does not crop HTML pages that only contain inline SVG icons", async () => {
 		const send = vi.fn();
 		const controller = createBrowserHostController({

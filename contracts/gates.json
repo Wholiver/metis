@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": "1.3.0",
+  "description": "Metis 插件版 - Source of Truth Quality Gates Contract (aligned with performance-runtime expectedRoles)",
+  "gates": [
+    {
+      "id": "G0",
+      "name": "Characterize",
+      "stage": "characterize",
+      "requiredRole": "implementer",
+      "description": "Pin current observable behavior with characterization tests on untouched code before refactoring. On T1, root may close this gate without spawning."
+    },
+    {
+      "id": "G1",
+      "name": "Plan",
+      "stage": "plan",
+      "requiredRole": "planner",
+      "description": "Inspect real repository; produce success criteria, file-by-file changes, unhappy paths at happy-path detail, and a verification strategy matching the deliverable (strict TDD + coverage argument for code-behavior work; structural/visual/docs oracle otherwise). On T1, root may close this gate without spawning."
+    },
+    {
+      "id": "G2",
+      "name": "Roadmap Acceptance",
+      "stage": "roadmap",
+      "requiredRole": "scope-coordinator",
+      "description": "Accept canonical executable ROADMAP.md before dispatching build lanes. Alternate closer: scoper. Follow-on G2-review uses reviewer; G2-verify uses fresh-verifier. On T2/T3, root closes this gate because scope-coordinator is not in the spawn allowlist."
+    },
+    {
+      "id": "G3.5",
+      "name": "Defect Depth-Lock",
+      "stage": "depth-lock",
+      "requiredRole": "depth-prober",
+      "description": "Derive deepest-cause function from issue text alone, blind to proposed fix; require adversarial RED reproduction test on unpatched code. On T1, root closes this gate (depth-prober is not in T1 spawn allowlist)."
+    },
+    {
+      "id": "G4",
+      "name": "Implement",
+      "stage": "implement",
+      "requiredRole": "implementer",
+      "description": "Implement within owned boundaries. Code-behavior frameworks use strict TDD (failing test first, minimal code to green, coverage >=95% on changed lines). Visual/structure, docs, and mechanical-apply work use their declared oracle instead of inventing coverage metrics. On T0/T1, root closes G4."
+    },
+    {
+      "id": "G5",
+      "name": "Review",
+      "stage": "review",
+      "requiredRole": "reviewer",
+      "description": "Independent claim-vs-diff verification; reject unbacked claims, stubbed code, regressions, or scope creep; binary PASS or SMASH."
+    },
+    {
+      "id": "G6",
+      "name": "Verify",
+      "stage": "verify",
+      "requiredRole": "verifier",
+      "description": "Grounded verification on real runners or renders. Code-behavior work: prove RED->GREEN, pre-existing tests stay GREEN, measured coverage >=95%. Visual/structure, docs accuracy, and mechanical-apply work: prove the declared oracle with real command/render evidence — do not invent coverage. Alternate closer: fresh-verifier."
+    },
+    {
+      "id": "G7",
+      "name": "Sign-off",
+      "stage": "sign-off",
+      "requiredRole": "juror",
+      "description": "Independent juror shipping readiness sign-off. Alternate closer: arbiter. T3 does not spawn jurors."
+    },
+    {
+      "id": "sweep",
+      "name": "Neighborhood Sweep",
+      "stage": "sweep",
+      "requiredRole": "sweeper",
+      "description": "Scan adjacent files and components for same-class defects."
+    },
+    {
+      "id": "goal-check",
+      "name": "Goal Check",
+      "stage": "goal-check",
+      "requiredRole": "goal-checker",
+      "description": "Independent adversarial verification re-deriving all asks from original mission; DONE requires 0 open findings and usability verified. Coverage >=95% applies only when the admitted framework's oracle is code-behavior TDD. On T3, root closes goal-check (goal-checker is not in T3 spawn allowlist)."
+    }
+  ]
+}

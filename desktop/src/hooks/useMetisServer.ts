@@ -434,8 +434,8 @@ export function toMessage(
     ? raw.message as Record<string, unknown>
     : raw;
   const rawRole = source.role || raw.role;
-  const isCompaction = rawRole === 'compactionSummary';
-  const role = isCompaction ? 'assistant' : rawRole;
+  if (rawRole === 'compactionSummary') return undefined;
+  const role = rawRole;
   if (role !== 'user' && role !== 'assistant') return undefined;
   const timestamp = typeof source.timestamp === 'string' || typeof source.timestamp === 'number'
     ? source.timestamp
@@ -455,12 +455,10 @@ export function toMessage(
     stopReason === 'aborted' ||
     Boolean(errorMessage)
   );
-  const rawText = isCompaction
-    ? `**[Context Compacted]** (Tokens before: ${source.tokensBefore ?? raw.tokensBefore ?? 'unknown'})\n\n${source.summary || raw.summary || extractText(source.content) || ''}`
-    : (extractText(source.content)
-        || (typeof source.text === 'string' ? source.text : '')
-        || extractText(raw.content)
-        || (role === 'assistant' && (stopReason === 'error' || stopReason === 'aborted') ? errorMessage : ''));
+  const rawText = extractText(source.content)
+    || (typeof source.text === 'string' ? source.text : '')
+    || extractText(raw.content)
+    || (role === 'assistant' && (stopReason === 'error' || stopReason === 'aborted') ? errorMessage : '');
   const parsedPayload = parseAttachmentPayloadText(rawText);
   const content = parsedPayload.text;
   const imageAttachments = extractImageAttachments(source.content || raw.content);
@@ -486,7 +484,6 @@ export function toMessage(
     role: role as 'user' | 'assistant',
     content,
   };
-  if (isCompaction) message.tags = ['compaction'];
   if (thinking) message.thinking = thinking;
   if (thinkingDurationMs !== undefined) message.thinkingDurationMs = thinkingDurationMs;
   if (parts && parts.length > 0) message.parts = parts;
@@ -691,6 +688,8 @@ function messagesContentEqual(previous: Message, incoming: Message): boolean {
     && (previous.usage?.output ?? 0) === (incoming.usage?.output ?? 0)
     && (previous.usage?.cacheRead ?? 0) === (incoming.usage?.cacheRead ?? 0)
     && (previous.usage?.cacheWrite ?? 0) === (incoming.usage?.cacheWrite ?? 0)
+    && previous.compaction?.tokensBefore === incoming.compaction?.tokensBefore
+    && previous.compaction?.summary === incoming.compaction?.summary
     && partsContentEqual(previous.parts, incoming.parts)
     && attachmentsIdentityEqual(previous.attachments, incoming.attachments);
 }
@@ -1715,8 +1714,17 @@ export function useMetisServer(activeProject?: ProjectItem) {
         assignStreaming(true);
         return;
       }
+      if (type === 'compaction_start') {
+        setIsCompacting(true);
+        return;
+      }
+      if (type === 'compaction_end') {
+        setIsCompacting(false);
+        return;
+      }
       if (type === 'agent_end') {
         flushPendingStream();
+        setIsCompacting(false);
         if (!event.willRetry) assignStreaming(false);
         reconcileCurrentSession();
         const project = activeProjectRef.current;
@@ -2324,12 +2332,17 @@ export function useMetisServer(activeProject?: ProjectItem) {
 
   const abortTurn = useCallback(async () => {
     flushPendingStreamRef.current();
+    setIsCompacting(false);
     assignStreaming(false);
     const activeId = activeSessionIdRef.current;
     if (activeId) {
       setWorkingSessionIds((current) => applyWorkingSessionIds(current, [activeId], false));
     }
     return await request<{ success?: boolean }>('/session/abort', 'POST');
+  }, [request]);
+
+  const abortSubagent = useCallback(async (subagentId?: string) => {
+    return await request<{ success?: boolean }>('/session/abort', 'POST', subagentId ? { subagentId } : undefined);
   }, [request]);
 
   const respondToExtensionUi = useCallback(async (response: ExtensionUiResponse) => {
@@ -2370,6 +2383,7 @@ export function useMetisServer(activeProject?: ProjectItem) {
     messages,
     sendMessage,
     abortTurn,
+    abortSubagent,
     models,
     providerCatalog,
     refreshModels,

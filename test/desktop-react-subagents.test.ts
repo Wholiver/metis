@@ -6,6 +6,8 @@ import { AgentResponse } from '../desktop/src/components/chat/AgentResponse';
 import { SubagentsList } from '../desktop/src/components/inspector/SubagentsList';
 import {
   collectSubagentItems,
+  deduplicateRepeatingParts,
+  extractPartsFromJsonLines,
   formatSubagentDuration,
   mergeSubagentHistoryItems,
   parseSubagentHistory,
@@ -690,5 +692,156 @@ describe('desktop React Subagents inspector and real-time work log viewer', () =
     expect(app).toContain('messagesSessionId,');
     expect(app).toContain('isMessagesInSync = Boolean(activeAgentId && messagesSessionId === activeAgentId)');
     expect(app).toContain('messagesSessionId !== activeAgentId');
+  });
+
+  it('strips raw ChildResult JSON protocol blobs from subagent output and populates structured childResult', () => {
+    const rawResultJson = JSON.stringify({
+      status: 'completed',
+      summary: 'Validated SVG files successfully.',
+      filesChanged: [],
+      commands: [
+        { argv: ['xmllint', '--noout', 'test.svg'], exitCode: 0, stdout: '', stderr: '' },
+      ],
+      findings: [],
+      proposedRepair: '',
+    });
+    const subagentNarrative = `Everything looks good!\n${rawResultJson}`;
+
+    const messages: Message[] = [
+      {
+        id: 'msg-svg',
+        role: 'assistant',
+        content: '',
+        parts: [
+          {
+            type: 'toolCall',
+            id: 'call-svg-verifier',
+            name: 'spawn_agent',
+            arguments: { agent: 'verifier', task: 'Verify SVG' },
+            result: {
+              content: JSON.stringify({
+                status: 'completed',
+                agent: 'verifier',
+                result: subagentNarrative,
+              }),
+            },
+            progress: { state: 'completed' },
+          },
+        ],
+      },
+    ];
+
+    const subagents = collectSubagentItems(messages);
+    expect(subagents).toHaveLength(1);
+    const item = subagents[0];
+    expect(item.result).toBe('Everything looks good!');
+    expect(item.result).not.toContain('{"status":"completed"');
+    expect(item.childResult).toBeDefined();
+    expect(item.childResult?.commands).toHaveLength(1);
+
+    // Verify command tool calls were synthesized for the UI
+    const toolParts = item.parts.filter((p) => p.type === 'toolCall');
+    expect(toolParts).toHaveLength(1);
+    expect(toolParts[0]).toMatchObject({
+      type: 'toolCall',
+      name: 'bash',
+      arguments: { command: 'xmllint --noout test.svg' },
+      progress: { state: 'completed' },
+    });
+
+    // Verify text parts do not contain the JSON protocol blob
+    const textParts = item.parts.filter((p) => p.type === 'text');
+    expect(textParts.some((p) => p.type === 'text' && p.text.includes('{"status"'))).toBe(false);
+  });
+
+  it('deduplicates cyclic repeating blocks of parts to prevent infinite rendering', () => {
+    const repeatingPair = [
+      {
+        type: 'toolCall' as const,
+        id: 'cmd-1',
+        name: 'bash',
+        arguments: { command: 'cat mission.md' },
+      },
+      {
+        type: 'text' as const,
+        id: 'text-1',
+        text: "I'll start by reading the canonical mission pointer and frozen contract artifacts before touching any code.",
+      },
+    ];
+
+    // Simulate 10 duplicate copies of the same [toolCall, text] pair
+    const partsWith10Cycles = Array.from({ length: 10 }, (_, i) => [
+      { ...repeatingPair[0], id: `cmd-${i}` },
+      { ...repeatingPair[1], id: `text-${i}` },
+    ]).flat();
+
+    expect(partsWith10Cycles).toHaveLength(20);
+
+    const deduplicated = deduplicateRepeatingParts(partsWith10Cycles);
+    expect(deduplicated).toHaveLength(2);
+    expect(deduplicated[0]).toMatchObject({ type: 'toolCall', name: 'bash' });
+    expect(deduplicated[1]).toMatchObject({ type: 'text', text: expect.stringContaining('mission pointer') });
+  });
+
+  it('extractPartsFromJsonLines picks the latest snapshot instead of multiplying parts across snapshots', () => {
+    const snapshot1 = JSON.stringify({
+      status: 'running',
+      parts: [
+        { type: 'toolCall', id: 'c1', name: 'bash', arguments: { command: 'pwd' } },
+      ],
+    });
+    const snapshot2 = JSON.stringify({
+      status: 'running',
+      parts: [
+        { type: 'toolCall', id: 'c1', name: 'bash', arguments: { command: 'pwd' } },
+        { type: 'text', id: 't1', text: 'Directory is clean.' },
+      ],
+    });
+
+    const multiLineOutput = `${snapshot1}\n${snapshot2}`;
+    const parts = extractPartsFromJsonLines('sub-test', multiLineOutput);
+    expect(parts).toBeDefined();
+    // Must contain exactly 2 parts from latest snapshot, NOT 3 (1 from snapshot 1 + 2 from snapshot 2)!
+    expect(parts).toHaveLength(2);
+    expect(parts![0].type).toBe('toolCall');
+    expect(parts![1].type).toBe('text');
+  });
+
+  it('renders a manual stop button for running subagents in SubagentsList', () => {
+    const runningSubagent = {
+      id: 'sub-running-1',
+      role: 'implementer',
+      task: 'Build backend API',
+      status: 'running' as const,
+      parts: [],
+    };
+    const completedSubagent = {
+      id: 'sub-done-1',
+      role: 'planner',
+      task: 'Plan roadmap',
+      status: 'completed' as const,
+      parts: [],
+    };
+
+    const markup = renderToStaticMarkup(
+      React.createElement(SubagentsList, {
+        subagents: [runningSubagent, completedSubagent],
+        onSelect: () => {},
+        onStop: () => {},
+      }),
+    );
+
+    // Stop button exists for running agent
+    expect(markup).toContain('data-subagent-stop-button=""');
+    // Row for running agent exists
+    expect(markup).toContain('data-subagent-id="sub-running-1"');
+    expect(markup).toContain('data-subagent-id="sub-done-1"');
+  });
+
+  it('ensures App.tsx properly imports and initializes useI18n for subagent stop handler', () => {
+    const appSource = source('desktop/src/App.tsx');
+    expect(appSource).toMatch(/import\s*\{[^}]*useI18n[^}]*\}\s*from\s*['"]\.\/i18n['"]/);
+    expect(appSource).toMatch(/const\s*\{\s*t\s*\}\s*=\s*useI18n\(\)/);
+    expect(appSource).toContain("t('subagentStopped')");
   });
 });

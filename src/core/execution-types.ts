@@ -265,9 +265,15 @@ export function findOverlappingOwnedPaths(claims: OwnedPathClaim[]): OwnedPathCl
 	return undefined;
 }
 
+function normalizePathForOverlap(p: string): string {
+	const cleaned = p.replace(/\\/g, "/").replace(/\/+$/, "").replace(/^\.\//, "").trim();
+	return cleaned || ".";
+}
+
 function pathsOverlap(a: string, b: string): boolean {
-	const left = a.replace(/\\/g, "/").replace(/\/+$/, "") || ".";
-	const right = b.replace(/\\/g, "/").replace(/\/+$/, "") || ".";
+	const left = normalizePathForOverlap(a);
+	const right = normalizePathForOverlap(b);
+	if (left === "." || right === "." || left === "*" || right === "*") return true;
 	return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
 

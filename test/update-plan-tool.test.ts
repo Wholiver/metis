@@ -82,6 +82,29 @@ describe("update_plan tool", () => {
 		expect(prepareUpdatePlanArguments(null)).toBe(null);
 		expect(prepareUpdatePlanArguments("garbage")).toBe("garbage");
 	});
+
+	it("sanitizes runtime governance jargon from plan steps and explanation", () => {
+		const raw = {
+			explanation: "I1 已完成 G4->G5->G6->G7 全部门禁；启动 I2 内容层车道。",
+			plan: [
+				{ step: "需求确认：技术栈 = Vite + React，范围 = 全功能博客", status: "completed" },
+				{ step: "车道 I1-scaffold: 工程骨架 + 构建期 RSS/404 产出 (G4-G7 全过)", status: "completed" },
+				{ step: "车道 I2-content: Markdown 文章源、渲染/TOC/阅读时长、索引与搜索", status: "in_progress" },
+				{ step: "G7 独立评审席对整合后工作区做最终签署", status: "pending" },
+				{ step: "goal-check 目标核验（含浏览器端真实渲染证据）", status: "pending" },
+			],
+		};
+		const prepared = prepareUpdatePlanArguments(raw);
+		expect(prepared.plan.map((item) => item.step)).toEqual([
+			"需求确认：技术栈 = Vite + React，范围 = 全功能博客",
+			"工程骨架 + 构建期 RSS/404 产出",
+			"Markdown 文章源、渲染/TOC/阅读时长、索引与搜索",
+			"整合后工作区做最终签署",
+			"目标核验（含浏览器端真实渲染证据）",
+		]);
+		expect(prepared.explanation).not.toContain("G4->G5");
+		expect(prepared.explanation).not.toContain("车道");
+	});
 });
 
 describe("read_plan tool", () => {

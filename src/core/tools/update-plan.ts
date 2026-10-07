@@ -57,7 +57,30 @@ function canonicalizePlanStatus(status: unknown): unknown {
 	return PLAN_STATUS_ALIASES[key] ?? status;
 }
 
-/** Fold common model aliases (done, complete, in-progress) before schema validation. */
+/** Clean accidental runtime/governance jargon from step text for a clean UI presentation. */
+export function cleanPlanStepText(step: string): string {
+	let text = step;
+	// Strip leading lane marker: e.g. "车道 I1-scaffold:", "Lane I2:"
+	text = text.replace(/^(?:车道|Lane)\s+[A-Za-z0-9_.-]+[:：]\s*/i, "");
+	// Strip trailing/inline gate remarks: e.g. "(G4-G7 全过)", "(G4-G7全过)", "(G4全过)", "(G0-G7全部通过)"
+	text = text.replace(/\s*\([A-Za-z0-9_.-]*\s*(?:G[0-7](?:[-~至到G\d\s]*全过|[^)]*)|(?:G[0-7]|全部门禁)[^)]*)\)/gi, "");
+	// Strip leading gate prefixes: e.g. "G7 独立评审席对...做最终签署" -> "整合后工作区做最终签署", "goal-check 目标核验..." -> "目标核验..."
+	text = text.replace(/^G[0-7](?:\.[0-9]+)?\s*(?:独立评审席)?[:：\s]*/i, "");
+	text = text.replace(/^对(?=[\u4e00-\u9fa5])/, "");
+	text = text.replace(/^goal-check\s*[:：\s]*/i, "");
+	return text.trim() || step;
+}
+
+/** Clean internal governance jargon from plan explanation text. */
+export function cleanPlanExplanationText(explanation: string): string {
+	let text = explanation;
+	text = text.replace(/G[0-7](?:\s*->\s*G[0-7])*\s*全?部门禁[;；]?\s*/gi, "阶段验证；");
+	text = text.replace(/车道/g, "任务模块");
+	text = text.replace(/\b(?:lane|juror|goal-check)\b/gi, "");
+	return text.trim() || explanation;
+}
+
+/** Fold common model aliases (done, complete, in-progress) and clean steps before schema validation. */
 export function prepareUpdatePlanArguments(input: unknown): UpdatePlanToolInput {
 	if (!input || typeof input !== "object") {
 		return input as UpdatePlanToolInput;
@@ -70,13 +93,32 @@ export function prepareUpdatePlanArguments(input: unknown): UpdatePlanToolInput 
 	let changed = false;
 	const plan = args.plan.map((item) => {
 		if (!item || typeof item !== "object") return item;
-		const current = item as { status?: unknown };
+		const current = item as { status?: unknown; step?: unknown };
 		const status = canonicalizePlanStatus(current.status);
-		if (status === current.status) return item;
-		changed = true;
-		return { ...current, status };
+		let step = current.step;
+		if (typeof step === "string") {
+			const cleaned = cleanPlanStepText(step);
+			if (cleaned !== step) {
+				step = cleaned;
+				changed = true;
+			}
+		}
+		if (status !== current.status) {
+			changed = true;
+		}
+		return { ...current, status, ...(typeof step === "string" ? { step } : {}) };
 	});
-	return (changed ? { ...args, plan } : input) as UpdatePlanToolInput;
+
+	let explanation = args.explanation;
+	if (typeof explanation === "string") {
+		const cleanedExplanation = cleanPlanExplanationText(explanation);
+		if (cleanedExplanation !== explanation) {
+			explanation = cleanedExplanation;
+			changed = true;
+		}
+	}
+
+	return (changed ? { ...args, plan, ...(explanation !== undefined ? { explanation } : {}) } : input) as UpdatePlanToolInput;
 }
 
 export function createUpdatePlanToolDefinition(options: UpdatePlanToolOptions = {}): ToolDefinition<typeof updatePlanSchema> {
@@ -84,13 +126,15 @@ export function createUpdatePlanToolDefinition(options: UpdatePlanToolOptions = 
 		name: "update_plan",
 		label: "Update plan",
 		description:
-			"Create or refresh this session's execution checklist without writing workspace files. Call again whenever a step starts or finishes so the visible list stays current. Each step status must be pending, in_progress, or completed; at most one step may be in_progress.",
+			"Create or refresh this session's execution checklist without writing workspace files. For multi-step tasks, call this to initialize the checklist before starting implementation. Call again whenever a step starts or finishes so the visible list stays current. Each step status must be pending, in_progress, or completed; at most one step may be in_progress.",
 		promptSnippet: "Keep the session execution checklist current as steps start and finish",
 		promptGuidelines: [
+			"Initialize update_plan right away for any task that involves multiple steps, edits, or verification — do not execute code without creating a plan first.",
 			"Call update_plan when a step starts or finishes; do not wait until the whole task ends.",
 			"After the checklist is active, call update_plan again when a step finishes or after several mutating writes so the visible list stays current.",
 			"Use status pending, in_progress, or completed only. Mark exactly one current step in_progress.",
-			"Write each step and explanation in the same language as the user's latest message.",
+			"Write each step and explanation in the same language as the user's latest message, using clean, user-friendly language describing concrete deliverables and files (e.g. '搭建基础工程骨架', '实现文章列表与 Markdown 渲染', '运行测试与验证').",
+			"CRITICAL: The checklist is displayed directly in the user interface. NEVER include internal governance or runtime jargon (such as '车道', 'lane', 'G0-G7', '门禁', 'juror', '独立评审席', 'goal-check', 'receipt') in step descriptions or explanations.",
 			"Never mark every step completed while a Performance run is still active; close the required performance_gate first.",
 		],
 		capabilities: { effect: "write", parallelSafe: false },

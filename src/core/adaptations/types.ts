@@ -124,3 +124,86 @@ export interface AdaptationSummary {
 	description?: string;
 	reason?: string;
 }
+
+/** Dimension of user personal preferences. */
+export type PreferenceDimension = "communication" | "engineering" | "interaction";
+
+/** Single preference item with evidence and confidence score. */
+export interface PreferenceItem {
+	id: string;
+	value: string;
+	confidence: number; // 0.0 - 1.0
+	updatedAt: string;
+	evidence?: string;
+	status?: "active" | "overridden" | "retired";
+}
+
+/** Structured multi-dimensional user preferences profile. */
+export interface UserPreferencesProfile {
+	/** Style of communication: brevity, language, tone, explanation depth, formatting */
+	communication: Record<string, PreferenceItem>;
+	/** Engineering conventions: test framework, typing strictness, naming convention, language flavor */
+	engineering: Record<string, PreferenceItem>;
+	/** Interaction and autonomy preferences: confirmation threshold, edit style, plan approval */
+	interaction: Record<string, PreferenceItem>;
+	updatedAt: string;
+	version: number;
+}
+
+/** Tactical playbook for specific task types or error recovery patterns. */
+export interface TacticalPlaybook {
+	id: string;
+	name: string;
+	description: string;
+	triggerKeywords: string[];
+	strategy: string;
+	verificationSteps?: string[];
+	confidence: number;
+	updatedAt: string;
+	status?: "active" | "tentative" | "retired";
+}
+
+/** Step in a multi-tool macro workflow. */
+export interface MacroWorkflowStep {
+	tool: string;
+	argsTemplate?: Record<string, any>;
+	description?: string;
+	continueOnError?: boolean;
+}
+
+/** Composite executable macro workflow composed of core tools. */
+export interface MacroWorkflow {
+	id: string;
+	name: string;
+	description: string;
+	steps: MacroWorkflowStep[];
+	updatedAt: string;
+	status?: "active" | "retired";
+}
+
+/** Project-specific micro tool synthesized and sandboxed for the workspace. */
+export interface ProjectMacroTool {
+	name: string;
+	description: string;
+	parameters: Record<string, any>;
+	script: string;
+	runtime: "node" | "bash";
+	createdAt: string;
+	status?: "active" | "retired";
+}
+
+/** Container for architecture self-evolution. */
+export interface ArchitectureEvolution {
+	playbooks?: TacticalPlaybook[];
+	macroWorkflows?: MacroWorkflow[];
+	projectTools?: ProjectMacroTool[];
+	updatedAt: string;
+}
+
+/** Output of the unified prompt compilation and conflict arbitration engine. */
+export interface CompiledPromptResult {
+	promptText: string;
+	activePreferences: string[];
+	activePlaybooks: string[];
+	suppressedRules: string[];
+}

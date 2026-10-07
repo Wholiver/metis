@@ -38,6 +38,10 @@ import {
 	getEffectiveUserProfileData,
 	generateDailyGrowthReport,
 	readTurnOutcomes,
+	getUserPreferences,
+	saveUserPreferences,
+	getArchitectureEvolution,
+	createEmptyPreferencesProfile,
 	type AdaptationKind,
 	type AdaptationScope,
 } from "../../core/adaptations/index.ts";
@@ -410,6 +414,7 @@ export async function startServerMode(
 				// Desktop uses this to decide whether a healthy listener can be reused
 				// or must be restarted with METIS_BROWSER_HOST injected.
 				browserHostConfigured: Boolean(process.env.METIS_BROWSER_HOST?.trim()),
+				routineHostConfigured: Boolean(process.env.METIS_ROUTINE_HOST?.trim()),
 			});
 		}
 		if (method === "GET" && url.pathname === "/global/update-check") {
@@ -493,12 +498,16 @@ export async function startServerMode(
 			}
 
 			const profile = getEffectiveUserProfileData({ agentDir, cwd, isProjectTrusted });
+			const userPreferences = getUserPreferences(agentDir);
+			const architectureEvolution = getArchitectureEvolution(agentDir, cwd);
 			return sendJson(response, 200, {
 				enabled,
 				adaptations,
 				unnotifiedCount,
 				growth,
 				profile,
+				userPreferences,
+				architectureEvolution,
 			});
 		}
 		if (method === "GET" && url.pathname === "/desktop/work-stats") {
@@ -520,11 +529,17 @@ export async function startServerMode(
 			return sendJson(response, 200, { cwd, sessions });
 		}
 		if (method === "GET" && url.pathname === "/session/messages") {
+			const branchEntries = session.sessionManager.getBranch();
+			const branchMessages = branchEntries.flatMap((entry) => {
+				if (entry.type !== "message") return [];
+				return [{ id: entry.id, ...entry.message }];
+			});
+			const messages = branchMessages.length > 0 ? branchMessages : session.messages;
 			return sendJson(response, 200, {
 				serverInstanceId,
 				serverSequence,
 				serverSessionId: session.sessionId,
-				messages: session.messages,
+				messages,
 				messageTimings: getMessageTimings(),
 			});
 		}
@@ -684,7 +699,17 @@ export async function startServerMode(
 				return sendError(response, 404, "queue_item_not_found", error instanceof Error ? error.message : String(error));
 			}
 		}
-		if (method === "POST" && url.pathname === "/session/abort") {
+		if (method === "POST" && (url.pathname === "/session/abort" || url.pathname === "/session/subagents/abort" || url.pathname === "/session/abort-subagent")) {
+			const body = await readJsonBody<{ subagentId?: string; agentId?: string }>(request, true);
+			const targetId = body?.subagentId ?? body?.agentId;
+			if (targetId) {
+				const success = session.abortSubagent ? session.abortSubagent(targetId) : false;
+				return sendJson(response, 200, { success });
+			}
+			if (url.pathname === "/session/subagents/abort" || url.pathname === "/session/abort-subagent") {
+				session.abortSubagents();
+				return sendJson(response, 200, { success: true });
+			}
 			await session.abort();
 			return sendJson(response, 200, { success: true });
 		}
@@ -927,6 +952,33 @@ export async function startServerMode(
 			await session.refreshAdaptations?.({ action: "retire", kind: "workflow", name: checkId, scope });
 			broadcast({ type: "adaptation_changed", action: "retire", kind: "workflow", name: checkId, scope });
 			return sendJson(response, 200, result);
+		}
+		if (method === "POST" && url.pathname === "/adaptations/preferences/delete") {
+			const body = await readJsonBody<{ dimension?: unknown; key?: unknown }>(request).catch(() => undefined);
+			const dimension = typeof body?.dimension === "string" ? body.dimension : undefined;
+			const key = typeof body?.key === "string" ? body.key : undefined;
+			if (dimension && key) {
+				const agentDir = runtimeHost.services.agentDir;
+				const profile = getUserPreferences(agentDir);
+				if ((profile as any)[dimension]) {
+					delete (profile as any)[dimension][key];
+					profile.updatedAt = new Date().toISOString();
+					profile.version = (profile.version ?? 1) + 1;
+					saveUserPreferences(agentDir, profile);
+					await session.refreshAdaptations?.({ action: "delete", kind: "preference", name: key });
+					broadcast({ type: "adaptation_changed", action: "delete", kind: "preference", name: key });
+					return sendJson(response, 200, { success: true, profile });
+				}
+			}
+			return sendError(response, 400, "invalid_request", "Dimension and key are required");
+		}
+		if (method === "POST" && url.pathname === "/adaptations/preferences/reset") {
+			const agentDir = runtimeHost.services.agentDir;
+			const emptyProfile = createEmptyPreferencesProfile();
+			saveUserPreferences(agentDir, emptyProfile);
+			await session.refreshAdaptations?.({ action: "reset", kind: "preference" });
+			broadcast({ type: "adaptation_changed", action: "reset", kind: "preference" });
+			return sendJson(response, 200, { success: true, profile: emptyProfile });
 		}
 		if (method === "POST" && url.pathname === "/adaptations/clear-notifications") {
 			const agentDir = runtimeHost.services.agentDir;

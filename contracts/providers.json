@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": "1.0.0",
+  "description": "Metis 插件版 - Supported Providers and Host Configuration",
+  "providers": {
+    "opencode": {
+      "id": "opencode",
+      "name": "OpenCode",
+      "supported": true,
+      "priority": 1,
+      "envOverride": "METIS_PLUGIN_INSTALL_ROOT",
+      "defaultHomeEnv": "XDG_CONFIG_HOME",
+      "defaultSubpath": "opencode",
+      "fallbackPath": "~/.config/opencode",
+      "launcherType": "command",
+      "launcherPath": "commands/metis.md",
+      "rolesDir": "agents",
+      "roleFormat": "markdown",
+      "bundleDir": ".metis-plugin/bundle",
+      "receiptFile": ".metis-plugin-opencode.json",
+      "nativeDispatchAllowed": false,
+      "deniedPermissions": ["task", "skill"],
+      "modelHandling": "resolved-pre-launch"
+    },
+    "codex": {
+      "id": "codex",
+      "name": "Codex",
+      "supported": true,
+      "priority": 2,
+      "envOverride": "METIS_PLUGIN_INSTALL_ROOT",
+      "defaultHomeEnv": "CODEX_HOME",
+      "defaultSubpath": "",
+      "fallbackPath": "~/.codex",
+      "launcherType": "skill",
+      "launcherPath": "skills/metis/SKILL.md",
+      "rolesDir": "agents",
+      "roleFormat": "toml",
+      "bundleDir": ".metis-plugin/bundle",
+      "receiptFile": ".metis-plugin-codex.json",
+      "sandboxModeByRoleType": {
+        "worker": "workspace-write",
+        "checker": "read-only",
+        "orchestrator": "read-only"
+      },
+      "envelopeStyle": "$metis"
+    },
+    "deepseek": {
+      "id": "deepseek",
+      "name": "DeepSeek Harness",
+      "supported": true,
+      "priority": 3,
+      "envOverride": "METIS_PLUGIN_INSTALL_ROOT",
+      "defaultHomeEnv": "DSH_HOME",
+      "defaultSubpath": "",
+      "fallbackPath": "~/.dsh",
+      "launcherType": "skill",
+      "launcherPath": "skills/metis/SKILL.md",
+      "rolesDir": "agents",
+      "roleFormat": "markdown",
+      "presetsDir": "agent-preset",
+      "cordisBridgeDir": "cordis-bridge",
+      "bundleDir": ".metis-plugin/bundle",
+      "receiptFile": ".metis-plugin-deepseek.json",
+      "bridgeRequired": true
+    },
+    "cursor": {
+      "id": "cursor",
+      "name": "Cursor",
+      "supported": false,
+      "reason": "PROVIDER_UNSUPPORTED: Cursor is out of scope for Metis 插件版 v1."
+    },
+    "claude": {
+      "id": "claude",
+      "name": "Claude Code",
+      "supported": false,
+      "reason": "PROVIDER_UNSUPPORTED: Claude is out of scope for Metis 插件版 v1."
+    },
+    "vscode": {
+      "id": "vscode",
+      "name": "VS Code",
+      "supported": false,
+      "reason": "PROVIDER_UNSUPPORTED: VS Code is out of scope for Metis 插件版 v1."
+    }
+  }
+}

@@ -61,7 +61,7 @@ function routeProtocol(state: PerformanceRunState): string {
 	const coerced = state.admission?.tierCoercedFrom
 		? ` Coerced from ${state.admission.tierCoercedFrom} to T0 for single-lane artifact apply/docs/polish.`
 		: "";
-	return `route protocol: ${route}.${coerced} Canonical state: ${state.governanceRoot}/run.json; ROADMAP.md is a deterministic projection. Write gate receipts under ${state.governanceRoot}/artifacts/ and pass evidence as artifacts/<name>.json|.md. A completed checklist is not completion while the run is active.`;
+	return `route protocol: ${route}.${coerced} Canonical state: ${state.governanceRoot}/run.json; ROADMAP.md is a deterministic projection. Write gate receipts under ${state.governanceRoot}/artifacts/ and pass evidence as artifacts/<name>.json|.md. A completed checklist is not completion while the run is active. Next: call update_plan to initialize the user-facing execution checklist before mutating files (use clean user language; omit internal gate codes or jargon).`;
 }
 
 /** Deep admission seam: validates route once, then returns compact current-turn context. */
@@ -77,6 +77,7 @@ export function createPerformanceAdmitToolDefinition(
 		parameters: performanceAdmitSchema,
 		promptGuidelines: [
 			"Do not grep, read, or query memory/session logs to discover performance_admit values. taskShape is bounded, sequential-complex, or parallel. framework is a native id such as docs, apply, polish, or backend-fix. Creating a README is T0 + bounded + one docs lane; after admit still independent check + repair, then G4 — a first-draft write is not done.",
+			"Immediately after admission, call update_plan to initialize the user-facing execution checklist before beginning file edits.",
 		],
 		executionMode: "sequential",
 		execute: async (_id, input) => {

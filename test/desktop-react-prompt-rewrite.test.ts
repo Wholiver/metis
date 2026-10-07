@@ -35,7 +35,8 @@ describe('desktop web Minecraft prompt rewrite', () => {
     expect(revealPromptForDisplay(WEB_MINECRAFT_USER_PROMPT)).toBe(WEB_MINECRAFT_USER_PROMPT);
     expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('does not skip performance_admit');
     expect(WEB_MINECRAFT_MODEL_PROMPT).not.toContain('named-child dispatch');
-    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('root-owned zero spawn');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).not.toContain('root-owned zero spawn');
+    expect(WEB_MINECRAFT_MODEL_PROMPT).toContain('at least T1 with independent G5 review and G6 verification');
   });
 
   it('keeps the short prompt in the user bubble after the model rewrite', () => {

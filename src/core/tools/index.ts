@@ -180,6 +180,17 @@ export {
 	type BrowserToolName,
 	type BrowserToolOptions,
 } from "./browser.ts";
+export {
+	ROUTINE_TOOL_NAMES,
+	createRoutineToolDefinitions,
+	createRoutineTools,
+	type RoutineToolOptions,
+	type RoutineListInput,
+	type RoutineCreateInput,
+	type RoutineUpdateInput,
+	type RoutineDeleteInput,
+	type RoutineRunNowInput,
+} from "./routine.ts";
 
 import type { AgentTool } from "@earendil-works/metis-agent-core";
 import type { ToolDefinition } from "../extensions/types.ts";

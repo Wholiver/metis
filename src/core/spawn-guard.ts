@@ -91,9 +91,10 @@ export class SpawnGuard {
 	private waitListeners = new Map<string, Array<(state: ChildAgentState) => void>>();
 
 	constructor(config?: Partial<SpawnGuardConfig>) {
+		const envMaxChildren = process.env.METIS_MAX_CHILDREN_PER_AGENT ? Number.parseInt(process.env.METIS_MAX_CHILDREN_PER_AGENT, 10) : undefined;
 		this.config = {
 			maxSpawnDepth: config?.maxSpawnDepth ?? DEFAULT_MAX_SPAWN_DEPTH,
-			maxChildrenPerAgent: config?.maxChildrenPerAgent ?? DEFAULT_MAX_CHILDREN_PER_AGENT,
+			maxChildrenPerAgent: config?.maxChildrenPerAgent ?? (Number.isFinite(envMaxChildren) && envMaxChildren! > 0 ? envMaxChildren! : DEFAULT_MAX_CHILDREN_PER_AGENT),
 			maxTotalChildren: config?.maxTotalChildren ?? DEFAULT_MAX_TOTAL_CHILDREN,
 			maxConcurrentAgents: config?.maxConcurrentAgents ?? DEFAULT_MAX_CONCURRENT_AGENTS,
 			defaultTimeoutMs: config?.defaultTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,

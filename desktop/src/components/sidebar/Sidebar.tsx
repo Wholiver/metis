@@ -1,5 +1,5 @@
 import React, { useState, useMemo, forwardRef, memo, useRef, useLayoutEffect, useEffect, useCallback, type CSSProperties } from 'react';
-import { Search, Plus, Settings, PanelLeftClose, ArrowUp, SquarePen, Folder, X } from 'lucide-react';
+import { Search, Plus, Settings, PanelLeftClose, ArrowUp, SquarePen, Folder, X, Clock } from 'lucide-react';
 import { Agent, ProjectItem } from '../../types';
 import { AgentItem } from './AgentItem';
 import { useI18n } from '../../i18n';
@@ -49,6 +49,8 @@ interface SidebarProps {
   onPrefetchProjectSessions?: (project: ProjectItem) => void;
   onAddProject?: () => void;
   onNewChat?: () => void;
+  isRoutinesOpen?: boolean;
+  onOpenRoutines?: () => void;
   onArchiveAgent?: (agent: Agent) => void;
   onOpenSettings?: () => void;
   onToggleSidebar?: () => void;
@@ -82,6 +84,8 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
   onPrefetchProjectSessions,
   onAddProject,
   onNewChat,
+  isRoutinesOpen = false,
+  onOpenRoutines,
   onArchiveAgent,
   onOpenSettings,
   onToggleSidebar,
@@ -102,7 +106,7 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
     new Set(activeProjectId ? [activeProjectId] : [])
   ));
   const [moreByProjectId, setMoreByProjectId] = useState<Record<string, boolean>>({});
-  const currentActiveId = optimisticActiveId ?? activeAgentId;
+  const currentActiveId = isRoutinesOpen ? null : (optimisticActiveId ?? activeAgentId);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const handleOpenUpdate = useCallback((e: React.MouseEvent) => {
@@ -418,6 +422,18 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
           >
             <SquarePen className="w-3.5 h-3.5 stroke-[1.7] text-ink-2 shrink-0" />
             <span className="truncate flex-1 text-left">{t('newConversation')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenRoutines}
+            data-sidebar-action-row=""
+            className={`relative z-10 w-full h-8 px-2 rounded-[8px] flex items-center gap-2 text-[14px] font-medium ${
+              isRoutinesOpen ? 'text-ink bg-hover-2 font-semibold' : 'text-ink-2 hover:text-ink'
+            } transition-[background-color,color,transform] duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)]`}
+            data-routines-action=""
+          >
+            <Clock className="w-3.5 h-3.5 stroke-[1.7] text-ink-2 shrink-0" />
+            <span className="truncate flex-1 text-left">{t('routines') || 'Routines'}</span>
           </button>
         </GlideMenu>
       </div>

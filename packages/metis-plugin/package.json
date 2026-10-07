@@ -1,0 +1,26 @@
+{
+  "name": "metis-plugin",
+  "version": "1.0.0",
+  "description": "Metis 插件版 — Autoprompt-style host-agnostic orchestration plugin for Codex, OpenCode, and DeepSeek Harness",
+  "type": "module",
+  "bin": {
+    "metis-plugin": "./bin/metis-plugin.js"
+  },
+  "main": "./src/index.ts",
+  "scripts": {
+    "project": "node ./bin/metis-plugin.js project",
+    "doctor": "node ./bin/metis-plugin.js doctor",
+    "check-contracts": "node ../../scripts/check-contracts.mjs"
+  },
+  "keywords": [
+    "metis",
+    "metis-plugin",
+    "codex",
+    "opencode",
+    "deepseek",
+    "orchestration",
+    "multi-agent"
+  ],
+  "author": "Metis Team",
+  "license": "MIT"
+}

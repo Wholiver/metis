@@ -1,11 +1,13 @@
 import React, { useCallback, useRef } from 'react';
-import { Bot, ChevronRight, CircleAlert, CircleCheckBig, CircleDot } from 'lucide-react';
+import { Bot, ChevronRight, CircleAlert, CircleCheckBig, CircleDot, Square } from 'lucide-react';
 import { useElapsedDuration } from '../../hooks/useElapsedDuration';
+import { useI18n } from '../../i18n';
 import { formatSubagentDuration, SubagentItem } from '../../lib/subagents';
 
 interface SubagentsListProps {
   subagents: SubagentItem[];
   onSelect: (subagent: SubagentItem) => void;
+  onStop?: (subagentId: string) => void;
 }
 
 const STATUS_LABELS: Record<SubagentItem['status'], string> = {
@@ -38,7 +40,8 @@ const SubagentDuration: React.FC<{ subagent: SubagentItem }> = ({ subagent }) =>
   ) : null;
 };
 
-export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelect }) => {
+export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelect, onStop }) => {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const indicatorRef = useRef<HTMLDivElement>(null);
   const hoveredRowRef = useRef<HTMLElement | null>(null);
@@ -142,6 +145,22 @@ export const SubagentsList: React.FC<SubagentsListProps> = ({ subagents, onSelec
               </p>
               <span className="sr-only">{STATUS_LABELS[subagent.status]}</span>
             </div>
+
+            {subagent.status === 'running' && onStop && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStop(subagent.agentId || subagent.id);
+                }}
+                className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-red transition-colors shrink-0 mr-1"
+                title={t('stopSubagent')}
+                aria-label={t('stopSubagent')}
+                data-subagent-stop-button=""
+              >
+                <Square className="h-3 w-3 fill-current" aria-hidden="true" />
+              </button>
+            )}
 
             <ChevronRight
               size={16}

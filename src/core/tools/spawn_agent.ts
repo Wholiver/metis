@@ -42,7 +42,8 @@ export const spawnAgentSchema = Type.Object({
 	),
 	gate: Type.Optional(
 		Type.Union([
-			Type.Literal("G0"), Type.Literal("G1"), Type.Literal("G2"), Type.Literal("G3.5"),
+			Type.Literal("G0"), Type.Literal("G1"), Type.Literal("G1-review"), Type.Literal("G1-verify"),
+			Type.Literal("G2"), Type.Literal("G2-review"), Type.Literal("G2-verify"), Type.Literal("G3.5"),
 			Type.Literal("G4"), Type.Literal("G5"), Type.Literal("G6"), Type.Literal("G7"),
 			Type.Literal("sweep"), Type.Literal("goal-check"),
 		], { description: "Host-assigned Performance gate this child is bound to. The child emits ChildResult; it must not call performance_gate." }),
@@ -72,6 +73,11 @@ export const spawnAgentSchema = Type.Object({
 			description: "Optional execution timeout in seconds (e.g. 60, 300)",
 		}),
 	),
+	ownedPaths: Type.Optional(
+		Type.Array(Type.String(), {
+			description: "Optional list of file or directory paths owned exclusively by this agent for shared-cwd exclusivity",
+		}),
+	),
 });
 
 export type SpawnAgentToolInput = Static<typeof spawnAgentSchema>;
@@ -98,6 +104,13 @@ export interface SpawnAgentRuntimeContext {
 	ownedPaths?: string[];
 }
 
+export interface HostChildGateRecord {
+	evidence: string;
+	frontier: string;
+	nextAction: string;
+	live?: string;
+}
+
 export interface SpawnAgentToolOptions {
 	guard?: SpawnGuard;
 	getGuard?: () => SpawnGuard;
@@ -113,6 +126,20 @@ export interface SpawnAgentToolOptions {
 	claimMutatingOwner?: (childAgentId: string, role: string, ownedPaths: string[]) => string | undefined;
 	/** Release shared-cwd mutating ownership after child exit. */
 	releaseMutatingOwner?: (childAgentId: string) => void;
+	/** Optional resolver for lane owned boundaries */
+	getLaneOwnedPaths?: (laneId: string) => string[] | undefined;
+	/**
+	 * Host records child-owned gates (G4/G5/G6/G7/sweep/goal-check and G1/G2 assurance)
+	 * from ChildResult under the child's actor. Root must not stamp those gates.
+	 */
+	recordChildGate?: (input: {
+		agentId: string;
+		role: string;
+		gate: NonNullable<SpawnAgentToolInput["gate"]>;
+		itemId?: string;
+		outcome: "pass" | "fail" | "blocked";
+		childResult: ChildResult;
+	}) => HostChildGateRecord | undefined;
 	sendMessage?: (agentId: string, result: string) => void;
 	onStatusChange?: (agentId: string, running: boolean) => void;
 }
@@ -176,6 +203,10 @@ export interface ChildAgentResultPayload {
 	exitCode?: number | null;
 	worktree?: string;
 	worktreeRetained?: boolean;
+	/** Present when the host auto-recorded a governed gate from ChildResult. */
+	hostGate?: HostChildGateRecord;
+	frontier?: string;
+	nextAction?: string;
 	childResult?: ChildResult;
 }
 
@@ -227,29 +258,211 @@ function extractGateOutcomeFromJsonLines(content: string, expectedGate?: SpawnAg
 	return latest;
 }
 
-function extractChildResultFromOutput(content: string): ChildResult | undefined {
+export function normalizeChildResult(parsed: any): ChildResult | undefined {
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+
+	// Ignore internal trace/streaming events unless explicitly a child result event
+	const eventTypes = new Set([
+		"trace_summary",
+		"message_start",
+		"message_update",
+		"message_end",
+		"tool_execution_start",
+		"tool_execution_end",
+		"subagent_status",
+		"agent_event",
+	]);
+	if (parsed.type && eventTypes.has(parsed.type)) return undefined;
+
+	// Status normalization
+	const rawStatus = String(parsed.status ?? parsed.verdict ?? parsed.outcome ?? parsed.result ?? "").toLowerCase().trim();
+	let status: ChildResult["status"] | undefined;
+	if (["completed", "pass", "passed", "success", "succeeded", "ok"].includes(rawStatus)) {
+		status = "completed";
+	} else if (["failed", "fail", "failure", "error"].includes(rawStatus)) {
+		status = "failed";
+	} else if (rawStatus === "blocked") {
+		status = "blocked";
+	} else if (["invalid", "invalid_brief"].includes(rawStatus)) {
+		status = "invalid";
+	}
+
+	const hasIndicators = parsed.filesChanged !== undefined || parsed.changedFiles !== undefined ||
+		parsed.summary !== undefined || parsed.commands !== undefined || parsed.findings !== undefined ||
+		parsed.testCommand !== undefined || parsed.testOutput !== undefined || parsed.risks !== undefined ||
+		parsed.files !== undefined || parsed.modifiedFiles !== undefined || parsed.deliverables !== undefined;
+	if (!status || !hasIndicators) {
+		if (hasIndicators && !status) {
+			status = "completed";
+		} else {
+			return undefined;
+		}
+	}
+
+	// Summary normalization
+	let summary = "";
+	if (typeof parsed.summary === "string" && parsed.summary.trim()) {
+		summary = parsed.summary.trim();
+	} else if (typeof parsed.message === "string" && parsed.message.trim()) {
+		summary = parsed.message.trim();
+	} else if (typeof parsed.description === "string" && parsed.description.trim()) {
+		summary = parsed.description.trim();
+	} else if (typeof parsed.testOutput === "string" && parsed.testOutput.trim()) {
+		summary = parsed.testOutput.trim();
+	} else {
+		summary = `Child agent ${status} execution.`;
+	}
+
+	// Files changed normalization
+	const rawFiles = parsed.filesChanged ?? parsed.changedFiles ?? parsed.files ?? parsed.modifiedFiles ?? parsed.deliverables;
+	let filesChanged: string[] = [];
+	if (Array.isArray(rawFiles)) {
+		filesChanged = rawFiles.map((f: unknown) => String(f).trim()).filter(Boolean);
+	} else if (typeof rawFiles === "string" && rawFiles.trim()) {
+		filesChanged = [rawFiles.trim()];
+	}
+
+	// Commands normalization
+	let commands: ChildResult["commands"] = [];
+	const rawCommands = parsed.commands ?? parsed.commandsRun;
+	if (Array.isArray(rawCommands)) {
+		commands = rawCommands.map((c: any) => {
+			if (typeof c === "string") {
+				return { argv: c.split(" ").filter(Boolean), cwd: ".", exitCode: 0 };
+			}
+			const argv = Array.isArray(c?.argv) ? c.argv.map(String) : typeof c?.command === "string" ? c.command.split(" ").filter(Boolean) : [];
+			return {
+				argv,
+				cwd: typeof c?.cwd === "string" ? c.cwd : ".",
+				exitCode: typeof c?.exitCode === "number" ? c.exitCode : 0,
+			};
+		});
+	} else if (parsed.testCommand) {
+		const cmdStr = String(parsed.testCommand).trim();
+		commands = [{
+			argv: cmdStr.split(" ").filter(Boolean),
+			cwd: ".",
+			exitCode: typeof parsed.exitCode === "number" ? parsed.exitCode : 0,
+		}];
+	}
+
+	// Findings normalization
+	let findings: ChildResult["findings"] = [];
+	const rawFindings = parsed.findings ?? parsed.risks ?? parsed.issues;
+	if (Array.isArray(rawFindings)) {
+		findings = rawFindings.map((f: any) => {
+			if (typeof f === "string") {
+				return { code: "FINDING", message: f };
+			}
+			return {
+				code: typeof f?.code === "string" ? f.code : "FINDING",
+				message: typeof f?.message === "string" ? f.message : String(f ?? ""),
+				evidence: typeof f?.evidence === "string" ? f.evidence : undefined,
+			};
+		});
+	}
+
+	const proposedRepair = typeof parsed.proposedRepair === "string"
+		? parsed.proposedRepair
+		: typeof parsed.repair === "string"
+			? parsed.repair
+			: undefined;
+
+	return {
+		status,
+		summary,
+		filesChanged,
+		commands,
+		findings,
+		...(proposedRepair ? { proposedRepair } : {}),
+	};
+}
+
+export function extractChildResultFromOutput(content: string): ChildResult | undefined {
+	if (!content) return undefined;
 	let latest: ChildResult | undefined;
+
+	// 1. Check markdown fenced code blocks: ```json ... ``` or ``` ... ```
+	const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/g;
+	let match: RegExpExecArray | null;
+	while ((match = codeBlockRegex.exec(content)) !== null) {
+		const blockText = match[1]?.trim();
+		if (blockText && (blockText.startsWith("{") || blockText.includes('"status"') || blockText.includes('"verdict"'))) {
+			try {
+				const parsed = JSON.parse(blockText);
+				const normalized = normalizeChildResult(parsed);
+				if (normalized) latest = normalized;
+			} catch {}
+		}
+	}
+
+	// 2. Check line by line (handles single-line JSONs)
 	for (const line of content.split(/\r?\n/)) {
 		const trimmed = line.trim();
 		if (!trimmed.startsWith("{")) continue;
 		try {
-			const parsed = JSON.parse(trimmed) as Partial<ChildResult> & { type?: string };
-			if (parsed.type) continue;
-			if (!parsed.status || !parsed.summary || !Array.isArray(parsed.filesChanged) || !Array.isArray(parsed.commands) || !Array.isArray(parsed.findings)) {
-				continue;
-			}
-			if (!["completed", "failed", "blocked", "invalid"].includes(String(parsed.status))) continue;
-			latest = {
-				status: parsed.status,
-				summary: parsed.summary,
-				filesChanged: parsed.filesChanged,
-				commands: parsed.commands,
-				findings: parsed.findings,
-				proposedRepair: typeof parsed.proposedRepair === "string" ? parsed.proposedRepair : undefined,
-			};
+			const parsed = JSON.parse(trimmed);
+			const normalized = normalizeChildResult(parsed);
+			if (normalized) latest = normalized;
 		} catch {}
 	}
+
+	// 3. Multiline balanced brace extraction if not yet found
+	if (!latest) {
+		let depth = 0;
+		let endIndex = -1;
+		for (let i = content.length - 1; i >= 0; i--) {
+			if (content[i] === "}") {
+				if (depth === 0) endIndex = i;
+				depth++;
+			} else if (content[i] === "{") {
+				if (depth > 0) {
+					depth--;
+					if (depth === 0 && endIndex !== -1) {
+						const candidate = content.slice(i, endIndex + 1);
+						try {
+							const parsed = JSON.parse(candidate);
+							const normalized = normalizeChildResult(parsed);
+							if (normalized) {
+								latest = normalized;
+								break;
+							}
+						} catch {}
+						endIndex = -1;
+					}
+				}
+			}
+		}
+	}
+
 	return latest;
+}
+
+export function stripChildResultFromOutput(content: string): string {
+	if (!content) return "";
+	// 1. Remove code blocks that parse into a valid ChildResult
+	let stripped = content.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, (match, blockText) => {
+		try {
+			const parsed = JSON.parse(blockText.trim());
+			if (normalizeChildResult(parsed)) return "";
+		} catch {}
+		return match;
+	});
+
+	// 2. Remove single lines that parse into a valid ChildResult
+	const lines = stripped.split(/\r?\n/);
+	const filtered = lines.filter((line) => {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith("{")) return true;
+		try {
+			const parsed = JSON.parse(trimmed);
+			if (normalizeChildResult(parsed)) return false;
+			return true;
+		} catch {
+			return true;
+		}
+	});
+	return filtered.join("\n").trim();
 }
 
 /** Extract nested trace_summary envelopes from child stdout/jsonl and merge into parent collector. */
@@ -338,11 +551,54 @@ function resolveGovernedChildOutcome(args: {
 					status = "error";
 					outcome = failClosed;
 					error = `Host fail-closed: completed ChildResult cannot override gate outcome ${failClosed}`;
+				} else if (
+					childResult.status === "completed" &&
+					isMutatingChildRole(args.agent) &&
+					args.gate === "G4" &&
+					(!childResult.filesChanged || childResult.filesChanged.length === 0)
+				) {
+					status = "error";
+					outcome = "invalid";
+					errorCode = "CHILD_RESULT_INVALID";
+					error = "CHILD_RESULT_INVALID: mutating implementer completed G4 without any changed files";
+					hint = "Implementers must write, edit, and persist changes to disk before reporting completion.";
 				} else {
 					outcome = "pass";
 				}
 			}
 		}
+	}
+
+	const rawOutput = args.liveFinalText || args.stdoutData.trim();
+	const cleanOutput = stripChildResultFromOutput(rawOutput);
+	const resolvedResult = cleanOutput || childResult?.summary || (status === "success" ? "(No output returned)" : undefined);
+
+	const cleanedParts = args.parts?.map((part) => {
+		if (part && part.type === "text" && typeof part.text === "string") {
+			const cleaned = stripChildResultFromOutput(part.text);
+			return { ...part, text: cleaned || childResult?.summary || part.text };
+		}
+		return part;
+	});
+
+	const hasToolCalls = cleanedParts?.some((p) => p.type === "toolCall");
+	let resolvedParts = cleanedParts;
+	if (!hasToolCalls && childResult?.commands && childResult.commands.length > 0) {
+		const cmdParts = childResult.commands.map((cmd, idx) => ({
+			type: "toolCall",
+			id: `${args.agentId}-cmd-${idx}`,
+			name: "bash",
+			arguments: { command: cmd.argv.join(" ") },
+			result: {
+				content: `exitCode: ${cmd.exitCode ?? 0}`,
+				isError: cmd.exitCode !== 0 && cmd.exitCode !== null,
+			},
+			progress: {
+				jobId: `cmd-${idx}`,
+				state: cmd.exitCode === 0 || cmd.exitCode === null ? "completed" : "failed",
+			},
+		}));
+		resolvedParts = [...cmdParts, ...(cleanedParts ?? [])];
 	}
 
 	const payload: ChildAgentResultPayload & { parts?: any[] } = {
@@ -362,8 +618,8 @@ function resolveGovernedChildOutcome(args: {
 		gate: args.gateOutcome?.gate ?? args.gate,
 		itemId: args.gateOutcome?.itemId ?? args.laneId,
 		evidence: args.gateOutcome?.evidence,
-		parts: args.parts,
-		result: args.liveFinalText || args.stdoutData.trim() || (status === "success" ? "(No output returned)" : undefined),
+		parts: resolvedParts,
+		result: resolvedResult,
 		error,
 		hint,
 		errorCode,
@@ -389,6 +645,68 @@ function resolveGovernedChildOutcome(args: {
 	}
 
 	return payload;
+}
+
+const HOST_RECORDABLE_GATES = new Set<NonNullable<SpawnAgentToolInput["gate"]>>([
+	"G0",
+	"G1",
+	"G1-review",
+	"G1-verify",
+	"G2-review",
+	"G2-verify",
+	"G3.5",
+	"G4",
+	"G5",
+	"G6",
+	"G7",
+	"sweep",
+	"goal-check",
+]);
+
+function applyHostChildGateRecord(
+	payload: ChildAgentResultPayload & { parts?: any[] },
+	recordChildGate: SpawnAgentToolOptions["recordChildGate"],
+): ChildAgentResultPayload & { parts?: any[] } {
+	if (!recordChildGate || !payload.childResult || !payload.gate || !HOST_RECORDABLE_GATES.has(payload.gate)) {
+		return payload;
+	}
+	if (payload.outcome !== "pass" && payload.outcome !== "fail" && payload.outcome !== "blocked") {
+		return payload;
+	}
+	try {
+		const hostGate = recordChildGate({
+			agentId: payload.agentId,
+			role: payload.agent,
+			gate: payload.gate,
+			itemId: payload.itemId,
+			outcome: payload.outcome,
+			childResult: payload.childResult,
+		});
+		if (!hostGate) return payload;
+		return {
+			...payload,
+			evidence: hostGate.evidence,
+			hostGate,
+			frontier: hostGate.frontier,
+			nextAction: hostGate.nextAction,
+			hint: [
+				payload.hint,
+				`Host recorded ${payload.gate} from ChildResult as ${payload.agentId}.`,
+				`frontier: ${hostGate.frontier}.`,
+				`Next required action: ${hostGate.nextAction}`,
+			]
+				.filter(Boolean)
+				.join(" "),
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return {
+			...payload,
+			status: "error",
+			error: `HOST_GATE_RECORD_FAILED: ${message}`,
+			hint: "Child finished, but the host could not record the gate. Fix the frontier/independence issue named above; do not call performance_gate as root for G5/G6, and do not read Metis source.",
+		};
+	}
 }
 
 function attributeChildError(stderr: string, stdout: string, exitCode: number | null): { error: string; hint?: string } {
@@ -467,7 +785,11 @@ export function createSpawnAgentToolDefinition(
 				};
 				return { content: [{ type: "text", text: JSON.stringify(sanitizeTraceData(payload), null, 2) }], details: undefined };
 			}
-			const ownedPaths = rt?.ownedPaths ?? ["."];
+			const ownedPaths = (preparedInput.ownedPaths && preparedInput.ownedPaths.length > 0)
+				? preparedInput.ownedPaths
+				: (laneId && options?.getLaneOwnedPaths ? options.getLaneOwnedPaths(laneId) : undefined)
+				?? (rt?.ownedPaths && !laneId ? rt.ownedPaths : undefined)
+				?? ["."];
 			const releaseMutatingOwner = () => {
 				options?.releaseMutatingOwner?.(childAgentId);
 			};
@@ -707,6 +1029,18 @@ export function createSpawnAgentToolDefinition(
 					}> = [];
 					let liveFinalText = "";
 					let gateOutcome: GateOutcome | undefined;
+					const messageOrder: string[] = [];
+					const messageParts = new Map<string, Array<{ type: string; id: string; [key: string]: any }>>();
+					let currentAssistantMsgId: string | undefined;
+					let assistantMessageCounter = 0;
+
+					const syncLiveParts = () => {
+						liveParts.length = 0;
+						for (const id of messageOrder) {
+							const parts = messageParts.get(id);
+							if (parts) liveParts.push(...parts);
+						}
+					};
 
 					const emitProgress = (text: string) => {
 						if (!_onUpdate) return;
@@ -726,88 +1060,138 @@ export function createSpawnAgentToolDefinition(
 							if (evt.type === "message_start" || evt.type === "message_update" || evt.type === "message_end") {
 								const msg = evt.message;
 								if (msg && msg.role === "assistant") {
+									let msgId: string;
+									if (evt.type === "message_start") {
+										msgId = String(msg.id || `${childAgentId}-msg-${assistantMessageCounter++}`);
+										currentAssistantMsgId = msgId;
+										if (!messageOrder.includes(msgId)) {
+											messageOrder.push(msgId);
+										}
+										messageParts.set(msgId, []);
+									} else {
+										if (!currentAssistantMsgId) {
+											currentAssistantMsgId = String(msg.id || `${childAgentId}-msg-${assistantMessageCounter++}`);
+											if (!messageOrder.includes(currentAssistantMsgId)) {
+												messageOrder.push(currentAssistantMsgId);
+											}
+											if (!messageParts.has(currentAssistantMsgId)) {
+												messageParts.set(currentAssistantMsgId, []);
+											}
+										}
+										msgId = currentAssistantMsgId;
+									}
+
+									const currentParts = messageParts.get(msgId) || [];
 									if (Array.isArray(msg.content)) {
-										liveParts.length = 0;
+										const updatedParts: Array<{ type: string; id: string; [key: string]: any }> = [];
 										let textAccumulator = "";
 										let partIdx = 0;
 										for (const part of msg.content) {
 											if (!part || typeof part !== "object") continue;
 											const partType = part.type;
 											if (partType === "thinking") {
-												liveParts.push({
+												updatedParts.push({
 													type: "thinking",
-													id: part.id || `${childAgentId}-thinking-${partIdx++}`,
+													id: part.id || `${msgId}-thinking-${partIdx++}`,
 													thinking: part.thinking || part.text || "",
 													durationMs: part.durationMs,
 												});
 											} else if (partType === "toolCall" || partType === "tool_use") {
-												const toolId = part.id || part.toolCallId || `${childAgentId}-tool-${partIdx++}`;
-												liveParts.push({
+												const toolId = String(part.id || part.toolCallId || `${msgId}-tool-${partIdx++}`);
+												const existingTool = currentParts.find((p) => p.type === "toolCall" && p.id === toolId)
+													|| liveParts.find((p) => p.type === "toolCall" && p.id === toolId);
+												updatedParts.push({
 													type: "toolCall",
 													id: toolId,
-													name: part.name || part.toolName || "tool",
-													arguments: part.arguments || part.input || {},
+													name: part.name || part.toolName || existingTool?.name || "tool",
+													arguments: part.arguments || part.input || existingTool?.arguments || {},
 													result: part.result
 														? {
 																content: typeof part.result === "string" ? part.result : (part.result.content || ""),
 																isError: Boolean(part.result.isError),
 															}
-														: undefined,
-													progress: part.progress || {
+														: existingTool?.result,
+													progress: part.progress || existingTool?.progress || {
 														jobId: String(toolId).slice(-6),
-														state: part.result ? (part.result.isError ? "failed" : "completed") : "running",
+														state: (part.result || existingTool?.result)
+															? ((part.result?.isError || existingTool?.result?.isError) ? "failed" : "completed")
+															: "running",
 													},
 												});
 											} else if (partType === "text") {
 												const text = part.text || "";
-												liveParts.push({
+												updatedParts.push({
 													type: "text",
-													id: part.id || `${childAgentId}-text-${partIdx++}`,
+													id: part.id || `${msgId}-text-${partIdx++}`,
 													text,
 												});
 												textAccumulator += (textAccumulator ? "\n" : "") + text;
 											}
 										}
+										messageParts.set(msgId, updatedParts);
 										if (textAccumulator) {
 											liveFinalText = textAccumulator;
 										}
 									} else if (typeof msg.content === "string" && msg.content.trim()) {
+										messageParts.set(msgId, [{
+											type: "text",
+											id: `${msgId}-text-0`,
+											text: msg.content,
+										}]);
 										liveFinalText = msg.content;
 									}
+									if (evt.type === "message_end") {
+										currentAssistantMsgId = undefined;
+									}
+									syncLiveParts();
 								}
 							} else if (evt.type === "tool_execution_start") {
-								const toolId = evt.toolCallId || `${childAgentId}-tool-${liveParts.length}`;
+								const toolId = String(evt.toolCallId || `${childAgentId}-tool-${liveParts.length}`);
 								const existing = liveParts.find((p) => p.type === "toolCall" && p.id === toolId);
 								if (existing) {
 									existing.name = evt.toolName || existing.name;
 									existing.arguments = evt.args || existing.arguments;
 									existing.progress = { jobId: String(toolId).slice(-6), state: "running" };
 								} else {
-									liveParts.push({
+									const newTool = {
 										type: "toolCall",
 										id: toolId,
 										name: evt.toolName || "tool",
 										arguments: evt.args || {},
 										progress: { jobId: String(toolId).slice(-6), state: "running" },
-									});
+									};
+									const targetMsgId = currentAssistantMsgId || (messageOrder.length > 0 ? messageOrder[messageOrder.length - 1] : `${childAgentId}-msg-0`);
+									if (!messageParts.has(targetMsgId)) {
+										messageOrder.push(targetMsgId);
+										messageParts.set(targetMsgId, []);
+									}
+									messageParts.get(targetMsgId)!.push(newTool);
+									syncLiveParts();
 								}
 							} else if (evt.type === "tool_execution_end") {
 								if (evt.toolName === "performance_gate") gateOutcome = extractGateOutcome(evt.result, gate) ?? gateOutcome;
-								const toolId = evt.toolCallId;
+								const toolId = String(evt.toolCallId || "");
 								const existing = liveParts.find((p) => p.type === "toolCall" && p.id === toolId);
 								const resultContent = typeof evt.result === "string" ? evt.result : JSON.stringify(evt.result ?? "");
 								if (existing) {
 									existing.result = { content: resultContent, isError: Boolean(evt.isError) };
 									existing.progress = { jobId: String(toolId).slice(-6), state: evt.isError ? "failed" : "completed" };
 								} else if (toolId) {
-									liveParts.push({
+									const newTool = {
 										type: "toolCall",
 										id: toolId,
 										name: evt.toolName || "tool",
 										arguments: {},
 										result: { content: resultContent, isError: Boolean(evt.isError) },
 										progress: { jobId: String(toolId).slice(-6), state: evt.isError ? "failed" : "completed" },
-									});
+									};
+									const targetMsgId = currentAssistantMsgId || (messageOrder.length > 0 ? messageOrder[messageOrder.length - 1] : `${childAgentId}-msg-0`);
+									if (!messageParts.has(targetMsgId)) {
+										messageOrder.push(targetMsgId);
+										messageParts.set(targetMsgId, []);
+									}
+									messageParts.get(targetMsgId)!.push(newTool);
+									syncLiveParts();
 								}
 							}
 						} catch {
@@ -890,7 +1274,7 @@ export function createSpawnAgentToolDefinition(
 						parentId,
 						rootRunId,
 						depth: childDepth,
-						pid: child.pid,
+						pid: child?.pid,
 						message: `Spawned ${agent}; waiting for progress…`,
 					}, null, 2));
 
@@ -906,10 +1290,17 @@ export function createSpawnAgentToolDefinition(
 					// We do not forcibly kill subagent processes via internal timers to prevent premature termination
 					// during deep reasoning or multi-turn tool calling.
 
+					const MAX_SPAWN_BUFFER_CHARS = 2 * 1024 * 1024;
 					child.stdout?.on("data", (chunk) => {
 						const text = chunk.toString("utf-8");
 						stdoutData += text;
+						if (stdoutData.length > MAX_SPAWN_BUFFER_CHARS) {
+							stdoutData = stdoutData.slice(-Math.floor(MAX_SPAWN_BUFFER_CHARS / 2));
+						}
 						lineBuffer += text;
+						if (lineBuffer.length > MAX_SPAWN_BUFFER_CHARS) {
+							lineBuffer = lineBuffer.slice(-Math.floor(MAX_SPAWN_BUFFER_CHARS / 2));
+						}
 
 						const lines = lineBuffer.split(/\r?\n/);
 						lineBuffer = lines.pop() ?? "";
@@ -922,6 +1313,9 @@ export function createSpawnAgentToolDefinition(
 					child.stderr?.on("data", (chunk) => {
 						const text = chunk.toString("utf-8");
 						stderrData += text;
+						if (stderrData.length > MAX_SPAWN_BUFFER_CHARS) {
+							stderrData = stderrData.slice(-Math.floor(MAX_SPAWN_BUFFER_CHARS / 2));
+						}
 						scheduleProgressEmit();
 					});
 
@@ -1037,28 +1431,31 @@ export function createSpawnAgentToolDefinition(
 
 							const isSuccess = exitCode === 0;
 							const errorAttribution = isSuccess ? { error: undefined, hint: undefined } : attributeChildError(stderrData, stdoutData, exitCode);
-							const payload = resolveGovernedChildOutcome({
-								isSuccess,
-								gate,
-								gateOutcome,
-								stdoutData,
-								liveFinalText,
-								effectiveCwd,
-								agent,
-								agentId: childAgentId,
-								parentId,
-								rootRunId,
-								depth: childDepth,
-								laneId,
-								cwd,
-								workspacePath: workspace.workspacePath,
-								exitCode,
-								provider: rt?.provider ?? process.env.METIS_PROVIDER,
-								model: rt?.model ?? process.env.METIS_MODEL,
-								baseUrl: rt?.baseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL,
-								errorAttribution,
-								parts: liveParts.length > 0 ? liveParts : undefined,
-							});
+							const payload = applyHostChildGateRecord(
+								resolveGovernedChildOutcome({
+									isSuccess,
+									gate,
+									gateOutcome,
+									stdoutData,
+									liveFinalText,
+									effectiveCwd,
+									agent,
+									agentId: childAgentId,
+									parentId,
+									rootRunId,
+									depth: childDepth,
+									laneId,
+									cwd,
+									workspacePath: workspace.workspacePath,
+									exitCode,
+									provider: rt?.provider ?? process.env.METIS_PROVIDER,
+									model: rt?.model ?? process.env.METIS_MODEL,
+									baseUrl: rt?.baseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL,
+									errorAttribution,
+									parts: liveParts.length > 0 ? liveParts : undefined,
+								}),
+								options?.recordChildGate,
+							);
 							guard.updateChildStatus(childAgentId, {
 								status: payload.status === "success" ? "completed" : "error",
 								exitCode,
@@ -1128,8 +1525,24 @@ export function createSpawnAgentToolDefinition(
 				const isSuccess = !cancelled && exitCode === 0;
 				let resultContent = "(No output returned)";
 				try {
-					const content = await fs.readFile(outputFile, "utf-8");
-					resultContent = content.length > 8000 ? "...(truncated)...\n" + content.slice(-8000) : content;
+					const st = await fs.stat(outputFile).catch(() => undefined);
+					if (st && st.size > 0) {
+						if (st.size > 65536) {
+							const fileHandle = await fs.open(outputFile, "r");
+							try {
+								const readLen = Math.min(st.size, 65536);
+								const buf = Buffer.alloc(readLen);
+								await fileHandle.read(buf, 0, readLen, st.size - readLen);
+								const tailChunk = buf.toString("utf-8");
+								resultContent = "...(truncated)...\n" + tailChunk.slice(-8000);
+							} finally {
+								await fileHandle.close().catch(() => {});
+							}
+						} else {
+							const content = await fs.readFile(outputFile, "utf-8");
+							resultContent = content.length > 8000 ? "...(truncated)...\n" + content.slice(-8000) : content;
+						}
+					}
 				} catch {
 					// Ignore
 				}
@@ -1139,27 +1552,30 @@ export function createSpawnAgentToolDefinition(
 					? { error: "Agent execution cancelled.", hint: undefined }
 					: isSuccess ? { error: undefined, hint: undefined } : attributeChildError(resultContent, "", exitCode);
 				const gateOutcome = extractGateOutcomeFromJsonLines(resultContent, gate);
-				const payload = resolveGovernedChildOutcome({
-					isSuccess: Boolean(isSuccess) && !cancelled,
-					gate,
-					gateOutcome,
-					stdoutData: resultContent,
-					liveFinalText: resultContent,
-					effectiveCwd,
-					agent,
-					agentId: childAgentId,
-					parentId,
-					rootRunId,
-					depth: childDepth,
-					laneId,
-					cwd,
-					workspacePath: workspace.workspacePath,
-					exitCode,
-					provider: rt?.provider ?? process.env.METIS_PROVIDER,
-					model: rt?.model ?? process.env.METIS_MODEL,
-					baseUrl: rt?.baseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL,
-					errorAttribution,
-				});
+				const payload = applyHostChildGateRecord(
+					resolveGovernedChildOutcome({
+						isSuccess: Boolean(isSuccess) && !cancelled,
+						gate,
+						gateOutcome,
+						stdoutData: resultContent,
+						liveFinalText: resultContent,
+						effectiveCwd,
+						agent,
+						agentId: childAgentId,
+						parentId,
+						rootRunId,
+						depth: childDepth,
+						laneId,
+						cwd,
+						workspacePath: workspace.workspacePath,
+						exitCode,
+						provider: rt?.provider ?? process.env.METIS_PROVIDER,
+						model: rt?.model ?? process.env.METIS_MODEL,
+						baseUrl: rt?.baseUrl ?? process.env.METIS_BASE_URL ?? process.env.OPENAI_BASE_URL,
+						errorAttribution,
+					}),
+					options?.recordChildGate,
+				);
 
 				guard.updateChildStatus(childAgentId, {
 					status: payload.status === "success" ? "completed" : "error",

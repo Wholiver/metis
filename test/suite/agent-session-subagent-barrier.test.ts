@@ -201,5 +201,43 @@ describe("AgentSession Subagent execution pause", () => {
 		expect(harness.session.getRunningSubagentIds()).toEqual([]);
 		expect(events.some((ev) => ev.type === "subagent_status" && ev.runningCount === 0)).toBe(true);
 	});
+
+	it("aborts a specific subagent with abortSubagent(agentId) and releases pause when empty", async () => {
+		const harness = await createHarness({
+			tools: [passiveTool("subagent"), passiveTool("log")],
+			initialActiveToolNames: ["subagent", "log"],
+		});
+		harnesses.push(harness);
+		const internals = harness.session as unknown as SubagentInternals;
+
+		internals._setSubagentRunning("worker-a", true);
+		internals._setSubagentRunning("worker-b", true);
+		expect(harness.session.getRunningSubagentCount()).toBe(2);
+
+		const events: any[] = [];
+		harness.session.subscribe((ev) => events.push(ev));
+
+		const customMessageSpy = vi.spyOn(harness.session, "sendCustomMessage").mockResolvedValue(undefined);
+
+		harness.session.abortSubagent("worker-a");
+		expect(harness.session.getRunningSubagentIds()).toEqual(["worker-b"]);
+		expect(harness.session.getRunningSubagentCount()).toBe(1);
+		expect(customMessageSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				customType: "subagent_result",
+				content: expect.arrayContaining([
+					expect.objectContaining({
+						text: expect.stringContaining("worker-a was stopped by user"),
+					}),
+				]),
+			}),
+			expect.objectContaining({ triggerTurn: true, deliverAs: "followUp" }),
+		);
+
+		harness.session.abortSubagent("worker-b");
+		expect(harness.session.getRunningSubagentCount()).toBe(0);
+		expect(harness.session.getRunningSubagentIds()).toEqual([]);
+		expect(events.some((ev) => ev.type === "subagent_status" && ev.runningCount === 0)).toBe(true);
+	});
 });
 

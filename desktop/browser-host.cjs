@@ -226,6 +226,33 @@ function computeSvgContentRect(viewport, viewBox) {
 	};
 }
 
+/** Keep crop rectangles inside the guest CSS viewport so capturePage does not throw. */
+function clampCropRectToGuest(rect, guest) {
+	if (!rect) return null;
+	let maxW = 0;
+	let maxH = 0;
+	try {
+		if (typeof guest?.getSize === "function") {
+			const size = guest.getSize();
+			maxW = Number(size?.width) || Number(Array.isArray(size) ? size[0] : 0) || 0;
+			maxH = Number(size?.height) || Number(Array.isArray(size) ? size[1] : 0) || 0;
+		}
+	} catch {
+		maxW = 0;
+		maxH = 0;
+	}
+	if (!(maxW > 0 && maxH > 0)) return rect;
+	const x = Math.max(0, Math.min(Math.round(Number(rect.x) || 0), maxW - 1));
+	const y = Math.max(0, Math.min(Math.round(Number(rect.y) || 0), maxH - 1));
+	const width = Math.max(1, Math.min(Math.round(Number(rect.width) || 0), maxW - x));
+	const height = Math.max(1, Math.min(Math.round(Number(rect.height) || 0), maxH - y));
+	if (width < 8 || height < 8) return null;
+	return { x, y, width, height };
+}
+
+const SCREENSHOT_TIMEOUT_MESSAGE =
+	"Screenshot timed out after 8s. browser_navigate the same deliverable file again, then retry browser_take_screenshot. Do not create an HTML wrapper page for a preview failure.";
+
 async function waitForTwoAnimationFrames(guest) {
 	if (typeof guest?.executeJavaScript !== "function") return;
 	try {
@@ -1377,16 +1404,40 @@ function createBrowserHostController(options = {}) {
 							"Timed out measuring Inspector SVG bounds",
 						);
 						if (info && info.standalone) {
-							cropRect = computeSvgContentRect(info, info?.viewBox);
+							cropRect = clampCropRectToGuest(
+								computeSvgContentRect(info, info?.viewBox),
+								resolved.guest,
+							);
 						}
 					} catch {
 						cropRect = null;
 					}
-					const image = await withTimeout(
-						cropRect ? resolved.guest.capturePage(cropRect) : resolved.guest.capturePage(),
-						SCREENSHOT_TIMEOUT_MS,
-						"This operation was aborted",
-					);
+					const captureOnce = (rect) =>
+						withTimeout(
+							rect ? resolved.guest.capturePage(rect) : resolved.guest.capturePage(),
+							SCREENSHOT_TIMEOUT_MS,
+							SCREENSHOT_TIMEOUT_MESSAGE,
+						);
+					let image;
+					try {
+						image = await captureOnce(cropRect);
+					} catch (firstError) {
+						// Cropped capture can throw (e.g. UnknownVizError) or time out; retry full-frame.
+						try {
+							image = await captureOnce(null);
+						} catch (secondError) {
+							const page = guestPageMeta(resolved.guest, resolved.meta);
+							const firstMessage = firstError instanceof Error ? firstError.message : String(firstError);
+							const secondMessage = secondError instanceof Error ? secondError.message : String(secondError);
+							return {
+								ok: false,
+								error: `${secondMessage} Preview failed twice (first: ${firstMessage}). Stay on the deliverable file; browser_navigate it again and retry screenshot. Do not create an HTML wrapper page solely because screenshot failed.`,
+								tabId: resolved.tabId,
+								url: page.url,
+								title: page.title,
+							};
+						}
+					}
 					const png = encodeScreenshotPng(image, resolved.guest);
 					const page = guestPageMeta(resolved.guest, resolved.meta);
 					if (resolved.meta) {
@@ -1512,6 +1563,7 @@ module.exports = {
 	resolveNavigateUrl,
 	resolveKeyboardKey,
 	computeSvgContentRect,
+	clampCropRectToGuest,
 	displayUrl,
 	BROWSER_FIT_VIEWPORT_SCRIPT,
 	applyFitViewport,

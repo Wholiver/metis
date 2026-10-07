@@ -16,7 +16,8 @@ test-subagent.log
 .temp
 desktop/release/
 desktop/release */
-.agents
+.agents/*
+!.agents/plugins/
 .claude
 .workbuddy
 skills-lock.json
@@ -38,3 +39,7 @@ vendor/*/dist/**/.claude/
 
 eval_results/
 .venv/
+out/
+__pycache__/
+*.pyc
+adapters/harbor_tb/

@@ -10,6 +10,7 @@ interface AssistantTurnProps {
   messages: Message[];
   startedAt?: string | number;
   streaming?: boolean;
+  isCompacting?: boolean;
   showProgress?: boolean;
   workflowProposal?: WorkflowProposalState;
   onOpenPlan?: (markdown: string) => void;
@@ -169,6 +170,7 @@ function reuseStablePartList(
 
 function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTurnProps): boolean {
   if (prev.streaming !== next.streaming) return false;
+  if (prev.isCompacting !== next.isCompacting) return false;
   if (prev.showProgress !== next.showProgress) return false;
   if (prev.startedAt !== next.startedAt) return false;
   if (prev.workflowProposal !== next.workflowProposal) return false;
@@ -193,6 +195,7 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   messages,
   startedAt: _startedAt,
   streaming = false,
+  isCompacting = false,
   showProgress = false,
   workflowProposal,
   onOpenPlan,
@@ -237,7 +240,7 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   const retryHandler = failureMessage && retryPrompt && onRetry
     ? () => onRetry(retryPrompt)
     : undefined;
-  const hasWork = streaming || isWaitingUserInput || workItems.some((part) => part.type === 'thinking' || part.type === 'toolCall');
+  const hasWork = streaming || isCompacting || isWaitingUserInput || workItems.some((part) => part.type === 'thinking' || part.type === 'toolCall');
   if (!hasWork) {
     const nonFailureMessages = failureMessage
       ? messages.filter((m) => m !== failureMessage && m.content && m.content !== failureMessage.errorMessage)
@@ -271,6 +274,7 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
       <AssistantWork
         items={workItems}
         streaming={streaming}
+        isCompacting={isCompacting}
         onOpenSubagent={onOpenSubagent}
       />
       {finalMessage && (

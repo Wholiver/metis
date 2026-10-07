@@ -36,6 +36,7 @@ interface InspectorProps {
   onMoveTab: (tabId: string, toIndex: number) => void;
   onUpdateTab: (tabId: string, patch: Partial<InspectorTab>) => void;
   onOpenSubagent?: (partId: string) => void;
+  onStopSubagent?: (subagentId: string) => void;
   onClose?: () => void;
   onCollapse?: () => void;
   activeSessionId?: string | null;
@@ -86,6 +87,7 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
   onMoveTab,
   onUpdateTab,
   onOpenSubagent,
+  onStopSubagent,
   onClose,
   onCollapse,
   activeSessionId,
@@ -386,6 +388,7 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
               <SubagentsList
                 subagents={subagents}
                 onSelect={(item) => onOpenSubagent?.(item.id)}
+                onStop={onStopSubagent}
               />
             </div>
           );

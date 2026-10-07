@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": "1.3.1",
+  "description": "Metis 插件版 - Source of Truth Routes Contract (aligned with performance-runtime TIER_ROLES)",
+  "routes": [
+    {
+      "tier": "fast-path",
+      "name": "Conversational Fast-Path",
+      "description": "Direct textual answer for greetings, explanations, questions, and non-mutating requests; no subagent dispatch.",
+      "sequence": [],
+      "notes": "Root session answers directly. No gates, no roles."
+    },
+    {
+      "tier": "T0",
+      "name": "Mechanical Apply",
+      "description": "Mechanically apply a fully specified change without design decisions. Root closes G4 with independent evidence in the G4 receipt.",
+      "sequence": ["G4"],
+      "notes": "Skip G5/G6/G7 and goal-check. Evidence lives in the G4 receipt. Root closes G4; no spawn."
+    },
+    {
+      "tier": "T1",
+      "name": "Bounded TDD Feature/Fix",
+      "description": "Exactly one ownership surface: root implements G4, then fresh G5 review and G6 verification. Many steps or files inside that one surface stay T1.",
+      "sequence": ["G4", "G5", "G6"],
+      "notes": "Spawn only reviewer and verifier/fresh-verifier. No juror, no goal-check. Debug inserts G0/G1/G3.5 closed by root before G4. Step count, file count, difficulty, or wanting more agents never raises this to T2/T3."
+    },
+    {
+      "tier": "T2",
+      "name": "Serial Multi-Surface Feature",
+      "description": "At least two ownership surfaces that must run serially (shared mutable state, overlapping paths, or ordered dependencies), then independent review/verify, one juror, and goal-check.",
+      "sequence": ["G2", "G4", "G5", "G6", "G7", "goal-check"],
+      "notes": "Requires ≥2 lanes. One lane is never T2. G2 closed by root (scope-coordinator is not in the T2 spawn allowlist). Conditional G1 planner for design forks. Debug may spawn depth-prober for G3.5. After G6: one juror, then goal-checker."
+    },
+    {
+      "tier": "T3",
+      "name": "Multi-Surface Fleet",
+      "description": "At least two pairwise-disjoint ownership surfaces with no shared mutable state that can run in parallel, then integrated G5/G6, sweep, and root goal-check.",
+      "sequence": ["G2", "G4", "G5", "G6", "sweep", "goal-check"],
+      "notes": "G2 executed by root. Implementer lanes are workspace directories with non-overlapping owned paths; a missing directory is not a lane. Overlap or shared mutable state downgrades to T2; a single surface downgrades to T1. wide changes the batch cap, not the lane count. Then reviewer, verifier, sweeper. goal-check executed by root. No planner, juror, or goal-checker spawn."
+    },
+    {
+      "tier": "debug",
+      "name": "Defect Repair Overlay",
+      "description": "Root-cause bug fix overlay: G0 characterize, G1 plan, G3.5 depth-lock before implementation on the selected tier.",
+      "sequence": ["G0", "G1", "G3.5"],
+      "notes": "Inserted before the selected tier's G4. On T1 and T3 these gates are closed by root. On T2, G3.5 may be closed by depth-prober; G7 + goal-check follow G6."
+    }
+  ]
+}

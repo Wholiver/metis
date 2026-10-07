@@ -428,3 +428,23 @@ input,
 [data-composer-fade-mask] {
   contain: paint;
 }
+
+/* ── Agent Workflow Canvas Animations ────────────────────── */
+@keyframes workflowDashFlow {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.edge-flow-backtrack {
+  stroke-dasharray: 6 4;
+  animation: workflowDashFlow 1.4s linear infinite;
+}
+
+.edge-flow-active {
+  stroke-dasharray: 6 4;
+  animation: workflowDashFlow 0.9s linear infinite;
+}

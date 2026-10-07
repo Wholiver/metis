@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getScopeDir } from "./store.ts";
+import { getScopeDir, getUserPreferences, getArchitectureEvolution } from "./store.ts";
+import { compileSelfLearningPrompt } from "./compiler.ts";
 import { type ArchitectureAdaptation, validateArchitectureAdaptation } from "./architecture-schema.ts";
 import { type WorkflowAdaptation, validateWorkflowAdaptation } from "./workflow-schema.ts";
 import { CONTROL_PLANE_TOOLS } from "./types.ts";
@@ -10,6 +11,11 @@ export interface AdaptationDiscoveryOptions extends SelfLearningActivationOption
 	cwd: string;
 	agentDir: string;
 	isProjectTrusted?: boolean;
+	turnContext?: {
+		userMessage?: string;
+		activeToolNames?: string[];
+		collaborationMode?: string;
+	};
 }
 
 /**
@@ -451,7 +457,23 @@ function extractSkillMeta(content: string, defaultName: string): { name: string;
  * to be injected into the agent system prompt so the agent is explicitly aware of them.
  */
 export function getLearnedAdaptationsPromptSummary(options: AdaptationDiscoveryOptions): string | undefined {
+	if (options.adaptationsFlag === "off") {
+		return undefined;
+	}
+
 	const sections: string[] = [];
+
+	// 0. Compiled structured preferences & architecture evolution (conflict-free)
+	const userPrefs = getUserPreferences(options.agentDir);
+	const archEvolution = getArchitectureEvolution(options.agentDir, options.cwd);
+	const compiled = compileSelfLearningPrompt({
+		userPreferences: userPrefs,
+		architecture: archEvolution,
+		turnContext: options.turnContext,
+	});
+	if (compiled.promptText) {
+		sections.push(compiled.promptText);
+	}
 
 	// 1. Learned skills
 	const resources = discoverAdaptationResources(options);

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
+  Brain,
   ChevronRight,
   CircleHelp,
   CloudCog,
+  Code2,
+  Cpu,
   Download,
   FileArchive,
   FolderCog,
@@ -12,6 +15,7 @@ import {
   Keyboard,
   LoaderCircle,
   MemoryStick,
+  MessageSquare,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -23,12 +27,21 @@ import {
   Sparkles,
   Square,
   Trash2,
-  TrendingUp,
   Upload,
-  Brain,
+  Workflow,
+  Wrench,
   X,
 } from 'lucide-react';
-import type { AdaptationSummaryItem, CollaborationMode, ModelOption, ProjectItem, ProviderCatalogEntry, ThinkingOption } from '../../types';
+import type {
+  AdaptationSummaryItem,
+  ArchitectureEvolutionData,
+  CollaborationMode,
+  ModelOption,
+  ProjectItem,
+  ProviderCatalogEntry,
+  ThinkingOption,
+  UserPreferencesProfileData,
+} from '../../types';
 import type { ArchivedSessionRecord } from '../../lib/archived-sessions';
 import { RELEASES_URL, type UpdateCheckState } from '../../hooks/useUpdateCheck';
 import { translateExact } from '../../i18n';
@@ -131,36 +144,46 @@ const tabs: Array<{ id: SettingsTab; label: string; icon: typeof Settings2 }> = 
 ];
 
 function Status({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'success' | 'danger' }) {
-  const colors = tone === 'success' ? 'bg-green-tint text-green ring-green/20'
-    : tone === 'danger' ? 'bg-red-tint text-red ring-red/20'
-      : 'bg-hover-2 text-ink-2 ring-[color:var(--focus)]';
-  return <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${colors}`}>{children}</span>;
+  const colors = tone === 'success' ? 'bg-green/10 text-green'
+    : tone === 'danger' ? 'bg-red/10 text-red'
+      : 'bg-hover-2 text-ink-2';
+  return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-medium ${colors}`}>{children}</span>;
 }
 
 function SectionHeading({ title, description }: { title: string; description?: string }) {
-  return <header className="mb-4 max-w-2xl"><h2 className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-ink leading-6">{title}</h2>{description && <p className="mt-1 text-pretty text-[12.5px] leading-5 text-ink-3">{description}</p>}</header>;
+  return (
+    <header className="mb-4 max-w-2xl">
+      <h2 className="text-balance text-[14px] font-medium tracking-tight text-ink">{title}</h2>
+      {description && <p className="mt-1 text-pretty text-[13px] leading-5 text-ink-3">{description}</p>}
+    </header>
+  );
 }
 
-function instructionSourceLabel(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (value && typeof value === 'object') {
-    const source = value as Record<string, unknown>;
-    for (const key of ['path', 'name', 'source', 'type']) {
-      if (typeof source[key] === 'string') return source[key] as string;
-    }
-  }
-  return 'Unknown source';
-}
-
+/** Quiet grouped surface — same density language as Routines / chat lists. */
 function Card({ children }: { children: React.ReactNode }) {
-  return <section className="space-y-0.5 rounded-card bg-surface p-1 shadow-card">{children}</section>;
+  return (
+    <section className="space-y-0.5 rounded-card border border-line/50 bg-surface p-1 shadow-card">
+      {children}
+    </section>
+  );
 }
 
 function Row({ label, description, children, stacked = false }: { label: string; description: string; children: React.ReactNode; stacked?: boolean }) {
-  return <div className={`flex min-h-[48px] gap-4 rounded-control px-3.5 py-2 transition-colors hover:bg-hover-2 ${stacked ? 'flex-col items-start gap-2' : 'items-center justify-between'} `}>
-    <div className="min-w-0"><p className="text-[13.5px] font-medium text-ink">{label}</p>{description && <p className="mt-0.5 text-pretty text-[12px] leading-[18px] text-ink-3">{description}</p>}</div>
-    <div className={stacked ? 'w-full' : 'shrink-0'}>{children}</div>
-  </div>;
+  return (
+    <div
+      className={`flex min-h-[52px] gap-4 rounded-control px-3.5 py-2.5 transition-colors hover:bg-hover ${
+        stacked ? 'flex-col items-start gap-2.5' : 'items-center justify-between'
+      }`}
+    >
+      <div className="min-w-0">
+        <p className="text-[14px] font-medium text-ink">{label}</p>
+        {description && (
+          <p className="mt-0.5 text-pretty text-[13px] leading-5 text-ink-3">{description}</p>
+        )}
+      </div>
+      <div className={stacked ? 'w-full' : 'shrink-0'}>{children}</div>
+    </div>
+  );
 }
 
 function Switch({ checked, onChange, disabled, label }: { checked: boolean; onChange: () => void; disabled?: boolean; label: string }) {
@@ -173,12 +196,12 @@ function Switch({ checked, onChange, disabled, label }: { checked: boolean; onCh
       disabled={disabled}
       onClick={onChange}
       className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] disabled:cursor-not-allowed disabled:opacity-40 ${
-        checked ? 'bg-accent' : 'bg-line-strong'
+        checked ? 'bg-ink' : 'bg-line-strong'
       }`}
     >
       <span
         aria-hidden="true"
-        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white dark:bg-hover-2 shadow-btn ring-0 transition duration-200 ease-in-out ${
+        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-canvas shadow-sm ring-0 transition duration-200 ease-in-out ${
           checked ? 'translate-x-4' : 'translate-x-0'
         }`}
       />
@@ -186,10 +209,14 @@ function Switch({ checked, onChange, disabled, label }: { checked: boolean; onCh
   );
 }
 
-const controlClass = 'h-9 w-full rounded-control border border-line-strong bg-field px-3 text-[13px] text-ink shadow-inset-field outline-none transition-shadow focus:ring-2 focus:ring-[color:var(--focus)] disabled:cursor-not-allowed disabled:opacity-50';
-const selectClass = 'h-9 rounded-control border border-line-strong bg-field pl-3 pr-8 text-[13px] text-ink shadow-inset-field outline-none transition-shadow focus:ring-2 focus:ring-[color:var(--focus)] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer appearance-none bg-[url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2714%27%20height=%2714%27%20viewBox=%270%200%2024%2024%27%20fill=%27none%27%20stroke=%27%2364748b%27%20stroke-width=%272%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27%3E%3Cpath%20d=%27m6%209%206%206%206-6%27/%3E%3C/svg%3E")] bg-no-repeat bg-[right_10px_center]';
-const iconButtonClass = 'inline-flex h-7 w-7 items-center justify-center rounded-chip text-ink-3 transition-[background-color,color] hover:bg-hover-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] disabled:opacity-50';
-const dangerIconButtonClass = 'inline-flex h-7 w-7 items-center justify-center rounded-chip text-ink-3 transition-colors hover:bg-red-tint hover:text-red focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] disabled:opacity-50';
+const controlClass =
+  'h-10 w-full rounded-control border border-line bg-field px-3.5 text-[14px] text-ink shadow-inset-field outline-none transition-[box-shadow,border-color] focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] disabled:cursor-not-allowed disabled:opacity-50';
+const selectClass =
+  'h-10 min-w-[140px] cursor-pointer appearance-none rounded-control border border-line bg-field bg-[url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2714%27%20height=%2714%27%20viewBox=%270%200%2024%2024%27%20fill=%27none%27%20stroke=%27%2364748b%27%20stroke-width=%272%27%20stroke-linecap=%27round%27%20stroke-linejoin=%27round%27%3E%3Cpath%20d=%27m6%209%206%206%206-6%27/%3E%3C/svg%3E")] bg-no-repeat bg-[right_10px_center] pl-3.5 pr-8 text-[14px] text-ink shadow-inset-field outline-none transition-[box-shadow,border-color] focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] disabled:cursor-not-allowed disabled:opacity-50';
+const iconButtonClass =
+  'inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-3 transition-[background-color,color] hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] disabled:opacity-50';
+const dangerIconButtonClass =
+  'inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-3 transition-colors hover:bg-red/10 hover:text-red focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] disabled:opacity-50';
 
 export function SettingsDialog(props: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>(() => normalizeTab(props.initialTab));
@@ -270,8 +297,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [selfLearningEnabled, setSelfLearningEnabled] = useState(false);
   const [maxLearnedSkills, setMaxLearnedSkills] = useState(30);
   const [adaptations, setAdaptations] = useState<AdaptationSummaryItem[]>([]);
-  const [userProfile, setUserProfile] = useState<any>();
-  const [growthReport, setGrowthReport] = useState<any>();
+  const [userPreferences, setUserPreferences] = useState<UserPreferencesProfileData | undefined>();
+  const [architectureEvolution, setArchitectureEvolution] = useState<ArchitectureEvolutionData | undefined>();
+  const [deletingPrefKey, setDeletingPrefKey] = useState<string | null>(null);
   const [adaptationScopeFilter, setAdaptationScopeFilter] = useState<'all' | 'project' | 'user'>('all');
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
   const [retiringCheckId, setRetiringCheckId] = useState<string | null>(null);
@@ -319,7 +347,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
         props.request<Record<string, any>>('/session/command', 'POST', { command: '/login' }),
         props.request<Record<string, any>>('/session/command', 'POST', { command: '/logout' }),
         props.request<Record<string, any>>('/session/command', 'POST', { command: '/language' }),
-        props.request<{ enabled: boolean; adaptations: AdaptationSummaryItem[]; unnotifiedCount: number }>('/adaptations').catch(() => null),
+        props.request<{ enabled: boolean; adaptations: AdaptationSummaryItem[]; unnotifiedCount: number; userPreferences?: UserPreferencesProfileData; architectureEvolution?: ArchitectureEvolutionData }>('/adaptations').catch(() => null),
         props.request<{ enabled: boolean; maxLearnedSkills?: number }>('/self-learning').catch(() => null),
       ]);
       setSession(nextSession || {}); setDefaults(nextDefaults || {});
@@ -343,11 +371,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
         if (Array.isArray(nextAdaptations.adaptations)) {
           setAdaptations(nextAdaptations.adaptations);
         }
-        if ((nextAdaptations as any).growth) {
-          setGrowthReport((nextAdaptations as any).growth);
+        if (nextAdaptations.userPreferences) {
+          setUserPreferences(nextAdaptations.userPreferences);
         }
-        if ((nextAdaptations as any).profile) {
-          setUserProfile((nextAdaptations as any).profile);
+        if (nextAdaptations.architectureEvolution) {
+          setArchitectureEvolution(nextAdaptations.architectureEvolution);
         }
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
@@ -362,7 +390,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
     if (isManual) setRefreshingSelfLearning(true);
     try {
       const [nextAdaptations, nextSelfLearning] = await Promise.all([
-        props.request<{ enabled: boolean; adaptations: AdaptationSummaryItem[]; unnotifiedCount: number; growth?: any; profile?: any }>('/adaptations').catch(() => null),
+        props.request<{ enabled: boolean; adaptations: AdaptationSummaryItem[]; unnotifiedCount: number; userPreferences?: UserPreferencesProfileData; architectureEvolution?: ArchitectureEvolutionData }>('/adaptations').catch(() => null),
         props.request<{ enabled: boolean; maxLearnedSkills?: number }>('/self-learning').catch(() => null),
       ]);
       if (nextSelfLearning) {
@@ -379,11 +407,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
         if (Array.isArray(nextAdaptations.adaptations)) {
           setAdaptations(nextAdaptations.adaptations);
         }
-        if (nextAdaptations.growth) {
-          setGrowthReport(nextAdaptations.growth);
+        if (nextAdaptations.userPreferences) {
+          setUserPreferences(nextAdaptations.userPreferences);
         }
-        if (nextAdaptations.profile) {
-          setUserProfile(nextAdaptations.profile);
+        if (nextAdaptations.architectureEvolution) {
+          setArchitectureEvolution(nextAdaptations.architectureEvolution);
         }
       }
     } catch {
@@ -485,11 +513,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
       ? updateCheck.error || 'Could not read the release manifest. Check your network connection.'
       : 'Compare this build against the published release manifest.';
 
-  const instructionSources = Array.isArray(session.instructionSources) ? session.instructionSources.map(instructionSourceLabel) : [];
-
   // Section 1: General (Language, Onboarding, Shortcuts)
   const general = (
-    <div className="space-y-3">
+    <div className="space-y-4">
         <Card>
           <Row label="Language" description="Applied to Desktop immediately and synchronized to Agent while connected.">
             <select className={selectClass} value={language} onChange={(e) => void setLanguage(e.target.value)} disabled={desktopDisabled}>{languageOptions.map((option) => <option key={option.code} value={option.code}>{option.nativeName}</option>)}</select>
@@ -501,7 +527,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
         <Card>
           {[
             ['New task', '⌘ N'], ['Send message', 'Enter'], ['New line', 'Shift Enter'], ['Close settings', 'Esc'],
-          ].map(([label, key]) => <Row key={label} label={label} description=""><kbd className="rounded-control border border-line bg-inset px-2 py-0.5 font-mono text-[11px] text-ink-2">{key}</kbd></Row>)}
+          ].map(([label, key]) => (
+            <Row key={label} label={label} description="">
+              <kbd className="rounded-[8px] border border-line bg-inset px-2.5 py-1 font-mono text-[12px] tabular-nums text-ink-2">{key}</kbd>
+            </Row>
+          ))}
         </Card>
       </div>
   );
@@ -592,42 +622,42 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   const model = (
     <>
-      <div className="space-y-6">
-        <div className="overflow-hidden rounded-card bg-surface shadow-card">
-          <div className="flex items-center justify-between px-4 py-3">
+      <div className="space-y-4">
+        <Card>
+          <div className="flex items-center justify-between gap-4 rounded-control px-3.5 py-2.5">
             <div className="min-w-0 pr-3">
-              <h3 className="text-[13.5px] font-medium text-ink truncate">
+              <h3 className="truncate text-[14px] font-medium text-ink">
                 {translate('Local configuration file')}
               </h3>
-              <p className="mt-0.5 text-[11.5px] text-ink-3 truncate">
+              <p className="mt-0.5 truncate text-[13px] text-ink-3">
                 {translate(`Manage local custom model configurations written to ${modelsFilePath}.`)}
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Button type="button" variant="secondary" size="sm" onClick={() => setShowAddModal(true)}>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button type="button" variant="primary" size="sm" onClick={() => setShowAddModal(true)}>
                 <Plus className="h-3.5 w-3.5" />
                 <span>{translate('Add model')}</span>
               </Button>
             </div>
           </div>
-        </div>
+        </Card>
 
         <div className="space-y-2.5">
-          <h3 className="text-[14px] font-semibold text-ink">
+          <h3 className="px-1 text-[13px] font-medium text-ink-3">
             {translate('Saved models')}
           </h3>
 
           {customProviders.length === 0 && savedOAuthAndBuiltinProviders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-card border border-dashed border-line-strong bg-inset/50 dark:bg-surface/50 py-10 px-6 text-center">
-              <p className="text-[13.5px] font-semibold text-ink-2">
+            <div className="flex flex-col items-center justify-center rounded-card border border-dashed border-line bg-surface px-6 py-10 text-center shadow-card">
+              <p className="text-[14px] font-medium text-ink">
                 {translate('No custom models configured yet')}
               </p>
-              <p className="mt-1.5 max-w-md text-[12px] text-ink-3 leading-normal">
+              <p className="mt-1.5 max-w-md text-[13px] leading-5 text-ink-3 text-pretty">
                 {translate('Added models will automatically be written to local models.json and appear in the chat model dropdown under the "Custom Models" group.')}
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">
+            <div className="divide-y divide-line/60 overflow-hidden rounded-card border border-line/50 bg-surface shadow-card">
               {customProviders.map((provider) => {
                 const modelNames =
                   provider.modelIds && provider.modelIds.length > 0
@@ -638,20 +668,20 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 return (
                   <div
                     key={provider.providerId}
-                    className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-hover-2"
+                    className="flex items-center justify-between px-4 py-3.5 transition-colors hover:bg-hover"
                   >
                     <div className="min-w-0 pr-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[13.5px] font-medium text-ink truncate">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate text-[14px] font-medium text-ink">
                           {provider.name || provider.providerId}
                         </span>
                         <ValuePill className="text-[11px]">{modelNames}</ValuePill>
                       </div>
-                      <p className="mt-0.5 text-[11.5px] text-ink-3 truncate">
+                      <p className="mt-0.5 truncate text-[13px] text-ink-3">
                         {provider.baseUrl}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex shrink-0 items-center gap-2">
                       <button
                         type="button"
                         title={translate('Delete')}
@@ -686,11 +716,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
               {savedOAuthAndBuiltinProviders.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-hover-2"
+                  className="flex items-center justify-between px-4 py-3.5 transition-colors hover:bg-hover"
                 >
                   <div className="min-w-0 pr-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[13.5px] font-medium text-ink truncate">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-[14px] font-medium text-ink">
                         {item.name}
                       </span>
                       <ValuePill tone="accent" className="text-[11px]">{item.tag}</ValuePill>
@@ -698,7 +728,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                         <ValuePill className="text-[11px]">{item.modelsSummary}</ValuePill>
                       ) : null}
                     </div>
-                    <p className="mt-0.5 text-[11.5px] text-ink-3 truncate">
+                    <p className="mt-0.5 truncate text-[13px] text-ink-3">
                       {item.baseUrl}
                     </p>
                   </div>
@@ -734,72 +764,15 @@ export function SettingsDialog(props: SettingsDialogProps) {
     </>
   );
 
-  // Section 3: Agent & Workflow (Collaboration mode, message queuing & retry, compaction, Memory, instruction sources)
+  // Section 3: Agent & Workflow (Collaboration mode)
   const agent = (
-    <div className="space-y-3">
+    <div className="space-y-4">
         <Card>
           <Row label="Collaboration mode" description="Plan uses read-only tools. Build can make changes; neither mode is an OS sandbox.">
             <select className={selectClass} value={props.collaborationMode} onChange={(e) => void props.onSelectCollaborationMode(e.target.value as CollaborationMode)} disabled={disabled}>
               <option value="plan">Plan</option>
               <option value="build">Build</option>
             </select>
-          </Row>
-          <Row label="Concurrency strategy" description="Default subagent concurrency limit for Build mode tasks.">
-            <select
-              className={selectClass}
-              value={session.concurrencyStrategy || 'tokensaver'}
-              onChange={(e) => void updateSession({ concurrencyStrategy: e.target.value }, 'Concurrency settings saved.')}
-              disabled={disabled}
-            >
-              <option value="tokensaver">Token saver (up to 6 agents)</option>
-              <option value="wide">Wide concurrency (up to 200 agents)</option>
-              <option value="custom">Custom concurrency limit</option>
-            </select>
-          </Row>
-          {session.concurrencyStrategy === 'custom' && (
-            <Row label="Concurrency limit" description="Maximum number of live subagents when custom concurrency is selected.">
-              <select
-                className={selectClass}
-                value={String(session.maxConcurrent || 12)}
-                onChange={(e) => void updateSession({ maxConcurrent: parseInt(e.target.value, 10) || 12 }, 'Concurrency settings saved.')}
-                disabled={disabled}
-              >
-                <option value="6">6</option>
-                <option value="12">12</option>
-                <option value="24">24</option>
-                <option value="48">48</option>
-              </select>
-            </Row>
-          )}
-          <Row label="Steering messages" description="How Agent receives instructions while working.">
-            <select className={selectClass} value={session.steeringMode || 'one-at-a-time'} onChange={(e) => void updateSession({ steeringMode: e.target.value }, 'Steering preference saved.')} disabled={disabled}>
-              <option value="one-at-a-time">One at a time</option>
-              <option value="all">All at once</option>
-            </select>
-          </Row>
-          <Row label="Follow-up messages" description="How Agent handles queued messages after it completes.">
-            <select className={selectClass} value={session.followUpMode || 'one-at-a-time'} onChange={(e) => void updateSession({ followUpMode: e.target.value }, 'Follow-up preference saved.')} disabled={disabled}>
-              <option value="one-at-a-time">One at a time</option>
-              <option value="all">All at once</option>
-            </select>
-          </Row>
-          <Row label="Automatic retry" description="Retry transient model and transport failures.">
-            <Switch label="Automatic retry" checked={Boolean(session.autoRetryEnabled)} onChange={() => void updateSession({ autoRetryEnabled: !session.autoRetryEnabled }, 'Retry preference saved.')} disabled={disabled} />
-          </Row>
-        </Card>
-        <Card>
-          <Row label="Auto-compact context" description="Consolidate the current session as it approaches its context limit.">
-            <Switch label="Auto-compact context" checked={Boolean(session.autoCompactionEnabled)} onChange={() => void updateSession({ autoCompactionEnabled: !session.autoCompactionEnabled }, 'Auto-compact preference saved.')} disabled={disabled} />
-          </Row>
-          <Row label="Compact now" description="Consolidate the current session without changing auto-compact.">
-            <Button type="button" variant="secondary" size="sm" disabled={disabled} onClick={() => void run(() => props.request('/session/compact', 'POST', {}, 10 * 60_000), 'Context compaction started.')}>
-              <SlidersHorizontal className="h-3.5 w-3.5" />Compact now
-            </Button>
-          </Row>
-        </Card>
-        <Card>
-          <Row label="Loaded instructions" description="The active session’s trusted context and instruction sources.">
-            <span className="max-w-72 truncate text-right text-[12px] text-ink-3" title={instructionSources.join(', ')}>{instructionSources.length ? instructionSources.join(', ') : 'No sources reported'}</span>
           </Row>
         </Card>
       </div>
@@ -856,22 +829,58 @@ export function SettingsDialog(props: SettingsDialogProps) {
     }
   };
 
+  const handleDeletePreference = async (dimension: string, key: string) => {
+    setDeletingPrefKey(`${dimension}:${key}`);
+    try {
+      await run(async () => {
+        await props.request('/adaptations/preferences/delete', 'POST', { dimension, key });
+        await loadAdaptations();
+      }, translate('selfLearningDeletePreference') || 'Preference deleted');
+    } finally {
+      setDeletingPrefKey(null);
+    }
+  };
+
+  const handleResetPreferences = async () => {
+    const title = translate('selfLearningResetPreferences') || 'Reset preferences';
+    const message = translate('selfLearningResetConfirm') || 'Clear all learned user preferences?';
+    const confirmed = await requestApproval({
+      title,
+      message,
+      confirmLabel: translate('selfLearningResetPreferences') || 'Reset',
+      danger: true,
+    });
+    if (confirmed === null) return;
+    try {
+      await run(async () => {
+        await props.request('/adaptations/preferences/reset', 'POST');
+        await loadAdaptations();
+      }, translate('selfLearningResetPreferences') || 'Preferences reset');
+    } catch {
+      // ignore
+    }
+  };
+
+  const totalPreferences = useMemo(() => {
+    if (!userPreferences) return 0;
+    const c = Object.keys(userPreferences.communication || {}).length;
+    const e = Object.keys(userPreferences.engineering || {}).length;
+    const i = Object.keys(userPreferences.interaction || {}).length;
+    return c + e + i;
+  }, [userPreferences]);
+
+  const totalEvolutionItems = useMemo(() => {
+    if (!architectureEvolution) return 0;
+    const p = architectureEvolution.playbooks?.length || 0;
+    const w = architectureEvolution.macroWorkflows?.length || 0;
+    const t = architectureEvolution.projectTools?.length || 0;
+    return p + w + t;
+  }, [architectureEvolution]);
+
   const filteredAdaptations = useMemo(() => {
     if (adaptationScopeFilter === 'all') return adaptations;
     return adaptations.filter((item) => item.scope === adaptationScopeFilter);
   }, [adaptations, adaptationScopeFilter]);
-
-  const liveActiveCount = useMemo(() => {
-    return adaptations.filter((a) => a.status !== 'retired' && !a.isRetired && !a.trial && a.status !== 'trial' && a.status !== 'tentative').length;
-  }, [adaptations]);
-
-  const liveTrialCount = useMemo(() => {
-    return adaptations.filter((a) => a.trial || a.status === 'trial' || a.status === 'tentative').length;
-  }, [adaptations]);
-
-  const liveRetiredCount = useMemo(() => {
-    return adaptations.filter((a) => a.status === 'retired' || a.isRetired).length;
-  }, [adaptations]);
 
   const getAdaptationDisplayName = (item: AdaptationSummaryItem) => {
     if (item.name) return item.name;
@@ -921,315 +930,356 @@ export function SettingsDialog(props: SettingsDialogProps) {
               value={maxLearnedSkills}
               disabled={disabled}
               onChange={(e) => void handleUpdateMaxSkills(Number(e.target.value))}
-              className="w-20 rounded-control border border-line bg-surface px-2.5 py-1 text-right text-[13px] text-ink font-mono focus:border-accent focus:outline-none"
+              className="w-20 rounded-control border border-line bg-surface px-2.5 py-1 text-right text-[14px] text-ink font-mono focus:border-line-strong focus:outline-none focus:ring-2 focus:ring-[color:var(--focus)]"
             />
           </Row>
         )}
         {!selfLearningEnabled && (
-          <div className="flex items-center gap-2.5 border-t border-line/60 bg-inset/30 px-3.5 py-2.5 text-[11.5px] text-ink-3">
+          <div className="flex items-center gap-2.5 border-t border-line/60 bg-inset/30 px-3.5 py-2.5 text-[13px] text-ink-3">
             <CircleHelp className="h-3.5 w-3.5 shrink-0 text-ink-3" />
-            <p className="min-w-0 flex-1 leading-normal">
+            <p className="min-w-0 flex-1 leading-5">
               {translate('selfLearningDisabledBanner') || 'Self-learning is currently disabled. Learned adaptations remain on disk but will not take effect.'}
             </p>
           </div>
         )}
       </Card>
 
-      {selfLearningEnabled && userProfile && Array.isArray(userProfile.traits) && userProfile.traits.length > 0 && (
-        <div className="overflow-hidden rounded-card bg-surface shadow-card">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-line/60">
-            <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-control bg-accent-tint text-accent">
-                <Brain className="h-3.5 w-3.5" />
+      {selfLearningEnabled && (
+        <Card>
+          <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-inset text-ink-2">
+                <Brain className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-[14px] font-medium text-ink">
+                  {translate('selfLearningPreferences') || 'User Preferences Profile'}
+                </h3>
+                <p className="mt-0.5 text-[13px] leading-5 text-ink-3">
+                  {translate('selfLearningPreferencesDesc') || 'Continuously learns your communication style, engineering conventions, and interaction preferences.'}
+                </p>
               </div>
-              <h3 className="text-[13.5px] font-medium text-ink">
-                {translate('selfLearningUserModel') || 'User Model'}
-              </h3>
             </div>
-            <span className="text-[11px] font-medium text-ink-3 tabular-nums font-mono">
-              {`${userProfile.traits.length} ${translate('selfLearningTraits') || 'Traits'}`}
-            </span>
-          </div>
-
-          <div className="p-3.5 space-y-2.5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {userProfile.traits.map((trait: any, idx: number) => {
-                const statement = trait.statement || trait.trait || '';
-                const dimension = trait.dimension || trait.category || 'trait';
-                const confidence = Math.round((trait.confidence ?? 1) * 100);
-                const dimLabel =
-                  dimension === 'communication'
-                    ? (translate('selfLearningDimCommunication') || 'Communication')
-                    : dimension === 'coding_style'
-                    ? (translate('selfLearningDimCodingStyle') || 'Coding Style')
-                    : dimension === 'rigor_and_acceptance'
-                    ? (translate('selfLearningDimRigor') || 'Rigor & Testing')
-                    : dimension === 'toolchain'
-                    ? (translate('selfLearningDimToolchain') || 'Toolchain')
-                    : dimension === 'autonomy'
-                    ? (translate('selfLearningDimAutonomy') || 'Autonomy')
-                    : dimension === 'domain_vocabulary'
-                    ? (translate('selfLearningDimDomain') || 'Domain')
-                    : (translate('selfLearningTrait') || dimension);
-
-                return (
-                  <div
-                    key={idx}
-                    className="flex flex-col justify-between gap-2 rounded-control bg-inset/40 dark:bg-inset/25 p-3 border border-line/60 transition-colors hover:border-line-strong hover:bg-inset/60"
-                  >
-                    <div className="flex items-center justify-between gap-1.5">
-                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                        <ValuePill tone="accent" className="text-[10px] uppercase font-mono tracking-wider px-1.5 py-0">
-                          {dimLabel}
-                        </ValuePill>
-                        {trait.userStated && (
-                          <ValuePill tone="green" className="text-[10px] px-1.5 py-0">
-                            {translate('selfLearningUserStated') || 'User Stated'}
-                          </ValuePill>
-                        )}
-                      </div>
-                      <span className="text-[10.5px] font-mono tabular-nums text-ink-3">
-                        {`${confidence}%`}
-                      </span>
-                    </div>
-
-                    <p className="text-[12.5px] text-ink font-medium leading-snug line-clamp-3" title={statement}>
-                      {statement}
-                    </p>
-
-                    {Array.isArray(trait.evidence) && trait.evidence.length > 0 && (
-                      <p className="text-[11px] text-ink-3 truncate" title={trait.evidence.join(' · ')}>
-                        {trait.evidence[0]}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {Array.isArray(userProfile.predictedFollowUps) && userProfile.predictedFollowUps.length > 0 && (
-              <div className="pt-2.5 border-t border-line/60 flex items-center gap-2 flex-wrap">
-                <span className="text-[11.5px] font-medium text-ink-3">
-                  {`${translate('selfLearningPredictedFollowUps') || 'Predicted Follow-ups'}:`}
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {userProfile.predictedFollowUps.map((p: any, idx: number) => (
-                    <span
-                      key={idx}
-                      className="rounded-chip bg-accent/10 border border-accent/20 px-2 py-0.5 text-[11px] text-accent font-medium"
-                    >
-                      {p.action || p.intent || p.prediction}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {selfLearningEnabled && growthReport && (
-        <div className="overflow-hidden rounded-card bg-surface shadow-card">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-line/60">
-            <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-control bg-green-tint text-green">
-                <TrendingUp className="h-3.5 w-3.5" />
-              </div>
-              <h3 className="text-[13.5px] font-medium text-ink">
-                {translate('selfLearningGrowthTrend') || 'Growth Trend'}
-              </h3>
-            </div>
-            <div className="flex items-center gap-2">
-              {typeof growthReport.adaptationSuccessRate === 'number' && (growthReport.totalEvaluatedRuns ?? 0) > 0 ? (
-                <ValuePill tone="green" className="text-[11px]">
-                  {(translate('selfLearningWinRate') || 'Success: {rate}%').replace(
-                    '{rate}',
-                    String(Math.round(growthReport.adaptationSuccessRate * 100)),
-                  )}
-                </ValuePill>
-              ) : (
-                <ValuePill tone="neutral" className="text-[11px]">
-                  {translate('selfLearningNoEvaluations') || 'No evaluations yet'}
-                </ValuePill>
-              )}
-              <Button
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className="text-[12px] tabular-nums text-ink-3">
+                {`${totalPreferences} ${translate('selfLearningTraits') || 'Preferences'}`}
+              </span>
+              <button
                 type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 text-ink-3 hover:text-ink cursor-pointer"
+                className={iconButtonClass}
                 title={translate('selfLearningRefresh') || 'Refresh'}
                 disabled={refreshingSelfLearning}
                 onClick={() => void loadAdaptations(true)}
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${refreshingSelfLearning ? 'animate-spin' : ''}`} />
-              </Button>
+              </button>
+              {totalPreferences > 0 && (
+                <button
+                  type="button"
+                  className={dangerIconButtonClass}
+                  title={translate('selfLearningResetPreferences') || 'Reset Preferences'}
+                  disabled={disabled}
+                  onClick={() => void handleResetPreferences()}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="px-4 pt-2.5 pb-0.5">
-            <p className="text-[12px] text-ink-3 leading-relaxed">
-              {translate('selfLearningGrowthDesc') || 'Real-time evaluation of adaptation effectiveness in tasks and continuous optimization.'}
-            </p>
+          <div className="px-3.5 pb-3.5">
+            {totalPreferences === 0 ? (
+              <div className="rounded-[10px] bg-inset/40 px-4 py-8 text-center">
+                <p className="text-[14px] font-medium text-ink">
+                  {translate('selfLearningNoPreferences') || 'No personal preferences recorded yet.'}
+                </p>
+                <p className="mt-1 text-pretty text-[13px] leading-5 text-ink-3">
+                  {translate('selfLearningNoPreferencesHint') || 'Metis will ask you if you want to record personal habits when expressing preferences or making corrections.'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {(['communication', 'engineering', 'interaction'] as const).map((dimension) => {
+                  const items = Object.entries(userPreferences?.[dimension] || {});
+                  if (items.length === 0) return null;
+                  const dimLabel =
+                    dimension === 'communication'
+                      ? (translate('selfLearningDimCommunication') || 'Communication & Style')
+                      : dimension === 'engineering'
+                        ? (translate('selfLearningDimEngineering') || 'Engineering Conventions')
+                        : (translate('selfLearningDimInteraction') || 'Interaction & Autonomy');
+                  const DimIcon =
+                    dimension === 'communication' ? MessageSquare
+                      : dimension === 'engineering' ? Code2
+                        : Cpu;
+                  return (
+                    <div key={dimension} className="space-y-1.5">
+                      <div className="flex items-center gap-1.5 px-0.5 text-ink-3">
+                        <DimIcon className="h-3.5 w-3.5" />
+                        <h4 className="text-[12px] font-medium">{dimLabel}</h4>
+                        <span className="text-[12px] tabular-nums">{`(${items.length})`}</span>
+                      </div>
+                      <div className="space-y-1">
+                        {items.map(([key, pref]) => {
+                          const isDeleting = deletingPrefKey === `${dimension}:${key}`;
+                          const confidence = Math.round((pref.confidence ?? 1) * 100);
+                          return (
+                            <div
+                              key={key}
+                              className="group flex items-start justify-between gap-3 rounded-[10px] px-3 py-2.5 transition-colors hover:bg-hover/70"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                  <span className="text-[14px] font-medium text-ink">{pref.key || key}</span>
+                                  <span className="text-[12px] tabular-nums text-ink-3">{`${confidence}%`}</span>
+                                </div>
+                                <p className="mt-1 text-[13.5px] leading-6 text-ink-3">{pref.value}</p>
+                                {pref.evidence && (
+                                  <p className="mt-0.5 truncate text-[12px] text-ink-3/80" title={pref.evidence}>
+                                    {pref.evidence}
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                className={`${dangerIconButtonClass} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
+                                title={translate('selfLearningDeletePreference') || 'Delete preference'}
+                                disabled={disabled || isDeleting}
+                                onClick={() => void handleDeletePreference(dimension, key)}
+                              >
+                                {isDeleting ? (
+                                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-
-          <div className="p-3.5 pt-2">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="flex flex-col items-center justify-center rounded-control bg-inset/40 dark:bg-inset/25 py-2.5 px-3 border border-line/50 transition-colors">
-                <span className="text-[10.5px] font-medium text-ink-3 uppercase tracking-wider">
-                  {translate('selfLearningTotalRuns') || 'Total Runs'}
-                </span>
-                <span className="mt-1 font-semibold text-[17px] tabular-nums text-ink">
-                  {growthReport.totalEvaluatedRuns ?? 0}
-                </span>
-              </div>
-              <div className="flex flex-col items-center justify-center rounded-control bg-inset/40 dark:bg-inset/25 py-2.5 px-3 border border-line/50 transition-colors">
-                <span className="text-[10.5px] font-medium text-ink-3 uppercase tracking-wider">
-                  {translate('selfLearningActive') || 'Active'}
-                </span>
-                <span className="mt-1 font-semibold text-[17px] tabular-nums text-green">
-                  {typeof growthReport.activeCount === 'number' && growthReport.activeCount > 0
-                    ? growthReport.activeCount
-                    : liveActiveCount}
-                </span>
-              </div>
-              <div className="flex flex-col items-center justify-center rounded-control bg-inset/40 dark:bg-inset/25 py-2.5 px-3 border border-line/50 transition-colors">
-                <span className="text-[10.5px] font-medium text-ink-3 uppercase tracking-wider">
-                  {translate('selfLearningTrial') || 'Trial'}
-                </span>
-                <span className="mt-1 font-semibold text-[17px] tabular-nums text-orange">
-                  {typeof growthReport.trialCount === 'number' && growthReport.trialCount > 0
-                    ? growthReport.trialCount
-                    : liveTrialCount}
-                </span>
-              </div>
-              <div className="flex flex-col items-center justify-center rounded-control bg-inset/40 dark:bg-inset/25 py-2.5 px-3 border border-line/50 transition-colors">
-                <span className="text-[10.5px] font-medium text-ink-3 uppercase tracking-wider">
-                  {translate('selfLearningRetired') || 'Retired'}
-                </span>
-                <span className="mt-1 font-semibold text-[17px] tabular-nums text-ink-3">
-                  {typeof growthReport.retiredCount === 'number' && growthReport.retiredCount > 0
-                    ? growthReport.retiredCount
-                    : liveRetiredCount}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+        </Card>
       )}
 
-      <div className="flex items-center justify-between pt-1">
-        <h3 className="text-[14px] font-semibold text-ink">
+      {selfLearningEnabled && (
+        <Card>
+          <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-inset text-ink-2">
+                <Cpu className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-[14px] font-medium text-ink">
+                  {translate('selfLearningArchitecture') || 'Agent Architecture Evolution'}
+                </h3>
+                <p className="mt-0.5 text-[13px] leading-5 text-ink-3">
+                  {translate('selfLearningArchitectureDesc') || 'Playbooks, macro-workflows, and specialized project tools autonomously synthesized by the agent.'}
+                </p>
+              </div>
+            </div>
+            <span className="shrink-0 text-[12px] tabular-nums text-ink-3">
+              {`${totalEvolutionItems} ${translate('selfLearningItems') || 'Artifacts'}`}
+            </span>
+          </div>
+
+          <div className="px-3.5 pb-3.5">
+            {totalEvolutionItems === 0 ? (
+              <div className="rounded-[10px] bg-inset/40 px-4 py-8 text-center">
+                <p className="text-[14px] font-medium text-ink">
+                  {translate('selfLearningNoEvolution') || 'No architecture evolution artifacts yet.'}
+                </p>
+                <p className="mt-1 text-pretty text-[13px] leading-5 text-ink-3">
+                  {translate('selfLearningNoEvolutionHint') || 'When solving complex tasks, Metis will autonomously synthesize reusable playbooks and macro tools for this workspace.'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {architectureEvolution?.playbooks && architectureEvolution.playbooks.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5 px-0.5 text-ink-3">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <h4 className="text-[12px] font-medium">
+                        {translate('selfLearningTacticalPlaybooks') || 'Tactical Playbooks'}
+                      </h4>
+                      <span className="text-[12px] tabular-nums">{`(${architectureEvolution.playbooks.length})`}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {architectureEvolution.playbooks.map((pb) => (
+                        <div key={pb.id} className="rounded-[10px] px-3 py-2.5 transition-colors hover:bg-hover/70">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[14px] font-medium text-ink">{pb.name}</span>
+                            <span className="text-[12px] tabular-nums text-ink-3">
+                              {`${Math.round((pb.confidence ?? 1) * 100)}%`}
+                            </span>
+                          </div>
+                          <p className="mt-1 font-mono text-[12px] text-ink-3">
+                            {pb.triggerKeywords?.join(', ') || pb.description}
+                          </p>
+                          <p className="mt-1 text-[13.5px] leading-6 text-ink-3">{pb.strategy}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {architectureEvolution?.macroWorkflows && architectureEvolution.macroWorkflows.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5 px-0.5 text-ink-3">
+                      <Workflow className="h-3.5 w-3.5" />
+                      <h4 className="text-[12px] font-medium">
+                        {translate('selfLearningMacroWorkflows') || 'Macro-Workflows'}
+                      </h4>
+                      <span className="text-[12px] tabular-nums">{`(${architectureEvolution.macroWorkflows.length})`}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {architectureEvolution.macroWorkflows.map((mw) => (
+                        <div key={mw.id} className="rounded-[10px] px-3 py-2.5 transition-colors hover:bg-hover/70">
+                          <span className="text-[14px] font-medium text-ink">{mw.name}</span>
+                          <p className="mt-1 text-[13.5px] leading-6 text-ink-3">{mw.description}</p>
+                          {Array.isArray(mw.steps) && mw.steps.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {mw.steps.map((st, i) => (
+                                <span key={i} className="rounded-chip bg-inset px-2 py-0.5 font-mono text-[11px] text-ink-2">
+                                  {`${i + 1}. ${typeof st === 'string' ? st : (st.description || st.tool)}`}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {architectureEvolution?.projectTools && architectureEvolution.projectTools.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5 px-0.5 text-ink-3">
+                      <Wrench className="h-3.5 w-3.5" />
+                      <h4 className="text-[12px] font-medium">
+                        {translate('selfLearningProjectTools') || 'Project Micro-Tools'}
+                      </h4>
+                      <span className="text-[12px] tabular-nums">{`(${architectureEvolution.projectTools.length})`}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {architectureEvolution.projectTools.map((tool) => (
+                        <div key={tool.name} className="rounded-[10px] px-3 py-2.5 transition-colors hover:bg-hover/70">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-[13px] font-medium text-ink">{tool.name}</span>
+                            <Status tone="neutral">{translate('selfLearningSandboxed') || 'Sandboxed'}</Status>
+                          </div>
+                          <p className="mt-1 text-[13.5px] leading-6 text-ink-3">{tool.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      <div className="flex items-center justify-between gap-3 px-0.5 pt-1">
+        <h3 className="text-[14px] font-medium text-ink">
           {`${translate('learnedAdaptations') || 'Learned Adaptations'} (${filteredAdaptations.length})`}
         </h3>
-        <div className="flex items-center gap-0.5 rounded-chip bg-field p-0.5 border border-line">
+        <div className="flex items-center gap-0.5 rounded-chip border border-line bg-field p-0.5">
           {(['all', 'project', 'user'] as const).map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => setAdaptationScopeFilter(s)}
-              className={`rounded-chip px-2.5 py-1 text-[11px] font-medium transition-all duration-150 outline-none focus:outline-none focus-visible:outline-none select-none active:scale-[0.97] ${
+              className={`rounded-chip px-2.5 py-1 text-[12px] font-medium transition-colors outline-none select-none ${
                 adaptationScopeFilter === s
-                  ? 'bg-surface text-ink shadow-xs ring-1 ring-black/5 dark:ring-white/10'
-                  : 'text-ink-3 hover:text-ink hover:bg-hover-2'
+                  ? 'bg-surface text-ink shadow-xs'
+                  : 'text-ink-3 hover:bg-hover-2 hover:text-ink'
               }`}
             >
               {s === 'all'
                 ? (translate('selfLearningScopeAll') || 'All')
                 : s === 'project'
-                ? (translate('selfLearningScopeProject') || 'Project')
-                : (translate('selfLearningScopeUser') || 'User')}
+                  ? (translate('selfLearningScopeProject') || 'Project')
+                  : (translate('selfLearningScopeUser') || 'User')}
             </button>
           ))}
         </div>
       </div>
 
       {filteredAdaptations.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-card border border-dashed border-line-strong bg-inset/30 dark:bg-surface/30 py-10 px-6 text-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface shadow-xs border border-line/60 mb-3 text-ink-3">
-            <SlidersHorizontal className="h-4 w-4 text-ink-3" strokeWidth={1.75} aria-hidden="true" />
-          </div>
-          <p className="text-[13.5px] font-semibold text-ink-2">
+        <div className="flex flex-col items-center justify-center rounded-[12px] px-6 py-12 text-center">
+          <SlidersHorizontal className="h-6 w-6 stroke-[1.7] text-ink-3" aria-hidden="true" />
+          <p className="mt-4 text-[14px] font-medium text-ink">
             {translate('selfLearningEmpty') || 'No adaptations recorded yet.'}
           </p>
-          <p className="mt-1.5 max-w-md text-[12px] text-ink-3 leading-relaxed">
+          <p className="mt-1.5 max-w-md text-pretty text-[13px] leading-5 text-ink-3">
             {translate('selfLearningEmptyHint') || 'Metis learns adaptations from task outcomes, corrections, and user preferences automatically when self-learning is enabled.'}
           </p>
         </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-1">
           {filteredAdaptations.map((item) => {
             const isRollingBack = rollingBackId === item.id;
+            const canRollback = item.revision > 1;
             return (
               <div
                 key={item.id}
-                className="overflow-hidden rounded-card bg-surface shadow-card border border-line/40 transition-colors hover:border-line"
+                className="group rounded-[12px] px-3.5 py-3.5 transition-colors hover:bg-hover/70"
               >
-                <div className="p-3.5 space-y-2.5">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2 flex-wrap min-w-0">
-                      <span className="text-[13.5px] font-medium text-ink truncate">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <h4 className="truncate text-[14px] font-medium text-ink">
                         {getAdaptationDisplayName(item)}
+                      </h4>
+                      <span className="text-[12px] text-ink-3">{getAdaptationKindBadge(item.kind)}</span>
+                      <span className="text-[12px] text-ink-3">
+                        {item.scope === 'project'
+                          ? (translate('selfLearningScopeProject') || 'Project')
+                          : (translate('selfLearningScopeUser') || 'User')}
                       </span>
-                      <ValuePill tone="accent" className="text-[10.5px] font-medium">
-                        {getAdaptationKindBadge(item.kind)}
-                      </ValuePill>
-                      <ValuePill className="text-[10.5px]">
-                        {item.scope === 'project' ? (translate('selfLearningScopeProject') || 'Project') : (translate('selfLearningScopeUser') || 'User')}
-                      </ValuePill>
-                      <ValuePill className="text-[10.5px]">{`Rev ${item.revision}`}</ValuePill>
+                      <span className="text-[12px] tabular-nums text-ink-3">{`Rev ${item.revision}`}</span>
                       {item.trial && (
-                        <ValuePill tone="orange" className="text-[10.5px] font-semibold">
-                          {translate('selfLearningTrial') || 'Trial'}
-                        </ValuePill>
+                        <Status tone="neutral">{translate('selfLearningTrial') || 'Trial'}</Status>
                       )}
                       {item.status && item.status !== 'active' && (
-                        <Status tone={item.status === 'retired' ? 'neutral' : 'warning'}>
-                          {item.status === 'retired' ? (translate('selfLearningRetired') || 'Retired') : item.status}
+                        <Status tone="neutral">
+                          {item.status === 'retired'
+                            ? (translate('selfLearningRetired') || 'Retired')
+                            : item.status}
                         </Status>
                       )}
                       {!selfLearningEnabled && (
                         <Status tone="neutral">{translate('notApplied') || 'Not Applied'}</Status>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        disabled={disabled || Boolean(rollingBackId) || item.revision <= 1}
-                        title={item.revision <= 1 ? (translate('noPreviousRevision') || 'No previous revision') : (translate('selfLearningRollback') || 'Rollback')}
-                        onClick={() => void handleRollbackAdaptation(item)}
-                      >
-                        {isRollingBack ? (
-                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <RotateCcw className="h-3.5 w-3.5" />
-                        )}
-                        <span>{translate('selfLearningRollback') || 'Rollback'}</span>
-                      </Button>
-                    </div>
-                  </div>
 
-                  {(item.description || item.reason) && (
-                    <p className="text-[12px] text-ink-2 leading-relaxed font-normal">
-                      {item.description || item.reason}
-                    </p>
-                  )}
+                    {(item.description || item.reason) && (
+                      <p className="mt-1.5 text-[13.5px] leading-6 text-ink-3">
+                        {item.description || item.reason}
+                      </p>
+                    )}
 
-                  <div className="flex items-center justify-between gap-3 text-[11.5px] text-ink-3 flex-wrap pt-0.5 border-t border-line/40">
-                    <div className="flex items-center gap-3 flex-wrap">
+                    <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-3">
                       <span className="tabular-nums">
-                        {(translate('selfLearningAppliedCount') || 'Applied: {count} times').replace('{count}', String(item.appliedCount ?? 0))}
+                        {(translate('selfLearningAppliedCount') || 'Applied: {count} times').replace(
+                          '{count}',
+                          String(item.appliedCount ?? 0),
+                        )}
                       </span>
                       {(item.helped !== undefined || item.hurt !== undefined) && (
-                        <span className="text-ink-2 font-mono text-[10.5px] tabular-nums">
+                        <span className="tabular-nums">
                           {(translate('selfLearningHelpedHurt') || 'Helped: {helped} · Hurt: {hurt}')
                             .replace('{helped}', String(item.helped ?? 0))
                             .replace('{hurt}', String(item.hurt ?? 0))}
                         </span>
                       )}
                       {item.lastOutcome && (
-                        <span className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1.5">
                           <span>{`${translate('selfLearningLastOutcome') || 'Last outcome'}:`}</span>
                           <Status tone={item.lastOutcome === 'success' ? 'success' : 'danger'}>
                             {item.lastOutcome}
@@ -1237,44 +1287,67 @@ export function SettingsDialog(props: SettingsDialogProps) {
                         </span>
                       )}
                       {(item.recurredCorrections ?? 0) > 0 && (
-                        <span className="flex items-center gap-1 text-ink-2 tabular-nums">
-                          {(translate('selfLearningRecurringCorrections') || 'Recurring corrections: {count}').replace('{count}', String(item.recurredCorrections))}
+                        <span className="tabular-nums">
+                          {(translate('selfLearningRecurringCorrections') || 'Recurring corrections: {count}').replace(
+                            '{count}',
+                            String(item.recurredCorrections),
+                          )}
                         </span>
                       )}
+                      <span
+                        className="ml-auto max-w-[220px] truncate font-mono text-[11px] text-ink-3/70"
+                        title={item.filePath}
+                      >
+                        {item.filePath.replace(/^\/Users\/[^/]+/, '~')}
+                      </span>
                     </div>
-                    <span className="truncate max-w-[220px] font-mono text-[10.5px] text-ink-3/70 hover:text-ink-2 transition-colors cursor-default" title={item.filePath}>
-                      {item.filePath.replace(/^\/Users\/[^/]+/, '~')}
-                    </span>
+
+                    {Array.isArray(item.pendingChecks) && item.pendingChecks.length > 0 && (
+                      <div className="mt-2.5 space-y-1.5 rounded-[10px] bg-inset/40 px-3 py-2.5">
+                        <div className="text-[12px] font-medium text-ink-2">
+                          {`${translate('selfLearningPendingChecks') || 'Pending checks'}:`}
+                        </div>
+                        <div className="space-y-1">
+                          {item.pendingChecks.map((checkId) => (
+                            <div key={checkId} className="flex items-center justify-between gap-2 text-[12px]">
+                              <span className="mr-2 truncate font-mono text-ink-3">{checkId}</span>
+                              <button
+                                type="button"
+                                className={dangerIconButtonClass}
+                                disabled={disabled || retiringCheckId === checkId}
+                                title={translate('selfLearningRetireCheck') || 'Retire Check'}
+                                onClick={() => void handleRetireCheck(checkId)}
+                              >
+                                {retiringCheckId === checkId ? (
+                                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {Array.isArray(item.pendingChecks) && item.pendingChecks.length > 0 && (
-                    <div className="rounded-control bg-inset/40 dark:bg-inset/25 p-2.5 space-y-1.5 border border-line/60">
-                      <div className="text-[11.5px] font-medium text-ink-2">
-                        {`${translate('selfLearningPendingChecks') || 'Pending checks'}:`}
-                      </div>
-                      <div className="space-y-1">
-                        {item.pendingChecks.map((checkId) => (
-                          <div key={checkId} className="flex items-center justify-between text-[11.5px]">
-                            <span className="font-mono text-ink-3 truncate mr-2">{checkId}</span>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              disabled={disabled || retiringCheckId === checkId}
-                              onClick={() => void handleRetireCheck(checkId)}
-                            >
-                              {retiringCheckId === checkId ? (
-                                <LoaderCircle className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-3 w-3" />
-                              )}
-                              <span>{translate('selfLearningRetireCheck') || 'Retire Check'}</span>
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    className={`${iconButtonClass} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
+                    disabled={disabled || Boolean(rollingBackId) || !canRollback}
+                    title={
+                      canRollback
+                        ? (translate('selfLearningRollback') || 'Rollback')
+                        : (translate('noPreviousRevision') || 'No previous revision')
+                    }
+                    onClick={() => void handleRollbackAdaptation(item)}
+                  >
+                    {isRollingBack ? (
+                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    )}
+                  </button>
                 </div>
               </div>
             );
@@ -1286,7 +1359,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   // Section 4: Workspace & Server (Connection, Workspace, Trust)
   const server = (
-    <div className="space-y-3">
+    <div className="space-y-4">
         <Card>
           <Row label="Connection status" description={String(workspace.path || props.activeProject?.path || 'No workspace selected')}>
             <Status tone={props.isConnected ? 'success' : 'danger'}>
@@ -1326,7 +1399,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   // Section 5: Data & About (Session data, Import/Export/Share, Version, Updates, Maintenance)
   const about = (
-    <div className="space-y-3">
+    <div className="space-y-4">
         <Card>
           <Row label="Session name" description="Shown in the conversation list." stacked>
             <div className="flex w-full gap-2">
@@ -1356,11 +1429,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <Upload className="h-3.5 w-3.5" />Choose file…
             </Button>
           </Row>
-          <Row label="Share session" description="Create a private GitHub Gist link.">
-            <Button type="button" variant="secondary" size="sm" disabled={disabled} onClick={() => void run(async () => { const result = await command('/share', 2 * 60_000); if (!result.url) throw new Error('Server did not return a share link'); await requireDesktop(desktop?.openExternal ? () => desktop.openExternal(result.url) : undefined, 'Open share link'); }, 'Share link created.')}>
-              <ChevronRight className="h-3.5 w-3.5" />Create link
-            </Button>
-          </Row>
         </Card>
         <Card>
           <Row
@@ -1380,7 +1448,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                   <li
                     key={item.id}
                     data-archived-session-row={item.id}
-                    className="flex min-h-[40px] items-center justify-between gap-3 rounded-control px-2 py-1.5 hover:bg-hover-2"
+                    className="flex min-h-[44px] items-center justify-between gap-3 rounded-control px-2.5 py-2 hover:bg-hover"
                   >
                     <p className="min-w-0 truncate text-[13px] font-medium text-ink">{item.name}</p>
                     <div className="flex shrink-0 items-center gap-1">
@@ -1488,19 +1556,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
     { id: 'collaboration-mode', tab: 'agent' as SettingsTab, title: 'Collaboration mode', desc: 'Plan uses read-only tools. Build can make changes; neither mode is an OS sandbox.', keywords: 'collaboration mode plan build 协作模式 计划 构建' },
     { id: 'self-learning', tab: 'adaptations' as SettingsTab, title: 'Self-Learning', desc: 'Runtime architecture adapts from experience. Disabling reverts to default architecture.', keywords: 'self learning adaptation 自我学习 适配 架构 工作流 角色 技能' },
     { id: 'adaptations-list', tab: 'adaptations' as SettingsTab, title: 'Learned Adaptations', desc: 'Inspect, manage, and rollback learned profiles, skills, roles, tools, and hooks.', keywords: 'learned adaptations rollback 回滚 适配列表 检查项 淘汰' },
-    { id: 'steering-messages', tab: 'agent' as SettingsTab, title: 'Steering messages', desc: 'How Agent receives instructions while working.', keywords: 'steering queue message 转向 指导 消息' },
-    { id: 'follow-up-messages', tab: 'agent' as SettingsTab, title: 'Follow-up messages', desc: 'How Agent handles queued messages after it completes.', keywords: 'follow up queue message 排队 消息' },
-    { id: 'auto-retry', tab: 'agent' as SettingsTab, title: 'Automatic retry', desc: 'Retry transient model and transport failures.', keywords: 'auto retry 自动重试 重试' },
-    { id: 'auto-compact', tab: 'agent' as SettingsTab, title: 'Auto-compact context', desc: 'Consolidate the current session as it approaches its context limit.', keywords: 'auto compact context 上下文 自动压缩 压缩' },
-    { id: 'compact-now', tab: 'agent' as SettingsTab, title: 'Compact now', desc: 'Consolidate the current session without changing auto-compact.', keywords: 'compact now 手动压缩 立即压缩' },
-    { id: 'instruction-sources', tab: 'agent' as SettingsTab, title: 'Instruction sources', desc: 'The active session’s trusted context and instruction sources.', keywords: 'instruction prompt source 指令源' },
     { id: 'server-connection', tab: 'server' as SettingsTab, title: 'Server configuration', desc: 'Configure address and optional authentication.', keywords: 'server connection url username password 服务端 连接' },
     { id: 'workspace', tab: 'server' as SettingsTab, title: 'Workspace', desc: 'Manage Desktop connection and the workspace used by the active session.', keywords: 'workspace folder project 工作区 目录 项目' },
     { id: 'project-trust', tab: 'server' as SettingsTab, title: 'Current project trust', desc: 'Controls loading of project resources, not Server network access.', keywords: 'trust security permissions 信任 安全 权限' },
     { id: 'session-name', tab: 'about' as SettingsTab, title: 'Session name', desc: 'Shown in the conversation list.', keywords: 'session name rename 会话 名称 改名' },
     { id: 'export-session', tab: 'about' as SettingsTab, title: 'Export session', desc: 'HTML is readable; JSONL can be resumed.', keywords: 'export html jsonl 导出 会话' },
     { id: 'import-session', tab: 'about' as SettingsTab, title: 'Import session', desc: 'Create and switch to a session from JSONL.', keywords: 'import 导入 会话' },
-    { id: 'share-session', tab: 'about' as SettingsTab, title: 'Share session', desc: 'Create a private GitHub Gist link.', keywords: 'share gist 分享 链接' },
     { id: 'archived-conversations', tab: 'about' as SettingsTab, title: 'Archived conversations', desc: 'Hidden from the sidebar. Restore them here, or delete permanently.', keywords: 'archive restore delete 归档 恢复 删除 隐藏' },
     { id: 'app-update', tab: 'about' as SettingsTab, title: 'Software update', desc: 'Compare this build against the published release manifest.', keywords: 'software update version check 软件更新 检查更新' },
     { id: 'reload-resources', tab: 'about' as SettingsTab, title: 'Reload Agent resources', desc: 'Reload extensions, Skills, themes and models.', keywords: 'reload restart resources 重载 重新加载' },
@@ -1534,14 +1595,16 @@ export function SettingsDialog(props: SettingsDialogProps) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/30 p-5 backdrop-blur-[3px]" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="settings-title" className="flex h-[min(680px,calc(100dvh-40px))] w-[min(920px,calc(100vw-40px))] overflow-hidden rounded-window bg-surface shadow-overlay">
-        <aside className="flex w-[230px] shrink-0 flex-col border-r border-line bg-canvas px-3 pb-3 pt-6 sm:pt-7 select-none">
-          <div className="mb-3.5 px-1 flex items-center h-6">
-            <h1 id="settings-title" className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-ink leading-6">Settings</h1>
+      <section role="dialog" aria-modal="true" aria-labelledby="settings-title" className="flex h-[min(720px,calc(100dvh-40px))] w-[min(940px,calc(100vw-40px))] overflow-hidden rounded-window bg-surface shadow-overlay">
+        <aside className="flex w-[240px] shrink-0 select-none flex-col border-r border-line bg-canvas px-3 pb-3 pt-5">
+          <div className="mb-3 flex h-8 items-center px-2">
+            <h1 id="settings-title" className="text-[14px] font-medium tracking-tight text-ink">
+              {translate('Settings')}
+            </h1>
           </div>
-          <div className="pb-2.5 flex-shrink-0">
-            <div className="relative flex h-9 w-full items-center rounded-chip bg-field px-2.5 transition-all focus-within:bg-surface focus-within:shadow-btn focus-within:ring-2 focus-within:ring-[color:var(--focus)]">
-              <Search className="w-4 h-4 text-ink-3 mr-2 flex-shrink-0" />
+          <div className="mb-2 shrink-0">
+            <div className="relative flex h-9 w-full items-center rounded-[10px] border border-line/60 bg-field px-2.5 transition-[background-color,box-shadow] focus-within:border-line-strong focus-within:bg-surface focus-within:ring-2 focus-within:ring-[color:var(--focus)]">
+              <Search className="mr-2 h-4 w-4 shrink-0 text-ink-3" />
               <input
                 type="text"
                 className="w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-3"
@@ -1554,7 +1617,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="p-0.5 text-ink-3 hover:text-ink"
+                  className="rounded-full p-0.5 text-ink-3 hover:bg-hover hover:text-ink"
                   aria-label="Clear search"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -1563,7 +1626,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
             </div>
           </div>
           <nav className="min-h-0 flex-1 overflow-y-auto" aria-label="Settings sections">
-            <GlideMenu highlightClassName="inset-x-0 rounded-[8px] bg-hover-2" className="flex flex-col gap-px">
+            <GlideMenu highlightClassName="inset-x-0 rounded-[8px] bg-hover" className="flex flex-col gap-0.5">
               {tabs.map((item) => {
                 const matchCount = searchResultsByTab.get(item.id) || 0;
                 const isActive = tab === item.id;
@@ -1574,53 +1637,51 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     data-menu-row=""
                     data-settings-panel={item.id}
                     onClick={() => handleTabChange(item.id)}
-                    className={`relative z-10 flex w-full min-h-[38px] items-center justify-between rounded-[8px] px-2.5 py-1.5 text-left transition-[color,transform] duration-150 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] ${
-                      isActive ? 'font-medium text-ink' : 'text-ink-2'
+                    className={`relative z-10 flex min-h-8 w-full items-center justify-between rounded-[8px] px-2.5 py-1.5 text-left transition-[color,transform] duration-150 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] ${
+                      isActive ? 'font-medium text-ink' : 'text-ink-3 hover:text-ink'
                     }`}
                     aria-current={isActive ? 'page' : undefined}
                   >
-                    <span className="flex items-center gap-2.5 truncate">
-                      <item.icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-ink' : 'text-ink-3'}`} />
-                      <span className="truncate text-[13.5px]">{item.label}</span>
+                    <span className="flex min-w-0 items-center gap-2.5 truncate">
+                      <item.icon className={`h-4 w-4 shrink-0 stroke-[1.7] ${isActive ? 'text-ink' : 'text-ink-3'}`} />
+                      <span className="truncate text-[14px]">{translate(item.label)}</span>
                     </span>
                     {searchQuery && matchCount > 0 ? (
-                      <ValuePill className="h-4 min-w-4 justify-center px-1.5 text-[10.5px]">{matchCount}</ValuePill>
+                      <ValuePill className="h-5 min-w-5 justify-center px-1.5 text-[11px]">{matchCount}</ValuePill>
                     ) : null}
                   </button>
                 );
               })}
             </GlideMenu>
           </nav>
-          <p className="px-1 pt-2 text-[11px] text-ink-3 dark:text-ink-3">{appInfo.version ? `v${appInfo.version}` : 'Loading version…'}</p>
+          <p className="px-2 pt-2 text-[12px] tabular-nums text-ink-3">
+            {appInfo.version ? `v${appInfo.version}` : 'Loading version…'}
+          </p>
         </aside>
-        <div className="flex min-w-0 flex-1 flex-col bg-inset/30 dark:bg-page">
+        <div className="flex min-w-0 flex-1 flex-col bg-page">
           <header
-            className={`flex shrink-0 items-center justify-between px-6 pt-6 pb-3.5 sm:px-7 sm:pt-7 sm:pb-3.5 transition-[border-color,box-shadow,background-color] duration-150 z-10 ${
+            className={`z-10 flex h-[50px] shrink-0 items-center justify-between px-6 transition-[border-color,background-color] duration-150 sm:px-7 ${
               isScrolled
                 ? 'border-b border-line bg-surface shadow-hairline'
                 : 'border-b border-transparent bg-transparent'
             }`}
           >
-            <div className="flex h-6 min-w-0 items-center">
-              <h2 className="text-balance text-[16px] font-semibold tracking-[-0.01em] text-ink leading-6 truncate">
-                {currentTabTitle}
-              </h2>
-            </div>
-            <div className="flex h-6 items-center">
-              <button
-                type="button"
-                className={`${iconButtonClass} -mr-1`}
-                onClick={props.onClose}
-                aria-label="Close settings"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+            <h2 className="truncate text-[14px] font-medium tracking-tight text-ink">
+              {currentTabTitle}
+            </h2>
+            <button
+              type="button"
+              className={iconButtonClass}
+              onClick={props.onClose}
+              aria-label="Close settings"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </header>
           <main
             ref={mainScrollRef}
             onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 0)}
-            className="relative min-w-0 flex-1 overflow-y-auto px-6 pb-6 pt-2 sm:px-7 sm:pb-7 sm:pt-2"
+            className="relative min-w-0 flex-1 overflow-y-auto px-6 pb-6 pt-3 sm:px-7 sm:pb-7"
           >
             {loading ? (
               <div className="flex h-full items-center justify-center gap-2 text-[14px] text-ink-3">
@@ -1628,8 +1689,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </div>
             ) : searchQuery && searchResults.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center text-center">
-                <CircleHelp className="h-8 w-8 text-ink-2 dark:text-ink-2" />
-                <p className="mt-3 text-[14px] font-medium text-ink-2">No matching settings</p>
+                <CircleHelp className="h-6 w-6 stroke-[1.7] text-ink-3" />
+                <p className="mt-3 text-[14px] font-medium text-ink">No matching settings</p>
                 <Button type="button" variant="secondary" size="sm" className="mt-4" onClick={() => { setSearchQuery(''); if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0; setIsScrolled(false); }}>Clear search</Button>
               </div>
             ) : searchQuery ? (
@@ -1640,16 +1701,16 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     <div
                       key={item.id}
                       onClick={() => { handleTabChange(item.tab); setSearchQuery(''); }}
-                      className="flex cursor-pointer items-center justify-between rounded-control px-3.5 py-2.5 transition-colors hover:bg-hover-2"
+                      className="flex cursor-pointer items-center justify-between rounded-control px-3.5 py-3 transition-colors hover:bg-hover"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-[13.5px] font-medium text-ink">{item.title}</span>
-                          <ValuePill className="text-[10.5px]">
-                            {tabs.find((t) => t.id === item.tab)?.label}
+                          <span className="text-[14px] font-medium text-ink">{item.title}</span>
+                          <ValuePill className="text-[11px]">
+                            {translate(tabs.find((t) => t.id === item.tab)?.label || '')}
                           </ValuePill>
                         </div>
-                        <p className="mt-0.5 text-pretty text-[12px] leading-5 text-ink-3">{item.desc}</p>
+                        <p className="mt-0.5 text-pretty text-[13px] leading-5 text-ink-3">{item.desc}</p>
                       </div>
                       <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" />
                     </div>
@@ -1660,7 +1721,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               sections[tab]
             )}
             {(feedback || error) && (
-              <div role={error ? 'alert' : 'status'} className={`sticky bottom-0 mt-5 rounded-control border px-3 py-2 text-[12px] ${error ? 'border-red/30 bg-red-tint text-red' : 'border-green/30 bg-green-tint text-green'}`}>
+              <div role={error ? 'alert' : 'status'} className={`sticky bottom-0 mt-5 rounded-[10px] border px-3.5 py-2.5 text-[13px] ${error ? 'border-red/30 bg-red/10 text-red' : 'border-green/30 bg-green/10 text-green'}`}>
                 {error || feedback}
               </div>
             )}

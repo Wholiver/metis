@@ -1,6 +1,20 @@
 import { AssistantContentPart, Message } from '../types';
 import { extractToolResultText } from './tool-execution-update';
 
+export interface SubagentFinding {
+  code: string;
+  message: string;
+}
+
+export interface SubagentChildResult {
+  status: 'completed' | 'failed' | 'blocked' | 'invalid';
+  summary?: string;
+  filesChanged?: string[];
+  commands?: Array<{ argv: string[]; cwd?: string; exitCode?: number | null }>;
+  findings?: SubagentFinding[];
+  proposedRepair?: string;
+}
+
 export interface SubagentItem {
   id: string;
   sessionId?: string;
@@ -18,6 +32,10 @@ export interface SubagentItem {
   result?: string;
   error?: string;
   exitCode?: number | null;
+  gate?: string;
+  outcome?: string;
+  itemId?: string;
+  childResult?: SubagentChildResult;
   parts: AssistantContentPart[];
 }
 
@@ -105,7 +123,40 @@ function mergeSubagentItem(cached: SubagentItem, current: SubagentItem): Subagen
     result: currentTerminal && current.result ? current.result : richerText(current.result, normalizedCached.result),
     error: current.error ?? normalizedCached.error,
     parts: currentPartsWeight >= cachedPartsWeight ? current.parts : normalizedCached.parts,
+    gate: current.gate || normalizedCached.gate,
+    outcome: current.outcome || normalizedCached.outcome,
+    itemId: current.itemId || normalizedCached.itemId,
+    childResult: current.childResult || normalizedCached.childResult,
   };
+}
+
+export function stripChildResultFromText(text: string): { cleanText: string; childResult?: SubagentChildResult } {
+  if (!text || typeof text !== 'string') return { cleanText: '' };
+  const lines = text.split(/\r?\n/);
+  let extracted: SubagentChildResult | undefined;
+  const filtered: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          (parsed.status === 'completed' || parsed.status === 'failed' || parsed.status === 'blocked' || parsed.status === 'invalid') &&
+          typeof parsed.summary === 'string' &&
+          Array.isArray(parsed.filesChanged) &&
+          Array.isArray(parsed.commands) &&
+          Array.isArray(parsed.findings)
+        ) {
+          extracted = parsed as SubagentChildResult;
+          continue;
+        }
+      } catch {}
+    }
+    filtered.push(line);
+  }
+  return { cleanText: filtered.join('\n').trim(), childResult: extracted };
 }
 
 export function mergeSubagentHistoryItems(
@@ -113,9 +164,13 @@ export function mergeSubagentHistoryItems(
   currentItems: SubagentItem[],
 ): SubagentItem[] {
   if (currentItems.length === 0) return [];
-  const cachedById = new Map(cachedItems.map((item) => [item.id, item]));
+  const cachedById = new Map<string, SubagentItem>();
+  for (const item of cachedItems) {
+    cachedById.set(item.id, item);
+    if (item.agentId) cachedById.set(item.agentId, item);
+  }
   return currentItems.map((item) => {
-    const cached = cachedById.get(item.id);
+    const cached = cachedById.get(item.id) || (item.agentId ? cachedById.get(item.agentId) : undefined);
     return cached ? mergeSubagentItem(cached, item) : item;
   });
 }
@@ -132,6 +187,10 @@ function parsePayload(content: string): {
   model?: string;
   elapsedSec?: number;
   parts?: unknown[];
+  gate?: string;
+  outcome?: string;
+  itemId?: string;
+  childResult?: SubagentChildResult;
 } | undefined {
   if (!content || typeof content !== 'string') return undefined;
   try {
@@ -187,6 +246,85 @@ function inferToolArguments(content: string): Record<string, unknown> {
   return args;
 }
 
+function partSignature(part: AssistantContentPart): string {
+  if (part.type === 'toolCall') {
+    const cmd = (part.arguments && typeof part.arguments === 'object' && 'command' in part.arguments)
+      ? String((part.arguments as any).command)
+      : JSON.stringify(part.arguments ?? {});
+    return `tool:${part.name}:${cmd}`;
+  }
+  if (part.type === 'text') {
+    return `text:${part.text.trim()}`;
+  }
+  if (part.type === 'thinking') {
+    return `thinking:${part.thinking.trim()}`;
+  }
+  return '';
+}
+
+export function deduplicateRepeatingParts(parts: AssistantContentPart[]): AssistantContentPart[] {
+  if (parts.length <= 1) return parts;
+
+  // 1. Filter out exact identical adjacent duplicate parts
+  const nonAdjacentDuplicates: AssistantContentPart[] = [];
+  const seenIds = new Set<string>();
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (part.id && seenIds.has(part.id)) {
+      continue;
+    }
+    const currentSig = partSignature(part);
+    const prevSig = nonAdjacentDuplicates.length > 0 ? partSignature(nonAdjacentDuplicates[nonAdjacentDuplicates.length - 1]) : '';
+    if (currentSig && currentSig === prevSig) {
+      continue;
+    }
+    if (part.id) seenIds.add(part.id);
+    nonAdjacentDuplicates.push(part);
+  }
+
+  if (nonAdjacentDuplicates.length <= 1) return nonAdjacentDuplicates;
+
+  // 2. Detect cyclic repeating blocks (e.g. [A, B] repeating N times)
+  const sigs = nonAdjacentDuplicates.map(partSignature);
+  const len = nonAdjacentDuplicates.length;
+
+  for (let blockLen = 1; blockLen <= Math.floor(len / 2); blockLen++) {
+    let repeats = true;
+    for (let i = blockLen; i < len; i++) {
+      if (sigs[i] !== sigs[i % blockLen]) {
+        repeats = false;
+        break;
+      }
+    }
+    if (repeats) {
+      return nonAdjacentDuplicates.slice(0, blockLen);
+    }
+  }
+
+  // 3. Detect partial cyclic repetition (e.g., A, B, A, B, A, B, A)
+  for (let blockLen = 1; blockLen <= Math.floor(len / 2); blockLen++) {
+    if (len >= blockLen * 3) {
+      let matchCount = 0;
+      for (let i = blockLen; i < len; i++) {
+        if (sigs[i] === sigs[i % blockLen]) {
+          matchCount++;
+        } else {
+          break;
+        }
+      }
+      if (matchCount >= blockLen * 2) {
+        const remainder = len - blockLen - matchCount;
+        if (remainder === 0) {
+          return nonAdjacentDuplicates.slice(0, blockLen);
+        }
+      }
+    }
+  }
+
+  return nonAdjacentDuplicates;
+}
+
 export function sanitizeSubagentParts(subagentId: string, rawParts: unknown[]): AssistantContentPart[] {
   if (!Array.isArray(rawParts) || rawParts.length === 0) return [];
   const parts: AssistantContentPart[] = [];
@@ -238,7 +376,7 @@ export function sanitizeSubagentParts(subagentId: string, rawParts: unknown[]): 
     }
   }
 
-  return parts;
+  return deduplicateRepeatingParts(parts);
 }
 
 export function extractPartsFromJsonLines(subagentId: string, text: string): AssistantContentPart[] | undefined {
@@ -259,18 +397,18 @@ export function extractPartsFromJsonLines(subagentId: string, text: string): Ass
   }
   if (jsonCount === 0) return undefined;
 
+  // If jsonObjects contains snapshots with structured parts, take the latest one!
+  const lastPartsObj = [...jsonObjects].reverse().find((obj) => Array.isArray(obj.parts) && obj.parts.length > 0);
+  if (lastPartsObj) {
+    const sanitized = sanitizeSubagentParts(subagentId, lastPartsObj.parts);
+    if (sanitized.length > 0) return deduplicateRepeatingParts(sanitized);
+  }
+
   const parts: AssistantContentPart[] = [];
   let partIndex = 0;
   const seenAssistantMessages = new Set<string>();
 
   for (const obj of jsonObjects) {
-    if (Array.isArray(obj.parts) && obj.parts.length > 0) {
-      const sanitized = sanitizeSubagentParts(subagentId, obj.parts);
-      if (sanitized.length > 0) {
-        parts.push(...sanitized);
-        continue;
-      }
-    }
 
     const msg = (obj.type === 'message' && obj.message && typeof obj.message === 'object')
       ? obj.message
@@ -586,7 +724,7 @@ function subagentItemFromToolCall(
     status = progressState === 'completed' || progressState === undefined ? 'completed' : 'running';
   }
 
-  const displayResult = payload?.result
+  const rawDisplayResult = payload?.result
     || (payload?.status === 'started' || payload?.status === 'running'
       ? (typeof (payload as { message?: unknown }).message === 'string'
         ? String((payload as { message: string }).message)
@@ -594,8 +732,49 @@ function subagentItemFromToolCall(
       : undefined)
     || (payload ? undefined : rawOutput)
     || undefined;
+
+  const rawChildResult = (payload?.childResult && typeof payload.childResult === 'object')
+    ? payload.childResult as SubagentChildResult
+    : undefined;
+
+  const { cleanText: cleanedDisplay, childResult: extractedFromDisplay } = stripChildResultFromText(rawDisplayResult || '');
+  const { childResult: extractedFromRaw } = stripChildResultFromText(rawOutput);
+  const childResult = rawChildResult || extractedFromDisplay || extractedFromRaw;
+
+  const displayResult = (cleanedDisplay || childResult?.summary || rawDisplayResult) || undefined;
   const errorText = payload?.error || (result?.isError ? rawOutput : undefined);
-  const subagentParts = parseSubagentOutputToParts(part.id, displayResult || rawOutput, payload?.parts);
+  let subagentParts = parseSubagentOutputToParts(part.id, displayResult || rawOutput, payload?.parts);
+
+  // Clean any text parts containing ChildResult JSON
+  subagentParts = subagentParts.map((p) => {
+    if (p.type === 'text') {
+      const { cleanText } = stripChildResultFromText(p.text);
+      return { ...p, text: cleanText || childResult?.summary || p.text };
+    }
+    return p;
+  });
+
+  // Synthesize tool calls if missing and commands exist in childResult
+  const hasToolCalls = subagentParts.some((p) => p.type === 'toolCall');
+  if (!hasToolCalls && childResult?.commands && childResult.commands.length > 0) {
+    const commandParts: AssistantContentPart[] = childResult.commands.map((cmd, index) => ({
+      type: 'toolCall',
+      id: `${part.id}-cmd-${index}`,
+      name: 'bash',
+      arguments: { command: cmd.argv.join(' ') },
+      result: {
+        content: `exitCode: ${cmd.exitCode ?? 0}`,
+        isError: cmd.exitCode !== 0 && cmd.exitCode !== null,
+      },
+      progress: {
+        jobId: `cmd-${index}`,
+        state: cmd.exitCode === 0 || cmd.exitCode === null ? 'completed' : 'failed',
+      },
+    }));
+    subagentParts = [...commandParts, ...subagentParts];
+  }
+
+  subagentParts = deduplicateRepeatingParts(subagentParts);
 
   return {
     id: part.id,
@@ -614,6 +793,10 @@ function subagentItemFromToolCall(
     result: displayResult,
     error: errorText,
     exitCode: payload?.exitCode,
+    gate: payload?.gate,
+    outcome: payload?.outcome,
+    itemId: payload?.itemId,
+    childResult,
     parts: subagentParts,
   };
 }

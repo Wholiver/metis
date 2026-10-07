@@ -9,3 +9,7 @@ export * from "./effective.ts";
 export * from "./workflow-schema.ts";
 export * from "./learner.ts";
 export * from "./ledger.ts";
+export * from "./compiler.ts";
+export * from "./preference-engine.ts";
+export * from "./architecture-engine.ts";
+export * from "./fast-learner.ts";

@@ -6,6 +6,7 @@ interface ThinkingBlockProps {
   thinking?: string;
   streaming?: boolean;
   active?: boolean;
+  compacting?: boolean;
 }
 
 export function thinkingSummary(thinking: string): string {
@@ -42,8 +43,9 @@ export function thinkingSubtitle(thinking: string): string {
 export const ThinkingBlock = React.memo<ThinkingBlockProps>(({
   streaming = false,
   active,
+  compacting = false,
 }) => {
-  const isActive = active ?? streaming;
+  const isActive = active ?? (streaming || compacting);
   const { t } = useI18n();
 
   if (!isActive) return null;
@@ -54,9 +56,10 @@ export const ThinkingBlock = React.memo<ThinkingBlockProps>(({
       data-thinking-block=""
       data-direct-thinking="true"
       data-part-type="thinking"
+      data-compacting={compacting ? 'true' : undefined}
       role="status"
     >
-      <TextShimmer text={t('sessionThinking')} active />
+      <TextShimmer text={compacting ? t('sessionCompacting') : t('sessionThinking')} active />
     </div>
   );
 });

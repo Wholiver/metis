@@ -137,12 +137,12 @@ describe("AgentSession prompt characterization", () => {
 		expect(JSON.stringify(harness.session.messages)).toContain("FALSE_COMPLETION_BLOCKED");
 	});
 
-	it("continues a stopped turn while a T0 Performance run is still active", async () => {
+	it("continues a stopped turn while a T1 visual Performance run is still active", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 		harness.setResponses([
 			fauxAssistantMessage(admissionCall({
-				tier: "T0",
+				tier: "T1",
 				taskShape: "bounded",
 				deliverables: ["pelican.svg"],
 				acceptanceCriteria: ["内置浏览器截图 shows a pelican on a bicycle"],
@@ -150,7 +150,7 @@ describe("AgentSession prompt characterization", () => {
 				lanes: [{
 					id: "pelican-svg",
 					objective: "Generate pelican.svg",
-					framework: "apply",
+					framework: "frontend-build",
 					ownedPaths: ["pelican.svg"],
 					deliverables: ["pelican.svg"],
 					acceptanceCriteria: ["内置浏览器截图 shows a pelican on a bicycle"],
@@ -220,14 +220,26 @@ describe("AgentSession prompt characterization", () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 		harness.setResponses([
-			...admittedResponses({ tier: "T2", taskShape: "sequential-complex", lanes: [{
-				id: "parser-plan", objective: "Design parser", framework: "plan-design", ownedPaths: ["src/parser.ts"],
-				deliverables: ["Design"], acceptanceCriteria: ["Design accepted"], verificationCommands: ["npm test -- parser"], dependsOn: [],
-			}] }),
-			...admittedResponses({ tier: "T2", taskShape: "sequential-complex", lanes: [{
-				id: "parser-plan", objective: "Design parser tests", framework: "plan-design", ownedPaths: ["src/parser.ts"],
-				deliverables: ["Updated design"], acceptanceCriteria: ["Tests covered"], verificationCommands: ["npm test -- parser"], dependsOn: [],
-			}] }),
+			...admittedResponses({ tier: "T2", taskShape: "sequential-complex", lanes: [
+				{
+					id: "parser-plan", objective: "Design parser", framework: "plan-design", ownedPaths: ["src/parser.ts"],
+					deliverables: ["Design"], acceptanceCriteria: ["Design accepted"], verificationCommands: ["npm test -- parser"], dependsOn: [],
+				},
+				{
+					id: "parser-docs", objective: "Document parser design", framework: "docs", ownedPaths: ["docs/parser.md"],
+					deliverables: ["Docs"], acceptanceCriteria: ["Docs match design"], verificationCommands: ["npm test -- parser"], dependsOn: ["parser-plan"],
+				},
+			] }),
+			...admittedResponses({ tier: "T2", taskShape: "sequential-complex", lanes: [
+				{
+					id: "parser-plan", objective: "Design parser tests", framework: "plan-design", ownedPaths: ["src/parser.ts"],
+					deliverables: ["Updated design"], acceptanceCriteria: ["Tests covered"], verificationCommands: ["npm test -- parser"], dependsOn: [],
+				},
+				{
+					id: "parser-docs", objective: "Document parser design", framework: "docs", ownedPaths: ["docs/parser.md"],
+					deliverables: ["Updated docs"], acceptanceCriteria: ["Docs match design"], verificationCommands: ["npm test -- parser"], dependsOn: ["parser-plan"],
+				},
+			] }),
 		]);
 
 		await harness.session.prompt("Repair the parser");

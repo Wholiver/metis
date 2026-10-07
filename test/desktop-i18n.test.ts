@@ -59,8 +59,10 @@ const legitimateCognates = new Set([
 	"toolTitleGlob",
 	"selfLearningRollback",
 	"selfLearningBadgeArchitecture",
+	"selfLearningSandboxed",
 	"reactUiPlanTodos",
 	"adaptations",
+	"pause",
 ]);
 
 describe("Desktop translation catalogs", () => {

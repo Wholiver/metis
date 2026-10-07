@@ -33,6 +33,7 @@ interface MessageListProps {
   timeDivider?: string;
   isLoading?: boolean;
   isStreaming?: boolean;
+  isCompacting?: boolean;
   isHomeEmpty?: boolean;
   workflowProposal?: WorkflowProposalState;
   onOpenPlan?: (markdown: string) => void;
@@ -51,6 +52,7 @@ export const MessageList = React.memo<MessageListProps>(({
   timeDivider,
   isLoading = false,
   isStreaming = false,
+  isCompacting = false,
   isHomeEmpty = false,
   workflowProposal,
   onOpenPlan,
@@ -63,7 +65,7 @@ export const MessageList = React.memo<MessageListProps>(({
   const { t } = useI18n();
   void workspacePath;
   void projectName;
-  const working = isStreaming || Boolean(pendingUserInput);
+  const working = isStreaming || isCompacting || Boolean(pendingUserInput);
   const {
     setScrollElement,
     setContentElement,
@@ -151,6 +153,9 @@ export const MessageList = React.memo<MessageListProps>(({
     let latestUserTs: string | number | undefined;
     let latestUserPrompt: string | undefined;
     for (const message of messages) {
+      if (message.tags?.includes('compaction') || message.compaction) {
+        continue;
+      }
       if (message.role === 'user') {
         groups.push({ type: 'user', key: message.id, message });
         latestUserTs = message.serverTimestamp;
@@ -236,7 +241,7 @@ export const MessageList = React.memo<MessageListProps>(({
   }, [hasHiddenEarlierGroups, loadEarlierGroups]);
 
   const activeAssistantGroup = renderGroups.at(-1)?.type === 'assistant' ? renderGroups.at(-1) : undefined;
-  const showEmptyActiveTurn = (isStreaming || Boolean(pendingUserInput)) && !activeAssistantGroup;
+  const showEmptyActiveTurn = (isStreaming || isCompacting || Boolean(pendingUserInput)) && !activeAssistantGroup;
   // Only the live assistant group (or the empty active turn below) may carry streaming/progress.
   // Never fall back to a previous completed assistant turn when the latest group is a user message.
   const progressGroup = activeAssistantGroup;
@@ -270,15 +275,17 @@ export const MessageList = React.memo<MessageListProps>(({
           {isLoading && messages.length === 0 && (
             <LoadingState className="mx-auto py-12" label={t('reactUiLoadingConversation') || 'Loading conversation…'} />
           )}
-          {visibleGroups.map((group) =>
-            group.type === 'user' ? (
-              <UserBubble key={group.key} message={group.message} />
-            ) : (
+          {visibleGroups.map((group) => {
+            if (group.type === 'user') {
+              return <UserBubble key={group.key} message={group.message} />;
+            }
+            return (
               <AssistantTurn
                 key={group.key}
                 messages={group.messages}
                 startedAt={group.startedAt}
                 streaming={Boolean(isStreaming && group === activeAssistantGroup)}
+                isCompacting={Boolean(isCompacting && group === activeAssistantGroup)}
                 showProgress={group === progressGroup}
                 workflowProposal={workflowProposal}
                 onOpenPlan={onOpenPlan}
@@ -289,14 +296,15 @@ export const MessageList = React.memo<MessageListProps>(({
                 model={model}
                 onOpenSubagent={onOpenSubagent}
               />
-            )
-          )}
+            );
+          })}
           {showEmptyActiveTurn && (
             <AssistantTurn
               key="active-assistant-turn"
               messages={[]}
               startedAt={latestUserTimestamp}
               streaming={isStreaming}
+              isCompacting={isCompacting}
               showProgress
               pendingUserInput={pendingUserInput}
               collaborationMode={collaborationMode}

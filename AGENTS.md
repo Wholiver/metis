@@ -106,6 +106,7 @@ When modifying Server endpoints (`src/modes/server/`) or Desktop-Server communic
 - **SSE event stream**: Events are emitted with monotonic sequence numbers and session IDs. Changes to event payloads must be backward-compatible with both Desktop and headless consumers.
 - **Cancellation & Abortion**: Aborts must cleanly terminate in-flight model requests and child processes without leaving orphan subagents or corrupting session history.
 - **Mainland China Gitee version mirror & single-parse sessions (gotcha)**: `resolveManifestSources` automatically detects mainland China environments (timezones such as `Asia/Shanghai`, `PRC` or `zh` locale) and races the Gitee release API (`oliverhuchenrui/metis`) concurrently with GitHub (`latest-version.json`). `METIS_GITEE_TOKEN` is appended only when set; never hardcode a Gitee access token in source. The desktop update download link always targets GitHub releases. `SessionManager.open` reads only the first line for the session header rather than parsing full multi-megabyte JSONL files twice, and `sessionInfoCache` persists to `~/.metis/agent/cache/sessions-index-v1.json` so cold-start `/sessions` listings avoid re-reading unchanged files.
+- **Full conversation history on reload & compaction omission (gotcha)**: `GET /session/messages` returns all conversational messages along the active branch (`session.sessionManager.getBranch()` filtered to `entry.type === 'message'`) falling back to `session.messages`. This ensures reloading or switching sessions preserves complete historical conversation turns even after context compaction pruned `session.messages`. On the desktop frontend, `toMessage()` in `useMetisServer.ts` and `MessageList.tsx` omit `compactionSummary` messages so compaction summaries/cards are not displayed in the chat flow.
 - **Verification**: Run `npm test -- test/server-mode.test.ts` and `npm test -- test/desktop-server-connection.test.ts`.
 
 ## Implementation Loop
@@ -206,6 +207,21 @@ Metis supports continuous self-learning through runtime adaptations (`src/core/a
   - `PerformanceRuntime.admit()` records an immutable `workflowSnapshot` into the run state when active (or `undefined` when off).
   - `allowedSpawnRoles()` and gate verification extraChecks strictly read `workflowSnapshot` from the active run state without querying disk.
   - Modifying `workflow.json` on disk or toggling self-learning flags mid-run has zero impact on the active run; changes only take effect upon the next `admit()`.
+
+## Scheduled Routines System
+
+When modifying routines scheduling (`src/core/routine-host.ts`, `src/core/tools/routine.ts`, `desktop/routine-host.cjs`):
+
+- **Cron & Interval Execution**: Support standard 5-field cron syntax (`* * * * *`) and interval formats.
+- **State Persistence & History**: Routine state, last run timestamp, and run histories persist safely across sessions.
+- **Desktop UI Parity**: Routines are exposed via Desktop settings dialog and sidebar tabs with bilingual status narration and direct toggle controls.
+
+## Metis Plugin Contracts Architecture
+
+When modifying plugins or role definitions (`bin/metis-plugin.js`, `contracts/`, `packages/`):
+
+- **Zero Contract Drift**: Always run `npm run check-contracts` to validate that `contracts/*.json` match BUILTIN definitions in `src/core/agent-definition.ts` and the 16 frameworks in `src/core/performance-frameworks.ts`.
+- **Role Projection**: Keep plugin role projections in parity across Codex, OpenCode, and DeepSeek environments.
 
 ## Recursive Multi-Agent System
 

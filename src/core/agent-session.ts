@@ -148,8 +148,10 @@ import {
 	WorkflowRuntime,
 } from "./workflow-runtime.ts";
 import { createBrowserHostFromEnv } from "./browser-host.ts";
+import { createRoutineHostFromEnv } from "./routine-host.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { createBrowserToolDefinitions } from "./tools/browser.ts";
+import { createRoutineToolDefinitions } from "./tools/routine.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 import {
@@ -529,6 +531,7 @@ export class AgentSession {
 	private readonly _sharedMutatingOwners = new SharedMutatingOwnerRegistry();
 	/** Host-forced continue attempts while a Performance run is still active (per prompt). */
 	private _performanceContinuationAttempts = 0;
+	private _promptLock: Promise<void> = Promise.resolve();
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -1054,6 +1057,25 @@ export class AgentSession {
 	}
 
 	/**
+	 * Wait for any running subagents, pending result deliveries, and follow-up turns to complete.
+	 */
+	async waitForSubagentsAndTurns(signal?: AbortSignal, timeoutMs?: number): Promise<void> {
+		const deadline = timeoutMs ? Date.now() + timeoutMs : Infinity;
+		while (
+			this._runningSubagentIds.size > 0 ||
+			this._pendingSubagentResults.size > 0 ||
+			this._subagentResultDeliveryInProgress
+		) {
+			if (signal?.aborted || Date.now() > deadline) break;
+			await new Promise((resolve) => setTimeout(resolve, 300));
+			await this.agent.waitForIdle();
+			await this._promptLock;
+		}
+		await this.agent.waitForIdle();
+		await this._promptLock;
+	}
+
+	/**
 	 * Abort all running subagents, terminate their process trees, and clear queues.
 	 */
 	abortSubagents(): void {
@@ -1065,6 +1087,8 @@ export class AgentSession {
 			} catch {
 				// Ignore
 			}
+			this._sharedMutatingOwners.release(jobId);
+			this._performanceRuntime.releaseSpawn(jobId);
 		}
 		this._runningSubagentIds.clear();
 		this._pendingSubagentResults.clear();
@@ -1075,6 +1099,98 @@ export class AgentSession {
 			runningCount: 0,
 			runningJobIds: [],
 		});
+		if (runningIds.length > 0) {
+			const notificationContent = [
+				`[Running subagents aborted by user]`,
+				`All running background subagents (${runningIds.join(", ")}) were manually stopped by the user. Background processes have been terminated and file locks released. Do NOT wait for them. Continue the remaining task directly now.`,
+			].join("\n\n");
+			void this.sendCustomMessage({
+				customType: "subagent_result",
+				content: [{ type: "text", text: notificationContent }],
+				display: true,
+			}, { triggerTurn: true, deliverAs: "followUp" }).catch((error) => {
+				console.error("Failed to notify session of aborted subagents:", error);
+			});
+		}
+	}
+
+	/**
+	 * Abort a specific running subagent by its agent ID or toolCallId.
+	 */
+	abortSubagent(targetId: string): boolean {
+		const guard = getGlobalSpawnGuard();
+		let matchedId: string | undefined = undefined;
+
+		if (this._runningSubagentIds.has(targetId)) {
+			matchedId = targetId;
+		} else {
+			for (const id of this._runningSubagentIds) {
+				if (id === targetId || id.includes(targetId) || targetId.includes(id)) {
+					matchedId = id;
+					break;
+				}
+			}
+			if (!matchedId) {
+				const runningChildren = guard.listChildren?.({ status: "running" }) ?? [];
+				for (const child of runningChildren) {
+					if (child.agentId === targetId || child.agentId.includes(targetId) || targetId.includes(child.agentId)) {
+						matchedId = child.agentId;
+						break;
+					}
+				}
+			}
+		}
+
+		const agentId = matchedId || targetId;
+		let killed = false;
+		try {
+			killed = guard.killChild(agentId, "SIGTERM");
+		} catch {
+			// Ignore
+		}
+
+		this._runningSubagentIds.delete(agentId);
+		if (matchedId) {
+			this._runningSubagentIds.delete(matchedId);
+		}
+		this._pendingSubagentResults.delete(agentId);
+		if (matchedId) {
+			this._pendingSubagentResults.delete(matchedId);
+		}
+		this._sharedMutatingOwners.release(agentId);
+		if (matchedId) {
+			this._sharedMutatingOwners.release(matchedId);
+		}
+		this._performanceRuntime.releaseSpawn(agentId);
+		if (matchedId) {
+			this._performanceRuntime.releaseSpawn(matchedId);
+		}
+
+		if (this._runningSubagentIds.size === 0) {
+			this._subagentPauseActive = false;
+			this._subagentLaunchBatchOpen = false;
+		}
+
+		this._emit({
+			type: "subagent_status",
+			runningCount: this._runningSubagentIds.size,
+			runningJobIds: [...this._runningSubagentIds],
+		});
+
+		const notificationContent = [
+			`[Subagent Job ${agentId} was stopped by user]`,
+			`The user manually terminated this Subagent. Its background process has been killed and workspace file locks have been released. Do NOT wait for it. It is no longer running. Please assess current progress and continue executing the task directly.`,
+		].join("\n\n");
+
+		void this.sendCustomMessage({
+			customType: "subagent_result",
+			content: [{ type: "text", text: notificationContent }],
+			display: true,
+		}, { triggerTurn: true, deliverAs: "followUp" }).catch((error) => {
+			console.error("Failed to notify session of aborted subagent:", error);
+		});
+
+		return killed;
 	}
 
 	// Track last assistant message for auto-compaction check
@@ -1560,6 +1676,14 @@ export class AgentSession {
 		finally { if (this._pendingUserInput?.requestId === request.requestId) this._pendingUserInput = undefined; }
 	}
 
+	get hasAskUser(): boolean {
+		return Boolean(this._askUserHandler);
+	}
+
+	async askUser(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserResponse> {
+		return this._askUser(request, signal);
+	}
+
 	/** Hosts with a visible ask surface opt into the upstream attended run chooser. */
 	setPerformanceAttendance(attendance: PerformanceAttendance): void {
 		if (this.isStreaming || this.isCompacting) throw new Error("Cannot change Performance attendance while the agent is running.");
@@ -2031,10 +2155,29 @@ export class AgentSession {
 
 		let learnedAdaptationsText: string | undefined;
 		if (this.isSelfLearningActive() && !this._namedAgentSession) {
+			const messages = this.agent?.state?.messages ?? [];
+			const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+			let lastUserText: string | undefined;
+			if (lastUserMsg) {
+				const c = (lastUserMsg as any).content;
+				if (typeof c === "string") lastUserText = c;
+				else if (Array.isArray(c)) {
+					lastUserText = c
+						.filter((p: any) => p && p.type === "text" && typeof p.text === "string")
+						.map((p: any) => p.text)
+						.join(" ");
+				}
+			}
+
 			learnedAdaptationsText = getLearnedAdaptationsPromptSummary({
 				cwd: this._cwd,
 				agentDir: this._agentDir,
 				isProjectTrusted: this.settingsManager.isProjectTrusted(),
+				turnContext: {
+					userMessage: lastUserText,
+					activeToolNames: validToolNames,
+					collaborationMode: this._collaborationMode,
+				},
 			});
 		}
 
@@ -2107,6 +2250,12 @@ export class AgentSession {
 	}
 
 	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void> {
+		const priorLock = this._promptLock;
+		let releaseLock: () => void = () => {};
+		this._promptLock = new Promise<void>((resolve) => {
+			releaseLock = resolve;
+		});
+		await priorLock;
 		try {
 			await this.agent.prompt(messages);
 			while (await this._handlePostAgentRun()) {
@@ -2122,6 +2271,7 @@ export class AgentSession {
 			this._activeRunInstructionStack = undefined;
 			this._systemPromptOverride = undefined;
 			this._flushPendingBashMessages();
+			releaseLock();
 		}
 	}
 
@@ -2185,11 +2335,12 @@ export class AgentSession {
 
 	/** Force more model turns when a Performance run is still open after a stop. */
 	private _unfinishedPerformanceContinuation(msg: AssistantMessage): string | undefined {
-		if (msg.stopReason !== "stop") return undefined;
+		if (msg.stopReason !== "stop" && msg.stopReason !== "length") return undefined;
 		if (this._namedAgentSession) return undefined;
 		const state = this._performanceRuntime.state;
 		if (!state || state.status !== "active") return undefined;
 		if (this._performanceContinuationAttempts >= 2) return undefined;
+		if (this._runningSubagentIds.size > 0 || this._subagentPauseActive) return undefined;
 		// Do not interrupt right after admission while still on G0/G1/G2/G3.5 with no reports.
 		// Interrupt false finishes once implementation/assurance frontiers are open (any T0–T3).
 		const implementationOrLater = new Set([
@@ -3718,7 +3869,16 @@ export class AgentSession {
 
 			// Auto-compaction can complete while follow-up/steering/custom messages are waiting.
 			// Continue once so queued messages are delivered.
-			return this.agent.hasQueuedMessages();
+			if (this.agent.hasQueuedMessages()) {
+				return true;
+			}
+
+			// If a Performance run is active, continue automatically rather than halting the turn.
+			if (this._performanceRuntime.state?.status === "active" && !this._namedAgentSession) {
+				return true;
+			}
+
+			return false;
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : "compaction failed";
 			if (started) {
@@ -4174,6 +4334,7 @@ export class AgentSession {
 								laneId: prepared.laneId,
 								gate: prepared.gate,
 								worktree: prepared.worktree,
+								ownedPaths: prepared.ownedPaths ?? input.ownedPaths,
 							};
 							if (isReliableHeadlessProfile()) {
 								// Headless benchmarks keep sequential mutating children in the scored cwd.
@@ -4183,6 +4344,19 @@ export class AgentSession {
 								throw new Error("REPAIR_REQUIRED: T3 parallel implementers require a Git repository root; revise admission to T2 for shared-cwd serial execution.");
 							}
 							return merged;
+						},
+						getLaneOwnedPaths: (laneId) => {
+							const run = this._performanceRuntime.state;
+							const lanes = run?.admission?.lanes ?? [];
+							if (laneId) {
+								const target = laneId.toLowerCase().replace(/[-_]/g, "");
+								const found = lanes.find((candidate) => candidate.id.toLowerCase().replace(/[-_]/g, "") === target);
+								if (found?.ownedPaths) return found.ownedPaths;
+							}
+							if (lanes.length === 1 && lanes[0]?.ownedPaths) {
+								return lanes[0].ownedPaths;
+							}
+							return undefined;
 						},
 						validateSpawn: (input, runtime, childAgentId) => {
 							if (this._namedAgentSession && !isHostDispatchActive()) {
@@ -4202,6 +4376,17 @@ export class AgentSession {
 							return this._sharedMutatingOwners.claim(childAgentId, ownedPaths);
 						},
 						releaseMutatingOwner: (childAgentId) => this._sharedMutatingOwners.release(childAgentId),
+						recordChildGate: (input) => {
+							if (!this._performanceRuntime.state?.admission) return undefined;
+							return this._performanceRuntime.recordChildGateFromResult({
+								agentId: input.agentId,
+								role: input.role,
+								gate: input.gate,
+								itemId: input.itemId,
+								outcome: input.outcome,
+								childResult: input.childResult,
+							});
+						},
 						onStatusChange: (jobId, running) => this._setSubagentRunning(jobId, running),
 						sendMessage: (jobId, result) => this._queueSubagentResult(jobId, result),
 					},
@@ -4253,6 +4438,12 @@ export class AgentSession {
 								},
 							});
 							this._performanceAdmissionRequired = false;
+							if (admission.tier === "T2" || admission.tier === "T3" || (admission.lanes && admission.lanes.length > 1)) {
+								const currentLimit = getGlobalSpawnGuard().getConfig().maxChildrenPerAgent;
+								if (currentLimit < 16) {
+									getGlobalSpawnGuard().updateConfig({ maxChildrenPerAgent: 16 });
+								}
+							}
 							this._appendPerformanceRunEntry(run);
 							return run;
 						},
@@ -4281,6 +4472,15 @@ export class AgentSession {
 			for (const definition of createBrowserToolDefinitions({ host: browserHost })) {
 				toolDefinitionRecord[definition.name] = definition;
 				browserToolNames.push(definition.name);
+			}
+		}
+
+		const routineHost = createRoutineHostFromEnv();
+		const routineToolNames: string[] = [];
+		if (routineHost) {
+			for (const definition of createRoutineToolDefinitions({ host: routineHost, defaultProjectPath: this._cwd })) {
+				toolDefinitionRecord[definition.name] = definition;
+				routineToolNames.push(definition.name);
 			}
 		}
 
@@ -4327,11 +4527,12 @@ export class AgentSession {
 					"performance_admit",
 					"performance_gate",
 					...browserToolNames,
+					...routineToolNames,
 				];
-		// SDK passes initialActiveToolNames without dynamic browser_* tools; always merge them in
-		// so Desktop sessions actually expose browser_navigate etc. to the model.
+		// SDK passes initialActiveToolNames without dynamic browser_* / routine_* tools; always merge them in
+		// so Desktop sessions actually expose them to the model.
 		const baseActiveToolNames = [
-			...new Set([...(options.activeToolNames ?? defaultActiveToolNames), ...browserToolNames]),
+			...new Set([...(options.activeToolNames ?? defaultActiveToolNames), ...browserToolNames, ...routineToolNames]),
 		];
 		if (this.isSelfLearningActive() && !this._namedAgentSession) {
 			if (!baseActiveToolNames.includes("adapt")) {

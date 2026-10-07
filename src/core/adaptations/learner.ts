@@ -21,6 +21,8 @@ import { validateWorkflowAdaptation } from "./workflow-schema.ts";
 import { getEffectiveArchitecture, getEffectiveWorkflow, getEffectiveUserProfileData, applyTraitDecay } from "./effective.ts";
 import { assertMainWorkflowInvariance } from "./validate.ts";
 import { readTurnOutcomes, generateDailyGrowthReport } from "./ledger.ts";
+import { extractUserPreferenceSignals } from "./preference-engine.ts";
+import { runOnlineFastLearner } from "./fast-learner.ts";
 import { getAgentDir } from "../../config.ts";
 
 export interface LearningProgressEvent {
@@ -468,6 +470,7 @@ export function isTurnImportant(options: {
 	hadRecovery?: boolean;
 }): boolean {
 	const { messages, toolCallsCount = 0, hadRecovery = false } = options;
+	if (extractUserPreferenceSignals(messages).length > 0) return true;
 	if (toolCallsCount >= 8) return true;
 	if (hadRecovery) return true;
 
@@ -1753,6 +1756,15 @@ export function scheduleTurnLearning(
 
 	const promise = (async () => {
 		const messages = session.agent.state.messages ?? [];
+
+		// Run online fast learner for user preferences and ask_user alignment
+		await runOnlineFastLearner({
+			session,
+			mode,
+			messages,
+			isProjectTrusted,
+		}).catch(() => undefined);
+
 		const res = await runTurnLearner({
 			agentDir,
 			cwd,

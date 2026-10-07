@@ -218,4 +218,40 @@ describe('desktop workflow plan SSE apply', () => {
     expect(workflowPlanFromCustomEntry({ customType: 'workflow_plan_reset' })).toBeNull();
     expect(workflowPlanFromCustomEntry({ customType: 'performance_run' })).toBeUndefined();
   });
+
+  it('formats raw governance steps and explanation for human-readable display', async () => {
+    const { formatPlanStepForDisplay, formatPlanExplanationForDisplay, workflowPlanFromCustomEntry } =
+      await import('../desktop/src/lib/workflow-plan');
+
+    expect(formatPlanStepForDisplay('车道 I1-scaffold: 工程骨架 + 构建期 RSS/404 产出 (G4-G7 全过)'))
+      .toBe('工程骨架 + 构建期 RSS/404 产出');
+    expect(formatPlanStepForDisplay('车道 I2-content: Markdown 文章源、渲染/TOC/阅读时长、索引与搜索'))
+      .toBe('Markdown 文章源、渲染/TOC/阅读时长、索引与搜索');
+    expect(formatPlanStepForDisplay('车道 I3-ui: 路由与全部页面与主题切换'))
+      .toBe('路由与全部页面与主题切换');
+    expect(formatPlanStepForDisplay('车道 I4-delivery: src/rss.js、静态 404、verify-build 与 smoke-routes 脚本'))
+      .toBe('src/rss.js、静态 404、verify-build 与 smoke-routes 脚本');
+    expect(formatPlanStepForDisplay('G7 独立评审席对整合后工作区做最终签署'))
+      .toBe('整合后工作区做最终签署');
+    expect(formatPlanStepForDisplay('goal-check 目标核验（含浏览器端真实渲染证据）'))
+      .toBe('目标核验（含浏览器端真实渲染证据）');
+
+    expect(formatPlanExplanationForDisplay('I1 已完成 G4->G5->G6->G7 全部门禁；启动 I2 内容层车道。'))
+      .not.toContain('G4->G5');
+
+    const formattedPlan = workflowPlanFromCustomEntry({
+      customType: 'workflow_plan',
+      data: {
+        explanation: 'I1 已完成 G4->G5->G6->G7 全部门禁；启动 I2 内容层车道。',
+        plan: [
+          { step: '车道 I1-scaffold: 工程骨架 + 构建期 RSS/404 产出 (G4-G7 全过)', status: 'completed' },
+          { step: '车道 I2-content: Markdown 文章源、渲染/TOC/阅读时长、索引与搜索', status: 'in_progress' },
+        ],
+      },
+    });
+
+    expect(formattedPlan?.plan[0].step).toBe('工程骨架 + 构建期 RSS/404 产出');
+    expect(formattedPlan?.plan[1].step).toBe('Markdown 文章源、渲染/TOC/阅读时长、索引与搜索');
+    expect(formattedPlan?.explanation).not.toContain('车道');
+  });
 });
