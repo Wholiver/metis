@@ -149,7 +149,7 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   const lastMessage = messages[messages.length - 1];
   const workflowPlanInterrupted = !showActiveProgress
     && lastMessage?.role === 'assistant'
-    && lastMessage.stopReason === 'aborted';
+    && (lastMessage.stopReason === 'aborted' || lastMessage.stopReason === 'error' || lastMessage.stopReason === 'length');
   const isHomeEmpty = messages.length === 0 && !isLoading && !showActiveProgress && !pendingUserInput && !viewingSubagent;
 
   const breadcrumb = useMemo((): ChatBreadcrumbSegment[] | undefined => {

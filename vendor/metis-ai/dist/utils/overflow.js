@@ -135,12 +135,13 @@ export function isContextOverflow(message, contextWindow) {
             return true;
         }
     }
-    // Case 3: Length-stop overflow (Xiaomi MiMo style) - server truncates oversized input
+    // Case 3: Length-stop overflow (Xiaomi MiMo style & reasoning models) - server truncates oversized input
     // to fit the context window, leaving no room for output. Returns stopReason "length"
-    // with output=0 and input+cacheRead filling the context window.
-    if (contextWindow && message.stopReason === "length" && message.usage.output === 0) {
-        const inputTokens = message.usage.input + message.usage.cacheRead;
-        if (inputTokens >= contextWindow * 0.99) {
+    // with minimal/zero text output and input+cacheRead filling the context window.
+    if (contextWindow && message.stopReason === "length" && message.usage) {
+        const inputTokens = (message.usage.input || 0) + (message.usage.cacheRead || 0);
+        const textTokens = (message.usage.output || 0) - (message.usage.reasoning || 0);
+        if (inputTokens >= contextWindow * 0.98 && (message.usage.output <= 2 || textTokens <= 2)) {
             return true;
         }
     }

@@ -447,5 +447,138 @@ describe("AgentSession auto-compaction queue resume", () => {
 		// Should NOT compact because the only usage data is from a kept pre-compaction message
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
 	});
+
+	it("should detect length-stop context overflow and trigger auto-compaction with willRetry true", async () => {
+		const model = session.model!;
+		const contextWindow = model.contextWindow ?? 200_000;
+		const lengthOverflowMessage: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "thinking", thinking: "No" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 2_000,
+				output: 1,
+				cacheRead: contextWindow - 2_500,
+				cacheWrite: 0,
+				reasoning: 1,
+				totalTokens: contextWindow - 499,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "length",
+			timestamp: Date.now(),
+		};
+
+		const runAutoCompactionSpy = vi
+			.spyOn(
+				session as unknown as {
+					_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<boolean>;
+				},
+				"_runAutoCompaction",
+			)
+			.mockResolvedValue(true);
+
+		const checkCompaction = (
+			session as unknown as {
+				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<boolean>;
+			}
+		)._checkCompaction.bind(session);
+
+		await checkCompaction(lengthOverflowMessage);
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledWith("overflow", true);
+	});
+
+	it("should remove trailing assistant message with stopReason length on willRetry compaction", async () => {
+		settingsManager.applyOverrides({ compaction: { keepRecentTokens: 50 } });
+		const model = session.model!;
+		const now = Date.now();
+		sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "user command with lots of words ".repeat(20) }],
+			timestamp: now - 3000,
+		});
+		sessionManager.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "prior response ".repeat(20) }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 1000,
+				output: 200,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 1200,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: now - 2000,
+		});
+		sessionManager.appendMessage({
+			role: "toolResult",
+			content: [{ type: "text", text: "tool completed" }],
+			timestamp: now - 1000,
+		} as any);
+		sessionManager.appendMessage({
+			role: "assistant",
+			content: [{ type: "thinking", thinking: "No" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 10,
+				output: 1,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 11,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "length",
+			timestamp: now - 500,
+		});
+
+		session.agent.state.messages = sessionManager.buildSessionContext().messages;
+		session.agent.streamFn = (summaryModel) => {
+			const stream = createAssistantMessageEventStream();
+			queueMicrotask(() => {
+				stream.push({
+					type: "done",
+					reason: "stop",
+					message: {
+						...fauxAssistantMessage("compacted summary"),
+						api: summaryModel.api,
+						provider: summaryModel.provider,
+						model: summaryModel.id,
+						usage: {
+							input: 10,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 10,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
+					},
+				});
+			});
+			return stream;
+		};
+
+		const runAutoCompaction = (
+			session as unknown as {
+				_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<boolean>;
+			}
+		)._runAutoCompaction.bind(session);
+
+		const result = await runAutoCompaction("overflow", true);
+		expect(result).toBe(true);
+
+		// The trailing assistant message with stopReason "length" must have been sliced off,
+		// leaving toolResult as the last message so agent.continue() can run without throwing
+		const lastMessage = session.agent.state.messages[session.agent.state.messages.length - 1];
+		expect(lastMessage?.role).not.toBe("assistant");
+		expect(lastMessage?.role).toBe("toolResult");
+	});
 });
 

@@ -1265,7 +1265,7 @@ export class AgentSession {
 				this._lastAssistantMessage = event.message;
 
 				const assistantMsg = event.message as AssistantMessage;
-				if (assistantMsg.stopReason !== "error") {
+				if (assistantMsg.stopReason === "stop" || assistantMsg.stopReason === "toolUse") {
 					this._overflowRecoveryAttempted = false;
 				}
 
@@ -3657,7 +3657,16 @@ export class AgentSession {
 		// the configured window. A successful response over the configured window should compact
 		// but must not retry: the assistant answer already completed and agent.continue() cannot
 		// continue from an assistant message.
-		if (sameModel && isContextOverflow(assistantMessage, contextWindow)) {
+		const isOverflow =
+			isContextOverflow(assistantMessage, contextWindow) ||
+			Boolean(
+				contextWindow &&
+					assistantMessage.stopReason === "length" &&
+					assistantMessage.usage &&
+					((assistantMessage.usage.input ?? 0) + (assistantMessage.usage.cacheRead ?? 0)) >= contextWindow * 0.98 &&
+					(((assistantMessage.usage.output ?? 0) - (assistantMessage.usage.reasoning ?? 0)) <= 2),
+			);
+		if (sameModel && isOverflow) {
 			const willRetry = assistantMessage.stopReason !== "stop";
 
 			if (!willRetry) {
@@ -3860,9 +3869,8 @@ export class AgentSession {
 
 			if (willRetry) {
 				const messages = this.agent.state.messages;
-				const lastMsg = messages[messages.length - 1];
-				if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
-					this.agent.state.messages = messages.slice(0, -1);
+				while (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+					messages.pop();
 				}
 				return true;
 			}
@@ -3870,11 +3878,6 @@ export class AgentSession {
 			// Auto-compaction can complete while follow-up/steering/custom messages are waiting.
 			// Continue once so queued messages are delivered.
 			if (this.agent.hasQueuedMessages()) {
-				return true;
-			}
-
-			// If a Performance run is active, continue automatically rather than halting the turn.
-			if (this._performanceRuntime.state?.status === "active" && !this._namedAgentSession) {
 				return true;
 			}
 

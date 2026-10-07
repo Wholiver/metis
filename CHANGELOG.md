@@ -2,17 +2,13 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
-## [1.4.6] - 2026-10-07
+## [1.4.7] - 2026-10-07
 
-### Desktop Turn Deduplication & Language Consistency Enforcement
+### Scheduled Routines, Plugin Contracts, Self-Learning Fast Loop, Length-Stop Compaction & Desktop UX
 
-- **Desktop Conversation Deduplication**: Fix turn duplication in `useMetisServer.ts` during snapshot reconciliation (`adoptSnapshotWithoutRegressing`) when snapshot IDs differ from synthesized SSE IDs after abort or session reload.
+- **Context Window Length-Stop Auto-Compaction & Truncation Handling**: Accurately detect context limit exhaustion (`stopReason: "length"` with >= 98% context filled and empty/minimal tokens) from reasoning models like DeepSeek-V4.1-Flash; trigger auto-compaction and pop trailing assistant messages before retrying so continuation proceeds seamlessly; treat empty length-stop turns as clear failure notices with retry affordances rather than displaying stale work text.
+- **Desktop Conversation Turn Deduplication**: Fix turn duplication in `useMetisServer.ts` during snapshot reconciliation (`adoptSnapshotWithoutRegressing`) when snapshot IDs differ from synthesized SSE IDs after abort or session reload.
 - **Strict Language Consistency Enforcement**: Enforce user language match across Plan/Build collaboration mode system prompts and milestone progress narration, strictly forbidding spontaneous switches to English when the user's latest prompt is Chinese.
-
-## [1.4.5] - 2026-10-07
-
-### Scheduled Routines System, Plugin Contracts, Self-Learning Fast Loop & Desktop UX
-
 - **Scheduled Routines System**: Introduce the background `RoutineHost` scheduler and model-facing `routine` tool (`list`, `create`, `update`, `delete`, `toggle`, `run`), supporting standard 5-field cron expressions, interval scheduling, persistent execution status, and an interactive Routines management panel in Desktop Settings & Sidebar.
 - **Plugin Architecture & Strict Contract Checking**: Add the `metis-plugin` CLI (`bin/metis-plugin.js`) and contract validation suite (`scripts/check-contracts.mjs`, `packages/`) enforcing strict zero-drift contracts across BUILTIN roles, 16 evaluation frameworks, performance gates, and route providers.
 - **Self-Learning Fast Loop & Adaptations Acceleration**: Expand runtime adaptations with the Prompt Compiler (`compiler.ts`), Architecture Rule Engine (`architecture-engine.ts`), Preference Engine (`preference-engine.ts`), and Schedule Learner (`schedule-learner.ts`) to converge multi-turn adaptations rapidly while preserving clean baseline execution when inactive.

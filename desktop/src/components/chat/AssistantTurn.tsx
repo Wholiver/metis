@@ -5,6 +5,7 @@ import { AgentBubble } from './AgentBubble';
 import { AssistantWork } from './AssistantWork';
 import { AssistantErrorCard } from './AssistantErrorCard';
 import { AssistantTurnFooter } from './AssistantTurnFooter';
+import { useI18n } from '../../i18n';
 
 interface AssistantTurnProps {
   messages: Message[];
@@ -72,6 +73,9 @@ export function resolveAssistantTurnLayout(
   if (!options.streaming) {
     for (let index = entries.length - 1; index >= 0; index -= 1) {
       if (isVisibleWorkText(entries[index].part, failureMessage)) {
+        if (failureMessage && entries[index].message !== failureMessage) {
+          continue;
+        }
         finalEntryIndex = index;
         break;
       }
@@ -102,12 +106,11 @@ export function resolveAssistantTurnLayout(
   if (!options.streaming) {
     if (finalEntry) {
       finalText = finalEntry.part.text.trim();
-    } else {
+    } else if (!failureMessage) {
       for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
-        if (failureMessage && message === failureMessage) continue;
         const text = message.content?.trim();
-        if (text && text !== failureMessage?.errorMessage) {
+        if (text) {
           finalText = text;
           break;
         }
@@ -206,13 +209,21 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
   model,
   onOpenSubagent,
 }) => {
+  const { t } = useI18n();
   const isWaitingUserInput = Boolean(pendingUserInput);
   const failureMessage = !streaming ? messages.find((m) => (
     m.stopReason === 'error' ||
     m.stopReason === 'aborted' ||
+    (m.stopReason === 'length' && (!m.content || !m.content.trim())) ||
     Boolean(m.errorMessage)
   )) : undefined;
-  const errorText = failureMessage ? (failureMessage.errorMessage || failureMessage.content) : undefined;
+  const errorText = failureMessage
+    ? (failureMessage.errorMessage || failureMessage.content || (
+        failureMessage.stopReason === 'length'
+          ? (t('assistantLengthError') || 'Response truncated: context window limit reached.')
+          : undefined
+      ))
+    : undefined;
   const layout = resolveAssistantTurnLayout(messages, { streaming, failureMessage });
   const workItemsRef = useRef<AssistantContentPart[]>([]);
   const workItems = reuseStablePartList(workItemsRef.current, layout.workItems);
