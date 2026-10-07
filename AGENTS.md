@@ -225,6 +225,17 @@ When modifying plugins or role definitions (`bin/metis-plugin.js`, `contracts/`,
 - **Zero Contract Drift**: Always run `npm run check-contracts` to validate that `contracts/*.json` match BUILTIN definitions in `src/core/agent-definition.ts` and the 16 frameworks in `src/core/performance-frameworks.ts`.
 - **Role Projection**: Keep plugin role projections in parity across Codex, OpenCode, and DeepSeek environments.
 
+## Metis Skill (插件版) Release
+
+Skill / plugin distribution is separate from Desktop and CLI (`@wholiver_hu/metis`) versioning.
+
+- **Package**: `metis-skill` (CLI bins: `metis-plugin`, `metis-skill`)
+- **Pack**: `npm run pack:skill` → `scripts/pack-metis-skill.mjs` (esbuild-bundles TS; ships `contracts/`; Node cannot type-strip under `node_modules`)
+- **Tag / asset**: `skill-vX.Y.Z` + `metis-skill-X.Y.Z.tgz` on GitHub Releases (do not reuse the Desktop/CLI `vX.Y.Z` latest tag for skill-only bumps)
+- **Install (README Quick start, below Desktop, not collapsed)**:
+  `npm install -g https://github.com/Wholiver/metis/releases/download/skill-vX.Y.Z/metis-skill-X.Y.Z.tgz` then `metis-plugin`
+- **Smoke**: after pack, `npm install -g --prefix /tmp/metis-skill-smoke ./metis-skill-X.Y.Z.tgz` and `metis-plugin --version` / `metis-plugin install codex --root <tmpdir>`
+
 ## Recursive Multi-Agent System
 
 When touching subagent execution (`src/core/tools/spawn_agent.ts`, `src/core/agent-definition.ts`):
