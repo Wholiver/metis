@@ -1,12 +1,12 @@
 {
 	"name": "@wholiver_hu/metis",
-	"version": "1.4.7-1",
+	"version": "1.4.8",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "@wholiver_hu/metis",
-			"version": "1.4.7-1",
+			"version": "1.4.8",
 			"bundleDependencies": [
 				"@earendil-works/metis-agent-core",
 				"@earendil-works/metis-ai",

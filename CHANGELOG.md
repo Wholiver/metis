@@ -2,7 +2,7 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
-## [1.4.7-1] - 2026-10-09
+## [1.4.8] - 2026-10-09
 
 ### Subagent Capacity & Quota Message Sanitization
 
