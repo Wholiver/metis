@@ -307,7 +307,7 @@ export function parseArgs(args: string[]): Args {
 		} else if (arg === "--max-children" && i + 1 < args.length) {
 			const rawVal = args[++i];
 			const parsedVal = parseInt(rawVal, 10);
-			if (Number.isNaN(parsedVal) || parsedVal < 1) {
+			if (Number.isNaN(parsedVal) || parsedVal < 0) {
 				result.diagnostics.push({ type: "error", message: `Invalid max-children: ${rawVal}` });
 			} else {
 				result.maxChildren = parsedVal;

@@ -448,5 +448,26 @@ describe("parseArgs", () => {
 			expect(result.messages).toEqual(["Do the task"]);
 		});
 	});
+
+	describe("--max-children flag", () => {
+		test("parses --max-children 0 as valid unlimited value", () => {
+			const result = parseArgs(["--max-children", "0"]);
+			expect(result.maxChildren).toBe(0);
+			expect(result.diagnostics).toEqual([]);
+		});
+
+		test("parses positive --max-children value", () => {
+			const result = parseArgs(["--max-children", "16"]);
+			expect(result.maxChildren).toBe(16);
+			expect(result.diagnostics).toEqual([]);
+		});
+
+		test("rejects negative --max-children value", () => {
+			const result = parseArgs(["--max-children", "-1"]);
+			expect(result.diagnostics).toEqual([
+				{ type: "error", message: "Invalid max-children: -1" },
+			]);
+		});
+	});
 });
 
