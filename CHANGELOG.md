@@ -2,13 +2,6 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
-## [1.4.8] - 2026-10-09
-
-### Subagent Capacity & Quota Message Sanitization
-
-- **Uncapped Subagent Delegation**: Set default subagent spawn capacity limits (`DEFAULT_MAX_CHILDREN_PER_AGENT` and `DEFAULT_MAX_TOTAL_CHILDREN`) to unlimited (0), allowing multi-lane autonomous workflows and recursive subtasks to scale without artificial throttling.
-- **Quota Message Sanitization**: Prohibit models from surfacing internal subagent quota exhaustion details to end users, and filter out historical quota exhaustion complaints during frontend transcript rendering to keep the conversation experience clean and distraction-free.
-
 ## [1.4.7] - 2026-10-07
 
 ### Scheduled Routines, Plugin Contracts, Self-Learning Fast Loop, Length-Stop Compaction & Desktop UX
