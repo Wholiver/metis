@@ -4,8 +4,8 @@ import { killProcessTree } from "../utils/shell.ts";
 
 /** Default recursion and concurrency limit configurations */
 export const DEFAULT_MAX_SPAWN_DEPTH = 5;
-export const DEFAULT_MAX_CHILDREN_PER_AGENT = 8;
-export const DEFAULT_MAX_TOTAL_CHILDREN = 32;
+export const DEFAULT_MAX_CHILDREN_PER_AGENT = 0; // 0 = unlimited by default
+export const DEFAULT_MAX_TOTAL_CHILDREN = 0; // 0 = unlimited by default
 export const DEFAULT_MAX_CONCURRENT_AGENTS = 4;
 export const DEFAULT_AGENT_TIMEOUT_MS = 0; // 0 = unlimited by default
 
@@ -94,7 +94,7 @@ export class SpawnGuard {
 		const envMaxChildren = process.env.METIS_MAX_CHILDREN_PER_AGENT ? Number.parseInt(process.env.METIS_MAX_CHILDREN_PER_AGENT, 10) : undefined;
 		this.config = {
 			maxSpawnDepth: config?.maxSpawnDepth ?? DEFAULT_MAX_SPAWN_DEPTH,
-			maxChildrenPerAgent: config?.maxChildrenPerAgent ?? (Number.isFinite(envMaxChildren) && envMaxChildren! > 0 ? envMaxChildren! : DEFAULT_MAX_CHILDREN_PER_AGENT),
+			maxChildrenPerAgent: config?.maxChildrenPerAgent ?? (Number.isFinite(envMaxChildren) && envMaxChildren! >= 0 ? envMaxChildren! : DEFAULT_MAX_CHILDREN_PER_AGENT),
 			maxTotalChildren: config?.maxTotalChildren ?? DEFAULT_MAX_TOTAL_CHILDREN,
 			maxConcurrentAgents: config?.maxConcurrentAgents ?? DEFAULT_MAX_CONCURRENT_AGENTS,
 			defaultTimeoutMs: config?.defaultTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
@@ -134,7 +134,7 @@ export class SpawnGuard {
 		}
 
 		// 2. Total and per-session child limits (Feat 13)
-		if (this.children.size >= this.config.maxTotalChildren) {
+		if (this.config.maxTotalChildren > 0 && this.children.size >= this.config.maxTotalChildren) {
 			return {
 				valid: false,
 				errorCode: "MAX_CHILDREN_EXCEEDED",
@@ -143,16 +143,18 @@ export class SpawnGuard {
 			};
 		}
 
-		const localChildCount = Array.from(this.children.values()).filter(
-			(c) => !options.parentId || c.parentId === options.parentId,
-		).length;
-		if (localChildCount >= this.config.maxChildrenPerAgent) {
-			return {
-				valid: false,
-				errorCode: "MAX_CHILDREN_EXCEEDED",
-				errorMessage: `Maximum children per agent (${this.config.maxChildrenPerAgent}) reached.`,
-				hint: "A single agent cannot spawn more children. Synthesize previous results or terminate finished tasks.",
-			};
+		if (this.config.maxChildrenPerAgent > 0) {
+			const localChildCount = Array.from(this.children.values()).filter(
+				(c) => !options.parentId || c.parentId === options.parentId,
+			).length;
+			if (localChildCount >= this.config.maxChildrenPerAgent) {
+				return {
+					valid: false,
+					errorCode: "MAX_CHILDREN_EXCEEDED",
+					errorMessage: `Maximum children per agent (${this.config.maxChildrenPerAgent}) reached.`,
+					hint: "A single agent cannot spawn more children. Synthesize previous results or terminate finished tasks.",
+				};
+			}
 		}
 
 		// 3. Concurrency limit (Feat 14)

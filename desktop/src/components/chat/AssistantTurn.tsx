@@ -30,6 +30,34 @@ export function isSubagentLaunchNotice(text: string): boolean {
     && /(等待|等它|waiting|wait for|background)/i.test(normalized);
 }
 
+/** Strips internal subagent/child task quota notices from text. */
+export function stripInternalQuotaNotices(text: string): string {
+  if (!text) return '';
+  let cleaned = text;
+  // Match prefix or line-starting subagent quota / limit notices (Chinese)
+  cleaned = cleaned.replace(
+    /(?:^|\n)\s*(?:子代理|子任务|并发\s*Agent|Agent)\s*(?:额度|配额|上限)?\s*(?:已用尽|已满|达到上限|已达上限|超限)\s*(?:[（(][^）\n]*[）)])?[，,。；;]?\s*(?:因此|所以)?\s*/gi,
+    '\n',
+  );
+  // Match inverted phrase variant e.g. "子代理额度已用尽（root 的 16 个子任务上限已满）"
+  cleaned = cleaned.replace(
+    /(?:^|\n)\s*(?:子代理|子任务)\s*(?:额度|配额)?\s*(?:已用尽|已满)?[，,。\s]*[（(][^）\n]*(?:上限|额度|子任务|root)[^）\n]*[）)][，,。；;]?\s*(?:因此|所以)?\s*/gi,
+    '\n',
+  );
+  // Match English errors: "Maximum children per agent (16) reached." or "MAX_CHILDREN_EXCEEDED"
+  cleaned = cleaned.replace(
+    /(?:^|\n)\s*(?:Maximum children per agent|Global spawned child limit|MAX_CHILDREN_EXCEEDED)[^.\n]*(?:\.|\n|$)\s*/gi,
+    '\n',
+  );
+  return cleaned.trim();
+}
+
+export function isInternalQuotaNotice(text: string): boolean {
+  const normalized = String(text || '').trim();
+  if (!normalized) return false;
+  return stripInternalQuotaNotices(normalized).length === 0;
+}
+
 /** Final assistant text only — never thinking, tools, or intermediate narration. */
 export function resolveAssistantFinalCopyText(
   messages: Message[],
@@ -48,15 +76,19 @@ function fallbackParts(message: Message): AssistantContentPart[] {
       durationMs: message.thinkingDurationMs,
     });
   }
-  if (message.content) parts.push({ type: 'text', id: `${message.id}-text`, text: message.content });
+  if (message.content) {
+    const cleaned = stripInternalQuotaNotices(message.content);
+    if (cleaned) parts.push({ type: 'text', id: `${message.id}-text`, text: cleaned });
+  }
   return parts;
 }
 
 function isVisibleWorkText(part: AssistantContentPart, failureMessage?: Message): part is Extract<AssistantContentPart, { type: 'text' }> {
-  return part.type === 'text'
-    && Boolean(part.text.trim())
-    && !isSubagentLaunchNotice(part.text)
-    && (!failureMessage || part.text !== failureMessage.errorMessage);
+  if (part.type !== 'text') return false;
+  const cleaned = stripInternalQuotaNotices(part.text);
+  return Boolean(cleaned.trim())
+    && !isSubagentLaunchNotice(cleaned)
+    && (!failureMessage || cleaned !== failureMessage.errorMessage);
 }
 
 export function resolveAssistantTurnLayout(
@@ -68,7 +100,15 @@ export function resolveAssistantTurnLayout(
   finalEntry?: { message: Message; part: Extract<AssistantContentPart, { type: 'text' }> };
 } {
   const failureMessage = options.failureMessage;
-  const entries = messages.flatMap((message) => (message.parts || fallbackParts(message)).map((part) => ({ message, part })));
+  const rawEntries = messages.flatMap((message) => (message.parts || fallbackParts(message)).map((part) => ({ message, part })));
+  const entries = rawEntries.flatMap(({ message, part }) => {
+    if (part.type === 'text') {
+      const cleaned = stripInternalQuotaNotices(part.text);
+      if (!cleaned) return [];
+      return [{ message, part: { ...part, text: cleaned } }];
+    }
+    return [{ message, part }];
+  });
   let finalEntryIndex = -1;
   if (!options.streaming) {
     for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -256,9 +296,14 @@ const AssistantTurnComponent: React.FC<AssistantTurnProps> = ({
     const nonFailureMessages = failureMessage
       ? messages.filter((m) => m !== failureMessage && m.content && m.content !== failureMessage.errorMessage)
       : messages;
+    const cleanedMessages = nonFailureMessages.map((m) => {
+      const cleaned = stripInternalQuotaNotices(m.content || '');
+      if (cleaned === m.content) return m;
+      return { ...m, content: cleaned };
+    }).filter((m) => Boolean(m.content?.trim()));
     const content = (
       <>
-        {nonFailureMessages.map((message) => (
+        {cleanedMessages.map((message) => (
           <AgentBubble
             key={message.id}
             message={message}

@@ -27,6 +27,7 @@ import {
 import {
 	computeTaskHash,
 	DEFAULT_MAX_CHILDREN_PER_AGENT,
+	DEFAULT_MAX_TOTAL_CHILDREN,
 	DEFAULT_MAX_CONCURRENT_AGENTS,
 	DEFAULT_MAX_SPAWN_DEPTH,
 	setGlobalSpawnGuard,
@@ -68,7 +69,8 @@ describe("SpawnGuard & Lifecycle Management (Bundle 3)", () => {
 
 	it("has correct default configuration constants", () => {
 		expect(DEFAULT_MAX_SPAWN_DEPTH).toBe(5);
-		expect(DEFAULT_MAX_CHILDREN_PER_AGENT).toBe(8);
+		expect(DEFAULT_MAX_CHILDREN_PER_AGENT).toBe(0);
+		expect(DEFAULT_MAX_TOTAL_CHILDREN).toBe(0);
 		expect(DEFAULT_MAX_CONCURRENT_AGENTS).toBe(4);
 	});
 
@@ -115,6 +117,36 @@ describe("SpawnGuard & Lifecycle Management (Bundle 3)", () => {
 		expect(check.valid).toBe(false);
 		expect(check.errorCode).toBe("MAX_CHILDREN_EXCEEDED");
 		expect(check.errorMessage).toContain("Maximum children per agent (3) reached");
+	});
+
+	it("allows unlimited spawns when maxChildrenPerAgent and maxTotalChildren are 0", () => {
+		const unlimitedGuard = new SpawnGuard({
+			maxChildrenPerAgent: 0,
+			maxTotalChildren: 0,
+			maxConcurrentAgents: 4,
+		});
+		for (let i = 1; i <= 25; i++) {
+			unlimitedGuard.registerChild({
+				agentId: `agent-${i}`,
+				agent: "implementer",
+				task: `Task ${i}`,
+				taskHash: computeTaskHash(`Task ${i}`),
+				mode: "sync",
+				depth: 1,
+				parentId: "root",
+				rootRunId: "run-1",
+				status: "completed",
+				startTime: Date.now(),
+			});
+		}
+
+		const check = unlimitedGuard.canSpawn({
+			agent: "implementer",
+			task: "Task 26",
+			depth: 1,
+			parentId: "root",
+		});
+		expect(check.valid).toBe(true);
 	});
 
 	it("enforces maxConcurrentAgents limit (Feat 14)", () => {

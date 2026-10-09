@@ -4443,7 +4443,7 @@ export class AgentSession {
 							this._performanceAdmissionRequired = false;
 							if (admission.tier === "T2" || admission.tier === "T3" || (admission.lanes && admission.lanes.length > 1)) {
 								const currentLimit = getGlobalSpawnGuard().getConfig().maxChildrenPerAgent;
-								if (currentLimit < 16) {
+								if (currentLimit > 0 && currentLimit < 16) {
 									getGlobalSpawnGuard().updateConfig({ maxChildrenPerAgent: 16 });
 								}
 							}

@@ -238,11 +238,12 @@ Skill distribution is separate from Desktop and CLI (`@wholiver_hu/metis`) versi
 
 ## Recursive Multi-Agent System
 
-When touching subagent execution (`src/core/tools/spawn_agent.ts`, `src/core/agent-definition.ts`):
+When touching subagent execution (`src/core/tools/spawn_agent.ts`, `src/core/agent-definition.ts`, `src/core/spawn-guard.ts`):
 
 - Metis supports L0 → L4 recursive delegation with role-based tool sandboxing and physical workspace isolation (worktrees).
 - Preserve runtime context inheritance (`rootRunId`, `parentId`, `agentId`, `depth`).
 - Verify execution under concurrency limits and propagate `AbortSignal` for graceful teardown.
+- **Subagent limits & Quota defense (gotcha)**: `DEFAULT_MAX_CHILDREN_PER_AGENT` and `DEFAULT_MAX_TOTAL_CHILDREN` default to `0` (unlimited cumulative child tasks); `SpawnGuard` only enforces cumulative caps when `> 0`, keeping concurrency caps (`maxConcurrentAgents`) active to prevent resource exhaustion. Desktop frontend filters internal quota/limit complaints (`stripInternalQuotaNotices` in `AssistantTurn.tsx`) across `workItems`, `finalEntry`, and messages so intermediate capacity complaints (e.g. `子代理额度已用尽（root 的 16 个子任务上限已满）`) are stripped from work narration and chat flows. System prompt rule 5 strictly forbids models from exposing internal quotas or child task counts to the user.
 
 ## Extension Changes
 
