@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Api, Model, ProviderHeaders } from "@earendil-works/metis-ai";
 import type { SettingsManager } from "./settings-manager.ts";
 import { isInstallTelemetryEnabled } from "./telemetry.ts";
@@ -64,16 +65,23 @@ function getDefaultAttributionHeaders(
 	return undefined;
 }
 
-function getSessionHeaders(model: Model<Api>, sessionId: string | undefined): Record<string, string> | undefined {
-	if (!sessionId) return undefined;
-	if (
-		model.provider !== "opencode" &&
-		model.provider !== "opencode-go" &&
-		!matchesHost(model.baseUrl, OPENCODE_HOST)
-	) {
-		return undefined;
+function getSessionHeaders(model: Model<Api>, sessionId: string | undefined): Record<string, string> {
+	const headers: Record<string, string> = {
+		"X-Request-Id": randomUUID(),
+	};
+	if (sessionId) {
+		headers["X-Session-Id"] = sessionId;
 	}
-	return { "x-opencode-session": sessionId, "x-opencode-client": "metis" };
+	if (
+		sessionId &&
+		(model.provider === "opencode" ||
+			model.provider === "opencode-go" ||
+			matchesHost(model.baseUrl, OPENCODE_HOST))
+	) {
+		headers["x-opencode-session"] = sessionId;
+		headers["x-opencode-client"] = "metis";
+	}
+	return headers;
 }
 
 export function mergeProviderAttributionHeaders(

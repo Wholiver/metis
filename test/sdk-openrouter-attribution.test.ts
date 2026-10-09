@@ -268,5 +268,28 @@ describe("createAgentSession provider attribution headers", () => {
 		expect(headers?.["x-opencode-session"]).toBe("configured-session");
 		expect(headers?.["x-opencode-client"]).toBe("configured-client");
 	});
+
+	it("adds universal X-Session-Id and X-Request-Id headers for any provider", async () => {
+		const headers = await captureHeaders(createModel("custom-test", "https://tierflow.cn/v1"), {
+			sessionId: "test-session-uuid-1234",
+		});
+
+		expect(headers?.["X-Session-Id"]).toBe("test-session-uuid-1234");
+		expect(headers?.["X-Request-Id"]).toBeDefined();
+		expect(headers?.["X-Request-Id"]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+	});
+
+	it("lets request headers override universal session and request headers", async () => {
+		const headers = await captureHeaders(createModel("custom-test", "https://tierflow.cn/v1"), {
+			sessionId: "test-session-uuid-1234",
+			requestHeaders: {
+				"X-Session-Id": "override-session",
+				"X-Request-Id": "override-request",
+			},
+		});
+
+		expect(headers?.["X-Session-Id"]).toBe("override-session");
+		expect(headers?.["X-Request-Id"]).toBe("override-request");
+	});
 });
 
