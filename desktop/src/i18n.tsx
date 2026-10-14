@@ -268,6 +268,8 @@ export function useI18n() {
   return { language, preference, t };
 }
 
+export const useTranslation = useI18n;
+
 export function DesktopI18nProvider({ children }: PropsWithChildren) {
   const [preference, setPreference] = useState('auto');
 

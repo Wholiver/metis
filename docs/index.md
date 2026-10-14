@@ -7,10 +7,17 @@ Metis is a minimal terminal coding harness. It is designed to stay small at the 
 Install Metis with npm:
 
 ```bash
-npm install -g --ignore-scripts metis
+npm install -g --ignore-scripts @wholiver_hu/metis
 ```
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. Metis does not require install scripts for normal npm installs.
+
+For the Metis Skill (Codex / OpenCode / DeepSeek Harness):
+
+```bash
+npm install -g metis-skill
+metis-plugin
+```
 
 On Linux or macOS, you can also use the installer:
 
@@ -21,7 +28,7 @@ curl -fsSL https://metis.dev/install.sh | sh
 To uninstall metis itself, use npm for curl and npm installs:
 
 ```bash
-npm uninstall -g metis
+npm uninstall -g @wholiver_hu/metis
 ```
 
 For pnpm, Yarn, or Bun installs, use the matching global remove command: `pnpm remove -g metis`, `yarn global remove metis`, or `bun uninstall -g metis`.

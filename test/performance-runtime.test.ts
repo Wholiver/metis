@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	PerformanceRuntime,
 	getPerformanceRunDirectory,
+	isRunWidePerformanceGate,
 	validatePerformanceSpawn,
 } from "../src/core/performance-runtime.ts";
 import { createPerformanceGateToolDefinition } from "../src/core/tools/performance-gate.ts";
@@ -1446,5 +1447,211 @@ Run nonce: ${state.nonce}
 		expect(state3.workflowSnapshot).toBeDefined();
 		expect(state3.workflowSnapshot?.extraChecks?.[0]?.id).toBe("check-2");
 		expect(runtime.allowedSpawnRoles()[0]).toBe("verifier");
+	});
+
+	it("supports run-wide goal-checker prepareSpawn and recordChildGateFromResult without laneId or when laneId is passed", () => {
+		expect(isRunWidePerformanceGate("goal-check")).toBe(true);
+		expect(isRunWidePerformanceGate("sweep")).toBe(true);
+		expect(isRunWidePerformanceGate("G2")).toBe(true);
+		expect(isRunWidePerformanceGate("G2-review")).toBe(true);
+		expect(isRunWidePerformanceGate("G2-verify")).toBe(true);
+		expect(isRunWidePerformanceGate("complete")).toBe(true);
+		expect(isRunWidePerformanceGate("G4")).toBe(false);
+
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		const workspaceRoot = mkdtempSync(join(tmpdir(), "metis-workspace-"));
+		roots.push(agentDir, workspaceRoot);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({
+			kind: "admit",
+			mission: "Build electron git tool with light theme",
+			workspaceRoot,
+			admission: {
+				tier: "T2",
+				taskShape: "sequential-complex",
+				deliverables: ["Build electron git tool with light theme"],
+				acceptanceCriteria: ["clean UI and passes tests"],
+				verificationCommands: ["npm test"],
+				sharedMutableState: true,
+				lanes: [
+					{
+						id: "ui",
+						objective: "Build UI",
+						framework: "frontend-build",
+						ownedPaths: ["src/ui"],
+						dependsOn: [],
+						deliverables: ["src/ui/App.tsx"],
+						acceptanceCriteria: ["clean UI"],
+						verificationCommands: ["npm test"],
+					},
+				],
+			},
+		});
+
+		expect(runtime.state?.frontier).toBe("G4");
+		writeFileSync(join(state.governanceRoot, "artifacts", "g4.json"), JSON.stringify({ changedFiles: ["src/ui/App.tsx"], testCommand: "npm test", testOutput: "pass", exitCode: 0 }), "utf8");
+		runtime.recordGateReport({ gate: "G4", actor: "imp-1", role: "implementer", verdict: "pass", evidence: "artifacts/g4.json" });
+		runtime.recordGateReport({ gate: "G5", actor: "rev-1", role: "reviewer", verdict: "pass", evidence: receipt(state, "review") });
+		runtime.recordGateReport({ gate: "G6", actor: "ver-1", role: "verifier", verdict: "pass", evidence: receipt(state, "verify") });
+		runtime.recordGateReport({ gate: "G7", actor: "juror-1", role: "juror", verdict: "pass", evidence: receipt(state, "juror") });
+
+		expect(runtime.state?.frontier).toBe("goal-check");
+		expect(runtime.state?.activeItemId).toBeUndefined();
+
+		// 1. prepareSpawn with no laneId must succeed for goal-checker
+		const prepared = runtime.prepareSpawn({ agent: "goal-checker", task: "Verify mission" });
+		expect(prepared.gate).toBe("goal-check");
+		expect(prepared.laneId).toBeUndefined();
+		expect(prepared.worktree).toBeUndefined();
+		expect(prepared.task).toContain("Route: T2/sequential-complex; scope: run-wide; gate: goal-check");
+		expect(prepared.task).toContain("Build electron git tool with light theme");
+
+		// 2. prepareSpawn even if caller passes a laneId must clear laneId for run-wide
+		const preparedWithLane = runtime.prepareSpawn({ agent: "goal-checker", task: "Verify mission", laneId: "ui" });
+		expect(preparedWithLane.laneId).toBeUndefined();
+
+		// 3. recordChildGateFromResult with goal-check must succeed even if itemId was passed
+		const result = runtime.recordChildGateFromResult({
+			agentId: "goal-checker-abc",
+			role: "goal-checker",
+			gate: "goal-check",
+			itemId: "ui",
+			outcome: "pass",
+			childResult: {
+				summary: "GOAL-CHECK 100% passed",
+				status: "completed",
+				commands: [{ argv: ["npm", "test"], cwd: ".", exitCode: 0 }],
+			},
+		});
+
+		expect(result.frontier).toBe("complete");
+		expect(runtime.state?.status).toBe("completed");
+		expect(result.nextAction).toContain("complete");
+		expect(result.nextAction).not.toContain("advance the current frontier");
+	});
+
+	it("preserves goal-check frontier on failure without deadlocking to G4, and ignores informational findings", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-"));
+		const workspaceRoot = mkdtempSync(join(tmpdir(), "metis-perf-workspace-"));
+		roots.push(agentDir, workspaceRoot);
+
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.admit({
+			kind: "admit",
+			mission: "Build multi-stage app",
+			workspaceRoot,
+			admission: {
+				tier: "T2",
+				taskShape: "sequential-complex",
+				deliverables: ["Build multi-stage app"],
+				acceptanceCriteria: ["clean backend and passes tests"],
+				verificationCommands: ["npm test"],
+				sharedMutableState: true,
+				lanes: [
+					{
+						id: "ui",
+						objective: "UI",
+						framework: "frontend-build",
+						ownedPaths: ["src/ui"],
+						dependsOn: [],
+						deliverables: ["src/ui/app.ts"],
+						acceptanceCriteria: ["clean ui"],
+						verificationCommands: ["npm test"],
+					},
+				],
+			},
+		});
+
+		writeFileSync(join(state.governanceRoot, "artifacts", "g4.json"), JSON.stringify({ changedFiles: ["src/ui/app.ts"], testCommand: "npm test", testOutput: "pass", exitCode: 0 }), "utf8");
+		runtime.recordGateReport({ gate: "G4", actor: "imp-1", role: "implementer", verdict: "pass", evidence: "artifacts/g4.json" });
+		runtime.recordGateReport({ gate: "G5", actor: "rev-1", role: "reviewer", verdict: "pass", evidence: receipt(state, "review") });
+		runtime.recordGateReport({ gate: "G6", actor: "ver-1", role: "verifier", verdict: "pass", evidence: receipt(state, "verify") });
+		runtime.recordGateReport({ gate: "G7", actor: "juror-1", role: "juror", verdict: "pass", evidence: receipt(state, "juror") });
+
+		expect(runtime.state?.frontier).toBe("goal-check");
+
+		// 1. Goal-check failure must keep frontier at goal-check, not fall back to G4
+		const failResult = runtime.recordChildGateFromResult({
+			agentId: "goal-checker-fail",
+			role: "goal-checker",
+			gate: "goal-check",
+			outcome: "fail",
+			childResult: {
+				summary: "Verification failed on edge case",
+				status: "failed",
+				findings: [{ code: "TEST_FAIL", file: "src/backend/app.ts", message: "1 test failed" }],
+			},
+		});
+		expect(failResult.frontier).toBe("goal-check");
+		expect(runtime.state?.frontier).toBe("goal-check");
+
+		// 2. Goal-check pass with informational findings (code: OK/PASS/INFO) must succeed and complete
+		const passResult = runtime.recordChildGateFromResult({
+			agentId: "goal-checker-pass",
+			role: "goal-checker",
+			gate: "goal-check",
+			outcome: "pass",
+			childResult: {
+				summary: "Verification succeeded after fix",
+				status: "completed",
+				commands: [{ argv: ["npm", "test"], cwd: ".", exitCode: 0 }],
+				findings: [
+					{ code: "OK", file: "src/backend/app.ts", message: "All tests pass" },
+					{ code: "INFO", message: "Code coverage 98%" },
+				],
+			},
+		});
+		expect(passResult.frontier).toBe("complete");
+		expect(runtime.state?.status).toBe("completed");
+	});
+
+	it("allows root coordinator to close goal-check when tier has no goal-checker role", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "metis-performance-t3-goal-"));
+		roots.push(agentDir);
+		const runtime = new PerformanceRuntime(agentDir);
+		const state = runtime.start({
+			kind: "start",
+			mission: "T3 multi-package build",
+			admission: {
+				tier: "T3",
+				taskShape: "parallel",
+				deliverables: ["pkg-a", "pkg-b"],
+				acceptanceCriteria: ["all pass"],
+				verificationCommands: ["npm test"],
+				sharedMutableState: false,
+				lanes: [
+					{
+						id: "pkg-a",
+						objective: "build a",
+						framework: "backend-implement",
+						ownedPaths: ["a/"],
+						deliverables: ["pkg-a"],
+						acceptanceCriteria: ["pass"],
+						verificationCommands: ["npm test"],
+						dependsOn: [],
+					},
+				],
+			},
+		});
+		writeRoadmap(state, [{ id: "parser-fix", tier: "T3" }]);
+		runtime.recordGateReport({ gate: "G2", actor: "scope-1", role: "scope-coordinator", verdict: "pass", evidence: receipt(state, "scope") });
+		runtime.recordGateReport({ gate: "G2-review", actor: "reviewer-1", role: "reviewer", verdict: "pass", evidence: receipt(state, "scope-review") });
+		runtime.recordGateReport({ gate: "G2-verify", actor: "verifier-1", role: "fresh-verifier", verdict: "pass", evidence: receipt(state, "scope-verify") });
+		runtime.recordGateReport({ gate: "G4", actor: "implementer-1", role: "implementer", verdict: "pass", evidence: receipt(state, "g4") });
+		runtime.recordGateReport({ gate: "G5", actor: "reviewer-2", role: "reviewer", verdict: "pass", evidence: receipt(state, "g5") });
+		runtime.recordGateReport({ gate: "G6", actor: "verifier-2", role: "verifier", verdict: "pass", evidence: receipt(state, "g6") });
+		for (const juror of ["juror-1", "juror-2", "juror-3"]) {
+			runtime.recordGateReport({ gate: "G7", actor: juror, role: "juror", verdict: "pass", evidence: receipt(state, juror) });
+		}
+		runtime.recordGateReport({ gate: "sweep", actor: "sweeper-1", role: "sweeper", verdict: "pass", evidence: receipt(state, "sweep") });
+		expect(runtime.state?.frontier).toBe("goal-check");
+
+		// Non-root delivery actor must NOT close goal-check
+		expect(() => runtime.recordGateReport({ gate: "goal-check", actor: "implementer-1", role: "implementer", verdict: "pass", evidence: receipt(state, "goal-check") })).toThrow();
+
+		// Root coordinator can close goal-check
+		runtime.recordGateReport({ gate: "goal-check", actor: "root", role: "root", verdict: "pass", evidence: receipt(state, "goal-check") });
+		expect(runtime.state?.frontier).toBe("complete");
+		expect(runtime.state?.status).toBe("completed");
 	});
 });

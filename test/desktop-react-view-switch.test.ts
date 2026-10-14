@@ -53,7 +53,9 @@ describe('desktop view-switch jank', () => {
     expect(app).toContain('data-sidebar-shell');
     expect(app).toContain('data-inspector-shell');
     expect(app).toContain("className={isSidebarOpen ? 'contents' : 'hidden'}");
-    expect(app).toContain("className={isInspectorOpen ? 'contents' : 'hidden'}");
+    expect(app).toContain("className={isRoutinesViewActive || isCodeTreeOpen || isHarnessOpen ? 'hidden' : 'contents'}");
+    expect(app).not.toContain('setIsInspectorOpen');
+    expect(inspector).not.toContain('data-inspector-collapse-button');
     expect(app).toContain('const switching = selectConversation(agentId)');
   });
 

@@ -873,6 +873,80 @@ export function truncateValidSubagentPath(
   return resolveSubagentTrail(roots, path).map((item) => item.id);
 }
 
+/** Depth-first list of a subagent tree, including nested spawn_agent calls. */
+export function flattenSubagentItems(roots: SubagentItem[]): SubagentItem[] {
+  const flat: SubagentItem[] = [];
+  const walk = (items: SubagentItem[]) => {
+    for (const item of items) {
+      flat.push(item);
+      const nested = collectSubagentItemsFromParts(item.parts, item.sessionId);
+      if (nested.length > 0) walk(nested);
+    }
+  };
+  walk(roots);
+  return flat;
+}
+
+export function findSubagentById(roots: SubagentItem[], id: string): SubagentItem | null {
+  return flattenSubagentItems(roots).find((item) => item.id === id) ?? null;
+}
+
+/** Running subagents, most recently started first. */
+export function listRunningSubagents(roots: SubagentItem[]): SubagentItem[] {
+  return flattenSubagentItems(roots)
+    .filter((item) => item.status === 'running')
+    .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+}
+
+/** Another running subagent to show after the focused one leaves `running`. */
+export function pickNextRunningSubagent(
+  roots: SubagentItem[],
+  focusedId: string | null,
+): SubagentItem | null {
+  return listRunningSubagents(roots).find((item) => item.id !== focusedId) ?? null;
+}
+
+export interface SubagentFollowSnapshot {
+  seenIds: ReadonlySet<string>;
+  followLive: boolean;
+  focusedId: string | null;
+}
+
+export type SubagentFollowDecision =
+  | { type: 'open'; id: string; seenIds: string[] }
+  | { type: 'close'; seenIds: string[] }
+  | { type: 'idle'; seenIds: string[] };
+
+/**
+ * New running ids open the inspector. A live follow switches to the next
+ * running subagent, or closes, once the focused one is no longer running.
+ * Already-seen running ids do not steal the tab again.
+ */
+export function decideSubagentFollow(
+  roots: SubagentItem[],
+  snapshot: SubagentFollowSnapshot,
+): SubagentFollowDecision {
+  const running = listRunningSubagents(roots);
+  const seen = new Set(snapshot.seenIds);
+  const unseen = running.filter((item) => !seen.has(item.id));
+  for (const item of running) seen.add(item.id);
+  const seenIds = [...seen];
+
+  if (unseen.length > 0) {
+    return { type: 'open', id: unseen[0]!.id, seenIds };
+  }
+  if (!snapshot.followLive || !snapshot.focusedId) {
+    return { type: 'idle', seenIds };
+  }
+  const focused = findSubagentById(roots, snapshot.focusedId);
+  if (focused?.status === 'running') {
+    return { type: 'idle', seenIds };
+  }
+  const next = pickNextRunningSubagent(roots, snapshot.focusedId);
+  if (next) return { type: 'open', id: next.id, seenIds };
+  return { type: 'close', seenIds };
+}
+
 export function formatSubagentDuration(durationMs?: number): string {
   if (durationMs === undefined || durationMs === null || Number.isNaN(durationMs)) return '';
   const totalSeconds = Math.max(1, Math.round(durationMs / 1000));

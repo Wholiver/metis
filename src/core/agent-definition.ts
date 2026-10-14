@@ -728,6 +728,7 @@ export interface LoadAgentsOptions {
 	agentPaths?: string[];
 	adaptationAgentPaths?: string[];
 	includeBuiltins?: boolean;
+	harnessSnapshot?: import("./harness-document.ts").HarnessDocument | null;
 }
 
 /**
@@ -771,8 +772,26 @@ export function loadAgents(options: LoadAgentsOptions): AgentDiscoveryResult {
 		realPathSet.add(realPath);
 	}
 
-	// 1. Built-in standard agents (lowest priority)
-	if (includeBuiltins) {
+	// 1. Built-in standard agents or harness snapshot roles (lowest priority)
+	if (options.harnessSnapshot) {
+		const roleNodes = options.harnessSnapshot.nodes.filter((n) => n.type === "role");
+		for (const node of roleNodes) {
+			const data = node.data as import("./harness-document.ts").HarnessRoleNodeData;
+			const agent: AgentDefinition = {
+				name: data.name,
+				description: data.description,
+				systemPrompt: data.systemPrompt,
+				tools: data.tools ? [...data.tools] : undefined,
+				model: data.model,
+				thinking: data.thinking,
+				maxSpawnDepth: data.maxSpawnDepth,
+				source: "builtin",
+				filePath: `<harness:${data.name}>`,
+				sourceInfo: createSyntheticSourceInfo(`<harness:${data.name}>`, { source: "builtin", scope: "user" }),
+			};
+			addAgent(agent);
+		}
+	} else if (includeBuiltins) {
 		for (const agent of BUILTIN_AGENTS) {
 			addAgent(agent);
 		}

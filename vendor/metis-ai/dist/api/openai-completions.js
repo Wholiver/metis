@@ -958,7 +958,7 @@ function mapStopReason(reason) {
  */
 function detectCompat(model) {
     const provider = model.provider;
-    const baseUrl = model.baseUrl;
+    const baseUrl = model.baseUrl || "";
     const isZai = provider === "zai" ||
         provider === "zai-coding-cn" ||
         baseUrl.includes("api.z.ai") ||

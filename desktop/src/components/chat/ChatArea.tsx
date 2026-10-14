@@ -1,17 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Agent, CollaborationMode, ContextUsage, Message, ModelOption, PendingUserInput, ProjectItem, SendMessageOptions, ThinkingOption, TokenBreakdown, UserInputResponse, WorkflowPlanState, WorkflowProposalState } from '../../types';
 import { IDLE_COMPOSER_ACTIVITY, reduceComposerActivity } from '../../lib/composer';
-import { formatAgentTitle } from '../../lib/task-agent';
-import { SubagentItem } from '../../lib/subagents';
 import { RateLimitWindow } from '../inspector/UsageQuotaCard';
-import { ChatHeader, ChatBreadcrumbSegment } from './ChatHeader';
+import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
 import { SkillCommand } from './SkillPicker';
 import { UserInputCard } from './UserInputCard';
-import { SubagentConversation } from './SubagentConversation';
-import { Square } from 'lucide-react';
-import { useI18n } from '../../i18n';
 import type { LearningProgressState } from '../../hooks/useMetisServer';
 
 interface ChatAreaProps {
@@ -23,7 +18,6 @@ interface ChatAreaProps {
   activeProject?: ProjectItem;
   onSelectProject?: (id: string) => void | Promise<void>;
   isSidebarOpen?: boolean;
-  isInspectorOpen?: boolean;
   onToggleSidebar?: () => void;
   onSendMessage: (text: string, options?: SendMessageOptions) => boolean | void | Promise<boolean | void>;
   onAbort?: () => void | Promise<void>;
@@ -42,7 +36,6 @@ interface ChatAreaProps {
   isChangingCollaborationMode?: boolean;
   skills?: SkillCommand[];
   isCompacting?: boolean;
-  onToggleInspector?: () => void;
   isStreaming?: boolean;
   isLoading?: boolean;
   workflowProposal?: WorkflowProposalState;
@@ -59,11 +52,6 @@ interface ChatAreaProps {
   quota5h?: RateLimitWindow;
   quota7d?: RateLimitWindow;
   onOpenSubagent?: (partId: string) => void;
-  onStopSubagent?: (subagentId: string) => void;
-  viewingSubagent?: SubagentItem | null;
-  subagentTrail?: SubagentItem[];
-  onNavigateBreadcrumb?: (depth: number) => void;
-  onBackToParent?: () => void;
   learningProgress?: LearningProgressState;
   onOpenSettingsTab?: (tab: string) => void;
   onDismissLearningProgress?: () => void;
@@ -78,7 +66,6 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   activeProject,
   onSelectProject,
   isSidebarOpen = true,
-  isInspectorOpen = true,
   onToggleSidebar,
   onSendMessage,
   onAbort,
@@ -97,7 +84,6 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   isChangingCollaborationMode = false,
   skills = [],
   isCompacting = false,
-  onToggleInspector,
   isStreaming = false,
   isLoading = false,
   workflowProposal,
@@ -114,16 +100,10 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   quota5h,
   quota7d,
   onOpenSubagent,
-  onStopSubagent,
-  viewingSubagent = null,
-  subagentTrail = [],
-  onNavigateBreadcrumb,
-  onBackToParent,
   learningProgress,
   onOpenSettingsTab,
   onDismissLearningProgress,
 }) => {
-  const { t } = useI18n();
   const [composerActivity, setComposerActivity] = useState(IDLE_COMPOSER_ACTIVITY);
 
   useEffect(() => {
@@ -150,94 +130,37 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   const workflowPlanInterrupted = !showActiveProgress
     && lastMessage?.role === 'assistant'
     && (lastMessage.stopReason === 'aborted' || lastMessage.stopReason === 'error' || lastMessage.stopReason === 'length');
-  const isHomeEmpty = messages.length === 0 && !isLoading && !showActiveProgress && !pendingUserInput && !viewingSubagent;
-
-  const breadcrumb = useMemo((): ChatBreadcrumbSegment[] | undefined => {
-    if (!viewingSubagent || subagentTrail.length === 0) return undefined;
-    return [
-      { id: `root:${agent.id}`, label: agent.name, depth: -1 },
-      ...subagentTrail.map((item, index) => ({
-        id: item.id,
-        label: formatAgentTitle(item.role),
-        depth: index,
-      })),
-    ];
-  }, [agent.id, agent.name, subagentTrail, viewingSubagent]);
-
-  const parentLabel = subagentTrail.length > 1
-    ? formatAgentTitle(subagentTrail[subagentTrail.length - 2]!.role)
-    : agent.name;
+  const isHomeEmpty = messages.length === 0 && !isLoading && !showActiveProgress && !pendingUserInput;
 
   return (
     <main data-purpose="main-chat" className="flex-1 h-full bg-page flex flex-col min-w-[360px] overflow-hidden relative">
       <ChatHeader
         agent={agent}
         isSidebarOpen={isSidebarOpen}
-        isInspectorOpen={isInspectorOpen}
         onToggleSidebar={onToggleSidebar}
-        onToggleInspector={onToggleInspector}
         onNewChat={onNewChat}
-        breadcrumb={breadcrumb}
-        onNavigateBreadcrumb={onNavigateBreadcrumb}
         learningProgress={learningProgress}
         onOpenSettingsTab={onOpenSettingsTab}
         onDismissLearningProgress={onDismissLearningProgress}
       />
-      {viewingSubagent ? (
-        <SubagentConversation
-          key={viewingSubagent.id}
-          subagent={viewingSubagent}
-          onOpenSubagent={onOpenSubagent}
-          collaborationMode={collaborationMode}
-          model={activeModel}
-        />
-      ) : (
-        <MessageList
-          sessionId={agent.id}
-          messages={messages}
-          workspacePath={workspacePath}
-          projectName={projectName}
-          isLoading={isLoading}
-          isStreaming={showActiveProgress}
-          isCompacting={isCompacting}
-          isHomeEmpty={isHomeEmpty}
-          workflowProposal={workflowProposal}
-          onOpenPlan={onOpenPlan}
-          pendingUserInput={pendingUserInput}
-          onSendMessage={handleSendMessage}
-          collaborationMode={collaborationMode}
-          model={activeModel}
-          onOpenSubagent={onOpenSubagent}
-        />
-      )}
-      {viewingSubagent ? (
-        <div
-          className="flex-shrink-0 border-t border-line px-4 py-3 flex items-center justify-center gap-3 bg-page"
-          data-subagent-composer-bar=""
-        >
-          <button
-            type="button"
-            onClick={onBackToParent}
-            className="rounded-chip px-3 py-1.5 text-[13px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
-            data-back-to-parent=""
-          >
-            {t('backToParent', { name: parentLabel })}
-          </button>
-          {viewingSubagent.status === 'running' && onStopSubagent && (
-            <button
-              type="button"
-              onClick={() => onStopSubagent(viewingSubagent.agentId || viewingSubagent.id)}
-              className="rounded-chip px-3 py-1.5 text-[13px] font-medium text-red hover:bg-red/10 transition-colors flex items-center gap-1.5"
-              data-subagent-stop-button=""
-              title={t('stopSubagent')}
-              aria-label={t('stopSubagent')}
-            >
-              <Square className="h-3 w-3 fill-current" aria-hidden="true" />
-              <span>{t('stopSubagent')}</span>
-            </button>
-          )}
-        </div>
-      ) : pendingUserInput ? (
+      <MessageList
+        sessionId={agent.id}
+        messages={messages}
+        workspacePath={workspacePath}
+        projectName={projectName}
+        isLoading={isLoading}
+        isStreaming={showActiveProgress}
+        isCompacting={isCompacting}
+        isHomeEmpty={isHomeEmpty}
+        workflowProposal={workflowProposal}
+        onOpenPlan={onOpenPlan}
+        pendingUserInput={pendingUserInput}
+        onSendMessage={handleSendMessage}
+        collaborationMode={collaborationMode}
+        model={activeModel}
+        onOpenSubagent={onOpenSubagent}
+      />
+      {pendingUserInput ? (
         <UserInputCard
           request={pendingUserInput}
           onRespond={onRespondToUserInput}

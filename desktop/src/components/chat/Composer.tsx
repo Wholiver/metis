@@ -45,6 +45,7 @@ interface ComposerProps {
   disabled?: boolean;
   isStreaming?: boolean;
   isHomeEmpty?: boolean;
+  showHomeLogo?: boolean;
   projects?: ProjectItem[];
   activeProject?: ProjectItem;
   onSelectProject?: (id: string) => void | Promise<void>;
@@ -140,6 +141,7 @@ export const Composer = React.memo<ComposerProps>(({
   disabled = false,
   isStreaming = false,
   isHomeEmpty = false,
+  showHomeLogo = true,
   projects = [],
   activeProject,
   onSelectProject,
@@ -532,7 +534,7 @@ export const Composer = React.memo<ComposerProps>(({
           isHomeEmpty ? 'items-center' : 'items-start'
         }`}
       >
-        {isHomeEmpty ? (
+        {isHomeEmpty && showHomeLogo ? (
           <div
             className="mb-5 flex shrink-0 select-none items-center justify-center"
             data-home-cloud-slot=""

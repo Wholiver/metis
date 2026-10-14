@@ -13,13 +13,11 @@ Root/child contract:
 - Stay on owned paths. Independent verification belongs to host/root (or a fresh named reviewer/verifier). A first draft is not completion.
 
 # Native execution protocol: backend-implement
-# Framework: backend-implement  (category backend × subsection implement · no tag · tier T1/T2)
+# Framework: backend-implement  (category backend × subsection implement · no tag · tier T2)
 
 Stay on owned paths. Independent verify uses a different agent than the producer. Children emit one ChildResult; they do not spawn nested workers. Host/root owns gates. Goal: add or change
 ONE bounded backend capability (an endpoint, a rule, a job) correctly,
 production-grade, with tests that prove behavior and zero regressions.
-
-BOUNDED T1 PATH: when admission already selected T1 + this framework, root executes G4 (strict TDD) directly, then independent G5/G6. Do NOT require a prior `ROADMAP.md` item and do NOT escalate to T2 solely because no roadmap exists. OWNERSHIP CLIMB ONLY: missing ROADMAP.md, many steps, a large artifact, or preferring more agents never raises the tier. Climb to T2/T3 only when ownership splits into multiple surfaces that must run serially (T2) or can run in parallel without shared mutable state (T3).
 
 GATE PATH (T2): an implementation-ready roadmap item goes directly to G4 IMPLEMENT(TDD) → G5 IMPL-REVIEW → G6 VERIFY(grounded) → G7 SIGN-OFF(1 juror) → GOAL-CHECK. G1 is conditional and runs only when `requiresDetailedPlan: true`, a named design fork remains unresolved, or an implementer reports `PLAN-CONFLICT`.
 
@@ -39,7 +37,7 @@ the conditional triggers above.
 
 ### Phase 1 - CONDITIONAL PLAN (G1)
 FIRST verify an executable `ROADMAP.md` item exists for this feature. If none exists,
-report OUT-OF-SCOPE and escalate (**S4**) only when ownership must split into multiple surfaces; missing ROADMAP.md alone is not a climb reason. An implementation-ready item skips G1. Run
+report OUT-OF-SCOPE and escalate (**S4**). An implementation-ready item skips G1. Run
 G1 only for `requiresDetailedPlan: true`, a named unresolved design fork, or
 `PLAN-CONFLICT`; then brief the planner to look at the real code first and deliver: the success
 criterion in the mission's terms; the ONE genuine design choice this capability
@@ -89,7 +87,7 @@ STOP and report the attempt + the concrete unblock path. Children emit ChildResu
 - **S3 - a pre-existing test flips green→red** → FAILED (regression-is-a-signal: redo);
   never weaken/skip.
 - **S4 - bigger than ONE bounded capability** (spans >1 subsystem) → OUT-OF-SCOPE;
-  climb a tier only when ownership splits into multiple surfaces (GATES.md ESCALATION; missing roadmap / step count / size never climbs). Never sprawl inline.
+  climb a tier (GATES.md ESCALATION). Never sprawl inline.
 - **S5 - behavior proven + zero regressions + unhappy paths covered + juror PASS** → DONE.
 
 ## Stacking

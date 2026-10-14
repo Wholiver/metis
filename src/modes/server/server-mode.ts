@@ -25,6 +25,11 @@ import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import { ProjectTrustStore } from "../../core/trust-manager.ts";
 import { isUiLanguage, SUPPORTED_UI_LANGUAGES } from "../../core/ui-language.ts";
 import { ensureReliableExecutionEnv } from "../../core/execution-types.ts";
+import { getBuiltinHarness } from "../../core/builtin-harness.ts";
+import { validateHarnessDocument } from "../../core/harness-document.ts";
+import { getHarnessFilePath } from "../../core/harness-runtime.ts";
+
+const serverHarnessCache = new Map<string, { mtimeMs: number; responseData: any }>();
 import { isSelfLearningActive } from "../../core/adaptations/activation.ts";
 import {
 	listAdaptations,
@@ -512,6 +517,100 @@ export async function startServerMode(
 		}
 		if (method === "GET" && url.pathname === "/desktop/work-stats") {
 			return sendJson(response, 200, await getDesktopWorkStats());
+		}
+
+		if (method === "GET" && url.pathname === "/harness/seed") {
+			return sendJson(response, 200, {
+				harness: getBuiltinHarness(),
+			});
+		}
+		if (method === "GET" && url.pathname === "/harness") {
+			const requestedCwd = url.searchParams.get("cwd") || session.sessionManager.getCwd() || runtimeHost.cwd;
+			const cwd = path.resolve(requestedCwd);
+			const filePath = getHarnessFilePath(cwd);
+			if (!fs.existsSync(filePath)) {
+				serverHarnessCache.delete(filePath);
+				return sendJson(response, 200, {
+					exists: false,
+					path: filePath,
+					harness: getBuiltinHarness(),
+				});
+			}
+			let stat: fs.Stats | undefined;
+			try {
+				stat = fs.statSync(filePath);
+			} catch {}
+			if (stat) {
+				const cached = serverHarnessCache.get(filePath);
+				if (cached && cached.mtimeMs === stat.mtimeMs) {
+					return sendJson(response, 200, cached.responseData);
+				}
+			}
+			try {
+				const content = fs.readFileSync(filePath, "utf8");
+				const parsed = JSON.parse(content);
+				const validation = validateHarnessDocument(parsed);
+				const responseData = {
+					exists: true,
+					path: filePath,
+					valid: validation.valid,
+					errors: validation.errors,
+					harness: parsed,
+				};
+				if (stat) {
+					serverHarnessCache.set(filePath, { mtimeMs: stat.mtimeMs, responseData });
+				}
+				return sendJson(response, 200, responseData);
+			} catch (error) {
+				return sendJson(response, 200, {
+					exists: true,
+					path: filePath,
+					valid: false,
+					errors: [error instanceof Error ? error.message : String(error)],
+					harness: getBuiltinHarness(),
+				});
+			}
+		}
+		if (method === "PUT" && url.pathname === "/harness") {
+			const body = await readJsonBody<{ cwd?: string; harness?: unknown }>(request);
+			if (!body?.harness) {
+				return sendError(response, 400, "invalid_request", "harness document is required");
+			}
+			const validation = validateHarnessDocument(body.harness);
+			if (!validation.valid) {
+				return sendError(response, 400, "invalid_harness", `Harness validation failed: ${validation.errors.join("; ")}`);
+			}
+			const requestedCwd = body.cwd || session.sessionManager.getCwd() || runtimeHost.cwd;
+			const cwd = path.resolve(requestedCwd);
+			const filePath = getHarnessFilePath(cwd);
+			const metisDir = path.dirname(filePath);
+			if (!fs.existsSync(metisDir)) {
+				fs.mkdirSync(metisDir, { recursive: true });
+			}
+			fs.writeFileSync(filePath, JSON.stringify(body.harness, null, 2), "utf8");
+			serverHarnessCache.delete(filePath);
+			return sendJson(response, 200, {
+				success: true,
+				path: filePath,
+				harness: body.harness,
+			});
+		}
+		if (method === "DELETE" && url.pathname === "/harness") {
+			const requestedCwd = url.searchParams.get("cwd") || session.sessionManager.getCwd() || runtimeHost.cwd;
+			const cwd = path.resolve(requestedCwd);
+			const filePath = getHarnessFilePath(cwd);
+			let deleted = false;
+			if (fs.existsSync(filePath)) {
+				fs.unlinkSync(filePath);
+				deleted = true;
+			}
+			serverHarnessCache.delete(filePath);
+			return sendJson(response, 200, {
+				success: true,
+				deleted,
+				path: filePath,
+				harness: getBuiltinHarness(),
+			});
 		}
 		if (method === "GET" && url.pathname === "/sessions") {
 			const requestedCwd = url.searchParams.get("cwd") || runtimeHost.cwd;

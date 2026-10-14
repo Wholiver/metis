@@ -24,6 +24,8 @@ export function evaluateChildGateEvidence(results: ChildResult[]): ChildGateEvid
 			reasons.push({ code: "CHILD_RESULT_FAILED", message: result.summary || "child blocked", evidence: "blocked" });
 		}
 		for (const finding of result.findings) {
+			const code = String(finding.code || "").toUpperCase().trim();
+			if (["OK", "PASS", "PASSED", "RESOLVED", "NONE", "INFO"].includes(code)) continue;
 			reasons.push({
 				code: "CHILD_FINDINGS_PRESENT",
 				message: `${finding.code}: ${finding.message}`,

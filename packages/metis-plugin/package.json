@@ -1,6 +1,6 @@
 {
   "name": "metis-skill",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Metis Skill — Autoprompt-style host-agnostic orchestration for Codex, OpenCode, and DeepSeek Harness",
   "type": "module",
   "bin": {
@@ -21,7 +21,7 @@
   "scripts": {
     "project": "node ./bin/metis-plugin.js project",
     "doctor": "node ./bin/metis-plugin.js doctor",
-    "pack:skill": "node ../../scripts/pack-metis-skill.mjs --version 0.0.1",
+    "pack:skill": "node ../../scripts/pack-metis-skill.mjs --version 0.1.0",
     "check-contracts": "node ../../scripts/check-contracts.mjs"
   },
   "keywords": [

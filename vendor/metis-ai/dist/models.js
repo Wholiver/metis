@@ -184,6 +184,10 @@ export function hasApi(model, api) {
     return model.api === api;
 }
 export function calculateCost(model, usage) {
+    if (!model.cost) {
+        usage.cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+        return usage.cost;
+    }
     // Anthropic charges 2x base input for 1h cache writes.
     const longWrite = usage.cacheWrite1h ?? 0;
     const shortWrite = usage.cacheWrite - longWrite;

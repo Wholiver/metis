@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { OpenCodeAdapter } from "../packages/metis-plugin/src/adapters/opencode.ts";
 import { ExternalController } from "../packages/metis-plugin/src/controller.ts";
 import { parseYamlFrontmatter } from "../packages/metis-plugin/src/utils.ts";
@@ -301,5 +302,110 @@ describe("Metis 插件版 - P1 OpenCode Adapter & Lifecycle CLI", () => {
     expect(result.resolvedModel.model).toBe("claude-3-7-sonnet");
     expect(result.resolvedModel.thinking).toBe(true);
     expect(result.resolvedModel.source).toBe("session");
+  });
+
+  it("should install metis.opencode.json with valid schema and safe task policies", async () => {
+    await adapter.install(testRoot);
+
+    const profilePath = join(testRoot, "metis.opencode.json");
+    expect(existsSync(profilePath)).toBe(true);
+
+    const config = JSON.parse(readFileSync(profilePath, "utf-8"));
+    expect(config["$schema"]).toBe("https://opencode.ai/config.json");
+    expect(config.subagent_depth).toBe(4);
+    expect(config.share).toBe("disabled");
+    expect(config.permission).toBeDefined();
+    expect(config.permission.task).toEqual({
+      "*": "deny",
+      "metis-*": "allow",
+    });
+  });
+
+  it("should install launch wrappers with valid policies and executable permissions", async () => {
+    await adapter.install(testRoot);
+
+    const shPath = join(testRoot, "workflow", "launch-opencode.sh");
+    const psPath = join(testRoot, "workflow", "launch-opencode.ps1");
+    expect(existsSync(shPath)).toBe(true);
+    expect(existsSync(psPath)).toBe(true);
+
+    const shContent = readFileSync(shPath, "utf-8");
+    expect(shContent).toContain("--check");
+    expect(shContent).toContain("1.18.7");
+    expect(shContent).toContain("OPENCODE_CONFIG");
+    expect(shContent).toContain("OPENCODE_PERMISSION");
+    expect(shContent).toContain("OPENCODE_DISABLE_EXTERNAL_SKILLS");
+
+    const psContent = readFileSync(psPath, "utf-8");
+    expect(psContent).toContain("--check");
+    expect(psContent).toContain("1.18.7");
+    expect(psContent).toContain("$env:OPENCODE_CONFIG");
+    expect(psContent).toContain("$env:OPENCODE_PERMISSION");
+    expect(psContent).toContain("$env:OPENCODE_DISABLE_EXTERNAL_SKILLS");
+  });
+
+  it("should support launch-opencode.sh --check when sh is available", async () => {
+    await adapter.install(testRoot);
+
+    const shPath = join(testRoot, "workflow", "launch-opencode.sh");
+    const res = spawnSync("sh", [shPath, "--check"], {
+      cwd: testRoot,
+      encoding: "utf-8",
+    });
+
+    if (res.status === 0) {
+      expect(res.stdout).toContain("opencode activation policy: ok");
+    } else {
+      // If opencode binary is not on global path in CI, should report missing binary cleanly
+      expect(res.stderr).toMatch(/executable not found on PATH|activation error/);
+    }
+  });
+
+  it("should fail doctor check if metis.opencode.json is missing or corrupted", async () => {
+    await adapter.install(testRoot);
+
+    // Remove metis.opencode.json
+    rmSync(join(testRoot, "metis.opencode.json"));
+
+    const doc = await adapter.doctor(testRoot);
+    expect(doc.verified).toBe(false);
+    expect(doc.details.profileValid).toBe(false);
+    expect(doc.errors.some(e => e.includes("Dedicated activation profile missing"))).toBe(true);
+  });
+
+  it("should fail doctor check if metis.opencode.json contains rogue or unsafe task policies", async () => {
+    await adapter.install(testRoot);
+
+    // Tamper with metis.opencode.json: add rogue allow
+    const profilePath = join(testRoot, "metis.opencode.json");
+    writeFileSync(profilePath, JSON.stringify({
+      "$schema": "https://opencode.ai/config.json",
+      subagent_depth: 4,
+      share: "disabled",
+      permission: {
+        task: {
+          "*": "deny",
+          "metis-*": "allow",
+          "rogue-task": "allow",
+        },
+      },
+    }, null, 2), "utf-8");
+
+    const doc = await adapter.doctor(testRoot);
+    expect(doc.verified).toBe(false);
+    expect(doc.details.profileValid).toBe(false);
+    expect(doc.errors.some(e => e.includes("unauthorized rules"))).toBe(true);
+  });
+
+  it("should fail doctor check if launch-opencode.sh is missing or corrupted", async () => {
+    await adapter.install(testRoot);
+
+    // Remove workflow/launch-opencode.sh
+    rmSync(join(testRoot, "workflow", "launch-opencode.sh"));
+
+    const doc = await adapter.doctor(testRoot);
+    expect(doc.verified).toBe(false);
+    expect(doc.details.wrapperValid).toBe(false);
+    expect(doc.errors.some(e => e.includes("POSIX launch wrapper missing"))).toBe(true);
   });
 });

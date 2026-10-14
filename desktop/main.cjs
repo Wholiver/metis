@@ -23,6 +23,10 @@ const { WorkspaceCreateError, createWorkspaceDirectory } = require("./workspace-
 const workspaceGit = require("./workspace-git.cjs");
 
 app.commandLine.appendSwitch("log-level", "3");
+app.commandLine.appendSwitch("enable-gpu-rasterization");
+app.commandLine.appendSwitch("enable-zero-copy");
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 
 const execFileAsync = promisify(execFile);
 const MAX_TREE_ITEMS = 600;
@@ -418,6 +422,7 @@ function createWindow() {
 			nodeIntegration: false,
 			webviewTag: true,
 			sandbox: false,
+			backgroundThrottling: false,
 		},
 	});
 
@@ -1303,12 +1308,10 @@ function createWindow() {
 								dragReordered = readTabs()[0]?.dataset.inspectorTabId === lastId;
 							} catch {}
 
-							document.querySelector('[data-inspector-collapse-button]')?.click();
-							await wait(60);
-							const collapsed = !document.querySelector('[data-plan-inspector]');
-							document.querySelector('[data-inspector-expand-button]')?.click();
-							await wait(60);
-							const retainedAfterCollapse = readTabs().length === 19;
+							const collapseControlPresent = Boolean(document.querySelector('[data-inspector-collapse-button]'));
+							const inspectorStayedMounted = Boolean(document.querySelector('[data-plan-inspector]'));
+							const collapsed = false;
+							const retainedAfterCollapse = readTabs().length === 19 && inspectorStayedMounted && !collapseControlPresent;
 
 							while (readTabs().length > 0) {
 								const activeClose = document.querySelector('[data-inspector-tab][aria-selected="true"] [data-inspector-tab-close]');
@@ -2227,30 +2230,137 @@ function registerIpc() {
 			return { name: path.basename(resolved), path: resolved };
 		});
 	});
-	ipcMain.handle("workspace:tree", () => readWorkspaceTree());
+	const resolveGitCwd = (targetDir) => (typeof targetDir === "string" && targetDir.trim() ? path.resolve(targetDir) : workspaceRoot);
+	ipcMain.handle("workspace:tree", (_event, targetDir) => readWorkspaceTree(targetDir));
 	ipcMain.handle("workspace:diff", (_event, relativePath) => readGitDiff(relativePath));
-	ipcMain.handle("workspace:git-info", () => workspaceGit.readGitInfo(workspaceRoot, nativeText));
-	ipcMain.handle("workspace:git-status", (_event, mode = "git") =>
-		workspaceGit.readGitStatus(workspaceRoot, mode === "branch" ? "branch" : "git", nativeText),
+	ipcMain.handle("workspace:git-info", (_event, targetDir) => workspaceGit.readGitInfo(resolveGitCwd(targetDir), nativeText));
+	ipcMain.handle("workspace:git-status", (_event, mode = "git", targetDir) =>
+		workspaceGit.readGitStatus(resolveGitCwd(targetDir), mode === "branch" ? "branch" : "git", nativeText),
 	);
-	ipcMain.handle("workspace:git-diff", (_event, relativePath, mode = "git") =>
+	ipcMain.handle("workspace:git-diff", (_event, relativePath, mode = "git", targetDir) =>
 		workspaceGit.readFileDiff(
-			workspaceRoot,
+			resolveGitCwd(targetDir),
 			relativePath,
 			mode === "branch" ? "branch" : "git",
 			nativeText,
 		),
 	);
-	ipcMain.handle("workspace:git-init", () => workspaceGit.initGitRepo(workspaceRoot, nativeText));
-	ipcMain.handle("workspace:reveal", async (_event, relativePath) => {
-		const absolutePath = resolveWorkspacePath(relativePath);
-		shell.showItemInFolder(absolutePath);
+	ipcMain.handle("workspace:git-init", (_event, targetDir) => workspaceGit.initGitRepo(resolveGitCwd(targetDir), nativeText));
+	ipcMain.handle("workspace:git-stage", (_event, files, targetDir) => workspaceGit.stageFiles(resolveGitCwd(targetDir), files, nativeText));
+	ipcMain.handle("workspace:git-unstage", (_event, files, targetDir) => workspaceGit.unstageFiles(resolveGitCwd(targetDir), files, nativeText));
+	ipcMain.handle("workspace:git-discard", (_event, files, targetDir) => workspaceGit.discardFiles(resolveGitCwd(targetDir), files, nativeText));
+	ipcMain.handle("workspace:git-commit", (_event, message, targetDir) => workspaceGit.commit(resolveGitCwd(targetDir), message, nativeText));
+	ipcMain.handle("workspace:git-history", (_event, limit, targetDir) => workspaceGit.readCommitHistory(resolveGitCwd(targetDir), limit, nativeText));
+	ipcMain.handle("workspace:git-commit-detail", (_event, hash, targetDir) => workspaceGit.readCommitDetail(resolveGitCwd(targetDir), hash, nativeText));
+	ipcMain.handle("workspace:git-commit-file-diff", (_event, hash, relativePath, targetDir) =>
+		workspaceGit.readCommitFileDiff(resolveGitCwd(targetDir), hash, relativePath, nativeText),
+	);
+	ipcMain.handle("workspace:git-branches", (_event, targetDir) => workspaceGit.readBranches(resolveGitCwd(targetDir), nativeText));
+	ipcMain.handle("workspace:git-checkout", (_event, branch, targetDir) => workspaceGit.checkoutBranch(resolveGitCwd(targetDir), branch, nativeText));
+	ipcMain.handle("workspace:reveal", async (_event, relativePath, targetDir) => {
+		const absolutePath = resolveWorkspacePath(relativePath, targetDir);
+		if (fs.existsSync(absolutePath)) {
+			shell.showItemInFolder(absolutePath);
+		} else {
+			const parentDir = path.dirname(absolutePath);
+			if (fs.existsSync(parentDir)) shell.openPath(parentDir);
+		}
+	});
+	ipcMain.handle("workspace:open-path", async (_event, relativePath, targetDir) => {
+		const absolutePath = resolveWorkspacePath(relativePath, targetDir);
+		await shell.openPath(absolutePath);
+		return true;
+	});
+	ipcMain.handle("workspace:read-file", async (_event, relativePath, targetDir) => {
+		const absolutePath = resolveWorkspacePath(relativePath, targetDir);
+		const stat = await fsp.stat(absolutePath);
+		if (!stat.isFile()) throw new Error("Target is not a file");
+		if (stat.size > 2 * 1024 * 1024) throw new Error("File too large to preview");
+		const content = await fsp.readFile(absolutePath, "utf8");
+		return content;
 	});
 	ipcMain.handle("provider-config:get-custom", async () => (await getCustomProviderConfigs())[0] ?? { exists: false });
 	ipcMain.handle("provider-config:list-custom", () => getCustomProviderConfigs());
 	ipcMain.handle("provider-config:discover-models", (_event, config) => discoverCustomProviderModels(config));
 	ipcMain.handle("provider-config:save-custom", (_event, config) => saveCustomProviderConfig(config));
 	ipcMain.handle("provider-config:delete-custom", (_event, providerId) => deleteCustomProvider(providerId));
+
+	let cachedFallbackBuiltinHarness = null;
+	function getFallbackBuiltinHarness() {
+		if (cachedFallbackBuiltinHarness) return cachedFallbackBuiltinHarness;
+		try {
+			const seedPath = path.join(__dirname, "builtin-harness-seed.json");
+			if (fs.existsSync(seedPath)) {
+				cachedFallbackBuiltinHarness = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+				return cachedFallbackBuiltinHarness;
+			}
+		} catch (err) {
+			console.warn("[desktop] Failed to load local builtin-harness-seed.json:", err);
+		}
+		return null;
+	}
+
+	ipcMain.handle("harness:load", async (_event, targetDir) => {
+		try {
+			const query = targetDir ? `?cwd=${encodeURIComponent(targetDir)}` : "";
+			const res = await metisRequest(`/harness${query}`);
+			if (res.ok && res.data) return res.data;
+		} catch {}
+		const baseDir = typeof targetDir === "string" && targetDir.trim() ? path.resolve(targetDir) : workspaceRoot;
+		const harnessPath = path.join(baseDir, ".metis", "harness.json");
+		if (fs.existsSync(harnessPath)) {
+			try {
+				const content = await fsp.readFile(harnessPath, "utf8");
+				const parsed = JSON.parse(content);
+				return { exists: true, path: harnessPath, valid: true, harness: parsed };
+			} catch (err) {
+				return { exists: true, path: harnessPath, valid: false, errors: [err.message] };
+			}
+		}
+		const fallback = getFallbackBuiltinHarness();
+		return { exists: false, path: harnessPath, valid: true, harness: fallback };
+	});
+	ipcMain.handle("harness:save", async (_event, harness, targetDir) => {
+		try {
+			const res = await metisRequest("/harness", {
+				method: "PUT",
+				body: { cwd: targetDir, harness },
+			});
+			if (res.ok && res.data) return res.data;
+			if (res.status === 400 && res.data) {
+				return { success: false, error: res.data.message || res.data.error || "Harness validation failed" };
+			}
+		} catch {}
+		const baseDir = typeof targetDir === "string" && targetDir.trim() ? path.resolve(targetDir) : workspaceRoot;
+		const metisDir = path.join(baseDir, ".metis");
+		const harnessPath = path.join(metisDir, "harness.json");
+		await fsp.mkdir(metisDir, { recursive: true });
+		await fsp.writeFile(harnessPath, JSON.stringify(harness, null, 2), "utf8");
+		return { success: true, path: harnessPath, harness };
+	});
+	ipcMain.handle("harness:delete", async (_event, targetDir) => {
+		try {
+			const query = targetDir ? `?cwd=${encodeURIComponent(targetDir)}` : "";
+			const res = await metisRequest(`/harness${query}`, { method: "DELETE" });
+			if (res.ok && res.data) return res.data;
+		} catch {}
+		const baseDir = typeof targetDir === "string" && targetDir.trim() ? path.resolve(targetDir) : workspaceRoot;
+		const harnessPath = path.join(baseDir, ".metis", "harness.json");
+		let deleted = false;
+		if (fs.existsSync(harnessPath)) {
+			await fsp.unlink(harnessPath);
+			deleted = true;
+		}
+		const fallback = getFallbackBuiltinHarness();
+		return { success: true, deleted, path: harnessPath, harness: fallback };
+	});
+	ipcMain.handle("harness:seed", async () => {
+		try {
+			const res = await metisRequest("/harness/seed");
+			if (res.ok && res.data) return res.data;
+		} catch {}
+		return { harness: getFallbackBuiltinHarness() };
+	});
 
 	ipcMain.handle("external:open", (_event, url) => {
 		if (!isHttpUrl(url)) throw new Error(nativeText("httpOnly"));
@@ -2430,20 +2540,22 @@ function findDefaultWorkspace() {
 	}
 }
 
-async function readWorkspaceTree() {
+async function readWorkspaceTree(targetDir) {
+	const currentRoot = targetDir && typeof targetDir === "string" && fs.existsSync(targetDir) ? path.resolve(targetDir) : workspaceRoot;
 	let count = 0;
 
 	async function walk(directory, depth) {
-		if (depth > 4 || count >= MAX_TREE_ITEMS) return [];
+		if (depth > 6 || count >= MAX_TREE_ITEMS) return [];
 		const entries = await fsp.readdir(directory, { withFileTypes: true });
 		entries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
 		const nodes = [];
 		for (const entry of entries) {
-			if (count >= MAX_TREE_ITEMS || entry.name === ".DS_Store") break;
+			if (count >= MAX_TREE_ITEMS) break;
+			if (entry.name === ".DS_Store") continue;
 			if (entry.isDirectory() && IGNORED_DIRECTORIES.has(entry.name)) continue;
 			if (entry.isSymbolicLink()) continue;
 			const absolutePath = path.join(directory, entry.name);
-			const relativePath = path.relative(workspaceRoot, absolutePath);
+			const relativePath = path.relative(currentRoot, absolutePath).replace(/\\/g, '/');
 			count += 1;
 			if (entry.isDirectory()) {
 				nodes.push({ name: entry.name, path: relativePath, type: "directory", children: await walk(absolutePath, depth + 1) });
@@ -2454,7 +2566,13 @@ async function readWorkspaceTree() {
 		return nodes;
 	}
 
-	return { root: workspaceSummary(), nodes: await walk(workspaceRoot, 0), truncated: count >= MAX_TREE_ITEMS };
+	const isGitRepo = workspaceGit.isGitRepoSync(currentRoot);
+	const rootSummary = {
+		name: path.basename(currentRoot),
+		path: currentRoot,
+		isGitRepo,
+	};
+	return { root: rootSummary, nodes: await walk(currentRoot, 0), truncated: count >= MAX_TREE_ITEMS };
 }
 
 async function readGitDiff(relativePath) {
@@ -2498,10 +2616,15 @@ async function readGitDiff(relativePath) {
 	return { path: normalized, diff: diff.slice(0, MAX_DIFF_BYTES), truncated: diff.length > MAX_DIFF_BYTES };
 }
 
-function resolveWorkspacePath(relativePath) {
-	if (typeof relativePath !== "string" || path.isAbsolute(relativePath)) throw new Error(nativeText("invalidWorkspacePath"));
-	const absolutePath = path.resolve(workspaceRoot, relativePath);
-	const relative = path.relative(workspaceRoot, absolutePath);
+function resolveWorkspacePath(relativePath, targetDir) {
+	if (typeof relativePath !== "string") throw new Error(nativeText("invalidWorkspacePath"));
+	const baseDir = typeof targetDir === "string" && targetDir.trim() ? path.resolve(targetDir) : workspaceRoot;
+	if (path.isAbsolute(relativePath)) {
+		if (fs.existsSync(relativePath)) return relativePath;
+		throw new Error(nativeText("invalidWorkspacePath"));
+	}
+	const absolutePath = path.resolve(baseDir, relativePath);
+	const relative = path.relative(baseDir, absolutePath);
 	if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(nativeText("pathEscapesWorkspace"));
 	return absolutePath;
 }

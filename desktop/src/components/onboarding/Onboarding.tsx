@@ -1,14 +1,38 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Check, FolderOpen, LoaderCircle, Plus, Server } from 'lucide-react';
 import type { ModelOption } from '../../types';
+import type { WorkProgressExpression } from '../../lib/work-progress';
 import { translateExact } from '../../i18n';
 import { MetisCloudMark } from '../chat/MetisCloudMark';
+import { SelfLearningBadge } from '../atoms/SelfLearningBadge';
 import './Onboarding.css';
 
 const COMPLETED_KEY = 'metis.desktopOnboardingCompleted.v3';
 const LEGACY_COMPLETED_KEY = 'metis.desktopOnboardingCompleted.v2';
 const FALLBACK_PROVIDERS = ['siliconflow-cn', 'openai', 'anthropic', 'deepseek', 'siliconflow', 'gemini', 'openrouter', 'orcarouter', 'groq', 'ollama'];
 const providerLabel = 'Configure API / OAuth / Base URL';
+
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  'siliconflow-cn': 'SiliconFlow 硅基流动 (国内推荐)',
+  'siliconflow': 'SiliconFlow (Global)',
+  'openai': 'OpenAI (GPT-4o, o3-mini)',
+  'anthropic': 'Anthropic (Claude 3.7 Sonnet)',
+  'deepseek': 'DeepSeek (V3, R1)',
+  'gemini': 'Google Gemini (Flash, Pro)',
+  'openrouter': 'OpenRouter',
+  'orcarouter': 'OrcaRouter',
+  'groq': 'Groq (Ultra-fast)',
+  'ollama': 'Ollama (Local 本地模型)',
+};
+
+function formatProviderName(id: string): string {
+  return PROVIDER_DISPLAY_NAMES[id] || id;
+}
+
+const EASTER_EGGS = [
+  'onboardingCloudEasterEgg1',
+  'onboardingCloudEasterEgg2',
+];
 
 // Inner interactive button radius = 10px (matching Settings sidebar tab)
 const ONBOARDING_BTN_CLASS =
@@ -23,7 +47,7 @@ type OnboardingProps = {
   request: Request;
   isConnected: boolean;
   models: ModelOption[];
-  onComplete: () => void;
+  onComplete: (sourceRect?: DOMRect | null) => void;
   onProjectReady: (workspace: Workspace) => Promise<void>;
   onSelectModel?: (model: ModelOption) => Promise<void>;
   onRefreshModels?: () => Promise<ModelOption[]>;
@@ -41,7 +65,8 @@ function detectSystemLanguage(): string {
 function languageName(code: string): string {
   if (code === 'auto') return 'Automatic';
   try {
-    return new Intl.DisplayNames([code], { type: 'language' }).of(code) || code;
+    const raw = new Intl.DisplayNames([code], { type: 'language' }).of(code) || code;
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
   } catch {
     return code;
   }
@@ -100,6 +125,42 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [selfLearningEnabled, setSelfLearningEnabled] = useState(false);
+  const [easterEggIndex, setEasterEggIndex] = useState<number | null>(null);
+  const [cloudBounce, setCloudBounce] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+
+  useEffect(() => {
+    setEasterEggIndex(null);
+  }, [step]);
+
+  const handleCloudEasterEgg = () => {
+    setCloudBounce(true);
+    setTimeout(() => setCloudBounce(false), 500);
+    setEasterEggIndex((prev) => {
+      if (prev === null) return 0;
+      return (prev + 1) % EASTER_EGGS.length;
+    });
+  };
+
+  const getStepExpression = (s: number): WorkProgressExpression => {
+    if (easterEggIndex !== null) return 'excited';
+    if (s === 0) return 'happy';
+    if (s === 1) return 'curious';
+    if (s === 2) return 'attentive';
+    if (s === 3) return selectedProject?.path ? 'proud' : 'excited';
+    return 'neutral';
+  };
+
+  const getStepBubbleText = (s: number): string => {
+    if (easterEggIndex !== null) {
+      return translateExact(EASTER_EGGS[easterEggIndex], language);
+    }
+    if (s === 0) return translateExact('onboardingCloudBubbleWelcome', language);
+    if (s === 1) return translateExact('onboardingCloudBubbleLang', language);
+    if (s === 2) return translateExact('onboardingCloudBubbleCredentials', language);
+    if (s === 3) return translateExact('onboardingCloudBubbleWorkspace', language);
+    return '';
+  };
 
   useEffect(() => {
     if (!open || !isConnected) return;
@@ -189,8 +250,14 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
         }
       }
     }
-    localStorage.setItem(COMPLETED_KEY, 'true');
-    onComplete();
+    const cloudEl = document.querySelector('[data-onboarding-cloud]');
+    const rect = cloudEl ? cloudEl.getBoundingClientRect() : null;
+    setIsClearing(true);
+    setTimeout(() => {
+      localStorage.setItem(COMPLETED_KEY, 'true');
+      onComplete(rect);
+      setIsClearing(false);
+    }, 360);
   };
   const run = async (operation: () => Promise<void>) => {
     setBusy(true); setFeedback('');
@@ -310,24 +377,150 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
       aria-modal="true"
       aria-labelledby="onboarding-title"
     >
+      {/* Stepper Header for Steps 1, 2, 3 */}
+      {step > 0 && (
+        <div className={`mb-4 flex items-center gap-2 max-w-xl w-full justify-center text-[12px] text-ink-3 font-medium select-none transition-all duration-300 ${isClearing ? 'opacity-0 -translate-y-2' : 'animate-in fade-in duration-200'}`}>
+          {[
+            { s: 1, label: translateExact('onboardingStepLanguage', language) },
+            { s: 2, label: translateExact('onboardingStepCredentials', language) },
+            { s: 3, label: translateExact('onboardingStepWorkspace', language) },
+          ].map((item, idx) => {
+            const isCurrent = step === item.s;
+            const isDone = step > item.s;
+            return (
+              <div key={item.s} className="flex items-center gap-2">
+                {idx > 0 && (
+                  <div className={`h-[1px] w-5 transition-colors ${isDone ? 'bg-accent' : 'bg-line'}`} />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setStep(item.s)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-control transition-all cursor-pointer ${
+                    isCurrent
+                      ? 'bg-hover-2 text-ink font-semibold shadow-btn'
+                      : isDone
+                        ? 'text-accent font-medium hover:bg-hover'
+                        : 'text-ink-3 hover:text-ink hover:bg-hover'
+                  }`}
+                >
+                  <span
+                    className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] ${
+                      isCurrent
+                        ? 'bg-ink text-surface dark:bg-accent dark:text-white font-bold'
+                        : isDone
+                          ? 'bg-accent text-white font-bold'
+                          : 'bg-inset text-ink-3'
+                    }`}
+                  >
+                    {isDone ? '✓' : item.s}
+                  </span>
+                  <span>{item.label}</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Step 0: Welcome Home Page */}
       {step === 0 && (
-        <div className="flex flex-col items-center justify-center text-center max-w-lg mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-300 motion-reduce:animate-none">
-          <div className="mb-5 flex items-center justify-center p-2" data-onboarding-home-cloud="">
-            <MetisCloudMark size={160} />
+        <div className="flex flex-col items-center justify-center text-center max-w-md w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-300 motion-reduce:animate-none">
+          {/* Cloud Mascot - Clean and proportional (matching main interface 56px visual scale) */}
+          <div
+            className="mb-4 flex shrink-0 select-none items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95"
+            data-onboarding-home-cloud=""
+            onClick={handleCloudEasterEgg}
+            title={translateExact('Click to interact with Metis', language)}
+          >
+            <div className={`onboarding-cloud-float ${cloudBounce ? 'animate-bounce' : ''}`}>
+              <MetisCloudMark size={160} className="w-[56px] h-[56px]" expression={getStepExpression(0)} />
+            </div>
           </div>
 
-          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-ink sm:text-4xl">
-            Welcome to Metis
+          <h1 id="onboarding-title" className="text-xl font-semibold tracking-tight text-ink sm:text-2xl text-balance">
+            {translateExact('onboardingWelcomeTitle', language)}
           </h1>
+          <p className="mt-2 max-w-[360px] text-[13.5px] font-normal leading-relaxed text-ink-3 text-pretty">
+            {getStepBubbleText(0)}
+          </p>
 
-          <div className="mt-8 flex flex-col items-center gap-3">
+          {/* Quick 3-Step Setup Preview (Flat, unboxed list directly on canvas matching RoutinesManager Fig 2) */}
+          <div className="mt-8 w-full max-w-[400px] text-left">
+            <div className="mb-2 px-3 text-[12px] font-medium text-ink-3">
+              {translateExact('onboardingSetupPreviewTitle', language)}
+            </div>
+            <div className="flex flex-col space-y-1">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="group flex w-full items-start gap-3 rounded-[12px] px-3 py-2.5 text-left transition-colors hover:bg-hover active:scale-[0.99] cursor-pointer"
+              >
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-inset text-[12px] font-semibold text-ink-2 group-hover:text-ink">
+                  1
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-medium text-ink">
+                    {translateExact('onboardingStepLanguage', language)}
+                  </span>
+                  <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">
+                    {translateExact('onboardingSetupStep1Desc', language)}
+                  </span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="group flex w-full items-start gap-3 rounded-[12px] px-3 py-2.5 text-left transition-colors hover:bg-hover active:scale-[0.99] cursor-pointer"
+              >
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-inset text-[12px] font-semibold text-ink-2 group-hover:text-ink">
+                  2
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-medium text-ink">
+                    {translateExact('onboardingStepCredentials', language)}
+                  </span>
+                  <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">
+                    {translateExact('onboardingSetupStep2Desc', language)}
+                  </span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStep(3)}
+                className="group flex w-full items-start gap-3 rounded-[12px] px-3 py-2.5 text-left transition-colors hover:bg-hover active:scale-[0.99] cursor-pointer"
+              >
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-inset text-[12px] font-semibold text-ink-2 group-hover:text-ink">
+                  3
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-medium text-ink">
+                    {translateExact('onboardingStepWorkspace', language)}
+                  </span>
+                  <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">
+                    {translateExact('onboardingSetupStep3Desc', language)}
+                  </span>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Action buttons directly on canvas (matching Fig 2 & Fig 4) */}
+          <div className="mt-8 flex flex-col items-center gap-3 w-full max-w-[400px]">
             <button
               type="button"
               onClick={() => setStep(1)}
-              className={ONBOARDING_BTN_CLASS}
+              className="inline-flex h-9 min-w-[160px] px-8 items-center justify-center rounded-[10px] bg-ink text-surface dark:bg-accent dark:text-white font-medium text-[13.5px] shadow-btn hover:opacity-95 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>Get Started</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep(3)}
+              className="text-[12px] text-ink-3 hover:text-ink transition-colors cursor-pointer"
+            >
+              <span>{translateExact('onboardingSkipToWorkspace', language)}</span>
             </button>
           </div>
         </div>
@@ -335,12 +528,26 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
 
       {/* Step 1: Language Selection - Fullscreen Centered */}
       {step === 1 && (
-        <div className="flex flex-col items-center justify-center text-center max-w-xl w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
-          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-ink sm:text-4xl">
-            Choose your language
-          </h1>
+        <div className="flex flex-col items-center justify-center text-center max-w-lg w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
+          {/* Guiding Companion Mascot */}
+          <div
+            className="mb-3.5 flex shrink-0 select-none items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95"
+            onClick={handleCloudEasterEgg}
+            title={translateExact('Click to interact with Metis', language)}
+          >
+            <div className={`onboarding-cloud-float ${cloudBounce ? 'animate-bounce' : ''}`}>
+              <MetisCloudMark size={52} expression={getStepExpression(1)} />
+            </div>
+          </div>
 
-          <div className="mt-8 w-full grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+          <h1 id="onboarding-title" className="text-xl font-semibold tracking-tight text-ink sm:text-2xl text-balance">
+            {translateExact('onboardingLanguageTitle', language)}
+          </h1>
+          <p className="mt-1.5 max-w-[380px] text-[13.5px] font-normal leading-relaxed text-ink-3 text-pretty">
+            {getStepBubbleText(1)}
+          </p>
+
+          <div className="mt-7 w-full grid grid-cols-2 gap-2.5 sm:grid-cols-3">
             {languages.map((item) => {
               const isSelected = language === item;
               return (
@@ -349,34 +556,38 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
                   type="button"
                   onClick={() => void saveLanguage(item)}
                   aria-pressed={isSelected}
-                  className={`flex h-10 items-center justify-between rounded-[10px] border px-3.5 text-left text-[13.5px] font-medium transition-[background-color,border-color,color,transform,box-shadow] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] ${
+                  className={`flex h-10 items-center justify-between rounded-[10px] border px-3.5 text-left text-[13px] transition-[background-color,border-color,color,transform,box-shadow] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] cursor-pointer ${
                     isSelected
-                      ? 'border-ink bg-ink dark:border-accent dark:bg-accent text-white shadow-btn'
-                      : 'border-line bg-surface text-ink-2 hover:border-line-strong hover:bg-hover dark:hover:bg-hover shadow-hairline'
+                      ? 'border-line-strong bg-hover-2 font-semibold text-ink shadow-btn'
+                      : 'border-line bg-surface/70 font-normal text-ink-2 hover:border-line-strong hover:bg-hover hover:text-ink shadow-hairline'
                   }`}
                 >
-                  <span>{languageName(item)}</span>
-                  {isSelected && <Check size={14} className="stroke-[2.5]" />}
+                  <span className="truncate">{languageName(item)}</span>
+                  {isSelected ? (
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-ink text-surface dark:bg-accent dark:text-white">
+                      <Check size={10} className="stroke-[3]" />
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
           </div>
 
-          <div className="mt-10 flex items-center justify-center gap-3.5">
+          <div className="mt-9 flex items-center justify-center gap-3.5">
             <button
               type="button"
               disabled={busy}
               onClick={() => setStep(0)}
               className={ONBOARDING_BTN_CLASS}
             >
-              <span>Home</span>
+              <span>Back</span>
             </button>
 
             <button
               type="button"
               disabled={busy}
               onClick={() => setStep(2)}
-              className={ONBOARDING_BTN_CLASS}
+              className={`${ONBOARDING_BTN_CLASS} !bg-ink !text-surface dark:!bg-accent dark:!text-white hover:opacity-95 shadow-btn`}
             >
               <span>Next</span>
             </button>
@@ -384,160 +595,185 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
         </div>
       )}
 
-      {/* Step 2: Credentials & Memory - Fullscreen Centered */}
+      {/* Step 2: Credentials & Memory - Fullscreen Centered (Unboxed canvas layout matching Step 0) */}
       {step === 2 && (
-        <div className="flex flex-col items-center justify-center max-w-xl w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
-          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-ink sm:text-4xl text-center">
-            Configure AI credentials
+        <div className="flex flex-col items-center justify-center max-w-md w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
+          {/* Guiding Companion Mascot */}
+          <div
+            className="mb-3.5 flex shrink-0 select-none items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95"
+            onClick={handleCloudEasterEgg}
+            title={translateExact('Click to interact with Metis', language)}
+          >
+            <div className={`onboarding-cloud-float ${cloudBounce ? 'animate-bounce' : ''}`}>
+              <MetisCloudMark size={52} expression={getStepExpression(2)} />
+            </div>
+          </div>
+
+          <h1 id="onboarding-title" className="text-xl font-semibold tracking-tight text-ink sm:text-2xl text-balance text-center">
+            {translateExact('onboardingCredentialsTitle', language)}
           </h1>
+          <p className="mt-1.5 max-w-[380px] text-[13.5px] font-normal leading-relaxed text-ink-3 text-pretty text-center">
+            {getStepBubbleText(2)}
+          </p>
 
-          <div className="mt-8 w-full space-y-4">
-            {/* Credentials Card: Inner controls R=10px, padding=16px -> Outer R = 10 + 16 = 26px */}
-            <div className="space-y-4 rounded-[26px] border border-line bg-surface p-4 shadow-card">
-              {/* Tablist: Inner tabs R=8px, padding=4px (p-1) -> Outer R = 8 + 4 = 12px */}
-              <div
-                role="tablist"
-                aria-label="Configure API / OAuth / Base URL"
-                className="inline-flex w-full gap-1 rounded-[12px] border border-line bg-inset p-1"
-              >
-                {(['api', 'oauth', 'custom'] as ProviderMethod[]).map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    role="tab"
-                    aria-selected={method === item}
-                    onClick={() => setMethod(item)}
-                    className={`min-h-8 flex-1 rounded-control text-[12.5px] font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] ${
-                      method === item
-                        ? 'bg-hover-2 font-semibold text-ink shadow-btn'
-                        : 'text-ink-3 hover:text-ink'
-                    }`}
-                  >
-                    {item === 'api' ? 'API Key' : item === 'oauth' ? 'OAuth' : 'Custom Base URL'}
-                  </button>
-                ))}
-              </div>
+          <div className="mt-7 w-full space-y-4">
+            {/* Tablist directly on canvas */}
+            <div
+              role="tablist"
+              aria-label={providerLabel}
+              className="inline-flex w-full gap-1 rounded-[10px] border border-line bg-inset p-1 shadow-hairline"
+            >
+              {(['api', 'oauth', 'custom'] as ProviderMethod[]).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  role="tab"
+                  aria-selected={method === item}
+                  onClick={() => setMethod(item)}
+                  className={`min-h-8 flex-1 rounded-control text-[12.5px] font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] cursor-pointer ${
+                    method === item
+                      ? 'bg-hover-2 font-semibold text-ink shadow-btn'
+                      : 'text-ink-3 hover:text-ink'
+                  }`}
+                >
+                  {item === 'api'
+                    ? (translateExact('onboardingProviderTabApiKey', language) || 'API Key')
+                    : item === 'oauth'
+                      ? (translateExact('onboardingProviderTabOAuth', language) || 'OAuth')
+                      : (translateExact('onboardingProviderTabCustom', language) || 'Custom Base URL')}
+                </button>
+              ))}
+            </div>
 
-              <div className="space-y-3 pt-1">
-                {method === 'api' && (
-                  <>
-                    <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-ink-2">{providerLabel}</label>
+            {/* Input controls directly on canvas */}
+            <div className="space-y-3.5 pt-0.5">
+              {method === 'api' && (
+                <>
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[12.5px] font-medium text-ink-2">
+                      {translateExact('provider', language) || 'Provider'}
+                    </label>
+                    <select
+                      value={provider}
+                      onChange={(event) => setProvider(event.target.value)}
+                      className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] cursor-pointer shadow-hairline"
+                    >
+                      {providerChoices.map((item) => (
+                        <option key={item} value={item}>{formatProviderName(item)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[12.5px] font-medium text-ink-2">API Key</label>
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={(event) => setApiKey(event.target.value)}
+                      autoComplete="off"
+                      placeholder={translateExact('inputApiKeyPlaceholder', language) || 'Enter an API Key'}
+                      className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 text-[13.5px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] shadow-hairline"
+                    />
+                  </div>
+                </>
+              )}
+
+              {method === 'oauth' && (
+                <>
+                  {oauthProviders.length ? (
+                    <div className="space-y-1.5 text-left">
+                      <label className="text-[12.5px] font-medium text-ink-2">
+                        {translateExact('provider', language) || 'Provider'}
+                      </label>
                       <select
-                        value={provider}
-                        onChange={(event) => setProvider(event.target.value)}
-                        className="h-9 w-full rounded-[10px] border border-line bg-surface px-3 text-[14px] text-ink outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)]"
+                        value={oauthProvider}
+                        onChange={(event) => setOauthProvider(event.target.value)}
+                        className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] cursor-pointer shadow-hairline"
                       >
-                        {providerChoices.map((item) => (
-                          <option key={item} value={item}>{item}</option>
+                        {oauthProviders.map((item) => (
+                          <option key={item} value={item}>{formatProviderName(item)}</option>
                         ))}
                       </select>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-ink-2">API Key</label>
-                      <input
-                        type="password"
-                        value={apiKey}
-                        onChange={(event) => setApiKey(event.target.value)}
-                        autoComplete="off"
-                        placeholder="Enter an API Key"
-                        className="h-9 w-full rounded-[10px] border border-line bg-surface px-3 text-[14px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)]"
-                      />
-                    </div>
-                  </>
-                )}
+                  ) : (
+                    <p className="rounded-[10px] bg-inset border border-line p-3 text-[12px] text-ink-3 text-center">
+                      {translateExact('noOAuthProvidersAvailable', language) || 'No OAuth Providers available'}
+                    </p>
+                  )}
+                </>
+              )}
 
-                {method === 'oauth' && (
-                  <>
-                    {oauthProviders.length ? (
-                      <div className="space-y-1.5">
-                        <label className="text-[12.5px] font-medium text-ink-2">{providerLabel}</label>
-                        <select
-                          value={oauthProvider}
-                          onChange={(event) => setOauthProvider(event.target.value)}
-                          className="h-9 w-full rounded-[10px] border border-line bg-surface px-3 text-[14px] text-ink outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)]"
-                        >
-                          {oauthProviders.map((item) => (
-                            <option key={item} value={item}>{item}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : (
-                      <p className="rounded-[10px] bg-inset border border-line p-3 text-[12px] text-ink-3">
-                        No OAuth Providers available
-                      </p>
+              {method === 'custom' && (
+                <>
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[12.5px] font-medium text-ink-2">
+                      {translateExact('customProviderName', language) || 'Provider name'}
+                    </label>
+                    <input
+                      value={customName}
+                      onChange={(event) => setCustomName(event.target.value)}
+                      placeholder={translateExact('customProviderNamePlaceholder', language) || 'Enter a Provider name'}
+                      className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 text-[13.5px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] shadow-hairline"
+                    />
+                  </div>
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[12.5px] font-medium text-ink-2">Base URL</label>
+                    <input
+                      value={baseUrl}
+                      onChange={(event) => setBaseUrl(event.target.value)}
+                      placeholder="https://api.example.com/v1"
+                      className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 text-[13.5px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] shadow-hairline"
+                    />
+                  </div>
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[12.5px] font-medium text-ink-2">API Key</label>
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={(event) => setApiKey(event.target.value)}
+                      autoComplete="off"
+                      placeholder={translateExact('inputApiKeyPlaceholder', language) || 'Enter an API Key'}
+                      className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 text-[13.5px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] shadow-hairline"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      disabled={busy || !baseUrl.trim()}
+                      onClick={discoverModels}
+                      className="inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-control border border-line bg-surface text-ink-2 text-[12px] font-medium hover:bg-hover active:scale-[0.98] transition-all disabled:opacity-45 cursor-pointer shadow-hairline"
+                    >
+                      <Server size={14} />
+                      <span>{translateExact('discoverModels', language) || 'Discover models'}</span>
+                    </button>
+                    {discoveredModels.length > 0 && (
+                      <span className="text-[11.5px] text-green font-medium truncate">
+                        {discoveredModels.map((m) => m.id).join(', ')}
+                      </span>
                     )}
-                  </>
-                )}
-
-                {method === 'custom' && (
-                  <>
-                    <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-ink-2">Provider name</label>
-                      <input
-                        value={customName}
-                        onChange={(event) => setCustomName(event.target.value)}
-                        placeholder="Enter a Provider name"
-                        className="h-9 w-full rounded-[10px] border border-line bg-surface px-3 text-[14px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)]"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-ink-2">Base URL</label>
-                      <input
-                        value={baseUrl}
-                        onChange={(event) => setBaseUrl(event.target.value)}
-                        placeholder="Enter a Base URL"
-                        className="h-9 w-full rounded-[10px] border border-line bg-surface px-3 text-[14px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)]"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-ink-2">API Key</label>
-                      <input
-                        type="password"
-                        value={apiKey}
-                        onChange={(event) => setApiKey(event.target.value)}
-                        autoComplete="off"
-                        placeholder="Enter an API Key"
-                        className="h-9 w-full rounded-[10px] border border-line bg-surface px-3 text-[14px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)]"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2 pt-0.5">
-                      <button
-                        type="button"
-                        disabled={busy || !baseUrl.trim()}
-                        onClick={discoverModels}
-                        className="inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-control border border-line bg-surface text-ink-2 text-[12px] font-medium hover:bg-hover active:scale-[0.98] transition-all disabled:opacity-45"
-                      >
-                        <Server size={14} />
-                        <span>Discover models</span>
-                      </button>
-                      {discoveredModels.length > 0 && (
-                        <span className="text-[11.5px] text-green font-medium truncate">
-                          {discoveredModels.map((m) => m.id).join(', ')}
-                        </span>
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-ink-2">Model</label>
-                      <input
-                        value={modelIds}
-                        onChange={(event) => setModelIds(event.target.value)}
-                        placeholder="Enter model IDs manually; separate multiple IDs with commas"
-                        className="h-9 w-full rounded-[10px] border border-line bg-surface px-3 text-[14px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)]"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
+                  </div>
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[12.5px] font-medium text-ink-2">
+                      {translateExact('modelName', language) || 'Model'}
+                    </label>
+                    <input
+                      value={modelIds}
+                      onChange={(event) => setModelIds(event.target.value)}
+                      placeholder={translateExact('enterCustomModelId', language) || 'Enter model IDs manually; separate multiple IDs with commas'}
+                      className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 text-[13.5px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] shadow-hairline"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Self-Learning Card */}
-            <div className="flex items-center justify-between rounded-[26px] border border-line bg-surface p-4 shadow-card">
-              <div className="space-y-0.5 pr-4">
-                <span className="text-[14px] font-semibold text-ink">
-                  {translateExact('Self-Learning', language)}
+            {/* Self-Learning Setting Row directly on canvas */}
+            <div className="flex items-center justify-between rounded-[12px] border border-line bg-surface/60 px-4 py-3 shadow-hairline transition-colors hover:bg-surface">
+              <div className="space-y-0.5 pr-4 text-left">
+                <span className="text-[13px] font-medium text-ink inline-flex items-center gap-1.5">
+                  <span>{translateExact('Self-Learning', language)}</span>
+                  <SelfLearningBadge />
                 </span>
-                <p className="text-[12px] leading-5 text-ink-3">
+                <p className="text-[12px] leading-relaxed text-ink-3">
                   {translateExact('Runtime architecture adapts from experience. Disabling reverts to default architecture.', language)}
                 </p>
               </div>
@@ -556,21 +792,30 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
             </p>
           )}
 
-          <div className="mt-8 flex items-center justify-center gap-3.5">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3.5">
             <button
               type="button"
               disabled={busy}
               onClick={() => setStep(1)}
               className={ONBOARDING_BTN_CLASS}
             >
-              <span>Previous</span>
+              <span>Back</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setStep(3)}
+              className={ONBOARDING_BTN_CLASS}
+            >
+              <span>{translateExact('onboardingSkipCredentials', language)}</span>
             </button>
 
             <button
               type="button"
               disabled={busy}
               onClick={handleContinue}
-              className={ONBOARDING_BTN_CLASS}
+              className={`${ONBOARDING_BTN_CLASS} !bg-ink !text-surface dark:!bg-accent dark:!text-white hover:opacity-95 shadow-btn`}
             >
               {busy ? <LoaderCircle size={14} className="animate-spin mr-1.5 inline" /> : null}
               <span>Next</span>
@@ -579,106 +824,126 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
         </div>
       )}
 
-      {/* Step 3: Workspace - Fullscreen Centered */}
+      {/* Step 3: Workspace - Fullscreen Centered (Unboxed canvas layout matching Step 0) */}
       {step === 3 && (
-        <div className="flex flex-col items-center justify-center max-w-xl w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
-          <h1 id="onboarding-title" className="text-3xl font-bold tracking-[-0.03em] text-ink sm:text-4xl text-center">
-            Select a project workspace
-          </h1>
+        <div className="flex flex-col items-center justify-center max-w-md w-full mx-auto py-6 animate-in fade-in zoom-in-[0.98] duration-200 motion-reduce:animate-none">
+          {/* Guiding Companion Mascot */}
+          <div
+            className="mb-3.5 flex shrink-0 select-none items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95"
+            data-onboarding-cloud=""
+            onClick={handleCloudEasterEgg}
+            title={translateExact('Click to interact with Metis', language)}
+          >
+            <div className={`onboarding-cloud-float ${cloudBounce ? 'animate-bounce' : ''}`}>
+              <MetisCloudMark size={52} expression={getStepExpression(3)} />
+            </div>
+          </div>
 
-          <div className="mt-8 w-full space-y-4">
-            {/* Workspace Card: Inner controls R=10px, padding=16px -> Outer R = 10 + 16 = 26px */}
-            <div className="space-y-4 rounded-[26px] border border-line bg-surface p-4 shadow-card">
-              {/* Tablist: Inner tabs R=8px, padding=4px (p-1) -> Outer R = 8 + 4 = 12px */}
-              <div
-                role="tablist"
-                aria-label="Add a project workspace"
-                className="inline-flex w-full gap-1 rounded-[12px] border border-line bg-inset p-1"
+          <div className={`flex flex-col items-center w-full transition-all duration-300 ease-out ${isClearing ? 'opacity-0 scale-95 blur-sm pointer-events-none' : 'opacity-100'}`}>
+            <h1 id="onboarding-title" className="text-xl font-semibold tracking-tight text-ink sm:text-2xl text-balance text-center">
+              {translateExact('onboardingWorkspaceTitle', language)}
+            </h1>
+            <p className="mt-1.5 max-w-[380px] text-[13.5px] font-normal leading-relaxed text-ink-3 text-pretty text-center">
+              {getStepBubbleText(3)}
+            </p>
+
+          <div className="mt-7 w-full space-y-4">
+            {/* Tablist directly on canvas */}
+            <div
+              role="tablist"
+              aria-label={translateExact('onboardingWorkspaceTitle', language) || 'Add a project workspace'}
+              className="inline-flex w-full gap-1 rounded-[10px] border border-line bg-inset p-1 shadow-hairline"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={projectMode === 'create'}
+                onClick={() => setProjectMode('create')}
+                className={`min-h-8 flex-1 rounded-control text-[12.5px] font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] cursor-pointer ${
+                  projectMode === 'create'
+                    ? 'bg-hover-2 font-semibold text-ink shadow-btn'
+                    : 'text-ink-3 hover:text-ink'
+                }`}
               >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={projectMode === 'create'}
-                  onClick={() => setProjectMode('create')}
-                  className={`min-h-8 flex-1 rounded-control text-[12.5px] font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] ${
-                    projectMode === 'create'
-                      ? 'bg-hover-2 font-semibold text-ink shadow-btn'
-                      : 'text-ink-3 hover:text-ink'
-                  }`}
-                >
-                  <Plus size={14} className="mr-1.5 inline" />New Project
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={projectMode === 'import'}
-                  onClick={() => setProjectMode('import')}
-                  className={`min-h-8 flex-1 rounded-control text-[12.5px] font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] ${
-                    projectMode === 'import'
-                      ? 'bg-hover-2 font-semibold text-ink shadow-btn'
-                      : 'text-ink-3 hover:text-ink'
-                  }`}
-                >
-                  <FolderOpen size={14} className="mr-1.5 inline" />Open Existing Project
-                </button>
-              </div>
+                <Plus size={14} className="mr-1.5 inline" />
+                <span>{translateExact('onboardingNewProject', language) || 'New Project'}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={projectMode === 'import'}
+                onClick={() => setProjectMode('import')}
+                className={`min-h-8 flex-1 rounded-control text-[12.5px] font-medium transition-[background-color,color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] cursor-pointer ${
+                  projectMode === 'import'
+                    ? 'bg-hover-2 font-semibold text-ink shadow-btn'
+                    : 'text-ink-3 hover:text-ink'
+                }`}
+              >
+                <FolderOpen size={14} className="mr-1.5 inline" />
+                <span>{translateExact('onboardingOpenExistingProject', language) || 'Open Existing Project'}</span>
+              </button>
+            </div>
 
-              <div className="space-y-3 pt-1">
-                {projectMode === 'create' ? (
-                  <>
-                    <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-ink-2">Project name</label>
-                      <input
-                        value={projectName}
-                        onChange={(event) => setProjectName(event.target.value)}
-                        placeholder="my-awesome-project"
-                        className="h-9 w-full rounded-[10px] border border-line bg-surface px-3 text-[14px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)]"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[12.5px] font-medium text-ink-2">Save location</label>
-                      <button
-                        type="button"
-                        onClick={selectParent}
-                        disabled={busy}
-                        className="flex h-9 w-full items-center justify-between rounded-[10px] border border-line bg-surface px-3 text-[14px] text-ink-2 transition-colors hover:bg-hover"
-                      >
-                        <span className="truncate">{parentPath || 'Select folder'}</span>
-                        <FolderOpen size={15} className="shrink-0 text-ink-3" />
-                      </button>
-                    </div>
+            {/* Input controls directly on canvas */}
+            <div className="space-y-3.5 pt-0.5">
+              {projectMode === 'create' ? (
+                <>
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[12.5px] font-medium text-ink-2">
+                      {translateExact('onboardingProjectName', language) || 'Project name'}
+                    </label>
+                    <input
+                      value={projectName}
+                      onChange={(event) => setProjectName(event.target.value)}
+                      placeholder="my-awesome-project"
+                      className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 text-[13.5px] text-ink placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] focus:border-line-strong dark:focus:border-line-strong focus:ring-2 focus:ring-[color:var(--focus)] shadow-hairline"
+                    />
+                  </div>
+                  <div className="space-y-1.5 text-left">
+                    <label className="text-[12.5px] font-medium text-ink-2">
+                      {translateExact('onboardingSaveLocation', language) || 'Save location'}
+                    </label>
                     <button
                       type="button"
-                      onClick={createProject}
-                      disabled={busy || !parentPath || !projectName.trim()}
-                      className="group inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[10px] border border-line bg-surface px-3.5 text-[14px] font-medium text-ink-2 shadow-hairline transition-all hover:bg-hover hover:border-line-strong hover:text-ink active:scale-[0.98] disabled:opacity-45"
-                    >
-                      <Plus size={14} />
-                      <span>Create & Enter Workspace</span>
-                    </button>
-                  </>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-[12.5px] text-ink-3">
-                      Select a local project folder, Metis will provide project-wide Agent collaboration.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={importProject}
+                      onClick={selectParent}
                       disabled={busy}
-                      className="group inline-flex h-9 w-full items-center justify-center gap-2 rounded-[10px] border border-line bg-surface px-3.5 text-[14px] font-medium text-ink-2 shadow-hairline transition-all hover:bg-hover hover:border-line-strong hover:text-ink active:scale-[0.98] disabled:opacity-45"
+                      className="flex h-10 w-full items-center justify-between rounded-[10px] border border-line bg-surface px-3 text-[13.5px] text-ink-2 transition-colors hover:bg-hover cursor-pointer shadow-hairline"
                     >
-                      <FolderOpen size={15} />
-                      <span>Choose Project Folder</span>
+                      <span className="truncate">{parentPath || (translateExact('selectFolder', language) || 'Select folder')}</span>
+                      <FolderOpen size={15} className="shrink-0 text-ink-3" />
                     </button>
                   </div>
-                )}
-              </div>
+                  <button
+                    type="button"
+                    onClick={createProject}
+                    disabled={busy || !parentPath || !projectName.trim()}
+                    className="group inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-[10px] border border-line bg-hover-2 px-3.5 text-[13.5px] font-medium text-ink shadow-hairline transition-all hover:bg-hover hover:border-line-strong active:scale-[0.98] disabled:opacity-45 cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    <span>{translateExact('onboardingCreateWorkspace', language) || 'Create & Enter Workspace'}</span>
+                  </button>
+                </>
+              ) : (
+                <div className="space-y-3.5 text-left">
+                  <p className="text-[12.5px] text-ink-3 leading-relaxed">
+                    {translateExact('onboardingImportWorkspaceDesc', language) || 'Select a local project folder, Metis will provide project-wide Agent collaboration.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={importProject}
+                    disabled={busy}
+                    className="group inline-flex h-11 w-full items-center justify-center gap-2 rounded-[12px] border border-line-strong bg-hover-2 px-4 text-[13.5px] font-medium text-ink shadow-btn transition-all hover:bg-hover hover:border-line-strong active:scale-[0.98] disabled:opacity-45 cursor-pointer"
+                  >
+                    <FolderOpen size={15} />
+                    <span>{translateExact('chooseProjectFolder', language) || 'Choose Project Folder'}</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {selectedProject?.path && (
-              <div className="flex items-center gap-2 rounded-card bg-green-tint px-3.5 py-2.5 text-[12.5px] font-medium text-green shadow-hairline animate-in fade-in">
-                <Check size={15} className="shrink-0 text-green" />
+              <div className="flex items-center gap-2.5 rounded-control bg-green-tint border border-green/20 px-3.5 py-2.5 text-[12.5px] font-medium text-green shadow-hairline animate-in fade-in">
+                <Check size={14} className="shrink-0 stroke-[2.5]" />
                 <span className="truncate">{selectedProject.path}</span>
               </div>
             )}
@@ -697,17 +962,18 @@ export function Onboarding({ open, request, isConnected, models, onComplete, onP
               onClick={() => setStep(2)}
               className={ONBOARDING_BTN_CLASS}
             >
-              <span>Previous</span>
+              <span>Back</span>
             </button>
 
             <button
               type="button"
               disabled={busy}
               onClick={() => void complete()}
-              className={ONBOARDING_BTN_CLASS}
+              className={`${ONBOARDING_BTN_CLASS} !bg-ink !text-surface dark:!bg-accent dark:!text-white hover:opacity-95 shadow-btn`}
             >
               <span>Finish & Start Coding</span>
             </button>
+          </div>
           </div>
         </div>
       )}

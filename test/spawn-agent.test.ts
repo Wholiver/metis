@@ -203,6 +203,118 @@ describe("spawn_agent tool & recursive delegation (Bundle 2)", () => {
 		expect(runtime.state?.reports.some((report) => report.gate === "G5" && report.actor.startsWith("reviewer-"))).toBe(true);
 	});
 
+	it("records run-wide goal-check from ChildResult via spawn_agent without requiring laneId", async () => {
+		const mockChild = createMockChildProcess();
+		spawnMock.mockReturnValue(mockChild);
+		const tempDir = mkdtempSync(join(tmpdir(), "metis-spawn-host-goal-check-"));
+		tempDirs.push(tempDir);
+		const runtime = new PerformanceRuntime(tempDir);
+		const state = runtime.admit({
+			kind: "admit",
+			mission: "Render bicycle pelican",
+			workspaceRoot: tempDir,
+			admission: {
+				tier: "T2",
+				taskShape: "sequential-complex",
+				deliverables: ["pelican.svg"],
+				acceptanceCriteria: ["SVG renders"],
+				verificationCommands: ["browser screenshot"],
+				sharedMutableState: false,
+				lanes: [{
+					id: "pelican-svg",
+					objective: "Make pelican.svg",
+					framework: "frontend-build",
+					ownedPaths: ["pelican.svg"],
+					deliverables: ["pelican.svg"],
+					acceptanceCriteria: ["SVG renders"],
+					verificationCommands: ["browser screenshot"],
+					dependsOn: [],
+				}],
+			},
+		});
+		const g4Path = join(state.governanceRoot, "artifacts", "g4.md");
+		writeFileSync(
+			g4Path,
+			"# g4\n- changedFiles: pelican.svg\n- testCommand: browser screenshot\n- testOutput: pass\n- exitCode: 0\n- visualStatus: pass\n- preExistingRegressions: 0\n",
+			"utf8",
+		);
+		runtime.recordGateReport({
+			gate: "G4",
+			actor: "root",
+			role: "root",
+			verdict: "pass",
+			evidence: "artifacts/g4.md",
+		});
+		runtime.recordGateReport({
+			gate: "G5",
+			actor: "reviewer-1",
+			role: "reviewer",
+			verdict: "pass",
+			evidence: "artifacts/g4.md",
+		});
+		runtime.recordGateReport({
+			gate: "G6",
+			actor: "verifier-1",
+			role: "verifier",
+			verdict: "pass",
+			evidence: "artifacts/g4.md",
+		});
+		runtime.recordGateReport({
+			gate: "G7",
+			actor: "juror-1",
+			role: "juror",
+			verdict: "pass",
+			evidence: "artifacts/g4.md",
+		});
+		expect(runtime.state?.frontier).toBe("goal-check");
+
+		const definition = createSpawnAgentToolDefinition(tempDir, {
+			prepareDispatch: (input) => {
+				const prepared = runtime.prepareSpawn(input);
+				return {
+					...input,
+					task: prepared.task,
+					context: prepared.context,
+					laneId: prepared.laneId,
+					gate: prepared.gate,
+					worktree: prepared.worktree,
+					ownedPaths: prepared.ownedPaths,
+				};
+			},
+			recordChildGate: (input) =>
+				runtime.recordChildGateFromResult({
+					agentId: input.agentId,
+					role: input.role,
+					gate: input.gate as "goal-check",
+					itemId: input.itemId,
+					outcome: input.outcome,
+					childResult: input.childResult,
+				}),
+		});
+
+		const execution = definition.execute(
+			"host-goal-check",
+			{ agent: "goal-checker", task: "Verify mission" },
+			new AbortController().signal,
+			() => {},
+			undefined as never,
+		);
+		await vi.waitFor(() => expect(mockChild.stdout.listenerCount("data")).toBeGreaterThan(0));
+		mockChild.stdout.emit("data", Buffer.from(childResultLine("GOAL-CHECK PASS pelican.svg")));
+		mockChild.emit("close", 0);
+		const result = await execution;
+		const payload = JSON.parse(result.content[0].text) as ChildAgentResultPayload;
+		expect(payload).toMatchObject({
+			status: "success",
+			outcome: "pass",
+			gate: "goal-check",
+			frontier: "complete",
+		});
+		expect(payload.hostGate?.evidence).toMatch(/host-goal-check-/);
+		expect(runtime.state?.frontier).toBe("complete");
+		expect(runtime.state?.status).toBe("completed");
+	});
+
 	it("returns no_verdict when a governed child exits zero without its gate", async () => {
 		const mockChild = createMockChildProcess();
 		spawnMock.mockReturnValue(mockChild);
@@ -977,6 +1089,55 @@ Task completed successfully.
 		expect(extractChildResultFromOutput('{"status": "success"}')).toBeUndefined();
 		expect(extractChildResultFromOutput('{"status": "ok"}')).toBeUndefined();
 		expect(extractChildResultFromOutput('{"result": "pass"}')).toBeUndefined();
+	});
+
+	it("extracts ChildResult from NDJSON message_end events with fenced markdown", () => {
+		const ndjson = [
+			JSON.stringify({ type: "agent_start" }),
+			JSON.stringify({ type: "turn_start" }),
+			JSON.stringify({
+				type: "message_end",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "text",
+							text: "I finished the work!\n\n```json\n{\n  \"status\": \"completed\",\n  \"summary\": \"Implemented packages\",\n  \"filesChanged\": [\"src/index.js\"],\n  \"testCommand\": \"npm test\",\n  \"exitCode\": 0\n}\n```",
+						},
+					],
+				},
+			}),
+			JSON.stringify({ type: "agent_end" }),
+		].join("\n");
+
+		const result = extractChildResultFromOutput(ndjson);
+		expect(result).toBeDefined();
+		expect(result?.status).toBe("completed");
+		expect(result?.summary).toBe("Implemented packages");
+		expect(result?.filesChanged).toEqual(["src/index.js"]);
+		expect(result?.commands).toEqual([{ argv: ["npm", "test"], cwd: ".", exitCode: 0 }]);
+	});
+
+	it("extracts ChildResult from NDJSON message_end events with raw JSON in string content", () => {
+		const ndjson = [
+			JSON.stringify({
+				type: "message_end",
+				message: {
+					role: "assistant",
+					content: JSON.stringify({
+						status: "completed",
+						summary: "Direct JSON message",
+						changedFiles: ["pkg/mod.ts"],
+					}),
+				},
+			}),
+		].join("\n");
+
+		const result = extractChildResultFromOutput(ndjson);
+		expect(result).toBeDefined();
+		expect(result?.status).toBe("completed");
+		expect(result?.summary).toBe("Direct JSON message");
+		expect(result?.filesChanged).toEqual(["pkg/mod.ts"]);
 	});
 
 	it("rejects completed G4 implementer when filesChanged is empty", async () => {

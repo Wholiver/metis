@@ -20,6 +20,7 @@ import { useI18n } from '../../i18n';
 import { isMac } from '../../lib/platform';
 import { describeCron } from '../../lib/cron-utils';
 import { Button } from '../atoms/Button';
+import { SelfLearningBadge } from '../atoms/SelfLearningBadge';
 import ApprovalDialog from '../primitives/ApprovalDialog';
 import { RoutineEditModal } from './RoutineEditModal';
 
@@ -309,7 +310,7 @@ export const RoutinesManager: React.FC<RoutinesManagerProps> = ({
   const isEmpty = !isLoading && routines.length === 0;
 
   return (
-    <div className="flex h-full flex-1 select-none flex-col overflow-hidden bg-canvas" data-routines-manager="">
+    <div className="flex h-full flex-1 select-none flex-col overflow-hidden bg-page" data-routines-manager="">
       {/* Top header — same quiet titlebar as Chat / Workflow */}
       <div
         className={`titlebar-drag flex h-[50px] shrink-0 items-center justify-between border-b border-transparent ${
@@ -429,12 +430,10 @@ export const RoutinesManager: React.FC<RoutinesManagerProps> = ({
                                 {routine.title}
                               </h3>
                               {routine.source === 'self_learning' && (
-                                <span
-                                  className="inline-flex shrink-0 items-center rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent"
+                                <SelfLearningBadge
+                                  label={tr('routineSourceSelfLearning', 'AI 学习生成', 'AI Generated')}
                                   data-routine-source="self_learning"
-                                >
-                                  {tr('routineSourceSelfLearning', 'AI 学习生成', 'AI Generated')}
-                                </span>
+                                />
                               )}
                               {routine.projectPath && (
                                 <span className="inline-flex shrink-0 items-center gap-1 text-[12px] text-ink-3">

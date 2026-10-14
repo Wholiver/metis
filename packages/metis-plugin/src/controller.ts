@@ -443,6 +443,7 @@ export class ExternalController {
             phase,
             providerId,
             targetDir: absTarget,
+            installRoot: doctor.installRoot,
             resolvedModel,
             mission,
             cordisBridge,
@@ -828,12 +829,13 @@ export class ExternalController {
     phase: { gate: string; role: PluginPhaseRole; taskBrief: string; laneId?: string; ownedPaths?: string[]; parallelGroup?: string };
     providerId: string;
     targetDir: string;
+    installRoot?: string;
     resolvedModel: ResolvedModelProfile;
     mission: string;
     cordisBridge?: CordisBridge;
     verbose?: boolean;
   }): Promise<GateExecutionEvidence> {
-    const { phase, providerId, targetDir, resolvedModel, mission, cordisBridge, verbose } = params;
+    const { phase, providerId, targetDir, installRoot, resolvedModel, mission, cordisBridge, verbose } = params;
 
     if (verbose) {
       console.log(`[Controller] Executing Gate ${phase.gate} with role ${phase.role} using model ${resolvedModel.model}...`);
@@ -891,6 +893,14 @@ export class ExternalController {
             break;
           }
         }
+
+        const structCall = cordisBridge.invokeTool("metis_structured_output", {
+          gate: phase.gate,
+          role: phase.role,
+          status: phase.role === "verifier" || phase.role === "fresh-verifier" || phase.role === "goal-checker" ? "VERIFIED" : "PASS",
+          summary: `Gate ${phase.gate} (${phase.role}) completed under Cordis governance`,
+        });
+        bridgeToolCalls.push({ tool: "metis_structured_output", args: { gate: phase.gate, role: phase.role }, ...structCall });
 
         const failedCall = bridgeToolCalls.find(c => !c.success);
         if (failedCall) {
@@ -1099,20 +1109,32 @@ export class ExternalController {
     }
 
     if (providerId === "opencode") {
+      const openCodeRoot = installRoot || resolve(process.env.HOME || "", ".opencode");
+      const profilePath = join(openCodeRoot, "metis.opencode.json");
+      const wrapperScript = process.platform === "win32"
+        ? join(openCodeRoot, "workflow", "launch-opencode.ps1")
+        : join(openCodeRoot, "workflow", "launch-opencode.sh");
+
       let opencodeBin = "opencode";
-      const whichCheck = spawnSync("which", ["opencode"], { encoding: "utf-8" });
-      if (whichCheck.status !== 0) {
-        const defaultBin = resolve(process.env.HOME || "", ".opencode/bin/opencode");
-        if (existsSync(defaultBin)) {
-          opencodeBin = defaultBin;
-        } else {
-          return {
-            gate: phase.gate,
-            role: phase.role,
-            status: "SMASH",
-            output: `PROVIDER_UNSUPPORTED: 'opencode' command line tool was not found in PATH or ~/.opencode/bin/opencode.`,
-            details: { error: "opencode_cli_missing", model: resolvedModel.model },
-          };
+      let useWrapper = false;
+      if (existsSync(wrapperScript) && process.platform !== "win32") {
+        opencodeBin = wrapperScript;
+        useWrapper = true;
+      } else {
+        const whichCheck = spawnSync("which", ["opencode"], { encoding: "utf-8" });
+        if (whichCheck.status !== 0) {
+          const defaultBin = resolve(process.env.HOME || "", ".opencode/bin/opencode");
+          if (existsSync(defaultBin)) {
+            opencodeBin = defaultBin;
+          } else {
+            return {
+              gate: phase.gate,
+              role: phase.role,
+              status: "SMASH",
+              output: `PROVIDER_UNSUPPORTED: 'opencode' command line tool was not found in PATH or ~/.opencode/bin/opencode.`,
+              details: { error: "opencode_cli_missing", model: resolvedModel.model },
+            };
+          }
         }
       }
 
@@ -1138,11 +1160,19 @@ export class ExternalController {
 
       args.push(prompt);
 
+      const opencodeEnv: Record<string, string> = {
+        ...(process.env as Record<string, string>),
+        OPENCODE_CONFIG: profilePath,
+        OPENCODE_CONFIG_CONTENT: '{"subagent_depth":4,"share":"disabled","permission":{"task":{"*":"deny","metis-*":"allow"}}}',
+        OPENCODE_PERMISSION: '{"task":{"*":"deny","metis-*":"allow"}}',
+        OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
+      };
+
       const execRes = spawnSync(opencodeBin, args, {
         cwd: targetDir,
         encoding: "utf-8",
         timeout: 180000,
-        env: { ...process.env },
+        env: opencodeEnv,
       });
 
       if (execRes.error) {
@@ -1183,6 +1213,8 @@ export class ExternalController {
           modelSource: resolvedModel.source,
           exitCode: 0,
           executionEngine: "opencode-run",
+          wrapperUsed: useWrapper,
+          profilePath,
           ...(phase.role === "root" ? { rootClosed: true, executed: true, ownedPaths: owned, receiptPath: opencodeReceipt } : {}),
         },
       };
@@ -1238,6 +1270,14 @@ export class ExternalController {
         }
       }
 
+      const structCall = cordisBridge.invokeTool("metis_structured_output", {
+        gate: phase.gate,
+        role: phase.role,
+        status: phase.role === "verifier" || phase.role === "fresh-verifier" || phase.role === "goal-checker" ? "VERIFIED" : "PASS",
+        summary: `Gate ${phase.gate} completed via Cordis Bridge.`,
+      });
+      bridgeToolCalls.push({ tool: "metis_structured_output", args: { gate: phase.gate, role: phase.role }, ...structCall });
+
       const failedCall = bridgeToolCalls.find(c => !c.success);
       if (failedCall) {
         return {
@@ -1257,6 +1297,7 @@ export class ExternalController {
         details: {
           bridgeToolCalls,
           cordisBridgeUsed: true,
+          structuredOutputRecorded: true,
           model: resolvedModel.model,
           thinking: resolvedModel.thinking,
           ...(phase.role === "root"

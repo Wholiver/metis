@@ -7,15 +7,16 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Bot, Check, Copy, GitBranch, Globe, ListTodo, Maximize2, Minimize2, PanelRightClose, Plus } from 'lucide-react';
-import { WorkflowPlanState, WorkflowProposalState, AssistantContentPart } from '../../types';
-import { SubagentItem } from '../../lib/subagents';
+import { Bot, Check, Copy, GitBranch, Globe, ListTodo, Maximize2, Minimize2, Plus } from 'lucide-react';
+import { WorkflowPlanState, WorkflowProposalState, AssistantContentPart, CollaborationMode, ModelOption } from '../../types';
+import { findSubagentById, SubagentItem } from '../../lib/subagents';
 import { InspectorTab, InspectorTabKind, isPinnedInspectorTab } from '../../lib/inspector-tabs';
 import { useI18n } from '../../i18n';
 import { isWindows } from '../../lib/platform';
 import { ReviewPanel } from './ReviewPanel';
 import { InspectorPlanPanel } from './InspectorPlanPanel';
 import { SubagentsList } from './SubagentsList';
+import { SubagentDetailView } from './SubagentDetailView';
 import { InspectorBrowserPanel } from './InspectorBrowserPanel';
 
 interface InspectorProps {
@@ -37,8 +38,8 @@ interface InspectorProps {
   onUpdateTab: (tabId: string, patch: Partial<InspectorTab>) => void;
   onOpenSubagent?: (partId: string) => void;
   onStopSubagent?: (subagentId: string) => void;
-  onClose?: () => void;
-  onCollapse?: () => void;
+  collaborationMode?: CollaborationMode;
+  model?: ModelOption;
   activeSessionId?: string | null;
   onToggleWideWidth?: () => void;
   isWideWidth?: boolean;
@@ -88,8 +89,8 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
   onUpdateTab,
   onOpenSubagent,
   onStopSubagent,
-  onClose,
-  onCollapse,
+  collaborationMode,
+  model,
   activeSessionId,
   onToggleWideWidth,
   isWideWidth = false,
@@ -338,9 +339,6 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
               {isWideWidth ? <Minimize2 className="w-3.5 h-3.5 stroke-[1.8]" /> : <Maximize2 className="w-3.5 h-3.5 stroke-[1.8]" />}
             </button>
           ) : null}
-          <button type="button" onClick={() => { saveActiveScroll(); (onCollapse || onClose)?.(); }} className="relative flex h-8 w-8 items-center justify-center rounded-[9px] text-ink-3 dark:text-ink-3 hover:bg-hover hover:text-ink active:scale-[0.96] transition-[color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)]" title={t('collapseInspector') || 'Collapse Inspector'} aria-label={t('collapseWorkspaceContext') || 'Collapse workspace context'} data-inspector-collapse-button="">
-            <PanelRightClose className="w-4 h-4 stroke-[1.8]" aria-hidden="true" />
-          </button>
         </div>
       </div>
 
@@ -373,23 +371,39 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
           );
         }
         if (tab.kind === 'subagents') {
+          const selectedSubagent = tab.selectedSubagentId
+            ? findSubagentById(subagents, tab.selectedSubagentId)
+            : null;
           return (
             <div
               key={tab.id}
-              ref={selected ? contentScrollRef : undefined}
+              ref={selected && !selectedSubagent ? contentScrollRef : undefined}
               id={`inspector-panel-${tab.id}`}
               role="tabpanel"
               aria-labelledby={`inspector-tab-${tab.id}`}
               hidden={!selected}
-              className="flex-1 overflow-y-auto px-3.5 pb-3.5 pt-2 no-drag"
+              className={selectedSubagent
+                ? 'flex min-h-0 flex-1 flex-col overflow-hidden no-drag'
+                : 'flex-1 overflow-y-auto px-3.5 pb-3.5 pt-2 no-drag'}
               data-inspector-panel="subagents"
               data-subagents-section=""
             >
-              <SubagentsList
-                subagents={subagents}
-                onSelect={(item) => onOpenSubagent?.(item.id)}
-                onStop={onStopSubagent}
-              />
+              {selectedSubagent ? (
+                <SubagentDetailView
+                  subagent={selectedSubagent}
+                  onOpenSubagent={onOpenSubagent}
+                  onStop={onStopSubagent}
+                  collaborationMode={collaborationMode}
+                  model={model}
+                  contentRef={selected ? contentScrollRef : undefined}
+                />
+              ) : (
+                <SubagentsList
+                  subagents={subagents}
+                  onSelect={(item) => onOpenSubagent?.(item.id)}
+                  onStop={onStopSubagent}
+                />
+              )}
             </div>
           );
         }

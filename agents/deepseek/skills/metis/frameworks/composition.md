@@ -15,7 +15,7 @@ Root/child contract:
 # Native execution protocol: composition
 # How frameworks COMPOSE (stack and run simultaneously)
 
-Host/root owns multi-lane composition. Spawn only admitted disjoint implementer lanes. Children emit ChildResult; they do not spawn nested workers. It adds NO new scheduler/gate/level. Use the existing admission split, per-lane sequencing, TOKENSAVER/BILLIONAIRE modes, and the run-global budget (cited by name, never restated).
+Host/root owns multi-lane composition. Spawn only admitted disjoint implementer lanes. Children emit ChildResult; they do not spawn nested workers. It adds NO new scheduler/gate/level. Use the existing admission split, per-lane sequencing, TOKENSAVER/BILLIONAIRE modes, and the run-global concurrency ceiling (cited by name, never restated).
 
 ## Two modes
 - **HORIZONTAL STACK - N frameworks, simultaneous.** A task spanning disjoint
@@ -43,7 +43,7 @@ Host/root owns multi-lane composition. Spawn only admitted disjoint implementer 
 3. **CHECK DISJOINTNESS:** every pairwise file-set intersection is empty. Any
    overlap → **S1**.
 4. **MOUNT:** the host/root builds one host→implementer handoff per row and dispatches each
-   as a sibling lane (mission verbatim + nonce + that framework). Over budget → **S4**.
+   as a sibling lane (mission verbatim + nonce + that framework). Over concurrency limit → **S4**.
 
 ## The invariant (deterministic)
 Two frameworks STACK only if their owned file sets are DISJOINT. Empty intersection
@@ -65,8 +65,7 @@ permitted.
 - **S2 - a "sub-task" is really two** → decompose further before selecting.
 - **S3 - an overlay would be a CATEGORY, not a tag** → reject; route it as its own
   sibling lane (a category is a track, never a vertical layer).
-- **S4 - the stack exceeds the run-global budget** (GATES.md "RUN-GLOBAL SUBAGENT
-  BUDGET"; max-concurrent base 200) → queue/serialize the overflow; never spawn past
+- **S4 - the stack exceeds the run-global concurrency ceiling** (GATES.md "RUN-GLOBAL SUBAGENT CONCURRENCY CEILING"; max-concurrent base 200) → queue/serialize the overflow; never spawn past
   the ceiling.
 - **S5 - one sub-task (degenerate)** → no stack; One admitted lane (a vertical overlay
   may still apply).
@@ -75,5 +74,5 @@ permitted.
 
 ## Alignment (point at, don't restate)
 GATES.md "FAN-OUT IS THE EXCEPTION" (composition is the MANAGER dispatching sibling
-tracks, never a child spawning nested workers) + "RUN-GLOBAL SUBAGENT BUDGET"; MODES.md Axis 1/2 +
+tracks, never a child spawning nested workers) + "RUN-GLOBAL SUBAGENT CONCURRENCY CEILING"; MODES.md Axis 1/2 +
 max-concurrent; PLAYBOOKS.md host→implementer split + playbook tags; README §3.

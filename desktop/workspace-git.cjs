@@ -147,6 +147,9 @@ async function listWorkingTreeDiffs(cwd, translate) {
 			additions: stats.additions,
 			deletions: stats.deletions,
 			status: statusKind(xy),
+			xy,
+			staged: xy[0] !== ' ' && xy[0] !== '?',
+			unstaged: xy[1] !== ' ' || xy === '??',
 		});
 	}
 	return files.sort((a, b) => a.file.localeCompare(b.file));
@@ -237,10 +240,15 @@ async function readFileDiff(cwd, relativePath, mode, translate) {
 				diff = staged.stdout;
 			}
 			if (!diff && isUntracked) {
-				const source = await fsp.readFile(absolutePath, 'utf8');
-				const sourceLines = source.split(/\r?\n/).slice(0, 500);
-				const body = sourceLines.map((line) => `+${line}`).join('\n');
-				diff = `diff --git a/${normalized} b/${normalized}\nnew file mode 100644\n--- /dev/null\n+++ b/${normalized}\n@@ -0,0 +1,${sourceLines.length} @@\n${body}`;
+				const buffer = await fsp.readFile(absolutePath);
+				if (buffer.includes(0)) {
+					diff = `diff --git a/${normalized} b/${normalized}\nnew file mode 100644\nBinary files /dev/null and b/${normalized} differ`;
+				} else {
+					const source = buffer.toString('utf8');
+					const sourceLines = source.split(/\r?\n/).slice(0, 500);
+					const body = sourceLines.map((line) => `+${line}`).join('\n');
+					diff = `diff --git a/${normalized} b/${normalized}\nnew file mode 100644\n--- /dev/null\n+++ b/${normalized}\n@@ -0,0 +1,${sourceLines.length} @@\n${body}`;
+				}
 			}
 		} catch (error) {
 			throw gitError(error, translate);
@@ -262,6 +270,220 @@ async function initGitRepo(cwd, translate) {
 	return readGitInfo(cwd, translate);
 }
 
+async function stageFiles(cwd, files, translate) {
+	if (!files || files.length === 0) {
+		await runGit(cwd, ['add', '-A'], { translate });
+	} else {
+		try {
+			await runGit(cwd, ['add', '--', ...files], { translate });
+		} catch (error) {
+			const errStr = String(error?.stderr || error?.message || '');
+			if (errStr.includes('ignored by one of your .gitignore files') || errStr.includes('Use -f')) {
+				await runGit(cwd, ['add', '-f', '--', ...files], { translate });
+			} else {
+				throw error;
+			}
+		}
+	}
+	return true;
+}
+
+async function hasHeadCommit(cwd) {
+	try {
+		await runGit(cwd, ['rev-parse', '--verify', 'HEAD']);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function unstageFiles(cwd, files, translate) {
+	const hasHead = await hasHeadCommit(cwd);
+	if (hasHead) {
+		if (!files || files.length === 0) {
+			await runGit(cwd, ['reset', 'HEAD'], { translate });
+		} else {
+			await runGit(cwd, ['reset', 'HEAD', '--', ...files], { translate });
+		}
+	} else {
+		if (!files || files.length === 0) {
+			await runGit(cwd, ['rm', '--cached', '-r', '-f', '.'], { translate });
+		} else {
+			await runGit(cwd, ['rm', '--cached', '-r', '-f', '--', ...files], { translate });
+		}
+	}
+	return true;
+}
+
+async function discardFiles(cwd, files, translate) {
+	const hasHead = await hasHeadCommit(cwd);
+	for (const file of files) {
+		const absolutePath = path.resolve(cwd, file);
+		try {
+			const status = await runGit(cwd, ['status', '--porcelain', '--', file], { translate });
+			const xy = status.stdout.slice(0, 2);
+			if (xy === '??') {
+				await fsp.rm(absolutePath, { recursive: true, force: true });
+			} else if (xy.includes('A')) {
+				try {
+					await runGit(cwd, ['rm', '-f', '--', file], { translate });
+				} catch {
+					await runGit(cwd, ['reset', 'HEAD', '--', file], { translate }).catch(() => {});
+					await fsp.rm(absolutePath, { recursive: true, force: true });
+				}
+			} else if (hasHead) {
+				await runGit(cwd, ['checkout', 'HEAD', '--', file], { translate });
+			} else {
+				await runGit(cwd, ['checkout', '--', file], { translate });
+			}
+		} catch (err) {
+			console.warn('[desktop] Failed to discard file:', file, err);
+		}
+	}
+	return true;
+}
+
+async function commit(cwd, message, translate) {
+	if (!message || !message.trim()) {
+		throw new Error(translate ? translate('commitMessageRequired') : 'Commit message is required');
+	}
+	try {
+		await runGit(cwd, ['commit', '-m', message.trim()], { translate });
+	} catch (err) {
+		const msg = String(err?.message || '');
+		if (msg.includes('Author identity unknown') || msg.includes('tell me who you are')) {
+			await runGit(
+				cwd,
+				['-c', 'user.name=Metis User', '-c', 'user.email=user@local', 'commit', '-m', message.trim()],
+				{ translate },
+			);
+		} else {
+			throw err;
+		}
+	}
+	return true;
+}
+
+async function readCommitHistory(cwd, limit = 50, translate) {
+	try {
+		const result = await runGit(
+			cwd,
+			['log', `-n${Math.min(limit, 100)}`, '--pretty=format:%H%x1f%h%x1f%an%x1f%ar%x1f%ad%x1f%s', '--date=short'],
+			{ translate },
+		);
+		const lines = result.stdout.split('\n').filter(Boolean);
+		return lines.map((line) => {
+			const [hash, shortHash, author, relativeDate, date, message] = line.split('\x1f');
+			return {
+				hash: hash || '',
+				shortHash: shortHash || (hash ? hash.slice(0, 7) : ''),
+				author: author || '',
+				relativeDate: relativeDate || '',
+				date: date || '',
+				message: message || '',
+			};
+		});
+	} catch {
+		return [];
+	}
+}
+
+async function readCommitDetail(cwd, hash, translate) {
+	if (!hash) return null;
+	try {
+		const logRes = await runGit(
+			cwd,
+			['log', '-n1', '--pretty=format:%H%x1f%h%x1f%an%x1f%ar%x1f%ad%x1f%s%x1f%b', hash],
+			{ translate },
+		);
+		const [fullHash, shortHash, author, relativeDate, date, subject, body] = logRes.stdout.split('\x1f');
+
+		const nameStatus = await runGit(cwd, ['diff-tree', '--no-commit-id', '--name-status', '-r', hash], { translate });
+		const numstat = await runGit(cwd, ['diff-tree', '--no-commit-id', '--numstat', '-r', hash], { translate });
+
+		const statsMap = new Map();
+		for (const line of numstat.stdout.split('\n')) {
+			if (!line.trim()) continue;
+			const parts = line.split('\t');
+			if (parts.length >= 3) {
+				const additions = parts[0] === '-' ? 0 : Number(parts[0]) || 0;
+				const deletions = parts[1] === '-' ? 0 : Number(parts[1]) || 0;
+				const file = parts.slice(2).join('\t');
+				statsMap.set(file, { additions, deletions });
+			}
+		}
+
+		const files = [];
+		for (const line of nameStatus.stdout.split('\n')) {
+			if (!line.trim()) continue;
+			const parts = line.split('\t');
+			const code = parts[0] || 'M';
+			const file = parts.at(-1);
+			if (!file) continue;
+			const s = statsMap.get(file) || { additions: 0, deletions: 0 };
+			files.push({
+				file,
+				status: code.startsWith('A') ? 'added' : code.startsWith('D') ? 'deleted' : 'modified',
+				additions: s.additions,
+				deletions: s.deletions,
+			});
+		}
+
+		return {
+			hash: fullHash,
+			shortHash: shortHash || fullHash.slice(0, 7),
+			author,
+			relativeDate,
+			date,
+			subject,
+			body: body ? body.trim() : '',
+			files,
+		};
+	} catch (err) {
+		console.warn('[desktop] Failed to read commit detail:', hash, err);
+		return null;
+	}
+}
+
+async function readCommitFileDiff(cwd, hash, relativePath, translate) {
+	if (!hash || !relativePath) return '';
+	try {
+		const result = await runGit(
+			cwd,
+			['show', '--no-ext-diff', '--format=', '--unified=4', `${hash}`, '--', relativePath],
+			{ translate, maxBuffer: MAX_DIFF_BYTES },
+		);
+		return result.stdout.slice(0, MAX_DIFF_BYTES);
+	} catch {
+		return '';
+	}
+}
+
+async function readBranches(cwd, translate) {
+	try {
+		const result = await runGit(cwd, ['branch', '--list'], { translate });
+		const lines = result.stdout.split('\n').filter(Boolean);
+		let current = '';
+		const branches = [];
+		for (const line of lines) {
+			const isCurrent = line.startsWith('*');
+			const name = line.replace(/^[\*\+]\s+/, '').trim();
+			if (name) {
+				if (isCurrent) current = name;
+				branches.push(name);
+			}
+		}
+		return { current, branches };
+	} catch {
+		return { current: '', branches: [] };
+	}
+}
+
+async function checkoutBranch(cwd, branch, translate) {
+	await runGit(cwd, ['checkout', branch], { translate });
+	return true;
+}
+
 module.exports = {
 	MAX_DIFF_BYTES,
 	isGitRepoSync,
@@ -272,4 +494,13 @@ module.exports = {
 	initGitRepo,
 	parsePorcelainPath,
 	statusKind,
+	stageFiles,
+	unstageFiles,
+	discardFiles,
+	commit,
+	readCommitHistory,
+	readCommitDetail,
+	readCommitFileDiff,
+	readBranches,
+	checkoutBranch,
 };

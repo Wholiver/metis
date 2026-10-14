@@ -2,6 +2,20 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [2.0.0] - 2026-10-14
+
+### Project Agent Harness Architecture, Visual Graph Editor, Sidebar Code Tree & Runtime Isolation
+
+- **Project Agent Harness Architecture (`.metis/harness.json`)**: Persist and enforce project-level multi-agent architectures with immutable run-start snapshots, structural validation, and refusal on corruption (no silent fallback).
+- **Interactive Agent Harness Graph Editor**: Visual canvas for designing execution tiers, role assignments, dependencies, and declarative quality gates directly in Desktop.
+- **Declarative Quality Gates**: Run automated verification checks (`command`, `expectExit`, `artifactPath`) with configurable enforcement policies (`block` or `loop-to:<nodeId>` backtracking).
+- **Sidebar Code Tree & Local Git Workspace**: Interactive directory explorer integrated into the sidebar, featuring file Git status badges (M/A/D/U), unified diff preview, branch tracking, search filters, and editor shortcuts.
+- **Universal Provider Session & Request Isolation**: Inject `X-Session-Id` and unique `X-Request-Id` headers across all model providers and custom proxies (including Tierflow, LiteLLM, OneAPI) to prevent proxy-level cross-session KV cache contamination.
+- **Uncapped Subagent Delegation**: Set default subagent spawn capacity limits (`DEFAULT_MAX_CHILDREN_PER_AGENT` and `DEFAULT_MAX_TOTAL_CHILDREN`) to unlimited (0) with CLI `--max-children 0` support.
+- **Quota Message Sanitization**: Prohibit models from surfacing internal quota exhaustion details and automatically filter historical quota notices in frontend rendering.
+- **Self-Learning Fast Loop & Badges**: Comprehensive runtime adaptation compiler, preference engines, and visual Self-Learning badges across the Desktop interface.
+- **Multi-Language Parity & Onboarding**: Complete 11-language catalog synchronization (1,820 keys each) and polished onboarding transition experiences.
+
 ## [1.4.9] - 2026-10-09
 
 ### Universal Session & Request Isolation, Subagent Uncapped Scaling & Quota Sanitization

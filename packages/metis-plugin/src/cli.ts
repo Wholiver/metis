@@ -33,7 +33,7 @@ export function getSkillVersion(): string {
       // keep looking
     }
   }
-  return "0.0.1";
+  return "0.1.0";
 }
 
 const SUPPORTED_INSTALL_PROVIDERS = ["codex", "opencode", "deepseek"] as const;

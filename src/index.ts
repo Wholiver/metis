@@ -30,6 +30,7 @@ export { validateAskUserRequest, validateAskUserResponse, type AskUserAnswer, ty
 export { extractProposedPlan, getLatestWorkflowProposal, resolveWorkflowPlan, resolveWorkflowProposal, type WorkflowPlanPhase, type WorkflowPlanState, type WorkflowPlanStep, type WorkflowProposalState } from "./core/workflow-runtime.ts";
 export {
 	PerformanceRuntime,
+	isRunWidePerformanceGate,
 	getPerformanceGovernanceRoot,
 	getPerformanceRunDirectory,
 	missionPointer,
@@ -595,3 +596,37 @@ export { convertToPng } from "./utils/image-convert.ts";
 export { formatDimensionNote, type ResizedImage, resizeImage } from "./utils/image-resize.ts";
 // Shell utilities
 export { getShellConfig } from "./utils/shell.ts";
+
+// Harness document and runtime exports
+export {
+	HARNESS_DOCUMENT_VERSION,
+	type HarnessCheck,
+	type HarnessDocument,
+	type HarnessEdge,
+	type HarnessEdgeType,
+	type HarnessFrameworkNodeData,
+	type HarnessGateNodeData,
+	type HarnessGateOnFail,
+	type HarnessNode,
+	type HarnessNodeData,
+	type HarnessNodeType,
+	type HarnessRoleNodeData,
+	type HarnessTierNodeData,
+	type HarnessValidationResult,
+	assertValidHarnessDocument,
+	validateHarnessDocument,
+} from "./core/harness-document.ts";
+export { getBuiltinHarness } from "./core/builtin-harness.ts";
+export {
+	HARNESS_FILE_NAME,
+	getHarnessFilePath,
+	hasHarnessFile,
+	loadHarnessSnapshot,
+} from "./core/harness-runtime.ts";
+export {
+	type DeclarativeCheckResult,
+	type DeclarativeGateExecutionResult,
+	executeDeclarativeGateChecks,
+	findHarnessGate,
+	findHarnessRubric,
+} from "./core/declarative-gates.ts";

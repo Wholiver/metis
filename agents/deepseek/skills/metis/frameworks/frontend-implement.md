@@ -13,12 +13,10 @@ Root/child contract:
 - Stay on owned paths. Independent verification belongs to host/root (or a fresh named reviewer/verifier). A first draft is not completion.
 
 # Native execution protocol: frontend-implement
-# Framework: frontend-implement  (category frontend × subsection implement · tag user-facing · tier T1/T2)
+# Framework: frontend-implement  (category frontend × subsection implement · tag user-facing · tier T2)
 
 Stay on owned paths. Independent verify uses a different agent than the producer. Children emit one ChildResult; they do not spawn nested workers. Host/root owns gates. Goal: add or change
 ONE bounded UI/client piece - correct, tested, AND genuinely usable on a real render.
-
-BOUNDED T1 PATH: when admission already selected T1 + this framework, root executes G4 directly, then independent G5/G6. Do NOT require a prior `ROADMAP.md` item and do NOT escalate to T2 solely because no roadmap exists. OWNERSHIP CLIMB ONLY: missing ROADMAP.md, many steps, a large artifact, or preferring more agents never raises the tier. Climb to T2/T3 only when ownership splits into multiple surfaces that must run serially (T2) or can run in parallel without shared mutable state (T3).
 
 GATE PATH (T2): an implementation-ready roadmap item goes directly to G4 IMPLEMENT(TDD) → G5 IMPL-REVIEW → G6 VERIFY(grounded + usability) → G7 SIGN-OFF(1 juror) → GOAL-CHECK. G1 is conditional and runs only when `requiresDetailedPlan: true`, a named design fork remains unresolved, or an implementer reports `PLAN-CONFLICT`.
 
@@ -38,7 +36,7 @@ only for the conditional triggers above.
 
 ### Phase 1 - CONDITIONAL PLAN (G1)
 FIRST verify an executable `ROADMAP.md` item exists for this feature; if none exists,
-report OUT-OF-SCOPE and escalate (**S4**) only when ownership must split into multiple surfaces; missing ROADMAP.md alone is not a climb reason. An implementation-ready item skips G1. Run
+report OUT-OF-SCOPE and escalate (**S4**). An implementation-ready item skips G1. Run
 G1 only for `requiresDetailedPlan: true`, a named unresolved design fork, or
 `PLAN-CONFLICT`; then the planner looks at the real UI first and delivers: the success criterion in user
 terms; the change file-by-file; ALL the states the piece must handle (loading /
@@ -80,7 +78,7 @@ STOP and report the attempt + the concrete unblock path. Children emit ChildResu
   **S3-USABILITY - rendered piece fails the usability pass** → back to G4 with the
   friction named; not DONE until a real user can complete the task.
 - **S4 - bigger than ONE bounded piece** (a whole flow / spans subsystems) →
-  OUT-OF-SCOPE; climb a tier only when ownership splits into multiple surfaces (GATES.md ESCALATION; missing roadmap / step count / size never climbs).
+  OUT-OF-SCOPE; climb a tier (GATES.md ESCALATION).
 - **S5 - piece proven + zero regressions + usability pass + juror PASS** → DONE.
 
 ## Stacking

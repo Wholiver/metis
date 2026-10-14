@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { BaseAdapter, type InstallReceipt, type DoctorResult, type DetectedModelProfile, type ModelResolutionContext } from "./base.ts";
 import { readJsonSafe, readTextSafe, extractModelFromJson, extractModelFromToml } from "../utils.ts";
 import { CordisBridge } from "../cordis-bridge/index.ts";
@@ -248,6 +249,7 @@ export class DeepSeekAdapter extends BaseAdapter {
     // 3. Verify Cordis SDK bridge (MANDATORY in production - fails closed if missing!)
     const bridgePath = join(root, "cordis-bridge", "index.js");
     let cordisBridgeValid = false;
+    let structuredOutputSupported = false;
     if (!existsSync(bridgePath)) {
       errors.push(`FAIL_CLOSED: Mandatory owned Cordis SDK bridge missing at ${bridgePath}. DeepSeek production path requires owned Cordis bridge.`);
     } else {
@@ -255,7 +257,7 @@ export class DeepSeekAdapter extends BaseAdapter {
         const bridgeContent = readFileSync(bridgePath, "utf-8");
         const requiredSymbols = ["CordisBridge", "OwnedTools", "createCordisBridge", "OWNED_TOOLS"];
         const missingSymbols = requiredSymbols.filter(sym => !bridgeContent.includes(sym));
-        const requiredTools = ["read", "write", "edit", "bash", "grep", "find", "ls"];
+        const requiredTools = ["read", "write", "edit", "bash", "grep", "find", "ls", "metis_structured_output"];
         const missingTools = requiredTools.filter(t => !bridgeContent.includes(`"${t}"`) && !bridgeContent.includes(`'${t}'`));
 
         if (missingSymbols.length > 0 || missingTools.length > 0) {
@@ -263,10 +265,11 @@ export class DeepSeekAdapter extends BaseAdapter {
         } else {
           const bridge = new CordisBridge({ workspaceRoot: root });
           const check = bridge.healthCheck();
-          if (check.ok && check.tools.length >= 7) {
+          if (check.ok && check.tools.length >= 8 && check.tools.includes("metis_structured_output")) {
             cordisBridgeValid = true;
+            structuredOutputSupported = true;
           } else {
-            errors.push(`FAIL_CLOSED: Cordis SDK bridge health check failed`);
+            errors.push(`FAIL_CLOSED: Cordis SDK bridge health check failed or missing metis_structured_output`);
           }
         }
       } catch (err: any) {
@@ -274,7 +277,87 @@ export class DeepSeekAdapter extends BaseAdapter {
       }
     }
 
-    // 4. Verify compatibility presets
+    // 4. Verify Headless Patch: headless.patch.yml (MANDATORY - fails closed if missing/corrupt)
+    let headlessPatchValid = false;
+    const patchPath = join(root, "headless.patch.yml");
+    if (!existsSync(patchPath)) {
+      errors.push(`FAIL_CLOSED: Mandatory headless patch missing at ${patchPath}`);
+    } else {
+      try {
+        const patchContent = readFileSync(patchPath, "utf-8");
+        const doc = parseYaml(patchContent);
+        const entries = Array.isArray(doc) ? doc.flatMap(row => row.insert || (row.id ? [row] : [])) : [];
+        const roles = entries.filter((row: any) => row.name === "@deepseek-ai/dsh-tool-subagent");
+        if (roles.length === 0) {
+          errors.push(`FAIL_CLOSED: Headless patch ${patchPath} contains no valid dsh subagent entries`);
+        } else {
+          let patchEntriesOk = true;
+          for (const role of roles) {
+            if (role.config?.maxDepth !== 1) {
+              errors.push(`FAIL_CLOSED: Role ${role.id} must have maxDepth=1 in ${patchPath}`);
+              patchEntriesOk = false;
+            }
+            const filter = role.config?.toolFilter;
+            if (!filter || !Array.isArray(filter.allow)) {
+              errors.push(`FAIL_CLOSED: Role ${role.id} missing toolFilter.allow array in ${patchPath}`);
+              patchEntriesOk = false;
+            } else {
+              if (Object.prototype.hasOwnProperty.call(filter, "deny")) {
+                errors.push(`FAIL_CLOSED: Role ${role.id} must not use deny list in ${patchPath}`);
+                patchEntriesOk = false;
+              }
+              if (!filter.allow.includes("metis_structured_output")) {
+                errors.push(`FAIL_CLOSED: Role ${role.id} missing metis_structured_output in ${patchPath}`);
+                patchEntriesOk = false;
+              }
+              for (const tool of filter.allow) {
+                if (/subagent|spawn|fork|delegate/i.test(tool)) {
+                  errors.push(`FAIL_CLOSED: Role ${role.id} must not permit native delegation tool ${tool}`);
+                  patchEntriesOk = false;
+                }
+              }
+            }
+          }
+          headlessPatchValid = patchEntriesOk;
+        }
+      } catch (err: any) {
+        errors.push(`FAIL_CLOSED: Headless patch verification error: ${err.message}`);
+      }
+    }
+
+    // 5. Verify Cordis Preset: agent-preset/agent.cordis.yml (MANDATORY - fails closed if missing/corrupt)
+    let cordisPresetValid = false;
+    const cordisPresetPath = join(root, "agent-preset", "agent.cordis.yml");
+    if (!existsSync(cordisPresetPath)) {
+      errors.push(`FAIL_CLOSED: Mandatory Cordis preset missing at ${cordisPresetPath}`);
+    } else {
+      try {
+        const presetContent = readFileSync(cordisPresetPath, "utf-8");
+        const doc = parseYaml(presetContent);
+        const roles = Array.isArray(doc) ? doc.filter((row: any) => row.name === "@deepseek-ai/dsh-tool-subagent") : [];
+        if (roles.length === 0) {
+          errors.push(`FAIL_CLOSED: Cordis preset ${cordisPresetPath} contains no valid dsh subagent entries`);
+        } else {
+          let presetEntriesOk = true;
+          for (const role of roles) {
+            if (role.config?.maxDepth !== 1) {
+              errors.push(`FAIL_CLOSED: Role ${role.id} must have maxDepth=1 in ${cordisPresetPath}`);
+              presetEntriesOk = false;
+            }
+            const filter = role.config?.toolFilter;
+            if (!filter || !Array.isArray(filter.allow) || !filter.allow.includes("metis_structured_output")) {
+              errors.push(`FAIL_CLOSED: Role ${role.id} missing toolFilter.allow with metis_structured_output in ${cordisPresetPath}`);
+              presetEntriesOk = false;
+            }
+          }
+          cordisPresetValid = presetEntriesOk;
+        }
+      } catch (err: any) {
+        errors.push(`FAIL_CLOSED: Cordis preset verification error: ${err.message}`);
+      }
+    }
+
+    // 6. Verify compatibility presets
     for (const role of this.contracts.roles) {
       const presetFile = join(root, "agent-preset", `metis-${role.id}.json`);
       if (!existsSync(presetFile)) {
@@ -282,7 +365,7 @@ export class DeepSeekAdapter extends BaseAdapter {
       }
     }
 
-    // 5. Verify bundle hash
+    // 7. Verify bundle hash
     const bundleHashFile = join(root, ".metis-plugin", "bundle", "bundle.hash");
     let bundleHashValid = false;
     if (existsSync(bundleHashFile)) {
@@ -312,6 +395,9 @@ export class DeepSeekAdapter extends BaseAdapter {
       warnings,
       details: {
         cordisBridgeValid,
+        headlessPatchValid,
+        cordisPresetValid,
+        structuredOutputSupported,
         productionPath: "owned-cordis-bridge",
         compatibilityPresets: "agent-preset",
         filesChecked: receipt.files.length,

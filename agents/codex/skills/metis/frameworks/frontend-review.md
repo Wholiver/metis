@@ -99,7 +99,7 @@ STOP and report the attempt + the concrete unblock path. Children emit ChildResu
 - **S3 - a P0 found is really a code bug to fix now** → route it as a `frontend-fix`
   lane; the review proceeds and completes.
 - **S4 - bigger than ONE bounded surface** (unrelated apps / a whole product audit) →
-  OUT-OF-SCOPE; climb a tier only when ownership splits into multiple surfaces (GATES.md ESCALATION; missing roadmap / step count / size never climbs).
+  OUT-OF-SCOPE; climb a tier (GATES.md ESCALATION).
 - **S5 - every persona journey walked with screenshots + one deduped evidence-backed
   artifact + P0/P1s routed + goal-check PASS** → DONE.
 

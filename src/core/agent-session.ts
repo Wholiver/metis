@@ -163,6 +163,9 @@ import {
 	type PerformanceRunState,
 	type PerformanceRunSummary,
 } from "./performance-runtime.ts";
+import type { HarnessDocument } from "./harness-document.ts";
+import { loadHarnessSnapshot } from "./harness-runtime.ts";
+import { findHarnessRubric } from "./declarative-gates.ts";
 
 // ============================================================================
 // Skill Block Parsing
@@ -513,6 +516,7 @@ export class AgentSession {
 	private _activeRunInstructionStack: InstructionStack | undefined;
 	private readonly _workflowRuntime = new WorkflowRuntime();
 	private readonly _performanceRuntime: PerformanceRuntime;
+	private _harnessSnapshot: Readonly<HarnessDocument> | null = null;
 	private _performanceAdmissionRequired = false;
 	private _pendingPerformanceMission?: string;
 	private _pendingPerformanceInvocation?: ReturnType<AgentSession["_parsePerformanceInvocation"]>;
@@ -577,6 +581,10 @@ export class AgentSession {
 	/** Model registry for API key resolution and model discovery */
 	get modelRegistry(): ModelRegistry {
 		return this._modelRegistry;
+	}
+
+	get harnessSnapshot(): Readonly<HarnessDocument> | null {
+		return this._harnessSnapshot;
 	}
 
 
@@ -2432,6 +2440,21 @@ export class AgentSession {
 
 			// Flush any pending bash messages before the new prompt
 			this._flushPendingBashMessages();
+
+			// Load or maintain harness snapshot:
+			// If not currently in an active run, parse .metis/harness.json.
+			// Missing file -> null (existing code paths).
+			// Valid file -> freeze snapshot for the run.
+			// Invalid or corrupted file -> throws and refuses startup.
+			if (!this._performanceRuntime.hasActiveRun()) {
+				const snapshot = loadHarnessSnapshot(this._cwd);
+				const prevSnapshot = this._harnessSnapshot;
+				this._harnessSnapshot = snapshot;
+				if (snapshot !== prevSnapshot) {
+					this._resourceLoader?.setHarnessSnapshot?.(snapshot);
+					await this._resourceLoader?.reload?.();
+				}
+			}
 
 			// Validate model
 			if (!this.model) {
@@ -4300,10 +4323,67 @@ export class AgentSession {
 							model: this.model?.id,
 							thinking: this.thinkingLevel,
 							getChildModel: (childRole) => {
+								if (this._harnessSnapshot) {
+									const roleNode = this._harnessSnapshot.nodes.find(
+										(n) => n.type === "role" && (n.id === childRole || (n.data as any)?.name === childRole),
+									);
+									const roleData = roleNode?.data as import("./harness-document.ts").HarnessRoleNodeData | undefined;
+									if (roleData?.model && roleData.model !== "inherit") {
+										const rawModel = roleData.model.trim();
+										let resolvedProvider = this.model?.provider ?? "openai";
+										let resolvedModelId = rawModel;
+										let resolvedBaseUrl: string | undefined;
+
+										if (rawModel.includes("/")) {
+											const [p, ...mParts] = rawModel.split("/");
+											resolvedProvider = p;
+											resolvedModelId = mParts.join("/");
+											const found = this._modelRegistry.find(resolvedProvider, resolvedModelId);
+											resolvedBaseUrl = found?.baseUrl;
+										} else {
+											const found = this._modelRegistry.getAll().find(
+												(m) => m.id === rawModel || m.provider === rawModel,
+											);
+											if (found) {
+												resolvedProvider = found.provider;
+												resolvedModelId = found.id;
+												resolvedBaseUrl = found.baseUrl;
+											}
+										}
+
+										const providerConfig = (this._modelRegistry as any).providerRequestConfigs?.get(resolvedProvider);
+										const cred = this._modelRegistry.authStorage?.get(resolvedProvider) ?? this._modelRegistry.authStorage?.get(rawModel);
+										const storedApiKey = cred ? (cred.type === "api_key" ? cred.key : (cred as any).access_token) : undefined;
+										const resolvedApiKey = (this._modelRegistry.authStorage as any).runtimeOverrides?.get(resolvedProvider) ||
+											(this._modelRegistry.authStorage as any).runtimeOverrides?.get(rawModel) ||
+											storedApiKey ||
+											(typeof providerConfig?.apiKey === "string" ? providerConfig.apiKey : undefined) ||
+											process.env[`${resolvedProvider.toUpperCase().replace(/-/g, "_")}_API_KEY`] ||
+											process.env.TIERFLOW_API_KEY;
+
+										return {
+											provider: resolvedProvider,
+											model: resolvedModelId,
+											baseUrl: resolvedBaseUrl,
+											apiKey: resolvedApiKey,
+										};
+									}
+								}
 								const model = this._getPerformanceChildModel(childRole);
-								return model ? { provider: model.provider, model: model.id } : undefined;
+								return model ? { provider: model.provider, model: model.id, baseUrl: model.baseUrl } : undefined;
 							},
-							getChildThinking: (childRole) => this._getPerformanceChildThinking(childRole),
+							getChildThinking: (childRole) => {
+								if (this._harnessSnapshot) {
+									const roleNode = this._harnessSnapshot.nodes.find(
+										(n) => n.type === "role" && (n.id === childRole || (n.data as any)?.name === childRole),
+									);
+									const roleData = roleNode?.data as import("./harness-document.ts").HarnessRoleNodeData | undefined;
+									if (roleData?.thinking) {
+										return roleData.thinking;
+									}
+								}
+								return this._getPerformanceChildThinking(childRole);
+							},
 							skills: this._resourceLoader
 								.getSkills()
 								.skills.filter((s) => s.sourceInfo.source === "cli" || s.sourceInfo.scope === "temporary")
@@ -4339,6 +4419,12 @@ export class AgentSession {
 								worktree: prepared.worktree,
 								ownedPaths: prepared.ownedPaths ?? input.ownedPaths,
 							};
+							if (this._harnessSnapshot && merged.gate) {
+								const rubric = findHarnessRubric(this._harnessSnapshot, merged.gate);
+								if (rubric) {
+									merged.context = [merged.context, `## Quality Gate Rubric (${merged.gate})\n${rubric}`].filter(Boolean).join("\n\n");
+								}
+							}
 							if (isReliableHeadlessProfile()) {
 								// Headless benchmarks keep sequential mutating children in the scored cwd.
 								return { ...merged, worktree: undefined };
@@ -4434,6 +4520,7 @@ export class AgentSession {
 								settings: this.settingsManager.getSettings(),
 								adaptationsFlag: this._adaptations,
 								env: process.env,
+								harnessSnapshot: this._harnessSnapshot,
 								capabilities: {
 									read: activeTools.has("read"),
 									write: activeTools.has("write") || activeTools.has("edit"),

@@ -83,7 +83,8 @@ STOP and report the attempt + the concrete unblock path. Children emit ChildResu
   the reshape altered behavior → root-cause and redo. Never rewrite the test to pass.
 - **S3 - the task actually needs a behavior change** (a fix or a new capability) →
   wrong framework: route to `<category>-fix` / `<category>-implement`.
-- **S4 - the reshape spans subsystems beyond the owned scope** → OUT-OF-SCOPE; climb a tier only when ownership splits into multiple surfaces (GATES.md ESCALATION; missing roadmap / step count / size never climbs).
+- **S4 - the reshape spans subsystems beyond the owned scope** → OUT-OF-SCOPE; climb a
+  tier (GATES.md ESCALATION).
 - **S5 - structure improved + dead code removed + characterization & suite GREEN +
   zero behavior change** → DONE.
 

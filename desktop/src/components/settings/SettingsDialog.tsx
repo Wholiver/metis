@@ -48,6 +48,7 @@ import { translateExact } from '../../i18n';
 import { modelLabel } from '../chat/ModelSwitcher';
 import { Button } from '../atoms/Button';
 import { ValuePill } from '../atoms/ValuePill';
+import { SelfLearningBadge } from '../atoms/SelfLearningBadge';
 import ApprovalDialog from '../primitives/ApprovalDialog';
 import GlideMenu from '../primitives/GlideMenu';
 import { AddModelModal } from './AddModelModal';
@@ -1626,7 +1627,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
             </div>
           </div>
           <nav className="min-h-0 flex-1 overflow-y-auto" aria-label="Settings sections">
-            <GlideMenu highlightClassName="inset-x-0 rounded-[8px] bg-hover" className="flex flex-col gap-0.5">
+            <GlideMenu
+              activeRowSelector="[aria-current='page']"
+              highlightClassName="inset-x-0 rounded-[8px] bg-hover-2"
+              className="flex flex-col gap-0.5"
+            >
               {tabs.map((item) => {
                 const matchCount = searchResultsByTab.get(item.id) || 0;
                 const isActive = tab === item.id;
@@ -1638,13 +1643,16 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     data-settings-panel={item.id}
                     onClick={() => handleTabChange(item.id)}
                     className={`relative z-10 flex min-h-8 w-full items-center justify-between rounded-[8px] px-2.5 py-1.5 text-left transition-[color,transform] duration-150 active:scale-[0.98] motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)] ${
-                      isActive ? 'font-medium text-ink' : 'text-ink-3 hover:text-ink'
+                      isActive ? 'font-medium text-ink' : 'text-ink-2 hover:text-ink'
                     }`}
                     aria-current={isActive ? 'page' : undefined}
                   >
                     <span className="flex min-w-0 items-center gap-2.5 truncate">
                       <item.icon className={`h-4 w-4 shrink-0 stroke-[1.7] ${isActive ? 'text-ink' : 'text-ink-3'}`} />
                       <span className="truncate text-[14px]">{translate(item.label)}</span>
+                      {item.id === 'adaptations' && (
+                        <SelfLearningBadge className="scale-90" tooltipPlacement="top" />
+                      )}
                     </span>
                     {searchQuery && matchCount > 0 ? (
                       <ValuePill className="h-5 min-w-5 justify-center px-1.5 text-[11px]">{matchCount}</ValuePill>

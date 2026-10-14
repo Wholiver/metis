@@ -8,8 +8,20 @@ export interface ToolExecutionResult {
   error?: string;
 }
 
+export interface StructuredOutputArgs {
+  status?: string;
+  summary?: string;
+  gate?: string;
+  role?: string;
+  deliverables?: string[];
+  metrics?: Record<string, any>;
+  errors?: string[];
+  [key: string]: any;
+}
+
 export class OwnedTools {
   private workspaceRoot: string;
+  private recordedStructuredOutputs: any[] = [];
 
   constructor(workspaceRoot: string) {
     this.workspaceRoot = workspaceRoot;
@@ -221,5 +233,25 @@ export class OwnedTools {
     } catch (err: any) {
       return { success: false, error: err.message };
     }
+  }
+
+  metis_structured_output(args: StructuredOutputArgs): ToolExecutionResult {
+    if (!args || typeof args !== "object") {
+      return { success: false, error: "STRUCTURED_OUTPUT_INVALID: Arguments must be an object" };
+    }
+    const record = { ...args, recordedAt: new Date().toISOString() };
+    this.recordedStructuredOutputs.push(record);
+    return {
+      success: true,
+      output: JSON.stringify({ recorded: true, count: this.recordedStructuredOutputs.length }),
+    };
+  }
+
+  getRecordedStructuredOutputs(): any[] {
+    return [...this.recordedStructuredOutputs];
+  }
+
+  clearRecordedStructuredOutputs(): void {
+    this.recordedStructuredOutputs = [];
   }
 }

@@ -69,7 +69,7 @@ npm install -g metis-skill
 metis-plugin
 ```
 
-Run `metis-plugin` to pick a host, or `metis-plugin install codex|opencode|deepseek`.
+Run `metis-plugin` to pick a host, or `metis-plugin install codex|opencode|deepseek`. Verify with `metis-plugin doctor`.
 
 <details>
 <summary><strong>CLI installation (Node.js &gt;= 22.19.0)</strong></summary>

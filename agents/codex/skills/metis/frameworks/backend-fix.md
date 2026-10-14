@@ -134,7 +134,8 @@ STOP and report the attempt + the concrete unblock path. Children emit ChildResu
 - **S3 - fix flips a pre-existing test green→red** → FAILED. Apply the
   regression-is-a-signal rule (Phase 5): re-root-cause and redo. Never weaken/skip
   the test, never DONE over it.
-- **S4 - root cause is outside the owned file/scope** → OUT-OF-SCOPE; climb a tier only when ownership splits into multiple surfaces (GATES.md ESCALATION; missing roadmap / step count / size never climbs). Never patch across subsystems inline.
+- **S4 - root cause is outside the owned file/scope** → OUT-OF-SCOPE; climb a tier
+  (GATES.md ESCALATION). Never patch across subsystems inline.
 - **S5 - repro GREEN + zero regressions + adversarial pass + asks met** → DONE.
 
 ## Stacking

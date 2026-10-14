@@ -4,13 +4,24 @@ This page gets you from install to a useful first Metis session.
 
 ## Install
 
-Metis is distributed as an npm package:
+Metis CLI is distributed as an npm package:
 
 ```bash
-npm install -g --ignore-scripts metis
+npm install -g --ignore-scripts @wholiver_hu/metis
 ```
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. Metis does not require install scripts for normal npm installs.
+
+### Skill (Codex / OpenCode / DeepSeek Harness)
+
+If you are using Metis as an orchestration skill inside Codex, OpenCode, or DeepSeek Harness:
+
+```bash
+npm install -g metis-skill
+metis-plugin
+```
+
+Verify installation with `metis-plugin doctor`.
 
 ### Uninstall
 
@@ -18,16 +29,19 @@ Use the package manager that installed Metis. The curl installer uses npm global
 
 ```bash
 # curl installer or npm install -g
-npm uninstall -g metis
+npm uninstall -g @wholiver_hu/metis
+
+# Skill uninstall
+npm uninstall -g metis-skill
 
 # pnpm
-pnpm remove -g metis
+pnpm remove -g @wholiver_hu/metis
 
 # Yarn
-yarn global remove metis
+yarn global remove @wholiver_hu/metis
 
 # Bun
-bun uninstall -g metis
+bun uninstall -g @wholiver_hu/metis
 ```
 
 Uninstalling Metis leaves settings, credentials, sessions, and installed metis packages in `~/.metis/agent/`.

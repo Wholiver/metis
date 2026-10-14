@@ -107,5 +107,39 @@ describe("Metis plugin projection parity with BUILTIN_AGENTS", () => {
 		expect(supervisor).toContain("goal_checker");
 		expect(supervisor).toContain("sweeper");
 		expect(supervisor).toContain("juror");
+
+		// OpenCode dedicated profile and launch wrappers parity
+		const ocProfile = readFileSync(join(outDir, "opencode", "metis.opencode.json"), "utf8");
+		const ocProfileRepo = readFileSync(join("agents", "opencode", "metis.opencode.json"), "utf8");
+		expect(ocProfile).toBe(ocProfileRepo);
+		expect(ocProfile).toContain("https://opencode.ai/config.json");
+		expect(ocProfile).toContain('"metis-*": "allow"');
+
+		const ocLaunchSh = readFileSync(join(outDir, "opencode", "workflow", "launch-opencode.sh"), "utf8");
+		const ocLaunchShRepo = readFileSync(join("agents", "opencode", "workflow", "launch-opencode.sh"), "utf8");
+		expect(ocLaunchSh).toBe(ocLaunchShRepo);
+		expect(ocLaunchSh).toContain("--check");
+		expect(ocLaunchSh).toContain("1.18.7");
+
+		const ocLaunchPs = readFileSync(join(outDir, "opencode", "workflow", "launch-opencode.ps1"), "utf8");
+		const ocLaunchPsRepo = readFileSync(join("agents", "opencode", "workflow", "launch-opencode.ps1"), "utf8");
+		expect(ocLaunchPs).toBe(ocLaunchPsRepo);
+
+		// DeepSeek headless patch, cordis preset, and bridge parity
+		const dsPatch = readFileSync(join(outDir, "deepseek", "headless.patch.yml"), "utf8");
+		const dsPatchRepo = readFileSync(join("agents", "deepseek", "headless.patch.yml"), "utf8");
+		expect(dsPatch).toBe(dsPatchRepo);
+		expect(dsPatch).toContain("metis_structured_output");
+		expect(dsPatch).toContain("@deepseek-ai/dsh-tool-subagent");
+
+		const dsCordis = readFileSync(join(outDir, "deepseek", "agent-preset", "agent.cordis.yml"), "utf8");
+		const dsCordisRepo = readFileSync(join("agents", "deepseek", "agent-preset", "agent.cordis.yml"), "utf8");
+		expect(dsCordis).toBe(dsCordisRepo);
+		expect(dsCordis).toContain("metis_structured_output");
+
+		const dsBridge = readFileSync(join(outDir, "deepseek", "cordis-bridge", "index.js"), "utf8");
+		const dsBridgeRepo = readFileSync(join("agents", "deepseek", "cordis-bridge", "index.js"), "utf8");
+		expect(dsBridge).toBe(dsBridgeRepo);
+		expect(dsBridge).toContain("metis_structured_output");
 	});
 });

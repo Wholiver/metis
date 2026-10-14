@@ -33,7 +33,14 @@ const contractsSrc = join(repoRoot, "contracts");
 const frameworksSrc = join(repoRoot, "src", "core", "performance-frameworks.ts");
 
 function parseArgs(argv) {
-  const out = { version: "0.0.1", outDir: repoRoot };
+  let defaultVersion = "0.1.0";
+  try {
+    const pkg = JSON.parse(readFileSync(join(pluginSrc, "package.json"), "utf8"));
+    if (pkg.version) defaultVersion = pkg.version;
+  } catch {
+    // fallback
+  }
+  const out = { version: defaultVersion, outDir: repoRoot };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--version" && argv[i + 1]) {
@@ -45,7 +52,7 @@ function parseArgs(argv) {
     } else if (arg.startsWith("--out-dir=")) {
       out.outDir = resolve(arg.slice("--out-dir=".length));
     } else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/pack-metis-skill.mjs [--version 0.0.1] [--out-dir .]`);
+      console.log(`Usage: node scripts/pack-metis-skill.mjs [--version <version>] [--out-dir .]`);
       process.exit(0);
     }
   }
@@ -109,10 +116,13 @@ function main() {
         "--bundle",
         "--platform=node",
         "--format=esm",
-        "--packages=external",
+        "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
         `--outfile=${join(stage, "dist", "cli.js")}`,
       ],
-      { cwd: repoRoot },
+      {
+        cwd: repoRoot,
+        env: { ...process.env, NODE_PATH: join(repoRoot, "node_modules") },
+      },
     );
 
     // Drop TS sources from the published tarball — only dist + contracts ship.

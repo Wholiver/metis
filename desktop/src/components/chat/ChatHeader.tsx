@@ -1,8 +1,9 @@
 import React from 'react';
-import { LoaderCircle, PanelLeftOpen, PanelRightOpen, Plus, Sparkles, X } from 'lucide-react';
+import { LoaderCircle, PanelLeftOpen, Plus, Sparkles, X } from 'lucide-react';
 import { Agent } from '../../types';
 import { useI18n } from '../../i18n';
-import { isMac, isWindows } from '../../lib/platform';
+import { isMac } from '../../lib/platform';
+import { SelfLearningBadge } from '../atoms/SelfLearningBadge';
 import type { LearningProgressState } from '../../hooks/useMetisServer';
 
 export type ChatBreadcrumbSegment = {
@@ -15,9 +16,7 @@ export type ChatBreadcrumbSegment = {
 interface ChatHeaderProps {
   agent: Agent;
   isSidebarOpen?: boolean;
-  isInspectorOpen?: boolean;
   onToggleSidebar?: () => void;
-  onToggleInspector?: () => void;
   onNewChat?: () => void;
   breadcrumb?: ChatBreadcrumbSegment[];
   onNavigateBreadcrumb?: (depth: number) => void;
@@ -29,9 +28,7 @@ interface ChatHeaderProps {
 export const ChatHeader = React.memo<ChatHeaderProps>(({
   agent,
   isSidebarOpen = true,
-  isInspectorOpen = true,
   onToggleSidebar,
-  onToggleInspector,
   onNewChat,
   breadcrumb,
   onNavigateBreadcrumb,
@@ -43,7 +40,7 @@ export const ChatHeader = React.memo<ChatHeaderProps>(({
   const segments = breadcrumb && breadcrumb.length > 1 ? breadcrumb : null;
 
   return (
-    <div className={`h-[50px] ${!isSidebarOpen ? 'px-3.5' : 'pl-6 pr-3.5'} ${isWindows && !isInspectorOpen ? 'pr-[140px]' : ''} flex items-center justify-between flex-shrink-0 titlebar-drag`}>
+    <div data-chat-header="" className={`h-[50px] ${!isSidebarOpen ? 'px-3.5' : 'pl-6 pr-3.5'} flex items-center justify-between flex-shrink-0 titlebar-drag`}>
       <div className="flex items-center gap-2 min-w-0 no-drag">
         {!isSidebarOpen && (
           <>
@@ -137,6 +134,7 @@ export const ChatHeader = React.memo<ChatHeaderProps>(({
             <span className="truncate max-w-[220px]">
               {learningProgress.learnedSummary}
             </span>
+            <SelfLearningBadge className="scale-90" tooltipPlacement="bottom" />
             <span className="text-[11px] underline opacity-80 shrink-0">
               {t('selfLearningViewDetails')}
             </span>
@@ -162,16 +160,6 @@ export const ChatHeader = React.memo<ChatHeaderProps>(({
           </span>
         )}
 
-        {!isInspectorOpen && (
-          <button
-            onClick={onToggleInspector}
-            data-inspector-expand-button=""
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-3 hover:bg-hover hover:text-ink transition-colors"
-            title="Expand Inspector"
-          >
-            <PanelRightOpen className="w-4 h-4 stroke-[1.8]" />
-          </button>
-        )}
       </div>
     </div>
   );

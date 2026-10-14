@@ -13,6 +13,8 @@ import { isHostDispatchActive } from "./host-dispatch.ts";
 import { getEffectiveWorkflow } from "./adaptations/effective.ts";
 import { isSelfLearningActive, type SelfLearningActivationOptions } from "./adaptations/activation.ts";
 import type { WorkflowAdaptation } from "./adaptations/workflow-schema.ts";
+import type { HarnessDocument, HarnessRoleNodeData, HarnessGateNodeData } from "./harness-document.ts";
+import { executeDeclarativeGateChecks, findHarnessGate, type DeclarativeGateExecutionResult } from "./declarative-gates.ts";
 
 /**
  * Runtime control plane for the Codex variant of Performance.
@@ -27,7 +29,28 @@ export type PerformanceEffortCapability = "selectable" | "inherited-only" | "uns
 export type PerformanceTier = "T0" | "T1" | "T2" | "T3";
 export type PerformanceTaskShape = "bounded" | "sequential-complex" | "parallel";
 export type ExistingFrameworkId = "apply" | "backend-build" | "backend-fix" | "backend-implement" | "composition" | "docs" | "frontend-build" | "frontend-fix" | "frontend-implement" | "frontend-review" | "generation" | "plan-design" | "plan-research" | "plan-scope" | "polish" | "refactor";
-export type PerformanceGate = "G0" | "G2" | "G2-assurance" | "G2-review" | "G2-verify" | "G1" | "G1-assurance" | "G1-review" | "G1-verify" | "G3.5" | "G4" | "G4-assurance" | "G5" | "G6" | "G7" | "G7-assurance" | "sweep" | "goal-check" | "complete" | "blocked";
+export type PerformanceGate =
+	| "G0"
+	| "G2"
+	| "G2-assurance"
+	| "G2-review"
+	| "G2-verify"
+	| "G1"
+	| "G1-assurance"
+	| "G1-review"
+	| "G1-verify"
+	| "G3.5"
+	| "G4"
+	| "G4-assurance"
+	| "G5"
+	| "G6"
+	| "G7"
+	| "G7-assurance"
+	| "sweep"
+	| "goal-check"
+	| "complete"
+	| "blocked"
+	| (string & {});
 export type PerformanceRunStatus = "active" | "completed" | "blocked" | "aborted";
 export type PerformanceVerdict = "pass" | "fail" | "blocked";
 
@@ -118,6 +141,7 @@ export interface PerformanceRunState {
 	admissionSha256?: string;
 	workspaceRoot?: string;
 	workflowSnapshot?: WorkflowAdaptation;
+	harnessSnapshot?: HarnessDocument;
 	routePolicy?: {
 		implementation: "root" | "serial-shared" | "parallel-isolated";
 		assuranceWorkspace: "integrated-shared";
@@ -182,6 +206,7 @@ export interface PerformanceAdmitInvocation extends Omit<PerformanceStartInvocat
 	};
 	adaptationsFlag?: "on" | "off";
 	env?: Record<string, string | undefined>;
+	harnessSnapshot?: HarnessDocument | null;
 }
 
 export interface PerformanceSpawnRequest {
@@ -209,7 +234,8 @@ export type PerformanceDispatchGate =
 	| "G6"
 	| "G7"
 	| "sweep"
-	| "goal-check";
+	| "goal-check"
+	| (string & {});
 
 const HOST_RECORDABLE_CHILD_GATES = new Set<string>([
 	"G0",
@@ -248,6 +274,18 @@ function defaultDispatchGateForRole(agent: string, frontier: PerformanceGate): P
 		"goal-checker": "goal-check",
 	};
 	return byRole[agent];
+}
+
+export function isRunWidePerformanceGate(gate?: string | null): boolean {
+	return (
+		gate === "G2" ||
+		gate === "G2-assurance" ||
+		gate === "G2-review" ||
+		gate === "G2-verify" ||
+		gate === "sweep" ||
+		gate === "goal-check" ||
+		gate === "complete"
+	);
 }
 
 export interface PerformancePreparedSpawn {
@@ -401,17 +439,28 @@ function nextActionForActiveFrontier(state: PerformanceRunState): string {
 			return `spawn_agent the required independent G7 juror(s)${itemHint}; the host records each juror gate from ChildResult. Do not call performance_gate for G7 yourself.`;
 		case "sweep":
 			return "spawn_agent one fresh sweeper for the convergence sweep; the host records the sweep gate from ChildResult. Do not call performance_gate for sweep yourself.";
-		case "goal-check":
-			if (state.admission && TIER_ROLES[state.admission.tier].has("goal-checker")) {
+		case "goal-check": {
+			const hasGoalChecker = state.harnessSnapshot
+				? state.harnessSnapshot.nodes.some((n) => n.type === "role" && (n.data as any).name === "goal-checker")
+				: Boolean(state.admission && TIER_ROLES[state.admission.tier].has("goal-checker"));
+			if (state.admission && hasGoalChecker) {
 				return "spawn_agent an independent goal-checker; the host records goal-check from ChildResult. Do not stamp goal-check as a delivery actor.";
 			}
 			return "record goal-check evidence with zero openFindings and a passing endToEnd, then call performance_gate with gate=goal-check.";
+		}
+		case "complete":
+			return "All performance gates have passed and the run is complete. Summarize deliverables and completed tasks for the user.";
+		case "blocked":
+			return "Performance run is blocked. Inspect open findings and repair roadmap or deliverables.";
 		default:
 			return `advance the current frontier ${state.frontier} with the matching performance_gate and governance artifact evidence.`;
 	}
 }
 
-function normalizedAdmission(admission: PerformanceAdmission): PerformanceAdmission {
+function normalizedAdmission(
+	admission: PerformanceAdmission,
+	harnessSnapshot?: HarnessDocument | null,
+): PerformanceAdmission {
 	const cleanList = (values: string[], label: string): string[] => {
 		const result = values.map((value) => value.trim()).filter(Boolean);
 		if (!result.length) throw new Error(`REPAIR_REQUIRED: ${label} must contain at least one concrete value.`);
@@ -433,7 +482,9 @@ function normalizedAdmission(admission: PerformanceAdmission): PerformanceAdmiss
 	if (new Set(lanes.map((lane) => lane.id)).size !== lanes.length) throw new Error("REPAIR_REQUIRED: lane ids must be unique.");
 	for (const lane of lanes) {
 		if (!lane.objective) throw new Error(`REPAIR_REQUIRED: lane ${lane.id} needs an objective.`);
-		if (!getPerformanceFramework(lane.framework)) throw new Error(`REPAIR_REQUIRED: lane ${lane.id} references unknown framework ${JSON.stringify(lane.framework)}.`);
+		const hasFramework = Boolean(getPerformanceFramework(lane.framework)) ||
+			Boolean(harnessSnapshot?.nodes.some((n) => n.type === "framework" && n.id === lane.framework));
+		if (!hasFramework) throw new Error(`REPAIR_REQUIRED: lane ${lane.id} references unknown framework ${JSON.stringify(lane.framework)}.`);
 		if (lane.dependsOn.includes(lane.id) || lane.dependsOn.some((id) => !lanes.some((candidate) => candidate.id === id))) {
 			throw new Error(`REPAIR_REQUIRED: lane ${lane.id} has an invalid dependency.`);
 		}
@@ -694,6 +745,64 @@ export function validatePerformanceSpawn(
 ): PerformanceSpawnDecision {
 	const hostDispatch = Boolean(request.hostDispatch) || isHostDispatchActive();
 	const hostOwnedRoles = new Set(["planner", "implementer", "verifier", "contract-solver", "repairer", "reviewer", "fresh-verifier"]);
+
+	if (state.harnessSnapshot) {
+		const harnessRoles = new Set(
+			state.harnessSnapshot.nodes
+				.filter((n) => n.type === "role")
+				.map((n) => (n.data as HarnessRoleNodeData).name),
+		);
+		if (!harnessRoles.has(request.childRole) && !(hostDispatch && hostOwnedRoles.has(request.childRole))) {
+			return { valid: false, message: `Performance rejects unknown role "${request.childRole}".` };
+		}
+		if (request.liveAgents >= state.maxConcurrent) {
+			return { valid: false, message: `Performance live-agent ceiling reached (${state.maxConcurrent}); collect a worker before dispatching another.` };
+		}
+		if (state.admission) {
+			const tierKey = state.admission.tier.toLowerCase();
+			const tierNode = state.harnessSnapshot.nodes.find(
+				(n) => n.type === "tier" && (n.id.toLowerCase().includes(tierKey) || n.id.toLowerCase() === tierKey),
+			);
+			if (tierNode) {
+				const fwIds = new Set(
+					state.harnessSnapshot.edges
+						.filter((e) => e.source === tierNode.id && (e.type === "tier-framework" || !e.type))
+						.map((e) => e.target),
+				);
+				const gateIds = new Set(
+					state.harnessSnapshot.edges
+						.filter((e) => fwIds.has(e.source) && (e.type === "framework-gate" || !e.type))
+						.map((e) => e.target),
+				);
+				const allowedRoles = new Set(
+					state.harnessSnapshot.edges
+						.filter((e) => (gateIds.has(e.source) || fwIds.has(e.source) || e.source === tierNode.id))
+						.map((e) => e.target),
+				);
+				if (allowedRoles.size > 0 && !allowedRoles.has(request.childRole)) {
+					if (!(hostDispatch && hostOwnedRoles.has(request.childRole))) {
+						return { valid: false, message: `Performance ${state.admission.tier} route does not permit ${request.childRole}.` };
+					}
+				}
+				if (allowedRoles.size === 0 && tierKey === "t0") {
+					if (!(hostDispatch && hostOwnedRoles.has(request.childRole))) {
+						return { valid: false, message: `Performance ${state.admission.tier} route does not permit ${request.childRole}.` };
+					}
+				}
+			}
+		}
+		if (request.parentRole === "root" || request.parentRole === "coordinator") {
+			return { valid: true };
+		}
+		const hasDelegationEdge = state.harnessSnapshot.edges.some(
+			(e) => e.source === request.parentRole && e.target === request.childRole && (e.type === "role-delegation" || !e.type),
+		);
+		if (hasDelegationEdge) {
+			return { valid: true };
+		}
+		return { valid: false, message: `Performance ${request.parentRole} cannot dispatch ${request.childRole} in current harness.` };
+	}
+
 	if (!KNOWN_ROLES.has(request.childRole) && !(hostDispatch && hostOwnedRoles.has(request.childRole))) {
 		return { valid: false, message: `Performance rejects unknown role "${request.childRole}".` };
 	}
@@ -762,7 +871,7 @@ export class PerformanceRuntime {
 
 	/** Start or revise a v2 run from a validated, typed admission contract. */
 	admit(invocation: PerformanceAdmitInvocation): PerformanceRunState {
-		const admission = normalizedAdmission(invocation.admission);
+		const admission = normalizedAdmission(invocation.admission, invocation.harnessSnapshot ?? this.stateValue?.harnessSnapshot);
 		const activationOpts: SelfLearningActivationOptions = {
 			executionProfile: invocation.executionProfile ?? this.options?.executionProfile,
 			settings: invocation.settings ?? this.options?.settings,
@@ -815,6 +924,7 @@ export class PerformanceRuntime {
 				admissionSha256,
 				workspaceRoot: resolve(invocation.workspaceRoot),
 				workflowSnapshot: isSelfLearning ? effectiveWf : undefined,
+				harnessSnapshot: invocation.harnessSnapshot ?? this.stateValue.harnessSnapshot,
 				routePolicy: routePolicyForAdmission(admission),
 				roadmapItems,
 				completedItemIds: [],
@@ -874,6 +984,7 @@ export class PerformanceRuntime {
 			admissionSha256,
 			workspaceRoot: resolve(invocation.workspaceRoot),
 			workflowSnapshot: isSelfLearning ? effectiveWf : undefined,
+			harnessSnapshot: invocation.harnessSnapshot ?? undefined,
 			routePolicy: routePolicyForAdmission(admission),
 		};
 		writeFileSync(join(governanceRoot, "PROMPTS.txt"), `MISSION\n${state.mission}\n`, "utf8");
@@ -894,9 +1005,38 @@ ${line(state, `FRONTIER ${state.frontier}`)}
 	}
 
 	allowedSpawnRoles(): string[] {
-		const tier = this.stateValue?.admission?.tier;
+		const state = this.stateValue;
+		if (state?.harnessSnapshot) {
+			const harnessRoles = state.harnessSnapshot.nodes
+				.filter((n) => n.type === "role")
+				.map((n) => (n.data as HarnessRoleNodeData).name);
+			if (state.admission) {
+				const tierKey = state.admission.tier.toLowerCase();
+				const tierNode = state.harnessSnapshot.nodes.find(
+					(n) => n.type === "tier" && (n.id.toLowerCase().includes(tierKey) || n.id.toLowerCase() === tierKey),
+				);
+				if (tierNode) {
+					const fwIds = new Set(
+						state.harnessSnapshot.edges
+							.filter((e) => e.source === tierNode.id && (e.type === "tier-framework" || !e.type))
+							.map((e) => e.target),
+					);
+					const gateIds = new Set(
+						state.harnessSnapshot.edges
+							.filter((e) => fwIds.has(e.source) && (e.type === "framework-gate" || !e.type))
+							.map((e) => e.target),
+					);
+					const allowed = state.harnessSnapshot.edges
+						.filter((e) => (gateIds.has(e.source) || fwIds.has(e.source) || e.source === tierNode.id))
+						.map((e) => e.target);
+					if (allowed.length > 0) return Array.from(new Set(allowed));
+				}
+			}
+			return Array.from(new Set(harnessRoles));
+		}
+		const tier = state?.admission?.tier;
 		const baseRoles = tier ? [...TIER_ROLES[tier]] : [...KNOWN_ROLES];
-		const effectiveWf = this.stateValue?.workflowSnapshot;
+		const effectiveWf = state?.workflowSnapshot;
 		if (effectiveWf?.routeBias && typeof effectiveWf.routeBias === "object") {
 			const biased = Object.values(effectiveWf.routeBias)
 				.filter((role) => baseRoles.includes(role));
@@ -911,7 +1051,7 @@ ${line(state, `FRONTIER ${state.frontier}`)}
 		task: string;
 		context?: string;
 		laneId?: string;
-		gate?: PerformancePreparedSpawn["gate"];
+		gate?: PerformanceDispatchGate | string;
 		/** Internal only — set by Controller ALS / hostDispatch, never model schema. */
 		hostDispatch?: boolean;
 	}): PerformancePreparedSpawn {
@@ -919,52 +1059,101 @@ ${line(state, `FRONTIER ${state.frontier}`)}
 		const hostDispatch = Boolean(input.hostDispatch) || isHostDispatchActive();
 		const hostOwnedRoles = new Set(["planner", "implementer", "verifier", "contract-solver", "repairer", "reviewer", "fresh-verifier"]);
 		if (!state?.admission) return { task: input.task, context: input.context, laneId: input.laneId, gate: input.gate };
-		// Controller hostDispatch only: allow short-loop roles under T1. Plain model spawn keeps TIER_ROLES.
-		if (hostDispatch && hostOwnedRoles.has(input.agent) && !TIER_ROLES[state.admission.tier].has(input.agent)) {
-			return {
-				task: input.task,
-				context: [input.context, "Host-owned reliable-headless dispatch; do not call performance_gate."].filter(Boolean).join("\n"),
-				laneId: input.laneId ?? state.activeItemId ?? state.admission.lanes[0]?.id,
-				gate: undefined,
-			};
+		if (state.frontier === "G4" && !state.activeItemId && state.roadmapItems.length > 0 && state.completedItemIds.length === state.roadmapItems.length) {
+			this.transition(this.requiresConvergenceSweep() ? "sweep" : "goal-check");
 		}
-		if (!TIER_ROLES[state.admission.tier].has(input.agent)) throw new Error(`Performance ${state.admission.tier} route does not permit ${input.agent}.`);
-		let candidateLaneId = input.laneId;
-		if (!candidateLaneId && state.admission.tier === "T3" && input.agent === "implementer") {
-			const activeLanes = new Set((state.leases ?? []).map((l) => l.laneId));
-			const availableLane = state.admission.lanes.find((l) => !activeLanes.has(l.id) && !(state.implementedItemIds ?? []).includes(l.id));
-			if (availableLane) {
-				candidateLaneId = availableLane.id;
+		if (state.harnessSnapshot) {
+			const tierKey = state.admission.tier.toLowerCase();
+			const tierNode = state.harnessSnapshot.nodes.find(
+				(n) => n.type === "tier" && (n.id.toLowerCase().includes(tierKey) || n.id.toLowerCase() === tierKey),
+			);
+			let allowedRoles: Set<string> | undefined;
+			if (tierNode) {
+				const fwIds = new Set(
+					state.harnessSnapshot.edges
+						.filter((e) => e.source === tierNode.id && (e.type === "tier-framework" || !e.type))
+						.map((e) => e.target),
+				);
+				const gateIds = new Set(
+					state.harnessSnapshot.edges
+						.filter((e) => fwIds.has(e.source) && (e.type === "framework-gate" || !e.type))
+						.map((e) => e.target),
+				);
+				const roles = state.harnessSnapshot.edges
+					.filter((e) => (gateIds.has(e.source) || fwIds.has(e.source) || e.source === tierNode.id))
+					.map((e) => e.target);
+				if (roles.length > 0) allowedRoles = new Set(roles);
 			}
+			const harnessRoles = new Set(
+				state.harnessSnapshot.nodes
+					.filter((n) => n.type === "role")
+					.map((n) => (n.data as HarnessRoleNodeData).name),
+			);
+			const effectiveAllowed = allowedRoles ?? harnessRoles;
+			if (!effectiveAllowed.has(input.agent) && !(hostDispatch && hostOwnedRoles.has(input.agent))) {
+				throw new Error(`Performance ${state.admission.tier} route does not permit ${input.agent}.`);
+			}
+		} else {
+			// Controller hostDispatch only: allow short-loop roles under T1. Plain model spawn keeps TIER_ROLES.
+			if (hostDispatch && hostOwnedRoles.has(input.agent) && !TIER_ROLES[state.admission.tier].has(input.agent)) {
+				return {
+					task: input.task,
+					context: [input.context, "Host-owned reliable-headless dispatch; do not call performance_gate."].filter(Boolean).join("\n"),
+					laneId: input.laneId ?? state.activeItemId ?? state.admission.lanes[0]?.id,
+					gate: undefined,
+				};
+			}
+			if (!TIER_ROLES[state.admission.tier].has(input.agent)) throw new Error(`Performance ${state.admission.tier} route does not permit ${input.agent}.`);
 		}
-		const laneId = candidateLaneId ?? state.activeItemId;
-		const lane = laneId ? state.admission.lanes.find((candidate) =>
-			candidate.id === laneId ||
-			candidate.id.toLowerCase().replace(/[-_]/g, "") === laneId.toLowerCase().replace(/[-_]/g, "")
-		) : undefined;
-		if (!lane) throw new Error(`Governed spawn requires a valid admitted laneId; received ${JSON.stringify(laneId)}.`);
 		// Frontier-correct assurance gates (G1-review etc.) outrank a stale G5/G6 request.
 		const effectiveGate = defaultDispatchGateForRole(input.agent, state.frontier) ?? input.gate;
 		if (!effectiveGate) throw new Error(`Governed spawn for ${input.agent} requires an explicit gate.`);
+		const isRunWide = isRunWidePerformanceGate(effectiveGate);
+		let lane: PerformanceAdmissionLane | undefined;
+		if (!isRunWide) {
+			let candidateLaneId = input.laneId;
+			if (!candidateLaneId && state.admission.tier === "T3" && input.agent === "implementer") {
+				const activeLanes = new Set((state.leases ?? []).map((l) => l.laneId));
+				const availableLane = state.admission.lanes.find((l) => !activeLanes.has(l.id) && !(state.implementedItemIds ?? []).includes(l.id));
+				if (availableLane) {
+					candidateLaneId = availableLane.id;
+				}
+			}
+			const laneId = candidateLaneId ?? state.activeItemId;
+			lane = laneId ? state.admission.lanes.find((candidate) =>
+				candidate.id === laneId ||
+				candidate.id.toLowerCase().replace(/[-_]/g, "") === laneId.toLowerCase().replace(/[-_]/g, "")
+			) : undefined;
+			if (!lane) throw new Error(`Governed spawn requires a valid admitted laneId; received ${JSON.stringify(laneId)}.`);
+		}
 		const pointer = missionPointer(state);
 		const productLoopNote =
 			input.agent === "implementer"
 				? "Product loop: edit owned deliverables, run verification (render/look for visual work), repair from the check, repeat until it passes. Emit one ChildResult; do not call performance_gate."
 				: "";
+		const allOwnedPaths = Array.from(new Set(state.admission.lanes.flatMap((l) => l.ownedPaths)));
 		const brief = [
 			"# Governed Performance dispatch",
 			`Mission pointer: ${pointer.path}`,
 			`Mission SHA-256: ${pointer.sha256}; bytes: ${pointer.bytes}; nonce: ${pointer.nonce}`,
 			`Workspace root/cwd: ${state.workspaceRoot}`,
 			`Governance root: ${state.governanceRoot}`,
-			`Route: ${state.admission.tier}/${state.admission.taskShape}; lane: ${lane.id}; gate: ${effectiveGate}`,
-			`Objective: ${lane.objective}`,
-			`Framework: ${lane.framework}`,
-			`Owned paths: ${lane.ownedPaths.join(", ")}`,
-			`Dependencies: ${lane.dependsOn.join(", ") || "none"}`,
-			`Deliverables: ${lane.deliverables.join(" | ")}`,
-			`Acceptance criteria: ${lane.acceptanceCriteria.join(" | ")}`,
-			`Verification commands: ${lane.verificationCommands.join(" | ")}`,
+			isRunWide
+				? `Route: ${state.admission.tier}/${state.admission.taskShape}; scope: run-wide; gate: ${effectiveGate}`
+				: `Route: ${state.admission.tier}/${state.admission.taskShape}; lane: ${lane!.id}; gate: ${effectiveGate}`,
+			isRunWide
+				? `Mission: ${state.mission}`
+				: `Objective: ${lane!.objective}`,
+			isRunWide
+				? `Admitted lanes: ${state.admission.lanes.map((l) => l.id).join(", ")}`
+				: `Framework: ${lane!.framework}`,
+			`Owned paths: ${(isRunWide ? allOwnedPaths : lane!.ownedPaths).join(", ")}`,
+			isRunWide
+				? undefined
+				: `Dependencies: ${lane!.dependsOn.join(", ") || "none"}`,
+			`Deliverables: ${(isRunWide ? state.admission.lanes.flatMap((l) => l.deliverables) : lane!.deliverables).join(" | ")}`,
+			`Acceptance criteria: ${(isRunWide ? state.admission.lanes.flatMap((l) => l.acceptanceCriteria) : lane!.acceptanceCriteria).join(" | ")}`,
+			`Verification commands: ${(isRunWide ? state.admission.lanes.flatMap((l) => l.verificationCommands) : lane!.verificationCommands).join(" | ")}`,
 			"Governance: stay within owned paths. Do not call performance_gate. Emit one ChildResult JSON line before exit; the host records gate evidence. Exit 0 without a valid ChildResult is invalid.",
 			productLoopNote,
 			input.agent === "reviewer" || input.agent === "verifier" || input.agent === "fresh-verifier"
@@ -976,8 +1165,15 @@ ${line(state, `FRONTIER ${state.frontier}`)}
 			`Assigned task: ${input.task}`,
 		].filter(Boolean).join("\n");
 		const context = [input.context, `Canonical mission is file-bound at ${pointer.path}; do not reinterpret or broaden admitted scope.`].filter(Boolean).join("\n");
-		const isolate = state.admission.tier === "T3" && input.agent === "implementer";
-		return { task: brief, context, laneId: lane.id, gate: effectiveGate, worktree: isolate ? "auto" : undefined, ownedPaths: lane.ownedPaths };
+		const isolate = !isRunWide && state.admission.tier === "T3" && input.agent === "implementer";
+		return {
+			task: brief,
+			context,
+			laneId: isRunWide ? undefined : lane!.id,
+			gate: effectiveGate,
+			worktree: isolate ? "auto" : undefined,
+			ownedPaths: isRunWide ? (allOwnedPaths.length > 0 ? allOwnedPaths : undefined) : lane!.ownedPaths,
+		};
 	}
 
 	start(invocation: PerformanceStartInvocation): PerformanceRunState {
@@ -1122,7 +1318,7 @@ ${line(state, "FRONTIER G2")}
 
 	private transition(frontier: PerformanceGate, status: PerformanceRunStatus = frontier === "complete" ? "completed" : frontier === "blocked" ? "blocked" : "active"): void {
 		if (!this.stateValue) throw new Error("No active Performance run.");
-		const allowed: Record<PerformanceGate, readonly PerformanceGate[]> = {
+		const allowed: Record<string, readonly PerformanceGate[]> = {
 			G0: ["G1", "G3.5", "G4", "blocked"],
 			G2: ["G2-assurance", "blocked"],
 			"G2-assurance": ["G0", "G2", "G1", "G3.5", "G4", "blocked"],
@@ -1144,8 +1340,17 @@ ${line(state, "FRONTIER G2")}
 			complete: [],
 			blocked: ["G0", "G1", "G2", "G4", "sweep", "goal-check"],
 		};
-		if (frontier !== this.stateValue.frontier && !allowed[this.stateValue.frontier].includes(frontier)) {
-			throw new Error(`Illegal Performance gate transition ${this.stateValue.frontier} -> ${frontier}.`);
+		const allowedTransitions = allowed[this.stateValue.frontier];
+		if (frontier !== this.stateValue.frontier && allowedTransitions && !allowedTransitions.includes(frontier)) {
+			const isHarnessAllowed = Boolean(
+				this.stateValue.harnessSnapshot?.edges.some(
+					(e) => (e.source === this.stateValue!.frontier && e.target === frontier) ||
+					       (e.target === frontier && frontier === "blocked")
+				)
+			);
+			if (!isHarnessAllowed && frontier !== "blocked") {
+				throw new Error(`Illegal Performance gate transition ${this.stateValue.frontier} -> ${frontier}.`);
+			}
 		}
 		this.stateValue = { ...this.stateValue, frontier, status, updatedAt: now() };
 		this.persist();
@@ -1212,7 +1417,7 @@ ${line(state, "FRONTIER G2")}
 	recordChildGateFromResult(input: {
 		agentId: string;
 		role: string;
-		gate: Exclude<PerformanceGate, "complete" | "blocked" | "G4-assurance" | "G1-assurance" | "G2-assurance" | "G7-assurance">;
+		gate: Exclude<PerformanceGate, "complete" | "blocked" | "G4-assurance" | "G1-assurance" | "G2-assurance" | "G7-assurance"> | string;
 		itemId?: string;
 		outcome: "pass" | "fail" | "blocked";
 		childResult: {
@@ -1231,7 +1436,10 @@ ${line(state, "FRONTIER G2")}
 		const resolvedGate =
 			defaultDispatchGateForRole(input.role, state.frontier) ??
 			input.gate;
-		if (!HOST_RECORDABLE_CHILD_GATES.has(resolvedGate)) {
+		const isHarnessGate = Boolean(
+			state.harnessSnapshot?.nodes.some((n) => n.type === "gate" && (n.id === resolvedGate || (n.data as any).name === resolvedGate))
+		);
+		if (!HOST_RECORDABLE_CHILD_GATES.has(resolvedGate) && !isHarnessGate) {
 			throw new Error(`Host does not auto-record gate ${resolvedGate} from ChildResult.`);
 		}
 		const roleByGate: Record<string, string> = {
@@ -1256,6 +1464,11 @@ ${line(state, "FRONTIER G2")}
 		const absoluteEvidence = join(state.governanceRoot, relativeEvidence);
 		const firstCommand = input.childResult.commands?.[0];
 		const findings = input.childResult.findings ?? [];
+		const nonPassFindings = findings.filter((f) => {
+			const code = String(f.code || "").toUpperCase().trim();
+			return !["OK", "PASS", "PASSED", "RESOLVED", "NONE", "INFO"].includes(code);
+		});
+		const openFindings = input.outcome === "pass" ? nonPassFindings.length : (findings.length || 1);
 		const receipt = {
 			gate: resolvedGate,
 			actor: input.agentId,
@@ -1279,13 +1492,15 @@ ${line(state, "FRONTIER G2")}
 			reproWasRed: true,
 			reproNowGreen: input.outcome === "pass",
 			preExistingRegressions: 0,
-			openFindings: findings.length,
+			openFindings,
 			endToEnd: input.outcome === "pass" ? "pass" : "fail",
 			hostRecordedFromChildResult: true,
 		};
 		writeFileSync(absoluteEvidence, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
 		let effectiveItemId = input.itemId;
-		if (!effectiveItemId && state.admission?.tier === "T3" && resolvedGate === "G4") {
+		if (isRunWidePerformanceGate(resolvedGate)) {
+			effectiveItemId = undefined;
+		} else if (!effectiveItemId && state.admission?.tier === "T3" && resolvedGate === "G4") {
 			const lease = (state.leases ?? []).find((l) => l.agentId === input.agentId);
 			effectiveItemId = lease?.laneId ?? state.activeItemId;
 		}
@@ -1350,7 +1565,21 @@ ${line(state, "FRONTIER G2")}
 	private recordCurrentGateReport(input: Omit<PerformanceGateReport, "at">): void {
 		let state = this.stateValue;
 		if (!state) throw new Error("No active Performance run.");
-		if (state.status !== "active") throw new Error(`Performance run is ${state.status}.`);
+		if (state.status !== "active") {
+			const isCoordinator = input.role === "root" || input.role === "primary";
+			const allowedBlockedRecovery: readonly string[] = ["G0", "G1", "G2", "G4", "sweep", "goal-check"];
+			if (state.status === "blocked" && isCoordinator && allowedBlockedRecovery.includes(input.gate)) {
+				state.status = "active";
+				state.frontier = input.gate as PerformanceGate;
+				this.log(`RUN_UNBLOCK unblocked_by=${input.role} gate=${input.gate}`);
+			} else {
+				throw new Error(`Performance run is ${state.status}.`);
+			}
+		}
+		if (state.frontier === "G4" && !state.activeItemId && state.roadmapItems.length > 0 && state.completedItemIds.length === state.roadmapItems.length) {
+			this.transition(this.requiresConvergenceSweep() ? "sweep" : "goal-check");
+			state = this.stateValue!;
+		}
 		if (this.recordParallelImplementation(input, state)) return;
 		const assuranceParent = input.gate.startsWith("G2-") ? "G2" : input.gate.startsWith("G1-") ? "G1" : input.gate === "G5" || input.gate === "G6" ? "G4" : undefined;
 		const isAssurance = input.gate === "G2-review" || input.gate === "G2-verify" || input.gate === "G1-review" || input.gate === "G1-verify" || input.gate === "G5" || input.gate === "G6";
@@ -1358,7 +1587,7 @@ ${line(state, "FRONTIER G2")}
 		if (isAssurance ? state.frontier !== `${assuranceParent}-assurance` : !isG7Assurance && input.gate !== state.frontier) {
 			throw new Error(`Evidence is for ${input.gate}, but current Performance frontier is ${state.frontier}.`);
 		}
-		const activeItem = input.gate === "G2" || input.gate === "G2-review" || input.gate === "G2-verify" || input.gate === "sweep" || input.gate === "goal-check" ? undefined : this.activeItem();
+		const activeItem = isRunWidePerformanceGate(input.gate) ? undefined : this.activeItem();
 		if (activeItem && input.itemId && input.itemId !== activeItem.id) {
 			throw new Error(`Evidence is for ROADMAP.md item ${input.itemId}, but active item is ${activeItem.id}.`);
 		}
@@ -1367,7 +1596,7 @@ ${line(state, "FRONTIER G2")}
 		if (input.verdict === "blocked" && state.repairRequired?.gate === input.gate) {
 			throw new Error(`REPAIR_REQUIRED: ${input.actor} must repair ROADMAP.md and retry ${input.gate}; a native validation error is not a runtime blocker. Original error: ${state.repairRequired.message}`);
 		}
-		const expectedRoles: Record<Exclude<PerformanceGate, "complete" | "blocked">, readonly string[]> = {
+		const expectedRoles: Record<string, readonly string[]> = {
 			G0: ["implementer"],
 			G2: ["scope-coordinator", "scoper"],
 			"G2-assurance": [],
@@ -1387,8 +1616,11 @@ ${line(state, "FRONTIER G2")}
 			sweep: ["sweeper"],
 			"goal-check": ["goal-checker"],
 		};
-		if (input.role !== "primary" && input.role !== "root" && !expectedRoles[input.gate].includes(input.role)) {
-			throw new Error(`${input.role} cannot close Performance ${input.gate}.`);
+		if (input.role !== "primary" && input.role !== "root") {
+			const expected = expectedRoles[input.gate];
+			if (expected && !expected.includes(input.role)) {
+				throw new Error(`${input.role} cannot close Performance ${input.gate}.`);
+			}
 		}
 		if (input.gate === "G2" && input.verdict === "pass") {
 			let roadmapItems: PerformanceRoadmapItem[];
@@ -1459,11 +1691,31 @@ ${line(state, "FRONTIER G2")}
 			if (this.requiresConvergenceSweep() && !state.reports.some((report) => report.gate === "sweep" && report.verdict === "pass")) {
 				throw new Error("Goal check requires a passing independent T3 convergence sweep.");
 			}
+			const hasGoalChecker = state.harnessSnapshot
+				? state.harnessSnapshot.nodes.some((n) => n.type === "role" && (n.data as any).name === "goal-checker")
+				: Boolean(state.admission && TIER_ROLES[state.admission.tier]?.has("goal-checker"));
+			const isRootCoordinator = input.role === "root" || input.role === "primary" || input.actor === "root";
 			const deliveryActors = new Set(state.reports.filter((report) => ["G4", "G5", "G6", "G7"].includes(report.gate)).map((report) => report.actor));
-			if (deliveryActors.has(input.actor) || state.leases.length > 0) throw new Error("Goal check must be independent of delivery gates and requires zero live subagents.");
+			if ((hasGoalChecker && deliveryActors.has(input.actor)) || (!hasGoalChecker && !isRootCoordinator && deliveryActors.has(input.actor)) || state.leases.length > 0) {
+				throw new Error("Goal check must be independent of delivery gates and requires zero live subagents.");
+			}
 			this.assertGoalEvidence(evidence);
 		}
 		if (input.verdict === "pass" && state.workspaceRoot) {
+			if (state.harnessSnapshot) {
+				const gateData = findHarnessGate(state.harnessSnapshot, input.gate);
+				if (gateData?.checks?.length) {
+					const checkRes = executeDeclarativeGateChecks(gateData, state.workspaceRoot);
+					if (!checkRes.passed) {
+						this.log(`HARNESS_GATE_CHECKS_FAILED gate=${input.gate} reason=${checkRes.failureReason}`);
+						if (checkRes.onFail === "block") {
+							input.verdict = "blocked";
+						} else {
+							input.verdict = "fail";
+						}
+					}
+				}
+			}
 			const effectiveWf = state.workflowSnapshot;
 			if (effectiveWf?.extraChecks?.length) {
 				const gateChecks = effectiveWf.extraChecks.filter((c) => c.gate === input.gate && c.command);
@@ -1536,7 +1788,14 @@ ${line(state, "FRONTIER G2")}
 			return this.transition("blocked", "blocked");
 		}
 		if (report.verdict === "fail") {
-			const fallbackGate = report.gate === "sweep" ? "G2" : report.gate === "G0" || report.gate === "G1" || report.gate === "G2" ? report.gate : report.gate === "G3.5" ? "G1" : "G4";
+			if (state.harnessSnapshot) {
+				const gateData = findHarnessGate(state.harnessSnapshot, report.gate);
+				if (gateData?.onFail?.startsWith("loop-to:")) {
+					const loopTarget = gateData.onFail.slice("loop-to:".length) as PerformanceGate;
+					return this.transition(loopTarget);
+				}
+			}
+			const fallbackGate = report.gate === "sweep" ? "G2" : report.gate === "G0" || report.gate === "G1" || report.gate === "G2" || report.gate === "goal-check" ? report.gate : report.gate === "G3.5" ? "G1" : "G4";
 			return this.transition(fallbackGate);
 		}
 		if (report.gate === "sweep") return this.transition("goal-check");
@@ -1550,14 +1809,38 @@ ${line(state, "FRONTIER G2")}
 			const policy = performanceItemGatePolicy(this.activeItem());
 			return this.transition(policy.requiresPlan ? "G1" : policy.requiresDepthLock ? "G3.5" : "G4");
 		}
-		const next: Record<Exclude<PerformanceGate, "complete" | "blocked">, PerformanceGate> = {
+		if (state.harnessSnapshot && activeItem) {
+			const itemFw = activeItem.framework;
+			const gateEdges = state.harnessSnapshot.edges
+				.filter((e) => e.source === itemFw && (e.type === "framework-gate" || !e.type))
+				.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+			if (gateEdges.length > 0) {
+				const currentIdx = gateEdges.findIndex((e) => e.target === report.gate);
+				if (currentIdx >= 0 && currentIdx < gateEdges.length - 1) {
+					const nextGateId = gateEdges[currentIdx + 1].target as PerformanceGate;
+					if (nextGateId === "complete") {
+						return this.completeActiveItem();
+					}
+					return this.transition(nextGateId);
+				}
+				if (currentIdx === gateEdges.length - 1) {
+					return this.completeActiveItem();
+				}
+			}
+		}
+		const next: Partial<Record<string, PerformanceGate>> = {
 			G0: "G4",
 			G2: "G2-assurance", "G2-assurance": "G2", "G2-review": "G2", "G2-verify": "G2",
 			G1: "G1-assurance", "G1-assurance": "G1", "G1-review": "G1", "G1-verify": "G1",
 			"G3.5": "G4",
 			G4: "G4-assurance", "G4-assurance": "G4", G5: "G4", G6: "G4", G7: "G7-assurance", "G7-assurance": "G7", sweep: "goal-check", "goal-check": "complete",
 		};
-		this.transition(next[report.gate]);
+		const nextGate = next[report.gate];
+		if (nextGate) {
+			this.transition(nextGate);
+		} else {
+			this.completeActiveItem();
+		}
 	}
 
 	validateSpawn(parentRole: string, childRole: string, liveAgents: number): PerformanceSpawnDecision {
@@ -1858,7 +2141,18 @@ ${line(state, "FRONTIER G2")}
 		if (!receiptHasValue(content, ["openFindings"], RECEIPT_EMPTY_FINDINGS)) {
 			throw new Error(`Goal check requires evidence of zero openFindings. ${RECEIPT_HELP}`);
 		}
-		if (!receiptHasValue(content, ["endToEnd"], RECEIPT_END_TO_END)) {
+		let hasEndToEnd = receiptHasValue(content, ["endToEnd"], RECEIPT_END_TO_END);
+		if (!hasEndToEnd) {
+			try {
+				const parsed = JSON.parse(content);
+				if (parsed.endToEnd && typeof parsed.endToEnd === "object") {
+					hasEndToEnd = Object.values(parsed.endToEnd).some((v) =>
+						typeof v === "string" && ["pass", "green", "true", "ok", "success"].includes(v.toLowerCase()),
+					);
+				}
+			} catch {}
+		}
+		if (!hasEndToEnd) {
 			throw new Error(`Goal check requires a passing real endToEnd exercise. ${RECEIPT_HELP}`);
 		}
 	}

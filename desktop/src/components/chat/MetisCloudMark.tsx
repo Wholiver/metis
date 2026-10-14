@@ -1,4 +1,5 @@
 import React, { useId } from 'react';
+import type { WorkProgressExpression } from '../../lib/work-progress';
 import {
   WORK_PROGRESS_CLOUD_BODY_PATH,
   WORK_PROGRESS_EYE_TARGETS,
@@ -13,14 +14,19 @@ const NEUTRAL_EYES = WORK_PROGRESS_EYE_TARGETS.neutral;
 type MetisCloudMarkProps = {
   className?: string;
   size?: number;
+  expression?: WorkProgressExpression;
+  onClick?: () => void;
 };
 
 export const MetisCloudMark: React.FC<MetisCloudMarkProps> = ({
   className = '',
   size = 64,
+  expression = 'neutral',
+  onClick,
 }) => {
   const reactId = useId().replace(/:/g, '');
   const maskId = `metis-home-cloud-mask-${reactId}`;
+  const eyes = WORK_PROGRESS_EYE_TARGETS[expression] || NEUTRAL_EYES;
 
   return (
     <svg
@@ -31,6 +37,7 @@ export const MetisCloudMark: React.FC<MetisCloudMarkProps> = ({
       role="img"
       aria-label="Metis"
       data-home-cloud=""
+      onClick={onClick}
     >
       <defs>
         <mask id={maskId} maskUnits="userSpaceOnUse" x="-158" y="-158" width="316" height="316">

@@ -41,12 +41,7 @@ export const spawnAgentSchema = Type.Object({
 		Type.String({ description: "Typed Performance admission lane identifier" }),
 	),
 	gate: Type.Optional(
-		Type.Union([
-			Type.Literal("G0"), Type.Literal("G1"), Type.Literal("G1-review"), Type.Literal("G1-verify"),
-			Type.Literal("G2"), Type.Literal("G2-review"), Type.Literal("G2-verify"), Type.Literal("G3.5"),
-			Type.Literal("G4"), Type.Literal("G5"), Type.Literal("G6"), Type.Literal("G7"),
-			Type.Literal("sweep"), Type.Literal("goal-check"),
-		], { description: "Host-assigned Performance gate this child is bound to. The child emits ChildResult; it must not call performance_gate." }),
+		Type.String({ description: "Host-assigned Performance gate this child is bound to. The child emits ChildResult; it must not call performance_gate." }),
 	),
 	mode: Type.Optional(
 		Type.Union([Type.Literal("sync"), Type.Literal("async")], {
@@ -92,7 +87,7 @@ export interface SpawnAgentRuntimeContext {
 	baseUrl?: string;
 	thinking?: ThinkingLevel;
 	/** Native orchestration may select a configured child model per role. */
-	getChildModel?: (agent: string) => { provider: string; model: string; baseUrl?: string } | undefined;
+	getChildModel?: (agent: string) => { provider: string; model: string; baseUrl?: string; apiKey?: string } | undefined;
 	/** Native orchestration may select an effort per child role. */
 	getChildThinking?: (agent: string) => ThinkingLevel | undefined;
 	apiKey?: string;
@@ -277,7 +272,7 @@ export function normalizeChildResult(parsed: any): ChildResult | undefined {
 	// Status normalization
 	const rawStatus = String(parsed.status ?? parsed.verdict ?? parsed.outcome ?? parsed.result ?? "").toLowerCase().trim();
 	let status: ChildResult["status"] | undefined;
-	if (["completed", "pass", "passed", "success", "succeeded", "ok"].includes(rawStatus)) {
+	if (["completed", "pass", "passed", "success", "succeeded", "ok", "done"].includes(rawStatus)) {
 		status = "completed";
 	} else if (["failed", "fail", "failure", "error"].includes(rawStatus)) {
 		status = "failed";
@@ -396,14 +391,36 @@ export function extractChildResultFromOutput(content: string): ChildResult | und
 		}
 	}
 
-	// 2. Check line by line (handles single-line JSONs)
+	// 2. Check line by line (handles single-line JSONs and NDJSON message events)
 	for (const line of content.split(/\r?\n/)) {
 		const trimmed = line.trim();
 		if (!trimmed.startsWith("{")) continue;
 		try {
 			const parsed = JSON.parse(trimmed);
 			const normalized = normalizeChildResult(parsed);
-			if (normalized) latest = normalized;
+			if (normalized) {
+				latest = normalized;
+				continue;
+			}
+			// If it's an NDJSON event containing message content (e.g., message_end, message_update, or message object)
+			if (parsed && typeof parsed === "object") {
+				const messageObj = (parsed as any).message ?? ((parsed as any).role && (parsed as any).content ? parsed : undefined);
+				if (messageObj) {
+					let innerText = "";
+					if (typeof messageObj.content === "string") {
+						innerText = messageObj.content;
+					} else if (Array.isArray(messageObj.content)) {
+						innerText = messageObj.content
+							.map((part: any) => (typeof part === "string" ? part : typeof part?.text === "string" ? part.text : ""))
+							.filter(Boolean)
+							.join("\n");
+					}
+					if (innerText.trim()) {
+						const fromMessage = extractChildResultFromOutput(innerText);
+						if (fromMessage) latest = fromMessage;
+					}
+				}
+			}
 		} catch {}
 	}
 
@@ -571,7 +588,9 @@ function resolveGovernedChildOutcome(args: {
 
 	const rawOutput = args.liveFinalText || args.stdoutData.trim();
 	const cleanOutput = stripChildResultFromOutput(rawOutput);
-	const resolvedResult = cleanOutput || childResult?.summary || (status === "success" ? "(No output returned)" : undefined);
+	const resolvedResult = (cleanOutput.startsWith('{"type":') && childResult?.summary)
+		? childResult.summary
+		: (cleanOutput || childResult?.summary || (status === "success" ? "(No output returned)" : undefined));
 
 	const cleanedParts = args.parts?.map((part) => {
 		if (part && part.type === "text" && typeof part.text === "string") {
@@ -956,8 +975,9 @@ export function createSpawnAgentToolDefinition(
 			if (childThinking) {
 				args.push("--thinking", childThinking);
 			}
-			if (rt?.apiKey) {
-				args.push("--api-key", rt.apiKey);
+			const childApiKey = selectedModel?.apiKey ?? rt?.apiKey;
+			if (childApiKey) {
+				args.push("--api-key", childApiKey);
 			}
 			if (rt?.skills && rt.skills.length > 0) {
 				for (const skill of rt.skills) {
@@ -1523,25 +1543,25 @@ export function createSpawnAgentToolDefinition(
 			const complete = async (exitCode: number | null) => {
 				if (!settle()) return;
 				const isSuccess = !cancelled && exitCode === 0;
+				let rawFullOutput = "";
 				let resultContent = "(No output returned)";
 				try {
 					const st = await fs.stat(outputFile).catch(() => undefined);
 					if (st && st.size > 0) {
-						if (st.size > 65536) {
+						const maxRead = 1024 * 1024; // 1MB
+						if (st.size > maxRead) {
 							const fileHandle = await fs.open(outputFile, "r");
 							try {
-								const readLen = Math.min(st.size, 65536);
-								const buf = Buffer.alloc(readLen);
-								await fileHandle.read(buf, 0, readLen, st.size - readLen);
-								const tailChunk = buf.toString("utf-8");
-								resultContent = "...(truncated)...\n" + tailChunk.slice(-8000);
+								const buf = Buffer.alloc(maxRead);
+								await fileHandle.read(buf, 0, maxRead, st.size - maxRead);
+								rawFullOutput = buf.toString("utf-8");
 							} finally {
 								await fileHandle.close().catch(() => {});
 							}
 						} else {
-							const content = await fs.readFile(outputFile, "utf-8");
-							resultContent = content.length > 8000 ? "...(truncated)...\n" + content.slice(-8000) : content;
+							rawFullOutput = await fs.readFile(outputFile, "utf-8");
 						}
+						resultContent = rawFullOutput.length > 8000 ? "...(truncated)...\n" + rawFullOutput.slice(-8000) : rawFullOutput;
 					}
 				} catch {
 					// Ignore
@@ -1551,14 +1571,14 @@ export function createSpawnAgentToolDefinition(
 				const errorAttribution = cancelled
 					? { error: "Agent execution cancelled.", hint: undefined }
 					: isSuccess ? { error: undefined, hint: undefined } : attributeChildError(resultContent, "", exitCode);
-				const gateOutcome = extractGateOutcomeFromJsonLines(resultContent, gate);
+				const gateOutcome = extractGateOutcomeFromJsonLines(rawFullOutput || resultContent, gate);
 				const payload = applyHostChildGateRecord(
 					resolveGovernedChildOutcome({
 						isSuccess: Boolean(isSuccess) && !cancelled,
 						gate,
 						gateOutcome,
-						stdoutData: resultContent,
-						liveFinalText: resultContent,
+						stdoutData: rawFullOutput || resultContent,
+						liveFinalText: rawFullOutput || resultContent,
 						effectiveCwd,
 						agent,
 						agentId: childAgentId,

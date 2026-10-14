@@ -22,11 +22,11 @@ dependency bump. There is NO design decision left and NOTHING to discover. This 
 PROPORTIONAL-GATES minimal path: no plan gate, no fresh-verify, no juror - just apply
 the known change and prove it green.
 
-GATE PATH: T0 closes APPLY → VERIFY inside the G4 receipt (no spawn, no separate G5/G6). T1 runs APPLY → independent DIFF-REVIEW (G5) → VERIFY-GREEN (G6). No G1 PLAN, no G7 SIGN-OFF.
+GATE PATH (T0/T1): APPLY → DIFF-REVIEW → VERIFY-GREEN. (No G1 PLAN, no G3 FRESH-VERIFY, no G7 SIGN-OFF. Both tiers retain independent diff review and runtime verification.)
 
 ## Root/child contract
 - Stay on owned paths for the assigned lane.
-- Independent review/verify uses a different agent than the producer. On T0 the mechanical check lives in the G4 receipt; on T1 G5/G6 are fresh workers. A first draft is not completion.
+- Independent review/verify uses a different agent than the producer; a first draft is not completion.
 - Children emit one ChildResult JSON line; they do not call performance_gate and do not spawn nested workers.
 - Host/root owns admission, gates, and completion. T2 serializes implementer lanes; T3 spawns only admitted disjoint implementers.
 
@@ -38,7 +38,7 @@ The mission MUST literally carry an exact diff OR an explicit command/edit list 
 apply verbatim - point at it. If no such artifact is in hand, or any real decision
 remains (what the shape should be, which option to pick, where a thing should live),
 apply is INELIGIBLE → **S2** route to a heavier framework
-(`frontend-build`/`docs`/`<category>-implement`/`plan-design`). Apply never self-declares "spec complete"; only
+(`<category>-implement`/`plan-design`). Apply never self-declares "spec complete"; only
 a named diff/command list admits it.
 
 ### Phase 1 - APPLY (G4-minimal)
@@ -46,19 +46,19 @@ Confirm the repo's OWN test command runs on untouched code first (else **S1
 BLOCKED**). Then apply the specified change mechanically within owned files only -
 the rename across all sites, the config edit, the dependency bump, the scaffold
 emission - exactly as specified, nothing more. No refactor, no opportunistic cleanup,
-no scope creep. On T0, record mechanical verification evidence in the G4 receipt and stop.
+no scope creep.
 
-### Phase 2 - DIFF-REVIEW (T1 only - a fresh worker)
-On T1, a fresh reviewer confirms the diff EQUALS the specified change: every specified edit
+### Phase 2 - DIFF-REVIEW (a fresh worker)
+A fresh reviewer confirms the diff EQUALS the specified change: every specified edit
 is present, no unspecified edit sneaked in, no site of the rename/change was missed.
-A diff that adds or omits anything vs the spec is **S3 DIFF-MISMATCH** → redo. T0 skips this spawn.
+A diff that adds or omits anything vs the spec is **S3 DIFF-MISMATCH** → redo.
 
-### Phase 3 - VERIFY-GREEN (grounded)
-On T0 the verify evidence is part of G4. On T1 a fresh worker runs on the REAL repo
-(returns preExistingRegressions/testCommand): the repo's test suite
+### Phase 3 - VERIFY-GREEN (grounded, fresh worker)
+On the REAL repo (returns preExistingRegressions/testCommand): the repo's test suite
 runs and the FULL pre-existing tests stay GREEN - ZERO green→red flips. For a change
 that has its own assertion (a config value now in effect, a new dep importable),
-prove that too. Pure mechanical apply asserts zero regressions — do not invent coverage metrics.
+prove that too. Coverage bar follows the tier; a pure mechanical apply with no new
+logic asserts zero regressions.
 **REGRESSION-IS-A-SIGNAL:** any green→red flip means the "mechanical" change had a
 real effect that broke something → this is no longer an apply; ESCALATE to a heavier
 FRAMEWORK (**S4**), never weaken/skip.

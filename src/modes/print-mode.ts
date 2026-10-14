@@ -247,7 +247,9 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 				getActiveToolDefinition: (name) => session.getActiveToolDefinition(name),
 				performanceRun: session.performanceRun,
 				collaborationMode: session.collaborationMode,
-				waitForSubagentsAndTurns: (sig, timeoutMs) => session.waitForSubagentsAndTurns(sig, timeoutMs),
+				waitForSubagentsAndTurns: session.waitForSubagentsAndTurns
+					? (sig, timeoutMs) => session.waitForSubagentsAndTurns(sig, timeoutMs)
+					: undefined,
 			},
 			instruction: buildContractInstruction(initialMessage, messages),
 			cwd,

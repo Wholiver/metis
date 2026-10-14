@@ -1,6 +1,6 @@
 ---
 name: frontend-build
-description: "Build a whole new UI surface, page, SVG, animation, or client flow from scratch."
+description: "Compile, bundle, and resolve UI assets and client applications."
 category: frontend
 tier: T1/T2
 ---
@@ -13,15 +13,13 @@ Root/child contract:
 - Stay on owned paths. Independent verification belongs to host/root (or a fresh named reviewer/verifier). A first draft is not completion.
 
 # Native execution protocol: frontend-build
-# Framework: frontend-build  (category frontend × subsection build · tag user-facing · tier T1/T2/T3)
+# Framework: frontend-build  (category frontend × subsection build · tag user-facing · tier T2/T3)
 
 Stay on owned paths. Independent verify uses a different agent than the producer. Children emit one ChildResult; they do not spawn nested workers. Host/root owns gates. Goal: build a WHOLE
 NEW UI surface/flow from scratch - every screen/state, the journey end-to-end,
-wired and genuinely usable (including standalone SVG/HTML/Canvas assets).
+wired and genuinely usable.
 
-BOUNDED T1 PATH: when admission already selected T1 + this framework, root executes G4 directly, then independent G5 review and G6 verification. Do NOT require a prior `ROADMAP.md` item, do NOT escalate to T2 solely because no roadmap exists, and do NOT invent code-coverage TDD when the oracle is structural/visual. OWNERSHIP CLIMB ONLY: missing ROADMAP.md, many steps, a large artifact, or preferring more agents never raises the tier. Climb to T2/T3 only when ownership splits into multiple surfaces that must run serially (T2) or can run in parallel without shared mutable state (T3).
-
-GATE PATH (T2): an executable roadmap item goes directly to G4 IMPLEMENT → G5 IMPL-REVIEW → G6 VERIFY(grounded + usability) → G7 SIGN-OFF → GOAL-CHECK. G1 is conditional and runs only when `requiresDetailedPlan: true`, a named design fork remains unresolved, or an implementer reports `PLAN-CONFLICT`. T3 uses 3 unanimous jurors.
+GATE PATH (T2): an executable roadmap item goes directly to G4 IMPLEMENT(TDD) → G5 IMPL-REVIEW → G6 VERIFY(grounded + usability) → G7 SIGN-OFF → GOAL-CHECK. G1 is conditional and runs only when `requiresDetailedPlan: true`, a named design fork remains unresolved, or an implementer reports `PLAN-CONFLICT`. T3 uses 3 unanimous jurors.
 
 ## Root/child contract
 - Stay on owned paths for the assigned lane.
@@ -38,8 +36,8 @@ the conditional triggers above. T3 uses 3 unanimous jurors.
 ## THE END-TO-END WORKFLOW
 
 ### Phase 1 - ROADMAP / CONDITIONAL PLAN (G1)
-On admitted T1, skip this phase and go to G4 (see BOUNDED T1 PATH). On T2/T3, FIRST verify an executable `ROADMAP.md` item exists for this surface; if none exists,
-report OUT-OF-SCOPE and escalate (**S4**) only when ownership must split into multiple surfaces; missing ROADMAP.md alone is not a climb reason. An implementation-ready item skips G1. Run
+FIRST verify an executable `ROADMAP.md` item exists for this surface; if none exists,
+report OUT-OF-SCOPE and escalate (**S4**). An implementation-ready item skips G1. Run
 G1 only for `requiresDetailedPlan: true`, a named unresolved design fork, or
 `PLAN-CONFLICT`; a genuine design fork routes through **S2** and `plan-design`. When G1
 runs, map the screens and states, end-to-end journey, data/state wiring, responsive and
@@ -79,7 +77,8 @@ STOP and report the attempt + the concrete unblock path. Children emit ChildResu
 - **S2 - design genuinely undecided** → hand to `plan-design` for the blueprint first.
 - **S3 - a pre-existing test flips green→red** → FAILED (regression-is-a-signal: redo).
   **S3-USABILITY - rendered flow fails the usability pass** → back to G4 with friction named.
-- **S4 - a piece proves bigger/cross-cutting than scoped** → OUT-OF-SCOPE; climb a tier only when ownership splits into multiple surfaces (GATES.md ESCALATION; missing roadmap / step count / size never climbs). The host/root splits into sibling lanes; no self-split.
+- **S4 - a piece proves bigger/cross-cutting than scoped** → OUT-OF-SCOPE; climb a
+  tier (GATES.md ESCALATION). The host/root splits into sibling lanes; no self-split.
 - **S5 - every piece built + flow wired + zero regressions + usability pass +
   sign-off PASS** → DONE.
 

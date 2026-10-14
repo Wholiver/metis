@@ -32,7 +32,7 @@ Under NO circumstances may an implementation, build, or animation request be dow
 
 ### `backend-build` (Backend Build Framework)
 - **Category / Tier**: `backend` · `T1/T2`
-- **Purpose**: Build a whole new backend component, service surface, or wired seams from scratch.
+- **Purpose**: Compile, bundle, and resolve dependencies for backend systems.
 - **Full Protocol**: [./frameworks/backend-build.md](./frameworks/backend-build.md)
 
 ### `backend-fix` (Backend Defect Repair Framework)
@@ -57,7 +57,7 @@ Under NO circumstances may an implementation, build, or animation request be dow
 
 ### `frontend-build` (Frontend Build Framework)
 - **Category / Tier**: `frontend` · `T1/T2`
-- **Purpose**: Build a whole new UI surface, page, SVG, animation, or client flow from scratch.
+- **Purpose**: Compile, bundle, and resolve UI assets and client applications.
 - **Full Protocol**: [./frameworks/frontend-build.md](./frameworks/frontend-build.md)
 
 ### `frontend-fix` (Frontend Defect Repair Framework)
@@ -77,7 +77,7 @@ Under NO circumstances may an implementation, build, or animation request be dow
 
 ### `generation` (Code Generation Framework)
 - **Category / Tier**: `generation` · `T1/T2`
-- **Purpose**: Mint a one-off custom framework when the selector returns FRAMEWORK: MISS — never a synonym for generating a file.
+- **Purpose**: Generate scaffolding, boilerplate, schemas, and typed contracts.
 - **Full Protocol**: [./frameworks/generation.md](./frameworks/generation.md)
 
 ### `plan-design` (Architecture Design Planning Framework)
@@ -97,7 +97,7 @@ Under NO circumstances may an implementation, build, or animation request be dow
 
 ### `polish` (Quality Polish Framework)
 - **Category / Tier**: `polish` · `T0/T1`
-- **Purpose**: Visual/copy/detail polish pass over an existing working surface; T1 retains independent G5/G6.
+- **Purpose**: Code aesthetics, comments, formatting, typing, and cleanup.
 - **Full Protocol**: [./frameworks/polish.md](./frameworks/polish.md)
 
 ### `refactor` (Safe Refactoring Framework)

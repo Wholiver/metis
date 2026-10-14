@@ -273,7 +273,9 @@ export const MessageList = React.memo<MessageListProps>(({
             <div ref={topSentinelRef} className="h-px w-full pointer-events-none opacity-0" aria-hidden="true" />
           )}
           {isLoading && messages.length === 0 && (
-            <LoadingState className="mx-auto py-12" label={t('reactUiLoadingConversation') || 'Loading conversation…'} />
+            <div className="flex-1 flex flex-col items-center justify-center py-16">
+              <LoadingState label={t('reactUiLoadingConversation') || 'Loading conversation…'} />
+            </div>
           )}
           {visibleGroups.map((group) => {
             if (group.type === 'user') {

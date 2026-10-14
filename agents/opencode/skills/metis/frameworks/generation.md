@@ -1,6 +1,6 @@
 ---
 name: generation
-description: "Mint a one-off custom framework when the selector returns FRAMEWORK: MISS — never a synonym for generating a file."
+description: "Generate scaffolding, boilerplate, schemas, and typed contracts."
 category: generation
 tier: T1/T2
 ---
@@ -18,8 +18,7 @@ Root/child contract:
 When the README §3 SELECTOR returns `FRAMEWORK: MISS` - a task whose shape no seeded
 leaf confidently matches - the loop does NOT degrade onto `backend-implement`. It
 GENERATES a custom framework for that exact task shape. This file is the algorithm +
-the persona-facing contract the ap-framework-generator follows. Do NOT use this framework
-to mean "generate an SVG/file/README"; pick `frontend-build`/`docs`/`apply`/etc. instead.
+the persona-facing contract the ap-framework-generator follows.
 
 ## 1. AXES - classify the task on three orthogonal dimensions (HRN-4 step 1)
 

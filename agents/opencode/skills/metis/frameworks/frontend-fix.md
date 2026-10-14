@@ -101,7 +101,7 @@ STOP and report the attempt + the concrete unblock path. Children emit ChildResu
 - **S1 - real test/build setup cannot run** → BLOCKED (report attempt + unblock path).
 - **S2 - behavior will not reproduce RED** → NOT-REPRODUCIBLE (widen once, then report).
 - **S3 - a pre-existing test flips green→red** → FAILED (regression-is-a-signal: redo).
-- **S4 - root cause outside the owned file/scope** → OUT-OF-SCOPE; climb a tier only when ownership splits into multiple surfaces (missing roadmap / step count / size never climbs).
+- **S4 - root cause outside the owned file/scope** → OUT-OF-SCOPE; climb a tier.
 - **S5 - repro GREEN + zero regressions + adversarial states pass + asks met** → DONE.
 
 ## Stacking

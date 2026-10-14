@@ -5,11 +5,12 @@ import { resolve, join, relative, isAbsolute, dirname, basename } from "node:pat
 import { execSync } from "node:child_process";
 
 export const CORDIS_BRIDGE_VERSION = "1.0.0";
-export const OWNED_TOOLS = ["read", "write", "edit", "bash", "grep", "find", "ls"];
+export const OWNED_TOOLS = ["read", "write", "edit", "bash", "grep", "find", "ls", "metis_structured_output"];
 
 export class OwnedTools {
   constructor(workspaceRoot) {
     this.workspaceRoot = workspaceRoot;
+    this.recordedStructuredOutputs = [];
   }
 
   canonicalize(p) {
@@ -172,6 +173,19 @@ export class OwnedTools {
       return { success: false, error: err.message };
     }
   }
+
+  metis_structured_output(args) {
+    if (!args || typeof args !== "object") {
+      return { success: false, error: "STRUCTURED_OUTPUT_INVALID: Arguments must be an object" };
+    }
+    const record = { ...args, recordedAt: new Date().toISOString() };
+    this.recordedStructuredOutputs.push(record);
+    return { success: true, output: JSON.stringify({ recorded: true, count: this.recordedStructuredOutputs.length }) };
+  }
+
+  getRecordedStructuredOutputs() {
+    return [...this.recordedStructuredOutputs];
+  }
 }
 
 export class CordisBridge {
@@ -192,6 +206,7 @@ export class CordisBridge {
       { name: "grep", description: "Search for query in workspace files" },
       { name: "find", description: "Find files matching pattern" },
       { name: "ls", description: "List files and directories" },
+      { name: "metis_structured_output", description: "Report the final structured result of the role assignment. Call when phase completes." },
     ];
     if (this.allowedTools) return list.filter(t => this.allowedTools.has(t.name));
     return list;
@@ -209,6 +224,7 @@ export class CordisBridge {
       case "grep": return this.tools.grep(args);
       case "find": return this.tools.find(args);
       case "ls": return this.tools.ls(args);
+      case "metis_structured_output": return this.tools.metis_structured_output(args);
       default: return { success: false, error: "UNKNOWN_TOOL: Tool \"" + toolName + "\" is not provided by Cordis SDK bridge" };
     }
   }

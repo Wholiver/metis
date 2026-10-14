@@ -4,11 +4,8 @@ import type { ToolDefinition } from "../extensions/types.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const performanceGateSchema = Type.Object({
-	gate: Type.Union([
-		Type.Literal("G0"), Type.Literal("G1"), Type.Literal("G1-review"), Type.Literal("G1-verify"), Type.Literal("G2"), Type.Literal("G2-review"), Type.Literal("G2-verify"),
-		Type.Literal("G3.5"), Type.Literal("G4"), Type.Literal("G5"), Type.Literal("G6"), Type.Literal("G7"), Type.Literal("sweep"), Type.Literal("goal-check"),
-	]),
-	itemId: Type.Optional(Type.String({ minLength: 1, description: "Stable ROADMAP.md item ID; omit only for run-wide G2 scope evidence." })),
+	gate: Type.String({ minLength: 1, description: "Performance gate identifier (e.g. G0, G1, G2, G3.5, G4, G5, G6, G7, sweep, goal-check, or custom gate ID)." }),
+	itemId: Type.Optional(Type.String({ minLength: 1, description: "Stable ROADMAP.md item ID; omit for run-wide gates (G2, G2-review, G2-verify, sweep, goal-check)." })),
 	verdict: Type.Union([Type.Literal("pass"), Type.Literal("fail"), Type.Literal("blocked")]),
 	evidence: Type.String({ minLength: 1, description: "Relative non-empty receipt path under the active run's artifacts/ directory" }),
 });

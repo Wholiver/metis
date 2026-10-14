@@ -1,4 +1,4 @@
-import { writeFileSync, mkdirSync, existsSync, readdirSync, statSync, readFileSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readdirSync, statSync, readFileSync, chmodSync } from "node:fs";
 import { resolve, join, dirname, relative } from "node:path";
 import { createHash } from "node:crypto";
 import { loadContracts, type ContractsBundle, type RoleContract } from "./contracts.ts";
@@ -386,6 +386,366 @@ export class Projector {
     ].join("\n");
   }
 
+  generateOpenCodeConfig(): string {
+    return JSON.stringify(
+      {
+        "$schema": "https://opencode.ai/config.json",
+        "subagent_depth": 4,
+        "share": "disabled",
+        "permission": {
+          "task": {
+            "*": "deny",
+            "metis-*": "allow",
+          },
+        },
+      },
+      null,
+      2
+    ) + "\n";
+  }
+
+  generateOpenCodeLaunchScript(): string {
+    return `#!/bin/sh
+
+set -eu
+
+fail() {
+  printf 'opencode activation error: %s\\n' "$1" >&2
+  exit 1
+}
+
+policy_json_is_safe() {
+  awk -v require_schema="\${1:-0}" '
+    BEGIN {
+      schema = 0
+      depth = 0
+      share = 0
+      permission = 0
+      task = 0
+      task_step = 0
+      task_ok = 0
+      bad = 0
+    }
+    /^  "\\$schema": "https:\\/\\/opencode\\.ai\\/config\\.json",?$/ {
+      schema++
+      next
+    }
+    /^  "subagent_depth": 4,?$/ {
+      depth++
+      next
+    }
+    /^  "share": "disabled",?$/ {
+      share++
+      next
+    }
+    /^  "permission": \\{$/ {
+      permission++
+      next
+    }
+    permission == 1 && /^    "task": \\{$/ {
+      task++
+      task_step = 0
+      next
+    }
+    task == 1 && task_ok == 0 {
+      if (task_step == 0 && $0 ~ /^      "\\*": "deny",$/) {
+        task_step = 1
+        next
+      }
+      if (task_step == 1 && $0 ~ /^      "metis-\\*": "allow"$/) {
+        task_step = 2
+        next
+      }
+      if (task_step == 2 && $0 ~ /^    \\},?$/) {
+        task_ok = 1
+        next
+      }
+      bad = 1
+    }
+    END {
+      schema_ok = require_schema == 0 || schema == 1
+      exit !(schema_ok && depth == 1 && share == 1 && permission == 1 && task == 1 && task_ok == 1 && bad == 0)
+    }
+  '
+}
+
+version_is_supported() {
+  candidate=$1
+  major=\${candidate%%.*}
+  remainder=\${candidate#*.}
+  minor=\${remainder%%.*}
+  patch=\${remainder#*.}
+
+  case "$major:$minor:$patch" in
+    *[!0-9:]*|'::') return 1 ;;
+  esac
+
+  [ "$major" -gt 1 ] && return 0
+  [ "$major" -lt 1 ] && return 1
+  [ "$minor" -gt 18 ] && return 0
+  [ "$minor" -lt 18 ] && return 1
+  [ "$patch" -ge 7 ]
+}
+
+check_only=0
+if [ "\${1-}" = '--check' ]; then
+  check_only=1
+  shift
+fi
+if [ "$check_only" -eq 1 ] && [ "$#" -ne 0 ]; then
+  fail '--check does not accept OpenCode arguments'
+fi
+
+profile=""
+if [ -n "\${XDG_CONFIG_HOME-}" ] && [ -f "$XDG_CONFIG_HOME/opencode/metis.opencode.json" ]; then
+  profile="$XDG_CONFIG_HOME/opencode/metis.opencode.json"
+elif [ -n "\${HOME-}" ] && [ -f "$HOME/.config/opencode/metis.opencode.json" ]; then
+  profile="$HOME/.config/opencode/metis.opencode.json"
+elif [ -n "\${HOME-}" ] && [ -f "$HOME/.opencode/metis.opencode.json" ]; then
+  profile="$HOME/.opencode/metis.opencode.json"
+else
+  script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+  if [ -f "$script_dir/../metis.opencode.json" ]; then
+    profile="$(cd "$script_dir/.." && pwd)/metis.opencode.json"
+  elif [ -f "$script_dir/metis.opencode.json" ]; then
+    profile="$script_dir/metis.opencode.json"
+  elif [ -f "./metis.opencode.json" ]; then
+    profile="$(pwd)/metis.opencode.json"
+  fi
+fi
+
+[ -n "$profile" ] && [ -f "$profile" ] || fail "dedicated activation profile not found: metis.opencode.json"
+
+if ! tr -d '\\r' < "$profile" | policy_json_is_safe 1; then
+  fail "dedicated activation profile is unsafe: $profile"
+fi
+
+opencode_bin=$(command -v opencode 2>/dev/null || true)
+[ -n "$opencode_bin" ] || fail 'opencode executable not found on PATH'
+
+OPENCODE_CONFIG=$profile
+OPENCODE_CONFIG_CONTENT='{"subagent_depth":4,"share":"disabled","permission":{"task":{"*":"deny","metis-*":"allow"}}}'
+OPENCODE_PERMISSION='{"task":{"*":"deny","metis-*":"allow"}}'
+OPENCODE_DISABLE_EXTERNAL_SKILLS=1
+export OPENCODE_CONFIG OPENCODE_CONFIG_CONTENT OPENCODE_PERMISSION OPENCODE_DISABLE_EXTERNAL_SKILLS
+
+if ! version_output=$("$opencode_bin" --version 2>/dev/null); then
+  fail 'could not read the OpenCode version'
+fi
+version=$(printf '%s\\n' "$version_output" |
+  sed -n 's/^[^0-9]*\\([0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*\\).*$/\\1/p' |
+  sed -n '1p')
+[ -n "$version" ] || fail 'could not parse the OpenCode version'
+version_is_supported "$version" || fail "OpenCode $version is older than required 1.18.7"
+
+if resolved=$("$opencode_bin" debug config --pure 2>/dev/null); then
+  if ! printf '%s\\n' "$resolved" | tr -d '\\r' | policy_json_is_safe 0; then
+    fail 'resolved activation policy is unsafe'
+  fi
+fi
+
+if [ "$check_only" -eq 1 ]; then
+  printf 'opencode activation policy: ok profile=%s version=%s\\n' "$profile" "$version"
+  exit 0
+fi
+
+exec "$opencode_bin" "$@"
+`;
+  }
+
+  generateOpenCodeLaunchPowerShell(): string {
+    return `Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'Stop'
+
+function Stop-Activation {
+    param([string]$Message)
+    [Console]::Error.WriteLine("opencode activation error: $Message")
+    exit 1
+}
+
+function Test-ActivationPolicy {
+    param(
+        [Parameter(Mandatory = $true)]$Config,
+        [switch]$RequireSchema
+    )
+
+    if ($RequireSchema -and $Config.'$schema' -cne 'https://opencode.ai/config.json') {
+        return $false
+    }
+    if ($Config.subagent_depth -ne 4 -or $Config.share -cne 'disabled') {
+        return $false
+    }
+    if ($null -eq $Config.permission -or $null -eq $Config.permission.task) {
+        return $false
+    }
+
+    $rules = @($Config.permission.task.PSObject.Properties)
+    if ($rules.Count -ne 2) { return $false }
+    if ($rules[0].Name -cne '*' -or [string]$rules[0].Value -cne 'deny') { return $false }
+    if ($rules[1].Name -cne 'metis-*' -or [string]$rules[1].Value -cne 'allow') { return $false }
+    return $true
+}
+
+function Test-SupportedVersion {
+    param([string]$Version)
+    if ($Version -notmatch '^(\\d+)\\.(\\d+)\\.(\\d+)$') { return $false }
+    $major = [int]$Matches[1]
+    $minor = [int]$Matches[2]
+    $patch = [int]$Matches[3]
+    if ($major -ne 1) { return $major -gt 1 }
+    if ($minor -ne 18) { return $minor -gt 18 }
+    return $patch -ge 7
+}
+
+$forwardArguments = @($args)
+$checkOnly = $false
+if ($forwardArguments.Count -gt 0 -and $forwardArguments[0] -ceq '--check') {
+    $checkOnly = $true
+    if ($forwardArguments.Count -gt 1) {
+        Stop-Activation '--check does not accept OpenCode arguments'
+    }
+    $forwardArguments = @()
+}
+
+$homeDirectory = if ($env:HOME) { $env:HOME } elseif ($env:USERPROFILE) { $env:USERPROFILE } else { [Environment]::GetFolderPath('UserProfile') }
+$configRoot = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $homeDirectory '.config' }
+
+$profile = Join-Path $configRoot 'opencode/metis.opencode.json'
+if (-not (Test-Path -LiteralPath $profile -PathType Leaf)) {
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $parentProfile = Join-Path (Split-Path -Parent $scriptDir) 'metis.opencode.json'
+    if (Test-Path -LiteralPath $parentProfile -PathType Leaf) {
+        $profile = $parentProfile
+    } elseif (Test-Path -LiteralPath 'metis.opencode.json' -PathType Leaf) {
+        $profile = (Resolve-Path 'metis.opencode.json').Path
+    } else {
+        Stop-Activation "dedicated activation profile not found: metis.opencode.json"
+    }
+}
+
+try {
+    $profileConfig = Get-Content -Raw -LiteralPath $profile | ConvertFrom-Json
+} catch {
+    Stop-Activation "dedicated activation profile is not valid JSON: $profile"
+}
+if (-not (Test-ActivationPolicy -Config $profileConfig -RequireSchema)) {
+    Stop-Activation "dedicated activation profile is unsafe: $profile"
+}
+
+$opencodeCommand = Get-Command opencode -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $opencodeCommand) {
+    Stop-Activation 'opencode executable not found on PATH'
+}
+$opencodePath = $opencodeCommand.Source
+
+$env:OPENCODE_CONFIG = $profile
+$env:OPENCODE_CONFIG_CONTENT = '{"subagent_depth":4,"share":"disabled","permission":{"task":{"*":"deny","metis-*":"allow"}}}'
+$env:OPENCODE_PERMISSION = '{"task":{"*":"deny","metis-*":"allow"}}'
+$env:OPENCODE_DISABLE_EXTERNAL_SKILLS = '1'
+
+$versionOutput = @(& $opencodePath --version 2>$null)
+if ($LASTEXITCODE -ne 0) {
+    Stop-Activation 'could not read the OpenCode version'
+}
+$versionText = $versionOutput -join "\`n"
+if ($versionText -notmatch '(\\d+\\.\\d+\\.\\d+)') {
+    Stop-Activation 'could not parse the OpenCode version'
+}
+$version = $Matches[1]
+if (-not (Test-SupportedVersion -Version $version)) {
+    Stop-Activation "OpenCode $version is older than required 1.18.7"
+}
+
+$resolvedOutput = @(& $opencodePath debug config --pure 2>$null)
+if ($LASTEXITCODE -eq 0 -and $resolvedOutput) {
+    try {
+        $resolvedConfig = ($resolvedOutput -join "\`n") | ConvertFrom-Json
+        if (-not (Test-ActivationPolicy -Config $resolvedConfig)) {
+            Stop-Activation 'resolved activation policy is unsafe'
+        }
+    } catch {}
+}
+
+if ($checkOnly) {
+    [Console]::Out.WriteLine("opencode activation policy: ok profile=$profile version=$version")
+    exit 0
+}
+
+& $opencodePath @forwardArguments
+exit $LASTEXITCODE
+`;
+  }
+
+  generateDeepSeekHeadlessPatch(): string {
+    const lines: string[] = [
+      "# Metis DeepSeek Harness Headless Patch",
+      "# Injects controller-owned subagents with strict tool allowlists.",
+      "- insert:",
+    ];
+
+    for (const role of this.contracts.roles) {
+      const toolName = `metis_${role.id.replace(/-/g, "_")}`;
+      const allowedTools = Array.from(new Set([
+        ...role.deepseek.toolFilter.map(t => t === "find" ? "glob" : t),
+        "metis_structured_output",
+      ]));
+      const indentedPersona = role.systemPrompt
+        .split("\n")
+        .map(line => `        ${line}`)
+        .join("\n");
+
+      lines.push(
+        `  - id: metis-${role.id}`,
+        `    name: '@deepseek-ai/dsh-tool-subagent'`,
+        `    config:`,
+        `      provider: spawn`,
+        `      toolName: ${toolName}`,
+        `      backgroundMode: continuable`,
+        `      maxDepth: 1`,
+        `      persona: |-`,
+        indentedPersona,
+        `      toolFilter:`,
+        `        allow: [${allowedTools.map(t => `"${t}"`).join(", ")}]`,
+      );
+    }
+
+    return lines.join("\n") + "\n";
+  }
+
+  generateDeepSeekCordisPreset(): string {
+    const lines: string[] = [
+      "# Metis Cordis Agent Presets",
+    ];
+
+    for (const role of this.contracts.roles) {
+      const toolName = `metis_${role.id.replace(/-/g, "_")}`;
+      const allowedTools = Array.from(new Set([
+        ...role.deepseek.toolFilter.map(t => t === "find" ? "glob" : t),
+        "metis_structured_output",
+      ]));
+      const indentedPersona = role.systemPrompt
+        .split("\n")
+        .map(line => `      ${line}`)
+        .join("\n");
+
+      lines.push(
+        `- id: metis-${role.id}`,
+        `  name: '@deepseek-ai/dsh-tool-subagent'`,
+        `  config:`,
+        `    provider: spawn`,
+        `    toolName: ${toolName}`,
+        `    backgroundMode: continuable`,
+        `    maxDepth: 1`,
+        `    persona: |-`,
+        indentedPersona,
+        `    toolFilter:`,
+        `      allow: [${allowedTools.map(t => `"${t}"`).join(", ")}]`,
+      );
+    }
+
+    return lines.join("\n") + "\n";
+  }
+
   projectOpenCode(targetDir: string): ProjectionResult {
     const files: ProjectedFile[] = [];
     mkdirSync(targetDir, { recursive: true });
@@ -478,7 +838,39 @@ export class Projector {
       });
     }
 
-    // 5. Private Bundle: .metis-plugin/bundle/
+    // 6. Dedicated activation profile: metis.opencode.json
+    const configContent = this.generateOpenCodeConfig();
+    const configRel = "metis.opencode.json";
+    const configAbs = join(targetDir, configRel);
+    files.push({
+      relativePath: configRel,
+      absolutePath: configAbs,
+      sha256: computeSha256(configContent),
+      content: configContent,
+    });
+
+    // 7. Launch Wrappers: workflow/launch-opencode.sh & workflow/launch-opencode.ps1
+    const launchShContent = this.generateOpenCodeLaunchScript();
+    const launchShRel = "workflow/launch-opencode.sh";
+    const launchShAbs = join(targetDir, launchShRel);
+    files.push({
+      relativePath: launchShRel,
+      absolutePath: launchShAbs,
+      sha256: computeSha256(launchShContent),
+      content: launchShContent,
+    });
+
+    const launchPsContent = this.generateOpenCodeLaunchPowerShell();
+    const launchPsRel = "workflow/launch-opencode.ps1";
+    const launchPsAbs = join(targetDir, launchPsRel);
+    files.push({
+      relativePath: launchPsRel,
+      absolutePath: launchPsAbs,
+      sha256: computeSha256(launchPsContent),
+      content: launchPsContent,
+    });
+
+    // 8. Private Bundle: .metis-plugin/bundle/
     const bundleFiles = this.generatePrivateBundle(targetDir);
     files.push(...bundleFiles);
 
@@ -720,7 +1112,29 @@ export class Projector {
       content: bridgeCode,
     });
 
-    // 5. Private Bundle
+    // 5. Headless Patch: headless.patch.yml
+    const patchContent = this.generateDeepSeekHeadlessPatch();
+    const patchRel = "headless.patch.yml";
+    const patchAbs = join(targetDir, patchRel);
+    files.push({
+      relativePath: patchRel,
+      absolutePath: patchAbs,
+      sha256: computeSha256(patchContent),
+      content: patchContent,
+    });
+
+    // 6. Cordis Agent Presets: agent-preset/agent.cordis.yml
+    const cordisPresetContent = this.generateDeepSeekCordisPreset();
+    const cordisPresetRel = join("agent-preset", "agent.cordis.yml");
+    const cordisPresetAbs = join(targetDir, cordisPresetRel);
+    files.push({
+      relativePath: cordisPresetRel,
+      absolutePath: cordisPresetAbs,
+      sha256: computeSha256(cordisPresetContent),
+      content: cordisPresetContent,
+    });
+
+    // 7. Private Bundle
     const bundleFiles = this.generatePrivateBundle(targetDir);
     files.push(...bundleFiles);
 
@@ -762,6 +1176,11 @@ export class Projector {
     for (const file of files) {
       mkdirSync(dirname(file.absolutePath), { recursive: true });
       writeFileSync(file.absolutePath, file.content, "utf-8");
+      if (file.relativePath.endsWith(".sh")) {
+        try {
+          chmodSync(file.absolutePath, 0o755);
+        } catch {}
+      }
     }
   }
 

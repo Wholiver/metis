@@ -1,5 +1,5 @@
 import React, { useState, useMemo, forwardRef, memo, useRef, useLayoutEffect, useEffect, useCallback, type CSSProperties } from 'react';
-import { Search, Plus, Settings, PanelLeftClose, ArrowUp, SquarePen, Folder, X, Clock } from 'lucide-react';
+import { Search, Plus, Settings, PanelLeftClose, ArrowUp, SquarePen, Folder, X, Clock, FolderGit2, Network } from 'lucide-react';
 import { Agent, ProjectItem } from '../../types';
 import { AgentItem } from './AgentItem';
 import { useI18n } from '../../i18n';
@@ -51,6 +51,12 @@ interface SidebarProps {
   onNewChat?: () => void;
   isRoutinesOpen?: boolean;
   onOpenRoutines?: () => void;
+  isCodeTreeOpen?: boolean;
+  onToggleCodeTree?: () => void;
+  isHarnessOpen?: boolean;
+  onToggleHarness?: () => void;
+  onSelectFileFromTree?: (relativePath: string, hasGitChanges: boolean) => void;
+  activeFilePath?: string | null;
   onArchiveAgent?: (agent: Agent) => void;
   onOpenSettings?: () => void;
   onToggleSidebar?: () => void;
@@ -86,6 +92,12 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
   onNewChat,
   isRoutinesOpen = false,
   onOpenRoutines,
+  isCodeTreeOpen = false,
+  onToggleCodeTree,
+  isHarnessOpen = false,
+  onToggleHarness,
+  onSelectFileFromTree,
+  activeFilePath = null,
   onArchiveAgent,
   onOpenSettings,
   onToggleSidebar,
@@ -106,7 +118,7 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
     new Set(activeProjectId ? [activeProjectId] : [])
   ));
   const [moreByProjectId, setMoreByProjectId] = useState<Record<string, boolean>>({});
-  const currentActiveId = isRoutinesOpen ? null : (optimisticActiveId ?? activeAgentId);
+  const currentActiveId = (isRoutinesOpen || isCodeTreeOpen || isHarnessOpen) ? null : (optimisticActiveId ?? activeAgentId);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const handleOpenUpdate = useCallback((e: React.MouseEvent) => {
@@ -434,6 +446,30 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
           >
             <Clock className="w-3.5 h-3.5 stroke-[1.7] text-ink-2 shrink-0" />
             <span className="truncate flex-1 text-left">{t('routines') || 'Routines'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onToggleCodeTree}
+            data-sidebar-action-row=""
+            className={`relative z-10 w-full h-8 px-2 rounded-[8px] flex items-center gap-2 text-[14px] font-medium ${
+              isCodeTreeOpen ? 'text-ink bg-hover-2 font-semibold' : 'text-ink-2 hover:text-ink'
+            } transition-[background-color,color,transform] duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)]`}
+            data-code-tree-action=""
+          >
+            <FolderGit2 className="w-3.5 h-3.5 stroke-[1.7] text-ink-2 shrink-0" />
+            <span className="truncate flex-1 text-left">{t('gitManager') || t('codeTree')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onToggleHarness}
+            data-sidebar-action-row=""
+            className={`relative z-10 w-full h-8 px-2 rounded-[8px] flex items-center gap-2 text-[14px] font-medium ${
+              isHarnessOpen ? 'text-ink bg-hover-2 font-semibold' : 'text-ink-2 hover:text-ink'
+            } transition-[background-color,color,transform] duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus)]`}
+            data-harness-action=""
+          >
+            <Network className="w-3.5 h-3.5 stroke-[1.7] text-ink-2 shrink-0" />
+            <span className="truncate flex-1 text-left">{t('agentHarness') || 'Agent Harness'}</span>
           </button>
         </GlideMenu>
       </div>

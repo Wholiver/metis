@@ -54,6 +54,7 @@ export interface ResourceLoader {
 	getAppendSystemPrompt(): string[];
 	extendResources(paths: ResourceExtensionPaths): void;
 	reload(options?: ResourceLoaderReloadOptions): Promise<void>;
+	setHarnessSnapshot?(snapshot: import("./harness-document.ts").HarnessDocument | null): void;
 }
 
 function resolvePromptInput(input: string | undefined, description: string): string | undefined {
@@ -198,6 +199,7 @@ export interface DefaultResourceLoaderOptions {
 	adaptations?: "on" | "off";
 	executionProfile?: ExecutionProfile;
 	namedAgentSession?: boolean;
+	harnessSnapshot?: import("./harness-document.ts").HarnessDocument | null;
 }
 
 export class DefaultResourceLoader implements ResourceLoader {
@@ -209,6 +211,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private adaptationsOption?: "on" | "off";
 	private executionProfile?: ExecutionProfile;
 	private namedAgentSession: boolean;
+	private harnessSnapshot?: import("./harness-document.ts").HarnessDocument | null;
 	private additionalExtensionPaths: string[];
 	private additionalSkillPaths: string[];
 	private additionalPromptTemplatePaths: string[];
@@ -282,6 +285,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.adaptationsOption = options.adaptations;
 		this.executionProfile = options.executionProfile;
 		this.namedAgentSession = Boolean(options.namedAgentSession);
+		this.harnessSnapshot = options.harnessSnapshot;
 		this.additionalExtensionPaths = options.additionalExtensionPaths ?? [];
 		this.additionalSkillPaths = options.additionalSkillPaths ?? [];
 		this.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? [];
@@ -847,6 +851,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.themeDiagnostics = resolvedThemes.diagnostics;
 	}
 
+	setHarnessSnapshot(snapshot: import("./harness-document.ts").HarnessDocument | null): void {
+		this.harnessSnapshot = snapshot;
+	}
+
 	private updateAgentsFromPaths(
 		agentPaths: string[],
 		metadataByPath?: Map<string, PathMetadata>,
@@ -862,6 +870,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				agentPaths,
 				adaptationAgentPaths,
 				includeBuiltins: !this.noAgents,
+				harnessSnapshot: this.harnessSnapshot,
 			});
 		}
 		const resolvedAgents = this.agentsOverride ? this.agentsOverride(agentsResult) : agentsResult;

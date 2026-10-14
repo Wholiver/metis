@@ -1,0 +1,245 @@
+/* Onboarding Cinematic Transition & Progressive Unveil Tour (v2) */
+
+.onboarding-transition-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 310;
+  pointer-events: none;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* 1. Backdrop curtain: covers window with pure blank page background during initial flight & landing */
+.onboarding-transition-curtain {
+  position: absolute;
+  inset: 0;
+  background-color: var(--page);
+  transition: opacity 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+}
+
+/* 2. Hero Flying Metis Cloud Mark */
+.onboarding-transition-cloud-wrapper {
+  position: fixed;
+  z-index: 330;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transform-origin: center center;
+  transition: transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.onboarding-cloud-aura {
+  position: absolute;
+  width: 130px;
+  height: 130px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.22) 0%, rgba(59, 130, 246, 0.1) 45%, transparent 70%);
+  filter: blur(12px);
+  pointer-events: none;
+  animation: onboarding-aura-pulse 2.4s ease-in-out infinite alternate;
+}
+
+html.dark .onboarding-cloud-aura {
+  background: radial-gradient(circle, rgba(129, 140, 248, 0.32) 0%, rgba(99, 102, 241, 0.16) 50%, transparent 75%);
+}
+
+@keyframes onboarding-aura-pulse {
+  0% {
+    transform: scale(0.94);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.12);
+    opacity: 0.95;
+  }
+}
+
+.onboarding-landing-ripple {
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--accent);
+  pointer-events: none;
+  animation: onboarding-ripple-expand 800ms cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes onboarding-ripple-expand {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  60% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+/* 3. Docked Feature Callouts (Linear / Raycast Style on pristine blank canvas) */
+.onboarding-tour-card,
+.onboarding-tour-docked-card {
+  position: absolute;
+  z-index: 340;
+  pointer-events: auto;
+  width: 320px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow:
+    0 16px 36px -4px rgba(0, 0, 0, 0.12),
+    0 0 0 1px var(--line),
+    0 0 16px -2px rgba(99, 102, 241, 0.06);
+  transition: opacity 250ms ease, transform 250ms ease;
+}
+
+.onboarding-card-pop {
+  animation: onboarding-card-pop 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes onboarding-card-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* =========================================================================
+   Stage Rules: Unrevealed panels remain 100% BLANK (clean page background),
+   without any dark mask or pitch black overlay.
+   ========================================================================= */
+
+/* Stage: Clearing, Flying & Landed (All 3 panels hidden, canvas is pristine blank) */
+[data-onboarding-tour-stage="clearing"] aside[data-sidebar],
+[data-onboarding-tour-stage="clearing"] [data-sidebar-resizer],
+[data-onboarding-tour-stage="clearing"] [data-chat-header],
+[data-onboarding-tour-stage="clearing"] [data-message-scroll],
+[data-onboarding-tour-stage="clearing"] [data-composer-dock-stack],
+[data-onboarding-tour-stage="clearing"] [data-home-project-slot],
+[data-onboarding-tour-stage="clearing"] [data-mode-switcher-row],
+[data-onboarding-tour-stage="clearing"] aside[data-plan-inspector],
+[data-onboarding-tour-stage="clearing"] [data-inspector-resizer],
+[data-onboarding-tour-stage="flying"] aside[data-sidebar],
+[data-onboarding-tour-stage="flying"] [data-sidebar-resizer],
+[data-onboarding-tour-stage="flying"] [data-chat-header],
+[data-onboarding-tour-stage="flying"] [data-message-scroll],
+[data-onboarding-tour-stage="flying"] [data-composer-dock-stack],
+[data-onboarding-tour-stage="flying"] [data-home-project-slot],
+[data-onboarding-tour-stage="flying"] [data-mode-switcher-row],
+[data-onboarding-tour-stage="flying"] aside[data-plan-inspector],
+[data-onboarding-tour-stage="flying"] [data-inspector-resizer],
+[data-onboarding-tour-stage="landed"] aside[data-sidebar],
+[data-onboarding-tour-stage="landed"] [data-sidebar-resizer],
+[data-onboarding-tour-stage="landed"] [data-chat-header],
+[data-onboarding-tour-stage="landed"] [data-message-scroll],
+[data-onboarding-tour-stage="landed"] [data-composer-dock-stack],
+[data-onboarding-tour-stage="landed"] [data-home-project-slot],
+[data-onboarding-tour-stage="landed"] [data-mode-switcher-row],
+[data-onboarding-tour-stage="landed"] aside[data-plan-inspector],
+[data-onboarding-tour-stage="landed"] [data-inspector-resizer] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Stage: Sidebar (Left sidebar fades in smoothly; Center and Right remain 100% BLANK) */
+[data-onboarding-tour-stage="sidebar"] aside[data-sidebar],
+[data-onboarding-tour-stage="sidebar"] [data-sidebar-resizer] {
+  opacity: 1 !important;
+  transition: opacity 350ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+[data-onboarding-tour-stage="sidebar"] [data-chat-header],
+[data-onboarding-tour-stage="sidebar"] [data-message-scroll],
+[data-onboarding-tour-stage="sidebar"] [data-composer-dock-stack],
+[data-onboarding-tour-stage="sidebar"] [data-home-project-slot],
+[data-onboarding-tour-stage="sidebar"] [data-mode-switcher-row],
+[data-onboarding-tour-stage="sidebar"] aside[data-plan-inspector],
+[data-onboarding-tour-stage="sidebar"] [data-inspector-resizer] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Stage: Composer (Sidebar stays visible; Center input box fades in; Right inspector remains 100% BLANK) */
+[data-onboarding-tour-stage="composer"] aside[data-sidebar],
+[data-onboarding-tour-stage="composer"] [data-sidebar-resizer],
+[data-onboarding-tour-stage="composer"] [data-chat-header],
+[data-onboarding-tour-stage="composer"] [data-message-scroll],
+[data-onboarding-tour-stage="composer"] [data-composer-dock-stack],
+[data-onboarding-tour-stage="composer"] [data-home-project-slot],
+[data-onboarding-tour-stage="composer"] [data-mode-switcher-row] {
+  opacity: 1 !important;
+  transition: opacity 350ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+[data-onboarding-tour-stage="composer"] aside[data-plan-inspector],
+[data-onboarding-tour-stage="composer"] [data-inspector-resizer] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Stage: Inspector (Sidebar, Composer, and Inspector are all visible!) */
+[data-onboarding-tour-stage="inspector"] aside[data-sidebar],
+[data-onboarding-tour-stage="inspector"] [data-sidebar-resizer],
+[data-onboarding-tour-stage="inspector"] [data-chat-header],
+[data-onboarding-tour-stage="inspector"] [data-message-scroll],
+[data-onboarding-tour-stage="inspector"] [data-composer-dock-stack],
+[data-onboarding-tour-stage="inspector"] [data-home-project-slot],
+[data-onboarding-tour-stage="inspector"] [data-mode-switcher-row],
+[data-onboarding-tour-stage="inspector"] aside[data-plan-inspector],
+[data-onboarding-tour-stage="inspector"] [data-inspector-resizer] {
+  opacity: 1 !important;
+  transition: opacity 350ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Native home cloud logo visibility:
+   Hidden throughout the tour (even in composer stage so only the input box is displayed),
+   then smoothly fades into view during settling! */
+[data-onboarding-tour-stage="clearing"] [data-home-cloud-slot],
+[data-onboarding-tour-stage="flying"] [data-home-cloud-slot],
+[data-onboarding-tour-stage="landed"] [data-home-cloud-slot],
+[data-onboarding-tour-stage="sidebar"] [data-home-cloud-slot],
+[data-onboarding-tour-stage="composer"] [data-home-cloud-slot],
+[data-onboarding-tour-stage="inspector"] [data-home-cloud-slot] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+[data-onboarding-tour-stage="settling"] [data-home-cloud-slot] {
+  opacity: 1 !important;
+  transition: opacity 350ms ease !important;
+}
+
+/* Stage: Settling (Transition everything smoothly to natural layout) */
+[data-onboarding-tour-stage="settling"] aside[data-sidebar],
+[data-onboarding-tour-stage="settling"] [data-sidebar-resizer],
+[data-onboarding-tour-stage="settling"] [data-chat-header],
+[data-onboarding-tour-stage="settling"] [data-message-scroll],
+[data-onboarding-tour-stage="settling"] [data-composer-dock-stack],
+[data-onboarding-tour-stage="settling"] [data-home-project-slot],
+[data-onboarding-tour-stage="settling"] [data-mode-switcher-row],
+[data-onboarding-tour-stage="settling"] aside[data-plan-inspector],
+[data-onboarding-tour-stage="settling"] [data-inspector-resizer] {
+  opacity: 1 !important;
+  transition: opacity 300ms ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-transition-cloud-wrapper,
+  .onboarding-transition-curtain,
+  .onboarding-tour-card,
+  .onboarding-cloud-aura,
+  .onboarding-landing-ripple {
+    transition: none !important;
+    animation: none !important;
+  }
+}

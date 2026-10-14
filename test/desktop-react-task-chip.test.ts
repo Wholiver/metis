@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { formatAgentTitle, resolveTaskAgentColor } from '../desktop/src/lib/task-agent';
 import {
   collectSubagentItemsFromParts,
+  decideSubagentFollow,
+  listRunningSubagents,
+  pickNextRunningSubagent,
   resolveSubagentPath,
   resolveSubagentTrail,
   truncateValidSubagentPath,
@@ -12,6 +15,18 @@ import {
 import type { AssistantContentPart } from '../desktop/src/types';
 
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+
+function runningPart(
+  id: string,
+  agent: string,
+  task: string,
+  startedAt: number,
+  nestedParts?: AssistantContentPart[],
+): Extract<AssistantContentPart, { type: 'toolCall' }> {
+  const part = spawnPart(id, agent, task, nestedParts);
+  part.progress = { jobId: id.slice(-6), state: 'running', startedAt };
+  return part;
+}
 
 function spawnPart(
   id: string,
@@ -62,39 +77,102 @@ describe('desktop OpenCode subagent task chip', () => {
       .toEqual(['call-parent']);
   });
 
-  it('navigates chip clicks through a nested main-pane stack', () => {
+  it('follows the newest running subagent, then the next, then closes', () => {
+    const child = runningPart('call-child', 'scribe', 'Write section', 20);
+    const runningParent: SubagentItem = {
+      id: 'call-parent',
+      role: 'researcher',
+      task: 'Research topic',
+      status: 'running',
+      startedAt: 10,
+      parts: [child],
+    };
+    const roots = [runningParent];
+
+    expect(listRunningSubagents(roots).map((item) => item.id)).toEqual(['call-child', 'call-parent']);
+
+    const opened = decideSubagentFollow(roots, { seenIds: new Set(), followLive: false, focusedId: null });
+    expect(opened).toMatchObject({ type: 'open', id: 'call-child' });
+
+    const steady = decideSubagentFollow(roots, {
+      seenIds: new Set(opened.seenIds),
+      followLive: true,
+      focusedId: 'call-child',
+    });
+    expect(steady.type).toBe('idle');
+
+    const parentOnly: SubagentItem[] = [{
+      id: 'call-parent',
+      role: 'researcher',
+      task: 'Research topic',
+      status: 'running',
+      startedAt: 10,
+      parts: [],
+    }];
+    expect(pickNextRunningSubagent(roots, 'call-child')?.id).toBe('call-parent');
+    const switched = decideSubagentFollow(parentOnly, {
+      seenIds: new Set(['call-child', 'call-parent']),
+      followLive: true,
+      focusedId: 'call-child',
+    });
+    expect(switched).toMatchObject({ type: 'open', id: 'call-parent' });
+
+    const finished: SubagentItem[] = [{
+      id: 'call-parent',
+      role: 'researcher',
+      task: 'Research topic',
+      status: 'completed',
+      startedAt: 10,
+      parts: [],
+    }];
+    const closed = decideSubagentFollow(finished, {
+      seenIds: new Set(switched.seenIds),
+      followLive: true,
+      focusedId: 'call-parent',
+    });
+    expect(closed.type).toBe('close');
+
+    const historical = decideSubagentFollow(finished, {
+      seenIds: new Set(closed.seenIds),
+      followLive: false,
+      focusedId: 'call-parent',
+    });
+    expect(historical.type).toBe('idle');
+  });
+
+  it('opens subagent work in the inspector instead of replacing the main chat', () => {
     const app = source('desktop/src/App.tsx');
     const chatArea = source('desktop/src/components/chat/ChatArea.tsx');
-    const header = source('desktop/src/components/chat/ChatHeader.tsx');
     const conversation = source('desktop/src/components/chat/SubagentConversation.tsx');
     const inspector = source('desktop/src/components/inspector/Inspector.tsx');
+    const detail = source('desktop/src/components/inspector/SubagentDetailView.tsx');
     const lib = source('desktop/src/lib/subagents.ts');
 
-    expect(app).toContain('viewingSubagentStack');
-    expect(app).toContain('setViewingSubagentStack');
-    expect(app).toContain('handleOpenRootSubagent');
-    expect(app).toContain('handleNavigateBreadcrumb');
-    expect(app).toContain('resolveSubagentTrail');
-    expect(app).not.toContain("dispatchInspectorTabs({ type: 'openSubagentDetail'");
+    expect(app).toContain('decideSubagentFollow');
+    expect(app).toContain("dispatchInspectorTabs({ type: 'openSubagentDetail', selectedSubagentId: id })");
+    expect(app).toContain('restoreTabId');
+    expect(app).toContain('autoCreatedTab');
+    expect(app).toContain('skipSubagentFollow');
+    expect(app).not.toContain('viewingSubagentStack');
 
-    expect(chatArea).toContain('<SubagentConversation');
+    expect(chatArea).not.toContain('<SubagentConversation');
+    expect(chatArea).not.toContain('data-back-to-parent');
     expect(chatArea).toContain('onOpenSubagent={onOpenSubagent}');
-    expect(chatArea).toContain('collaborationMode={collaborationMode}');
-    expect(chatArea).toContain('model={activeModel}');
-    expect(chatArea).toContain('subagentTrail');
-    expect(chatArea).toContain('data-back-to-parent');
-    expect(header).toContain('data-chat-breadcrumb');
-    expect(header).toContain('data-breadcrumb-ancestor');
-    expect(header).toContain('data-breadcrumb-current');
+
     expect(conversation).toContain('onOpenSubagent={onOpenSubagent}');
     expect(conversation).toContain('<UserBubble');
     expect(conversation).toContain('<AssistantTurn');
     expect(conversation).not.toContain('<AssistantWork');
 
-    expect(inspector).not.toContain('SubagentDetailView');
+    expect(inspector).toContain('SubagentDetailView');
+    expect(inspector).toContain('findSubagentById');
     expect(inspector).toContain('onOpenSubagent?.(item.id)');
-    expect(lib).toContain('collectSubagentItemsFromParts');
-    expect(lib).toContain('resolveSubagentPath');
+    expect(detail).toContain('data-subagent-stop-button');
+    expect(detail).toContain('<SubagentConversation');
+    expect(detail).toContain('fullWidth');
+    expect(conversation).toContain("fullWidth ? '' : 'max-w-[620px]'");
+    expect(lib).toContain('decideSubagentFollow');
+    expect(lib).toContain('pickNextRunningSubagent');
   });
 
   it('renders spawn_agent through TaskToolChip markup and styles', () => {

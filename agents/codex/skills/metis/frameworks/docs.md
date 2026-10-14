@@ -19,7 +19,7 @@ Stay on owned paths. Independent verify uses a different agent than the producer
 onboarding) that is ACCURATE against the real code and USABLE by its real audience -
 with at least one example that actually runs. Owns no production code.
 
-GATE PATH: T0 is only for a fully specified one-line docs edit (exact replacement) closed in the G4 receipt with zero spawn. Substantive authoring is T1+ and runs `G4 WRITE → G5 DOC-REVIEW → G6 ACCURACY-VERIFY` (T2 may add GOAL-CHECK). An implementation-ready executable roadmap item goes directly to G4. G1 is conditional only when the item names an unresolved audience/outline design fork, sets `requiresDetailedPlan: true`, or the writer returns PLAN-CONFLICT. Do not claim T0 still runs independent G5/G6 workers.
+GATE PATH: T0/T1/T2 run `G4 WRITE → G5 DOC-REVIEW → G6 ACCURACY-VERIFY → GOAL-CHECK`. An implementation-ready executable roadmap item goes directly to G4. G1 is conditional only when the item names an unresolved audience/outline design fork, sets `requiresDetailedPlan: true`, or the writer returns PLAN-CONFLICT. Every tier retains independent document review and grounded accuracy verification.
 
 ## Root/child contract
 - Stay on owned paths for the assigned lane.

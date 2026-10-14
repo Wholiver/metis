@@ -4,6 +4,7 @@ import { ProjectItem, RoutineItem } from '../../types';
 import { useI18n } from '../../i18n';
 import { CRON_PRESETS, getNextRunTime, isValidCron } from '../../lib/cron-utils';
 import { Button } from '../atoms/Button';
+import { SelfLearningBadge } from '../atoms/SelfLearningBadge';
 
 interface RoutineEditModalProps {
   isOpen: boolean;
@@ -234,14 +235,22 @@ export const RoutineEditModal: React.FC<RoutineEditModalProps> = ({
               <CalendarClock className="h-4 w-4 stroke-[1.8]" />
             </span>
             <div className="min-w-0">
-              <h2
-                id="routine-edit-title"
-                className="truncate text-[15px] font-medium tracking-tight text-ink"
-              >
-                {isEditing
-                  ? tr('editRoutineModal', '编辑例行任务', 'Edit Routine')
-                  : tr('newRoutineModal', '新建例行任务', 'New Routine')}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2
+                  id="routine-edit-title"
+                  className="truncate text-[15px] font-medium tracking-tight text-ink"
+                >
+                  {isEditing
+                    ? tr('editRoutineModal', '编辑例行任务', 'Edit Routine')
+                    : tr('newRoutineModal', '新建例行任务', 'New Routine')}
+                </h2>
+                {editingRoutine?.source === 'self_learning' && (
+                  <SelfLearningBadge
+                    label={tr('routineSourceSelfLearning', 'AI 学习生成', 'AI Generated')}
+                    data-routine-source="self_learning"
+                  />
+                )}
+              </div>
               <p className="mt-0.5 text-[13px] text-ink-3">
                 {tr(
                   'routineModalHint',

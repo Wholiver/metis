@@ -3,6 +3,8 @@ import { Sparkles, X } from 'lucide-react';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { ChatArea } from './components/chat/ChatArea';
 import { RoutinesManager } from './components/routines/RoutinesManager';
+import { CodeTreeManager } from './components/codetree/CodeTreeManager';
+import { HarnessEditor } from './components/harness/HarnessEditor';
 import { Inspector } from './components/inspector/Inspector';
 import {
   createInspectorTabsState,
@@ -13,11 +15,10 @@ import {
 import { ExtensionUiRequest } from './lib/extension-ui';
 import {
   collectSubagentItems,
+  decideSubagentFollow,
+  findSubagentById,
   mergeSubagentHistoryItems,
   parseSubagentHistory,
-  resolveSubagentPath,
-  resolveSubagentTrail,
-  truncateValidSubagentPath,
   SUBAGENT_HISTORY_STORAGE_KEY,
   type SubagentHistory,
 } from './lib/subagents';
@@ -36,6 +37,7 @@ import { useSystemTheme } from './hooks/useSystemTheme';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { ExtensionUiDialog } from './components/ExtensionUiDialog';
 import { Onboarding, shouldShowOnboarding } from './components/onboarding/Onboarding';
+import { OnboardingTransition, type OnboardingTransitionStage } from './components/onboarding/OnboardingTransition';
 import { SkillCommand } from './components/chat/SkillPicker';
 import { Agent, AssistantContentPart, Message, ModelOption, PendingUserInput, ProjectItem, ThinkingOption, WorkflowPlanState } from './types';
 import { resolveBrowserShineActive } from './lib/browser-control';
@@ -290,6 +292,7 @@ export function App() {
   const captureAsk = captureParams.has('capture-ask');
   const captureSkills = captureParams.has('capture-skills');
   const captureExtensionUi = captureParams.has('capture-extension-ui');
+  const skipSubagentFollow = [...captureParams.keys()].some((key) => key.startsWith('capture-'));
   const [captureThinkingState, setCaptureThinkingState] = useState<'thinking' | 'other'>('thinking');
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [activeProjectId, setActiveProjectId] = useState('');
@@ -356,10 +359,32 @@ export function App() {
   const [sidebarWidth, setSidebarWidth] = useState<number>(224);
   const [inspectorWidth, setInspectorWidth] = useState<number>(300);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
-  const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
   const [browserHostBusy, setBrowserHostBusy] = useState(false);
   const [browserShineLatched, setBrowserShineLatched] = useState(false);
   const [isRoutinesViewActive, setIsRoutinesViewActive] = useState(false);
+  const [isCodeTreeOpen, setIsCodeTreeOpen] = useState(false);
+  const [isHarnessOpen, setIsHarnessOpen] = useState(false);
+  const isHarnessOpenRef = useRef(false);
+  const harnessLeaveGuardRef = useRef<((proceed: () => void) => void) | null>(null);
+  isHarnessOpenRef.current = isHarnessOpen;
+
+  const registerHarnessLeaveGuard = useCallback((guard: ((proceed: () => void) => void) | null) => {
+    harnessLeaveGuardRef.current = guard;
+  }, []);
+
+  const runIfHarnessAllows = useCallback((action: () => void) => {
+    if (!isHarnessOpenRef.current) {
+      action();
+      return;
+    }
+    const guard = harnessLeaveGuardRef.current;
+    if (!guard) {
+      action();
+      return;
+    }
+    guard(action);
+  }, []);
+  const [treeActiveFilePath, setTreeActiveFilePath] = useState<string | null>(null);
   const [inspectorTabsState, dispatchInspectorTabs] = useReducer(
     inspectorTabsReducer,
     undefined,
@@ -386,11 +411,33 @@ export function App() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => (
     captureSettledSend || captureExtensionUi || captureInspectorTabs || capturePlanPreview || captureWorkflowPlan || capturePlanPoints || capturePlanPointsEmpty || captureTools || captureThinkingOverflow ? false : shouldShowOnboarding()
   ));
+  const [onboardingTransitionActive, setOnboardingTransitionActive] = useState(false);
+  const [onboardingSourceRect, setOnboardingSourceRect] = useState<DOMRect | null>(null);
+  const [transitionStage, setTransitionStage] = useState<OnboardingTransitionStage>('idle');
   const [settingsTab, setSettingsTab] = useState<'general' | 'shortcuts' | 'server' | 'model' | 'agent' | 'security' | 'session' | 'about' | 'adaptations'>('general');
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' | 'info' } | null>(null);
   const [skillCommands, setSkillCommands] = useState<SkillCommand[]>([]);
   const [activeResizer, setActiveResizer] = useState<'sidebar' | 'inspector' | null>(null);
-  const [viewingSubagentStack, setViewingSubagentStack] = useState<string[]>([]);
+  const inspectorTabsRef = useRef(inspectorTabsState);
+  inspectorTabsRef.current = inspectorTabsState;
+  const subagentFollowRef = useRef({
+    seenIds: [] as string[],
+    followLive: false,
+    focusedId: null as string | null,
+    restoreTabId: null as string | null,
+    autoCreatedTab: false,
+  });
+  const clearFollowedSubagent = useCallback(() => {
+    subagentFollowRef.current.seenIds = [];
+    subagentFollowRef.current.followLive = false;
+    subagentFollowRef.current.focusedId = null;
+    subagentFollowRef.current.restoreTabId = null;
+    subagentFollowRef.current.autoCreatedTab = false;
+    const subTab = inspectorTabsRef.current.tabs.find((tab) => tab.kind === 'subagents');
+    if (subTab?.selectedSubagentId) {
+      dispatchInspectorTabs({ type: 'update', tabId: subTab.id, patch: { selectedSubagentId: null } });
+    }
+  }, []);
   const [subagentHistory, setSubagentHistory] = useState<SubagentHistory>(() => {
     if (typeof localStorage === 'undefined') return {};
     return parseSubagentHistory(localStorage.getItem(SUBAGENT_HISTORY_STORAGE_KEY));
@@ -559,31 +606,6 @@ export function App() {
       ? restoredSubagents
       : collectSubagentItems(displayedMessages, activeAgentId)
   ), [displayedMessages, messages, restoredSubagents, activeAgentId]);
-
-  const subagentTrail = useMemo(
-    () => resolveSubagentTrail(displayedSubagents, viewingSubagentStack),
-    [displayedSubagents, viewingSubagentStack],
-  );
-
-  const viewingSubagent = useMemo(
-    () => (viewingSubagentStack.length > 0
-      ? resolveSubagentPath(displayedSubagents, viewingSubagentStack)
-      : null),
-    [displayedSubagents, viewingSubagentStack],
-  );
-
-  useEffect(() => {
-    if (viewingSubagentStack.length === 0) return;
-    const valid = truncateValidSubagentPath(displayedSubagents, viewingSubagentStack);
-    if (valid.length !== viewingSubagentStack.length
-      || valid.some((id, index) => id !== viewingSubagentStack[index])) {
-      setViewingSubagentStack(valid);
-    }
-  }, [displayedSubagents, viewingSubagentStack]);
-
-  useEffect(() => {
-    setViewingSubagentStack([]);
-  }, [activeAgentId]);
 
   const handleStopSubagent = useCallback(async (subagentId: string) => {
     void abortSubagent(subagentId);
@@ -859,18 +881,25 @@ export function App() {
   }, [activeAgent?.sessionPath, activeAgentId, archivedSessions, removeConversation, request]);
 
   const handleSelectProject = useCallback((id: string) => {
-    setIsRoutinesViewActive(false);
-    const targetProj = projects.find((p) => p.id === id);
-    if (!targetProj || targetProj.id === activeProjectId) return;
-    setActiveProjectId(id);
-    void selectProject(targetProj);
-    const desktop = (window as any).metisDesktop;
-    if (desktop?.workspace?.set && targetProj?.path) {
-      void desktop.workspace.set(targetProj.path).catch((err: unknown) => {
-        console.warn('[desktop] Failed to set workspace:', err);
-      });
+    const apply = () => {
+      setIsRoutinesViewActive(false);
+      const targetProj = projects.find((p) => p.id === id);
+      if (!targetProj || targetProj.id === activeProjectId) return;
+      setActiveProjectId(id);
+      void selectProject(targetProj);
+      const desktop = (window as any).metisDesktop;
+      if (desktop?.workspace?.set && targetProj?.path) {
+        void desktop.workspace.set(targetProj.path).catch((err: unknown) => {
+          console.warn('[desktop] Failed to set workspace:', err);
+        });
+      }
+    };
+    if (!isHarnessOpenRef.current || id === activeProjectId) {
+      apply();
+      return;
     }
-  }, [activeProjectId, projects, selectProject]);
+    runIfHarnessAllows(apply);
+  }, [activeProjectId, projects, runIfHarnessAllows, selectProject]);
 
   const handleToggleSidebar = useCallback(() => {
     setIsSidebarOpen((prev) => !prev);
@@ -884,45 +913,38 @@ export function App() {
     void abortTurn();
   }, [abortTurn]);
 
-  const handleToggleInspector = useCallback(() => {
-    setIsInspectorOpen((prev) => {
-      if (!prev) dispatchInspectorTabs({ type: 'open', kind: 'files' });
-      return !prev;
-    });
-  }, []);
-
-  const handleCloseInspector = useCallback(() => {
-    setIsInspectorOpen(false);
-  }, []);
-
   const handleSelectAgent = useCallback(async (agentId: string) => {
-    setIsRoutinesViewActive(false);
-    setViewingSubagentStack([]);
-    const switching = selectConversation(agentId);
-    let ownerPath: string | undefined;
-    for (const [path, list] of Object.entries(projectAgentsByPath)) {
-      if (list.some((agent) => agent.id === agentId)) {
-        ownerPath = path;
-        break;
-      }
-    }
-    if (!ownerPath) {
-      ownerPath = agents.find((agent) => agent.id === agentId)?.projectPath;
-    }
-    if (ownerPath && !pathsEqual(ownerPath, activeProject?.path)) {
-      const ownerProject = projects.find((project) => pathsEqual(project.path, ownerPath));
-      if (ownerProject) {
-        setActiveProjectId(ownerProject.id);
-        const desktop = (window as any).metisDesktop;
-        if (desktop?.workspace?.set) {
-          void desktop.workspace.set(ownerProject.path).catch((err: unknown) => {
-            console.warn('[desktop] Failed to set workspace:', err);
-          });
+    runIfHarnessAllows(() => {
+      setIsRoutinesViewActive(false);
+      setIsCodeTreeOpen(false);
+      setIsHarnessOpen(false);
+      clearFollowedSubagent();
+      const switching = selectConversation(agentId);
+      let ownerPath: string | undefined;
+      for (const [path, list] of Object.entries(projectAgentsByPath)) {
+        if (list.some((agent) => agent.id === agentId)) {
+          ownerPath = path;
+          break;
         }
       }
-    }
-    await switching;
-  }, [activeProject?.path, agents, projectAgentsByPath, projects, selectConversation]);
+      if (!ownerPath) {
+        ownerPath = agents.find((agent) => agent.id === agentId)?.projectPath;
+      }
+      if (ownerPath && !pathsEqual(ownerPath, activeProject?.path)) {
+        const ownerProject = projects.find((project) => pathsEqual(project.path, ownerPath));
+        if (ownerProject) {
+          setActiveProjectId(ownerProject.id);
+          const desktop = (window as any).metisDesktop;
+          if (desktop?.workspace?.set) {
+            void desktop.workspace.set(ownerProject.path).catch((err: unknown) => {
+              console.warn('[desktop] Failed to set workspace:', err);
+            });
+          }
+        }
+      }
+      void switching;
+    });
+  }, [activeProject?.path, agents, clearFollowedSubagent, projectAgentsByPath, projects, runIfHarnessAllows, selectConversation]);
 
   const handleAddProject = async () => {
     const desktop = (window as any).metisDesktop;
@@ -1078,17 +1100,61 @@ export function App() {
   }, []);
 
   const handleNewChat = useCallback(() => {
-    setIsRoutinesViewActive(false);
-    setViewingSubagentStack([]);
-    void newConversation();
-  }, [newConversation]);
+    runIfHarnessAllows(() => {
+      setIsRoutinesViewActive(false);
+      setIsCodeTreeOpen(false);
+      setIsHarnessOpen(false);
+      clearFollowedSubagent();
+      void newConversation();
+    });
+  }, [clearFollowedSubagent, newConversation, runIfHarnessAllows]);
 
   const handleOpenRoutines = useCallback(() => {
-    setIsRoutinesViewActive(true);
-  }, []);
+    runIfHarnessAllows(() => {
+      setIsCodeTreeOpen(false);
+      setIsHarnessOpen(false);
+      setIsRoutinesViewActive(true);
+    });
+  }, [runIfHarnessAllows]);
 
   const handleCloseRoutines = useCallback(() => {
     setIsRoutinesViewActive(false);
+  }, []);
+
+  const handleToggleCodeTree = useCallback(() => {
+    runIfHarnessAllows(() => {
+      setIsRoutinesViewActive(false);
+      setIsHarnessOpen(false);
+      setIsCodeTreeOpen((prev) => !prev);
+    });
+  }, [runIfHarnessAllows]);
+
+  const handleCloseCodeTree = useCallback(() => {
+    setIsCodeTreeOpen(false);
+  }, []);
+
+  const handleToggleHarness = useCallback(() => {
+    if (isHarnessOpenRef.current) {
+      runIfHarnessAllows(() => setIsHarnessOpen(false));
+      return;
+    }
+    setIsRoutinesViewActive(false);
+    setIsCodeTreeOpen(false);
+    setIsHarnessOpen(true);
+  }, [runIfHarnessAllows]);
+
+  const handleCloseHarness = useCallback(() => {
+    runIfHarnessAllows(() => setIsHarnessOpen(false));
+  }, [runIfHarnessAllows]);
+
+  const handleSelectFileFromTree = useCallback((relativePath: string, hasGitChanges: boolean) => {
+    setTreeActiveFilePath(relativePath);
+    if (hasGitChanges) {
+      dispatchInspectorTabs({
+        type: 'openOrActivate',
+        kind: 'files',
+      });
+    }
   }, []);
 
   const handleJumpToRoutineSession = useCallback(async (sessionId: string, projectPath?: string) => {
@@ -1112,7 +1178,6 @@ export function App() {
   }, [activeProject, handleSelectAgent, projects, refresh, selectProject]);
 
   const handleOpenInspectorTab = useCallback((kind: InspectorTabKind) => {
-    setIsInspectorOpen(true);
     dispatchInspectorTabs({ type: 'open', kind });
   }, []);
 
@@ -1130,7 +1195,6 @@ export function App() {
     const handleOpenBrowser = (event: Event) => {
       const customEvent = event as CustomEvent<{ url?: string; newTab?: boolean }>;
       const url = customEvent.detail?.url;
-      setIsInspectorOpen(true);
       if (customEvent.detail?.newTab) {
         dispatchInspectorTabs({ type: 'open', kind: 'browser', browserUrl: url });
       } else {
@@ -1149,7 +1213,6 @@ export function App() {
       newTab?: boolean;
       tabId?: string;
     }) => {
-      setIsInspectorOpen(true);
       if (payload?.tabId) {
         dispatchInspectorTabs({ type: 'activate', tabId: payload.tabId });
         if (payload.url) {
@@ -1173,7 +1236,6 @@ export function App() {
     });
     const offSelect = desktop.browser.onSelectTab?.((payload: { tabId?: string }) => {
       if (!payload?.tabId) return;
-      setIsInspectorOpen(true);
       dispatchInspectorTabs({ type: 'activate', tabId: payload.tabId });
     });
     const offBusy = desktop.browser.onBusy?.((payload: { busy?: boolean }) => {
@@ -1187,7 +1249,6 @@ export function App() {
   }, []);
 
   const openInspectorPlan = useCallback((markdown?: string) => {
-    setIsInspectorOpen(true);
     dispatchInspectorTabs({
       type: 'openOrActivate',
       kind: 'plan',
@@ -1196,29 +1257,66 @@ export function App() {
     });
   }, [activeAgentId, messagesSessionId]);
 
-  const handleOpenSubagent = useCallback((partId: string) => {
-    setViewingSubagentStack((prev) => {
-      const existing = prev.indexOf(partId);
-      if (existing >= 0) return prev.slice(0, existing + 1);
-      return [...prev, partId];
-    });
-  }, []);
-
-  const handleOpenRootSubagent = useCallback((partId: string) => {
-    setViewingSubagentStack([partId]);
-  }, []);
-
-  const handleNavigateBreadcrumb = useCallback((depth: number) => {
-    if (depth < 0) {
-      setViewingSubagentStack([]);
-      return;
+  const openSubagentInInspector = useCallback((id: string, followLive: boolean) => {
+    const tabsState = inspectorTabsRef.current;
+    const existing = tabsState.tabs.find((tab) => tab.kind === 'subagents');
+    const alreadyShowingDetail = Boolean(
+      existing && tabsState.activeTabId === existing.id && existing.selectedSubagentId,
+    );
+    const follow = subagentFollowRef.current;
+    if (!alreadyShowingDetail) {
+      follow.restoreTabId = tabsState.activeTabId;
+      follow.autoCreatedTab = !existing;
     }
-    setViewingSubagentStack((prev) => prev.slice(0, depth + 1));
+    follow.followLive = followLive;
+    follow.focusedId = id;
+    dispatchInspectorTabs({ type: 'openSubagentDetail', selectedSubagentId: id });
   }, []);
 
-  const handleBackToParentAgent = useCallback(() => {
-    setViewingSubagentStack((prev) => prev.slice(0, -1));
+  const closeSubagentInspector = useCallback(() => {
+    const follow = subagentFollowRef.current;
+    const tabsState = inspectorTabsRef.current;
+    const subTab = tabsState.tabs.find((tab) => tab.kind === 'subagents');
+    follow.followLive = false;
+    follow.focusedId = null;
+    if (!subTab) return;
+    if (follow.autoCreatedTab) {
+      dispatchInspectorTabs({ type: 'close', tabId: subTab.id });
+      if (follow.restoreTabId && follow.restoreTabId !== subTab.id) {
+        dispatchInspectorTabs({ type: 'activate', tabId: follow.restoreTabId });
+      }
+    } else if (subTab.selectedSubagentId) {
+      dispatchInspectorTabs({ type: 'update', tabId: subTab.id, patch: { selectedSubagentId: null } });
+      if (follow.restoreTabId && follow.restoreTabId !== subTab.id && tabsState.activeTabId === subTab.id) {
+        dispatchInspectorTabs({ type: 'activate', tabId: follow.restoreTabId });
+      }
+    }
+    follow.autoCreatedTab = false;
   }, []);
+
+  const handleOpenSubagent = useCallback((partId: string) => {
+    const follow = subagentFollowRef.current;
+    if (!follow.seenIds.includes(partId)) follow.seenIds = [...follow.seenIds, partId];
+    const item = findSubagentById(displayedSubagents, partId);
+    openSubagentInInspector(partId, item?.status === 'running');
+  }, [displayedSubagents, openSubagentInInspector]);
+
+  useEffect(() => {
+    clearFollowedSubagent();
+  }, [activeAgentId, clearFollowedSubagent]);
+
+  useEffect(() => {
+    if (skipSubagentFollow) return;
+    const follow = subagentFollowRef.current;
+    const decision = decideSubagentFollow(displayedSubagents, {
+      seenIds: new Set(follow.seenIds),
+      followLive: follow.followLive,
+      focusedId: follow.focusedId,
+    });
+    follow.seenIds = decision.seenIds;
+    if (decision.type === 'open') openSubagentInInspector(decision.id, true);
+    else if (decision.type === 'close') closeSubagentInspector();
+  }, [activeAgentId, closeSubagentInspector, displayedSubagents, openSubagentInInspector, skipSubagentFollow]);
 
   useEffect(() => {
     if (capturePlanPreview || capturePlanPoints || capturePlanPointsEmpty || captureInspectorTabs || captureWorkflowPlan) return;
@@ -1226,10 +1324,20 @@ export function App() {
   }, [activeAgentId, captureInspectorTabs, capturePlanPoints, capturePlanPointsEmpty, capturePlanPreview, captureWorkflowPlan]);
 
   const handleActivateInspectorTab = useCallback((tabId: string) => {
+    const subTab = inspectorTabsRef.current.tabs.find((tab) => tab.kind === 'subagents');
+    if (!subTab || tabId !== subTab.id) {
+      subagentFollowRef.current.followLive = false;
+    }
     dispatchInspectorTabs({ type: 'activate', tabId });
   }, []);
 
   const handleCloseInspectorTab = useCallback((tabId: string) => {
+    const subTab = inspectorTabsRef.current.tabs.find((tab) => tab.kind === 'subagents');
+    if (subTab && tabId === subTab.id) {
+      subagentFollowRef.current.followLive = false;
+      subagentFollowRef.current.focusedId = null;
+      subagentFollowRef.current.autoCreatedTab = false;
+    }
     dispatchInspectorTabs({ type: 'close', tabId });
   }, []);
 
@@ -1249,6 +1357,7 @@ export function App() {
       className={`flex h-screen w-screen bg-transparent text-ink select-none overflow-hidden ${
         activeResizer ? 'cursor-col-resize select-none' : ''
       }`}
+      data-onboarding-tour-stage={onboardingTransitionActive ? transitionStage : undefined}
     >
       {/* 1. Left Sidebar Panel */}
       <div className={isSidebarOpen ? 'contents' : 'hidden'} aria-hidden={!isSidebarOpen || undefined} data-sidebar-shell="">
@@ -1271,6 +1380,12 @@ export function App() {
             onNewChat={handleNewChat}
             isRoutinesOpen={isRoutinesViewActive}
             onOpenRoutines={handleOpenRoutines}
+            isCodeTreeOpen={isCodeTreeOpen}
+            onToggleCodeTree={handleToggleCodeTree}
+            isHarnessOpen={isHarnessOpen}
+            onToggleHarness={handleToggleHarness}
+            onSelectFileFromTree={handleSelectFileFromTree}
+            activeFilePath={treeActiveFilePath}
             onArchiveAgent={captureConversationIcons ? undefined : handleArchiveAgent}
             onOpenSettings={handleOpenSettings}
             onToggleSidebar={handleCloseSidebar}
@@ -1290,7 +1405,7 @@ export function App() {
           />
       </div>
 
-      {/* 2. Center Main Workspace Area: Routines Manager or Chat Area */}
+      {/* 2. Center Main Workspace Area: Routines Manager, Code Tree, or Chat Area */}
       {isRoutinesViewActive ? (
         <RoutinesManager
           projects={projects}
@@ -1300,6 +1415,31 @@ export function App() {
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={handleToggleSidebar}
           onNewChat={handleNewChat}
+        />
+      ) : isCodeTreeOpen ? (
+        <CodeTreeManager
+          projects={projects}
+          activeProjectId={activeProjectId}
+          activeProjectPath={activeProject?.path}
+          onSelectProject={handleSelectProject}
+          onClose={handleCloseCodeTree}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={handleToggleSidebar}
+          onNewChat={handleNewChat}
+          onSelectFile={handleSelectFileFromTree}
+        />
+      ) : isHarnessOpen ? (
+        <HarnessEditor
+          projects={projects}
+          activeProjectId={activeProjectId}
+          activeProjectPath={activeProject?.path}
+          onSelectProject={handleSelectProject}
+          onClose={handleCloseHarness}
+          registerLeaveGuard={registerHarnessLeaveGuard}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={handleToggleSidebar}
+          onNewChat={handleNewChat}
+          availableModels={models}
         />
       ) : (
       <ChatArea
@@ -1311,7 +1451,6 @@ export function App() {
         activeProject={activeProject}
         onSelectProject={handleSelectProject}
         isSidebarOpen={isSidebarOpen}
-        isInspectorOpen={isInspectorOpen}
         onToggleSidebar={handleToggleSidebar}
         onNewChat={handleNewChat}
         onSendMessage={captureSettledSend
@@ -1335,7 +1474,6 @@ export function App() {
         isChangingCollaborationMode={isChangingCollaborationMode}
         skills={captureSkills ? SKILL_PICKER_CAPTURE_SKILLS : skillCommands}
         isCompacting={isCompacting}
-        onToggleInspector={handleToggleInspector}
         isStreaming={captureWorkflowPlan || captureTools || captureThinkingProgress || captureStreamingWork ? true : capturePlanPreview ? false : isStreaming}
         isLoading={captureMessageWidth || captureThinkingProgress || capturePlanPreview || captureWorkflowPlan || captureLocalSend || captureSettledSend ? false : isLoadingMessages}
         workflowProposal={displayedProposal}
@@ -1351,11 +1489,6 @@ export function App() {
         quota5h={quota5h}
         quota7d={quota7d}
         onOpenSubagent={handleOpenSubagent}
-        onStopSubagent={handleStopSubagent}
-        viewingSubagent={viewingSubagent}
-        subagentTrail={subagentTrail}
-        onNavigateBreadcrumb={handleNavigateBreadcrumb}
-        onBackToParent={handleBackToParentAgent}
         learningProgress={learningProgress}
         onOpenSettingsTab={handleOpenSettingsTab}
         onDismissLearningProgress={dismissLearningProgress}
@@ -1363,7 +1496,11 @@ export function App() {
       )}
 
       {/* 3. Right Inspector Panel */}
-      <div className={isInspectorOpen ? 'contents' : 'hidden'} aria-hidden={!isInspectorOpen || undefined} data-inspector-shell="">
+      <div
+        className={isRoutinesViewActive || isCodeTreeOpen || isHarnessOpen ? 'hidden' : 'contents'}
+        aria-hidden={isRoutinesViewActive || isCodeTreeOpen || isHarnessOpen || undefined}
+        data-inspector-shell=""
+      >
           {/* Resizer Handle for Inspector */}
           <div
             onMouseDown={handleInspectorResizeStart}
@@ -1390,10 +1527,10 @@ export function App() {
             onCloseTab={handleCloseInspectorTab}
             onMoveTab={handleMoveInspectorTab}
             onUpdateTab={handleUpdateInspectorTab}
-            onOpenSubagent={handleOpenRootSubagent}
+            onOpenSubagent={handleOpenSubagent}
             onStopSubagent={handleStopSubagent}
-            onClose={handleCloseInspector}
-            onCollapse={handleCloseInspector}
+            collaborationMode={collaborationMode}
+            model={activeModel}
             activeSessionId={activeAgentId || messagesSessionId || null}
             onToggleWideWidth={handleToggleWideInspector}
             isWideWidth={inspectorWidth >= 650}
@@ -1435,10 +1572,31 @@ export function App() {
         request={request}
         isConnected={isConnected}
         models={models}
-        onComplete={() => setIsOnboardingOpen(false)}
+        onComplete={(rect) => {
+          setIsOnboardingOpen(false);
+          handleNewChat();
+          if (rect) {
+            setOnboardingSourceRect(rect);
+            setTransitionStage('flying');
+            setOnboardingTransitionActive(true);
+          }
+        }}
         onProjectReady={handleOnboardingProject}
         onSelectModel={selectModel}
         onRefreshModels={refreshModels}
+      />
+      <OnboardingTransition
+        active={onboardingTransitionActive}
+        sourceRect={onboardingSourceRect}
+        sidebarWidth={sidebarWidth}
+        inspectorWidth={inspectorWidth}
+        onStageChange={setTransitionStage}
+        onNewChat={handleNewChat}
+        onFinish={() => {
+          setOnboardingTransitionActive(false);
+          setOnboardingSourceRect(null);
+          setTransitionStage('idle');
+        }}
       />
       <ExtensionUiDialog
         request={captureExtensionUi ? EXTENSION_UI_CAPTURE_REQUEST : extensionUiRequest}

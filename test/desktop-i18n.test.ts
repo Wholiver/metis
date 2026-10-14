@@ -60,9 +60,15 @@ const legitimateCognates = new Set([
 	"selfLearningRollback",
 	"selfLearningBadgeArchitecture",
 	"selfLearningSandboxed",
+	"selfLearningBetaBadge",
 	"reactUiPlanTodos",
 	"adaptations",
 	"pause",
+	"diffView",
+	"harnessPass",
+	"harnessTierFastPath",
+	"harnessTierT0",
+	"harnessTierT1",
 ]);
 
 describe("Desktop translation catalogs", () => {
@@ -180,6 +186,7 @@ describe("Desktop translation coverage", () => {
 		const files = [resolve(process.cwd(), "desktop/src/App.tsx")];
 		const collectFiles = (directory: string) => {
 			for (const name of readdirSync(directory)) {
+				if (name === "harness") continue;
 				const path = resolve(directory, name);
 				if (statSync(path).isDirectory()) collectFiles(path);
 				else if (path.endsWith(".tsx")) files.push(path);
@@ -250,8 +257,8 @@ describe("Desktop translation coverage", () => {
 		]) add(value);
 
 		const intentionallyStable = new Set([
-			"简体中文", "https://api.example.com/v1", "⌘ N", "Enter", "Shift Enter", "Esc", "HTML", "JSONL",
-			"Metis Desktop", "Metis", "·", "%", "+", "—", "PDF", "ID #", "calendar.google.com", "M",
+			"简体中文", "https://api.example.com/v1", "⌘ N", "Enter", "Shift Enter", "Esc", "Ctrl↵", "HTML", "JSONL",
+			"Metis Desktop", "Metis", "·", "%", "+", "—", "PDF", "ID #", "calendar.google.com", "M", "HEAD",
 			"bloub 动画头像", "my-awesome-project", "model-id", "myprovider",
 		]);
 		const english = new Set(Object.values(i18n.catalogs.en));

@@ -29,13 +29,24 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		selectParent: () => ipcRenderer.invoke("workspace:select-parent"),
 		create: (input) => ipcRenderer.invoke("workspace:create", input),
 		selectMany: () => ipcRenderer.invoke("workspace:select-many"),
-		tree: () => ipcRenderer.invoke("workspace:tree"),
+		tree: (targetDir) => ipcRenderer.invoke("workspace:tree", targetDir),
 		diff: (relativePath) => ipcRenderer.invoke("workspace:diff", relativePath),
-		gitInfo: () => ipcRenderer.invoke("workspace:git-info"),
-		gitStatus: (mode) => ipcRenderer.invoke("workspace:git-status", mode),
-		gitDiff: (relativePath, mode) => ipcRenderer.invoke("workspace:git-diff", relativePath, mode),
-		gitInit: () => ipcRenderer.invoke("workspace:git-init"),
-		reveal: (relativePath) => ipcRenderer.invoke("workspace:reveal", relativePath),
+		gitInfo: (targetDir) => ipcRenderer.invoke("workspace:git-info", targetDir),
+		gitStatus: (mode, targetDir) => ipcRenderer.invoke("workspace:git-status", mode, targetDir),
+		gitDiff: (relativePath, mode, targetDir) => ipcRenderer.invoke("workspace:git-diff", relativePath, mode, targetDir),
+		gitInit: (targetDir) => ipcRenderer.invoke("workspace:git-init", targetDir),
+		gitStage: (files, targetDir) => ipcRenderer.invoke("workspace:git-stage", files, targetDir),
+		gitUnstage: (files, targetDir) => ipcRenderer.invoke("workspace:git-unstage", files, targetDir),
+		gitDiscard: (files, targetDir) => ipcRenderer.invoke("workspace:git-discard", files, targetDir),
+		gitCommit: (message, targetDir) => ipcRenderer.invoke("workspace:git-commit", message, targetDir),
+		gitHistory: (limit, targetDir) => ipcRenderer.invoke("workspace:git-history", limit, targetDir),
+		gitCommitDetail: (hash, targetDir) => ipcRenderer.invoke("workspace:git-commit-detail", hash, targetDir),
+		gitCommitFileDiff: (hash, relativePath, targetDir) => ipcRenderer.invoke("workspace:git-commit-file-diff", hash, relativePath, targetDir),
+		gitBranches: (targetDir) => ipcRenderer.invoke("workspace:git-branches", targetDir),
+		gitCheckout: (branch, targetDir) => ipcRenderer.invoke("workspace:git-checkout", branch, targetDir),
+		reveal: (relativePath, targetDir) => ipcRenderer.invoke("workspace:reveal", relativePath, targetDir),
+		openPath: (relativePath, targetDir) => ipcRenderer.invoke("workspace:open-path", relativePath, targetDir),
+		readFile: (relativePath, targetDir) => ipcRenderer.invoke("workspace:read-file", relativePath, targetDir),
 	},
 	providerConfig: {
 		getCustom: () => ipcRenderer.invoke("provider-config:get-custom"),
@@ -100,6 +111,12 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 			ipcRenderer.on("routine:updated", handler);
 			return () => ipcRenderer.removeListener("routine:updated", handler);
 		},
+	},
+	harness: {
+		load: (targetDir) => ipcRenderer.invoke("harness:load", targetDir),
+		save: (harness, targetDir) => ipcRenderer.invoke("harness:save", harness, targetDir),
+		delete: (targetDir) => ipcRenderer.invoke("harness:delete", targetDir),
+		seed: () => ipcRenderer.invoke("harness:seed"),
 	},
 });
 

@@ -1,6 +1,6 @@
 ---
 name: polish
-description: "Visual/copy/detail polish pass over an existing working surface; T1 retains independent G5/G6."
+description: "Code aesthetics, comments, formatting, typing, and cleanup."
 category: polish
 tier: T0/T1
 ---
@@ -75,7 +75,8 @@ STOP and report the attempt + the concrete unblock path. Children emit ChildResu
   `frontend-implement` / `frontend-fix`; polish covers only the finished-feel pass.
 - **S3 - a pre-existing test flips green→red** → FAILED (regression-is-a-signal: redo);
   never weaken/skip.
-- **S4 - the "polish" is really a redesign/new capability** → OUT-OF-SCOPE; climb a tier only when ownership splits into multiple surfaces (GATES.md ESCALATION; missing roadmap / step count / size never climbs) or route to `frontend-build`.
+- **S4 - the "polish" is really a redesign/new capability** → OUT-OF-SCOPE; climb a
+  tier (GATES.md ESCALATION) or route to `frontend-build`.
 - **S5 - every planned polish item landed across its states + zero regressions +
   juror PASS** → DONE.
 

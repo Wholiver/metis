@@ -26,6 +26,7 @@ await cp(path.join(desktopDir, "i18n.cjs"), path.join(outputDir, "i18n.cjs"));
 await cp(path.join(desktopDir, "i18n-source.cjs"), path.join(outputDir, "i18n-source.cjs"));
 await cp(path.join(desktopDir, "src", "i18n-catalogs.js"), path.join(outputDir, "src", "i18n-catalogs.js"));
 await cp(path.join(desktopDir, "src", "i18n-catalogs.cjs"), path.join(outputDir, "src", "i18n-catalogs.cjs"));
+await cp(path.join(desktopDir, "builtin-harness-seed.json"), path.join(outputDir, "builtin-harness-seed.json"));
 await cp(path.join(desktopDir, "public"), path.join(outputDir, "public"), { recursive: true });
 await cp(path.join(desktopDir, "assets"), path.join(outputDir, "assets"), { recursive: true });
 await cp(path.join(desktopDir, "renderer"), path.join(outputDir, "renderer"), { recursive: true });

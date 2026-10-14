@@ -239,7 +239,76 @@ export class OpenCodeAdapter extends BaseAdapter {
       }
     }
 
-    // 4. Verify bundle hash
+    // 4. Verify dedicated activation profile: metis.opencode.json
+    let profileValid = true;
+    const profilePath = join(root, "metis.opencode.json");
+    if (!existsSync(profilePath)) {
+      errors.push(`Dedicated activation profile missing at ${profilePath}`);
+      profileValid = false;
+    } else {
+      try {
+        const profileObj = JSON.parse(readFileSync(profilePath, "utf-8"));
+        if (profileObj["$schema"] !== "https://opencode.ai/config.json") {
+          errors.push(`Profile $schema must be "https://opencode.ai/config.json", found "${profileObj["$schema"]}"`);
+          profileValid = false;
+        }
+        if (profileObj.subagent_depth !== 4) {
+          errors.push(`Profile subagent_depth must be 4, found ${profileObj.subagent_depth}`);
+          profileValid = false;
+        }
+        if (profileObj.share !== "disabled") {
+          errors.push(`Profile share must be "disabled", found "${profileObj.share}"`);
+          profileValid = false;
+        }
+        const taskRules = profileObj.permission?.task;
+        if (!taskRules || taskRules["*"] !== "deny" || taskRules["metis-*"] !== "allow") {
+          errors.push(`Profile permission.task is unsafe: must deny * and allow metis-*`);
+          profileValid = false;
+        } else {
+          const ruleKeys = Object.keys(taskRules);
+          const rogueKeys = ruleKeys.filter(k => k !== "*" && k !== "metis-*");
+          if (rogueKeys.length > 0) {
+            errors.push(`Profile permission.task contains unauthorized rules: ${rogueKeys.join(", ")}`);
+            profileValid = false;
+          }
+        }
+      } catch (e: any) {
+        errors.push(`Dedicated activation profile is invalid JSON: ${e.message}`);
+        profileValid = false;
+      }
+    }
+
+    // 5. Verify launch wrappers: workflow/launch-opencode.sh & launch-opencode.ps1
+    let wrapperValid = true;
+    const launchShPath = join(root, "workflow", "launch-opencode.sh");
+    if (!existsSync(launchShPath)) {
+      errors.push(`POSIX launch wrapper missing: workflow/launch-opencode.sh`);
+      wrapperValid = false;
+    } else {
+      const shContent = readFileSync(launchShPath, "utf-8");
+      const requiredShTokens = ["--check", "1.18.7", "OPENCODE_CONFIG", "OPENCODE_PERMISSION", "OPENCODE_DISABLE_EXTERNAL_SKILLS"];
+      const missingTokens = requiredShTokens.filter(t => !shContent.includes(t));
+      if (missingTokens.length > 0) {
+        errors.push(`POSIX launch wrapper incomplete. Missing required tokens: ${missingTokens.join(", ")}`);
+        wrapperValid = false;
+      }
+    }
+
+    const launchPsPath = join(root, "workflow", "launch-opencode.ps1");
+    if (!existsSync(launchPsPath)) {
+      errors.push(`PowerShell launch wrapper missing: workflow/launch-opencode.ps1`);
+      wrapperValid = false;
+    } else {
+      const psContent = readFileSync(launchPsPath, "utf-8");
+      const requiredPsTokens = ["--check", "1.18.7", "OPENCODE_CONFIG", "OPENCODE_PERMISSION", "OPENCODE_DISABLE_EXTERNAL_SKILLS"];
+      const missingTokens = requiredPsTokens.filter(t => !psContent.includes(t));
+      if (missingTokens.length > 0) {
+        errors.push(`PowerShell launch wrapper incomplete. Missing required tokens: ${missingTokens.join(", ")}`);
+        wrapperValid = false;
+      }
+    }
+
+    // 6. Verify bundle hash
     const bundleHashFile = join(root, ".metis-plugin", "bundle", "bundle.hash");
     let bundleHashValid = false;
     if (existsSync(bundleHashFile)) {
@@ -269,6 +338,8 @@ export class OpenCodeAdapter extends BaseAdapter {
       warnings,
       details: {
         permissionsValid,
+        profileValid,
+        wrapperValid,
         nativeDispatchAllowed: false,
         filesChecked: receipt.files.length,
         activeModel: detectedModel ? detectedModel.model : undefined,

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { LoaderCircle } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import type { DiffRow } from '../primitives/CodeBlock';
 import CodeBlock from '../primitives/CodeBlock';
@@ -49,7 +50,10 @@ export function ReviewDiffPreview({
       </div>
       <div data-slot="session-review-v2-preview-scroll" data-review-diff-flush="">
         {loading ? (
-          <p className="px-1 py-2 text-[12px] text-ink-3">{t('reviewLoadingChanges')}</p>
+          <div className="flex flex-col items-center justify-center h-full min-h-[200px] py-16 text-center px-4 text-ink-3">
+            <LoaderCircle className="w-5 h-5 animate-spin mb-2.5 text-ink-3 stroke-[1.8]" />
+            <p className="text-[12px] text-ink-3">{t('reviewLoadingChanges')}</p>
+          </div>
         ) : parsedRows.length === 0 ? (
           <p className="px-1 py-2 text-[12px] text-ink-3">{t('waitingForFile')}</p>
         ) : (

@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { parse as parseYaml } from "yaml";
 import { DeepSeekAdapter } from "../packages/metis-plugin/src/adapters/deepseek.ts";
 import { ExternalController } from "../packages/metis-plugin/src/controller.ts";
 import { CordisBridge } from "../packages/metis-plugin/src/cordis-bridge/index.ts";
@@ -358,5 +359,113 @@ describe("Metis 插件版 - P3 DeepSeek Harness & Cordis Bridge", () => {
     expect(result.resolvedModel.model).toBe("deepseek-reasoner");
     expect(result.resolvedModel.thinking).toBe(true);
     expect(result.resolvedModel.source).toBe("session");
+  });
+
+  it("should install headless.patch.yml and agent-preset/agent.cordis.yml with strict allowlists and maxDepth=1", async () => {
+    await adapter.install(testRoot);
+
+    const patchPath = join(testRoot, "headless.patch.yml");
+    const cordisPath = join(testRoot, "agent-preset", "agent.cordis.yml");
+    expect(existsSync(patchPath)).toBe(true);
+    expect(existsSync(cordisPath)).toBe(true);
+
+    const patchDoc = parseYaml(readFileSync(patchPath, "utf-8"));
+    const patchEntries = Array.isArray(patchDoc) ? patchDoc.flatMap((r: any) => r.insert || [r]) : [];
+    expect(patchEntries.length).toBe(26);
+
+    for (const role of patchEntries) {
+      expect(role.name).toBe("@deepseek-ai/dsh-tool-subagent");
+      expect(role.config.maxDepth).toBe(1);
+      expect(Array.isArray(role.config.toolFilter.allow)).toBe(true);
+      expect(role.config.toolFilter.allow).toContain("metis_structured_output");
+      expect(role.config.toolFilter.deny).toBeUndefined();
+      for (const tool of role.config.toolFilter.allow) {
+        expect(tool).not.toMatch(/subagent|spawn|fork|delegate/i);
+      }
+    }
+
+    const cordisDoc = parseYaml(readFileSync(cordisPath, "utf-8"));
+    expect(Array.isArray(cordisDoc)).toBe(true);
+    expect(cordisDoc.length).toBe(26);
+
+    for (const role of cordisDoc) {
+      expect(role.name).toBe("@deepseek-ai/dsh-tool-subagent");
+      expect(role.config.maxDepth).toBe(1);
+      expect(role.config.toolFilter.allow).toContain("metis_structured_output");
+    }
+  });
+
+  it("should support metis_structured_output tool in CordisBridge", () => {
+    const bridge = new CordisBridge({ workspaceRoot: targetDir });
+    const defs = bridge.getToolDefinitions();
+    expect(defs.some(t => t.name === "metis_structured_output")).toBe(true);
+
+    const callRes = bridge.invokeTool("metis_structured_output", {
+      gate: "G4",
+      role: "implementer",
+      status: "PASS",
+      summary: "Implementation complete and verified",
+      deliverables: ["src/index.ts"],
+    });
+
+    expect(callRes.success).toBe(true);
+    expect(callRes.output).toContain("recorded");
+  });
+
+  it("should fail closed in doctor if headless.patch.yml is missing", async () => {
+    await adapter.install(testRoot);
+
+    rmSync(join(testRoot, "headless.patch.yml"));
+
+    const doc = await adapter.doctor(testRoot);
+    expect(doc.verified).toBe(false);
+    expect(doc.details.headlessPatchValid).toBe(false);
+    expect(doc.errors.some(e => e.includes("FAIL_CLOSED"))).toBe(true);
+    expect(doc.errors.some(e => e.includes("Mandatory headless patch missing"))).toBe(true);
+  });
+
+  it("should fail closed in doctor if agent-preset/agent.cordis.yml is missing", async () => {
+    await adapter.install(testRoot);
+
+    rmSync(join(testRoot, "agent-preset", "agent.cordis.yml"));
+
+    const doc = await adapter.doctor(testRoot);
+    expect(doc.verified).toBe(false);
+    expect(doc.details.cordisPresetValid).toBe(false);
+    expect(doc.errors.some(e => e.includes("FAIL_CLOSED"))).toBe(true);
+    expect(doc.errors.some(e => e.includes("Mandatory Cordis preset missing"))).toBe(true);
+  });
+
+  it("should fail closed in doctor if Cordis bridge lacks metis_structured_output", async () => {
+    await adapter.install(testRoot);
+
+    // Tamper bridge file to remove metis_structured_output
+    const bridgePath = join(testRoot, "cordis-bridge", "index.js");
+    const content = readFileSync(bridgePath, "utf-8").replace(/metis_structured_output/g, "unsupported_tool");
+    writeFileSync(bridgePath, content, "utf-8");
+
+    const doc = await adapter.doctor(testRoot);
+    expect(doc.verified).toBe(false);
+    expect(doc.errors.some(e => e.includes("FAIL_CLOSED"))).toBe(true);
+  });
+
+  it("should record structured output in controller execution details", async () => {
+    await adapter.install(testRoot);
+
+    const result = await controller.activate({
+      provider: "deepseek",
+      customRoot: testRoot,
+      targetDir,
+      mission: "Build indexing engine with full verification",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.provider).toBe("deepseek");
+
+    // Check evidence includes structured output tool invocation
+    const hasStructuredCall = result.gateEvidence.some(ev =>
+      ev.details?.bridgeToolCalls?.some((call: any) => call.tool === "metis_structured_output")
+    );
+    expect(hasStructuredCall).toBe(true);
   });
 });

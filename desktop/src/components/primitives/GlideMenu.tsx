@@ -4,13 +4,14 @@
  */
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, useEffect, useCallback, type ReactNode } from "react";
 
 type GlideMenuProps = {
   children: ReactNode;
   className?: string;
   highlightClassName?: string;
   rowSelector?: string;
+  activeRowSelector?: string;
 };
 
 /** A single hover layer that glides between interactive menu rows. */
@@ -19,6 +20,7 @@ export default function GlideMenu({
   className = "",
   highlightClassName = "inset-x-0 rounded-[8px] bg-hover",
   rowSelector = "[data-menu-row]",
+  activeRowSelector,
 }: GlideMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<{ top: number; height: number } | null>(null);
@@ -35,14 +37,51 @@ export default function GlideMenu({
     setVisible(true);
   };
 
+  const updateToActive = useCallback(() => {
+    if (!activeRowSelector) return;
+    const container = ref.current;
+    if (!container) return;
+    const activeRow = container.querySelector(activeRowSelector);
+    if (activeRow instanceof HTMLElement) {
+      const containerRect = container.getBoundingClientRect();
+      const rowRect = activeRow.getBoundingClientRect();
+      if (rowRect.height > 0) {
+        setBox({ top: rowRect.top - containerRect.top, height: rowRect.height });
+        setVisible(true);
+      }
+    } else {
+      setVisible(false);
+    }
+  }, [activeRowSelector]);
+
+  useEffect(() => {
+    if (activeRowSelector) {
+      updateToActive();
+      const raf = requestAnimationFrame(updateToActive);
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [activeRowSelector, children, updateToActive]);
+
   return (
     <div
       ref={ref}
       onMouseOver={(event) => moveTo(event.target)}
-      onMouseLeave={() => setVisible(false)}
+      onMouseLeave={() => {
+        if (activeRowSelector) {
+          updateToActive();
+        } else {
+          setVisible(false);
+        }
+      }}
       onFocusCapture={(event) => moveTo(event.target)}
       onBlurCapture={(event) => {
-        if (!ref.current?.contains(event.relatedTarget as Node | null)) setVisible(false);
+        if (!ref.current?.contains(event.relatedTarget as Node | null)) {
+          if (activeRowSelector) {
+            updateToActive();
+          } else {
+            setVisible(false);
+          }
+        }
       }}
       className={`group/glide-menu relative ${className}`}
     >
@@ -54,7 +93,7 @@ export default function GlideMenu({
           height: box?.height ?? 0,
           opacity: box && visible ? 1 : 0,
           transition:
-            "top 220ms cubic-bezier(0.23,1,0.32,1), height 220ms cubic-bezier(0.23,1,0.32,1), opacity 150ms ease",
+            "top 150ms cubic-bezier(0.16,1,0.3,1), height 150ms cubic-bezier(0.16,1,0.3,1), opacity 150ms ease",
         }}
       />
       {children}

@@ -17,7 +17,7 @@ function replaceImagesWithPlaceholder(content, placeholder) {
     return result;
 }
 function downgradeUnsupportedImages(messages, model) {
-    if (model.input.includes("image")) {
+    if (model.input?.includes("image")) {
         return messages;
     }
     return messages.map((msg) => {

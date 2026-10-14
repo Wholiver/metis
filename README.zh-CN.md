@@ -67,7 +67,7 @@ npm install -g metis-skill
 metis-plugin
 ```
 
-运行 `metis-plugin` 选择宿主，或直接 `metis-plugin install codex|opencode|deepseek`。
+运行 `metis-plugin` 选择宿主，或直接 `metis-plugin install codex|opencode|deepseek`。可通过 `metis-plugin doctor` 验证安装完整性。
 
 <details>
 <summary><strong>CLI 安装（Node.js &gt;= 22.19.0）</strong></summary>

@@ -11,6 +11,8 @@ interface SubagentConversationProps {
   onOpenSubagent?: (partId: string) => void;
   collaborationMode?: CollaborationMode;
   model?: ModelOption;
+  /** Inspector panel: fill the sidebar instead of the centered 620px chat column. */
+  fullWidth?: boolean;
 }
 
 export function buildSubagentTaskMessage(subagent: SubagentItem): Message {
@@ -86,6 +88,7 @@ export const SubagentConversation: React.FC<SubagentConversationProps> = ({
   onOpenSubagent,
   collaborationMode,
   model,
+  fullWidth = false,
 }) => {
   const streaming = subagent.status === 'running';
   const userMessage = useMemo(() => buildSubagentTaskMessage(subagent), [subagent]);
@@ -100,7 +103,7 @@ export const SubagentConversation: React.FC<SubagentConversationProps> = ({
       data-message-scroll=""
     >
       <div
-        className="flex w-full min-w-0 max-w-[620px] flex-col"
+        className={`flex w-full min-w-0 flex-col ${fullWidth ? '' : 'max-w-[620px]'}`}
         data-message-lane=""
       >
         <UserBubble message={userMessage} />
