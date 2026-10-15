@@ -32,4 +32,3 @@ export function registerBuiltInImagesApiProviders() {
 }
 registerBuiltInImagesApiProviders();
 //# sourceMappingURL=register-builtins.js.map
-

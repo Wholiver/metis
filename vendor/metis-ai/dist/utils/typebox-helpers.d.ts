@@ -15,4 +15,3 @@ export declare function StringEnum<T extends readonly string[]>(values: T, optio
     default?: T[number];
 }): TUnsafe<T[number]>;
 //# sourceMappingURL=typebox-helpers.d.ts.map
-

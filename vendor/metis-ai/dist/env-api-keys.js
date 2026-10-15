@@ -27,6 +27,14 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
     });
 }
 import { getProviderEnvValue } from "./utils/provider-env.js";
+export const ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN";
+export const ANTHROPIC_OAUTH_TOKEN_ENV = "ANTHROPIC_OAUTH_TOKEN";
+export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
+export const ANTHROPIC_FEDERATION_RULE_ID_ENV = "ANTHROPIC_FEDERATION_RULE_ID";
+export const ANTHROPIC_ORGANIZATION_ID_ENV = "ANTHROPIC_ORGANIZATION_ID";
+export const ANTHROPIC_SERVICE_ACCOUNT_ID_ENV = "ANTHROPIC_SERVICE_ACCOUNT_ID";
+export const ANTHROPIC_IDENTITY_TOKEN_FILE_ENV = "ANTHROPIC_IDENTITY_TOKEN_FILE";
+export const ANTHROPIC_WORKSPACE_ID_ENV = "ANTHROPIC_WORKSPACE_ID";
 let cachedVertexAdcCredentialsExists = null;
 function hasVertexAdcCredentials(env) {
     const explicitCredentialsPath = env?.GOOGLE_APPLICATION_CREDENTIALS;
@@ -61,14 +69,18 @@ function getApiKeyEnvVars(provider) {
     if (provider === "github-copilot") {
         return ["COPILOT_GITHUB_TOKEN"];
     }
-    // ANTHROPIC_OAUTH_TOKEN takes precedence over ANTHROPIC_API_KEY
+    // ANTHROPIC_AUTH_TOKEN participates in env discovery/status, but
+    // getEnvApiKey() skips it because requests must pass it as Authorization: Bearer.
     if (provider === "anthropic") {
-        return ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"];
+        return [ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_OAUTH_TOKEN_ENV, ANTHROPIC_API_KEY_ENV];
     }
     const envMap = {
         "ant-ling": "ANT_LING_API_KEY",
+        "qwen-token-plan": "QWEN_TOKEN_PLAN_API_KEY",
+        "qwen-token-plan-cn": "QWEN_TOKEN_PLAN_CN_API_KEY",
+        "qwen-token-plan-individual": "QWEN_TOKEN_PLAN_API_KEY",
         openai: "OPENAI_API_KEY",
-        "azure-openai-responses": "AZURE_OPENAI_API_KEY",
+        azure: "AZURE_OPENAI_API_KEY",
         nvidia: "NVIDIA_API_KEY",
         deepseek: "DEEPSEEK_API_KEY",
         google: "GEMINI_API_KEY",
@@ -76,8 +88,11 @@ function getApiKeyEnvVars(provider) {
         groq: "GROQ_API_KEY",
         cerebras: "CEREBRAS_API_KEY",
         xai: "XAI_API_KEY",
+        typesafe: "TYPESAFE_API_KEY",
+        radius: "RADIUS_API_KEY",
         openrouter: "OPENROUTER_API_KEY",
         orcarouter: "ORCAROUTER_API_KEY",
+        cohere: "COHERE_API_KEY",
         "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
         zai: "ZAI_API_KEY",
         "zai-coding-cn": "ZAI_CODING_CN_API_KEY",
@@ -89,15 +104,13 @@ function getApiKeyEnvVars(provider) {
         huggingface: "HF_TOKEN",
         fireworks: "FIREWORKS_API_KEY",
         together: "TOGETHER_API_KEY",
+        baseten: "BASETEN_API_KEY",
         opencode: "OPENCODE_API_KEY",
         "opencode-go": "OPENCODE_API_KEY",
         "kimi-coding": "KIMI_API_KEY",
+        meta: "META_API_KEY",
         "cloudflare-workers-ai": "CLOUDFLARE_API_KEY",
         "cloudflare-ai-gateway": "CLOUDFLARE_API_KEY",
-        "qwen-token-plan": "QWEN_TOKEN_PLAN_API_KEY",
-        "qwen-token-plan-cn": "QWEN_TOKEN_PLAN_CN_API_KEY",
-        "qwen-token-plan-individual": "QWEN_TOKEN_PLAN_API_KEY",
-        baseten: "BASETEN_API_KEY",
         xiaomi: "XIAOMI_API_KEY",
         "xiaomi-token-plan-cn": "XIAOMI_TOKEN_PLAN_CN_API_KEY",
         "xiaomi-token-plan-ams": "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
@@ -116,7 +129,9 @@ export function findEnvKeys(provider, env) {
 export function getEnvApiKey(provider, env) {
     const envKeys = findEnvKeys(provider, env);
     if (envKeys?.[0]) {
-        return getProviderEnvValue(envKeys[0], env);
+        const apiKeyEnv = provider === "anthropic" ? envKeys.find((key) => key !== ANTHROPIC_AUTH_TOKEN_ENV) : envKeys[0];
+        if (apiKeyEnv)
+            return getProviderEnvValue(apiKeyEnv, env);
     }
     // Vertex AI supports either an explicit API key or Application Default Credentials.
     // Auth is configured via `gcloud auth application-default login`.
@@ -148,4 +163,3 @@ export function getEnvApiKey(provider, env) {
     return undefined;
 }
 //# sourceMappingURL=env-api-keys.js.map
-

@@ -50,6 +50,26 @@ describe("custom provider thinking fallback", () => {
 		expect(getSupportedThinkingLevels(load("gpt-5").model)).toEqual(["minimal", "low", "medium", "high"]);
 	});
 
+	it("restores thinking gears for third-party API models like gpt-6-astra, gpt-6.1-luna, codex-auto-review, and astra", () => {
+		const astra = load("gpt-6-astra").model;
+		expect(astra.reasoning).toBe(true);
+		expect(getThinkingOptions(astra).length).toBeGreaterThan(1);
+		expect(getSupportedThinkingLevels(astra)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+
+		const luna = load("gpt-6.1-luna").model;
+		expect(luna.reasoning).toBe(true);
+		expect(getThinkingOptions(luna).length).toBeGreaterThan(1);
+		expect(getSupportedThinkingLevels(luna)).toEqual(["off", "low", "medium", "high", "xhigh", "max"]);
+
+		const codex = load("codex-auto-review").model;
+		expect(codex.reasoning).toBe(true);
+		expect(getThinkingOptions(codex).length).toBeGreaterThan(1);
+
+		const plainAstra = load("astra").model;
+		expect(plainAstra.reasoning).toBe(true);
+		expect(getThinkingOptions(plainAstra).length).toBeGreaterThan(1);
+	});
+
 	it("respects explicit declarations and does not guess unknown aliases", () => {
 		expect(load("deepseek-v4-pro", { reasoning: false }).model.reasoning).toBe(false);
 		expect(load("deepseek-v4-pro", {}, { reasoning: false }).model.reasoning).toBe(false);

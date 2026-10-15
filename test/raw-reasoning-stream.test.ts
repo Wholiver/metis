@@ -62,6 +62,7 @@ describe("raw reasoning stream preference", () => {
 			"openai-codex-responses",
 			"openai-completions",
 			"openai-responses",
+			"pi-messages",
 		]);
 	});
 

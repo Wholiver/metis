@@ -122,10 +122,11 @@ describe("ModelRegistry", () => {
 			"amazon-bedrock",
 			"ant-ling",
 			"anthropic",
-			"azure-openai-responses",
+			"azure",
 			"baseten",
 			"cerebras",
 			"cohere",
+			"orcarouter",
 			"cloudflare-ai-gateway",
 			"cloudflare-workers-ai",
 			"deepseek",
@@ -136,6 +137,7 @@ describe("ModelRegistry", () => {
 			"groq",
 			"huggingface",
 			"kimi-coding",
+			"meta",
 			"minimax",
 			"minimax-cn",
 			"mistral",
@@ -147,11 +149,12 @@ describe("ModelRegistry", () => {
 			"opencode",
 			"opencode-go",
 			"openrouter",
-			"orcarouter",
 			"qwen-token-plan",
 			"qwen-token-plan-cn",
 			"qwen-token-plan-individual",
+			"radius",
 			"together",
+			"typesafe",
 			"vercel-ai-gateway",
 			"xai",
 			"xiaomi",
@@ -185,9 +188,8 @@ describe("ModelRegistry", () => {
 		const models = ModelRegistry.create(authStorage, modelsJsonPath).getAll();
 
 		for (const [provider, modelId] of Object.entries(defaultModelPerProvider)) {
-			expect(models, `${provider}/${modelId}`).toEqual(
-				expect.arrayContaining([expect.objectContaining({ provider, id: modelId })]),
-			);
+			const found = models.some((m) => m.provider === provider && m.id === modelId);
+			expect(found, `${provider}/${modelId}`).toBe(true);
 		}
 	});
 
@@ -918,7 +920,7 @@ describe("ModelRegistry", () => {
 						"anthropic/claude-sonnet-4": {
 							compat: { openRouterRouting: { only: ["amazon-bedrock"] } },
 						},
-						"anthropic/claude-opus-4": {
+						"anthropic/claude-opus-4.1": {
 							compat: { openRouterRouting: { only: ["anthropic"] } },
 						},
 					},
@@ -929,7 +931,7 @@ describe("ModelRegistry", () => {
 			const models = getModelsForProvider(registry, "openrouter");
 
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
-			const opus = models.find((m) => m.id === "anthropic/claude-opus-4");
+			const opus = models.find((m) => m.id === "anthropic/claude-opus-4.1");
 
 			const sonnetCompat = sonnet?.compat as OpenAICompletionsCompat | undefined;
 			const opusCompat = opus?.compat as OpenAICompletionsCompat | undefined;
@@ -958,7 +960,7 @@ describe("ModelRegistry", () => {
 			expect(sonnet?.name).toBe("Proxied Sonnet");
 
 			// Other models should have the baseUrl but not the name override
-			const opus = models.find((m) => m.id === "anthropic/claude-opus-4");
+			const opus = models.find((m) => m.id === "anthropic/claude-opus-4.1");
 			expect(opus?.baseUrl).toBe("https://my-proxy.example.com/v1");
 			expect(opus?.name).not.toBe("Proxied Sonnet");
 		});
@@ -1999,7 +2001,7 @@ describe("ModelRegistry", () => {
 					refresh: "github-access-token",
 					access: "tid=test;exp=9999999999;proxy-ep=proxy.individual.githubcopilot.com;",
 					expires: Date.now() + 60_000,
-					availableModelIds: ["gpt-4.1"],
+					availableModelIds: ["gpt-5.4"],
 				});
 
 				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
@@ -2009,7 +2011,7 @@ describe("ModelRegistry", () => {
 						.getAvailable()
 						.filter((m) => m.provider === "github-copilot")
 						.map((m) => m.id),
-				).toEqual(["gpt-4.1"]);
+				).toEqual(["gpt-5.4"]);
 			});
 
 			test("getApiKeyAndHeaders resolves authHeader on every request", async () => {

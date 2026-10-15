@@ -9,6 +9,17 @@ const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 const MAX_DIFF_BYTES = 300_000;
 
+const BINARY_EXTENSIONS = new Set([
+	'.7z', '.ai', '.aif', '.apk', '.app', '.avi', '.bin', '.bmp', '.bz2',
+	'.class', '.dat', '.db', '.dll', '.dmg', '.dylib', '.eot', '.exe',
+	'.flac', '.gif', '.gz', '.ico', '.iso', '.jar', '.jpeg', '.jpg',
+	'.m4a', '.mid', '.mkv', '.mov', '.mp3', '.mp4', '.mpeg', '.mpg',
+	'.ogg', '.otf', '.pdf', '.png', '.psd', '.pyc', '.rar', '.so',
+	'.sqlite', '.sqlite3', '.svgz', '.tar', '.tgz', '.tif', '.tiff',
+	'.ttf', '.wasm', '.wav', '.webm', '.webp', '.wma', '.wmv', '.woff',
+	'.woff2', '.xz', '.zip', '.zst',
+]);
+
 /**
  * OpenCode-aligned VCS helpers for Desktop Review V2.
  * Modes: git (working tree), branch (vs default), turn (handled in renderer).
@@ -134,12 +145,18 @@ async function listWorkingTreeDiffs(cwd, translate) {
 		seen.add(file);
 		const stats = unstaged.get(file) || staged.get(file) || { additions: 0, deletions: 0 };
 		if (xy === '??' && stats.additions === 0 && stats.deletions === 0) {
-			try {
-				const absolute = path.join(cwd, file);
-				const content = await fsp.readFile(absolute, 'utf8');
-				stats.additions = content.length === 0 ? 0 : content.split(/\r?\n/).length;
-			} catch {
-				// ignore unreadable
+			const ext = path.extname(file).toLowerCase();
+			if (!BINARY_EXTENSIONS.has(ext)) {
+				try {
+					const absolute = path.join(cwd, file);
+					const st = await fsp.stat(absolute);
+					if (st.isFile() && st.size <= MAX_DIFF_BYTES) {
+						const content = await fsp.readFile(absolute, 'utf8');
+						stats.additions = content.length === 0 ? 0 : content.split(/\r?\n/).length;
+					}
+				} catch {
+					// ignore unreadable
+				}
 			}
 		}
 		files.push({
@@ -240,14 +257,28 @@ async function readFileDiff(cwd, relativePath, mode, translate) {
 				diff = staged.stdout;
 			}
 			if (!diff && isUntracked) {
-				const buffer = await fsp.readFile(absolutePath);
-				if (buffer.includes(0)) {
+				const ext = path.extname(normalized).toLowerCase();
+				let isBinary = BINARY_EXTENSIONS.has(ext);
+				if (!isBinary) {
+					try {
+						const st = await fsp.stat(absolutePath);
+						if (st.size > MAX_DIFF_BYTES) isBinary = true;
+					} catch {
+						isBinary = true;
+					}
+				}
+				if (isBinary) {
 					diff = `diff --git a/${normalized} b/${normalized}\nnew file mode 100644\nBinary files /dev/null and b/${normalized} differ`;
 				} else {
-					const source = buffer.toString('utf8');
-					const sourceLines = source.split(/\r?\n/).slice(0, 500);
-					const body = sourceLines.map((line) => `+${line}`).join('\n');
-					diff = `diff --git a/${normalized} b/${normalized}\nnew file mode 100644\n--- /dev/null\n+++ b/${normalized}\n@@ -0,0 +1,${sourceLines.length} @@\n${body}`;
+					const buffer = await fsp.readFile(absolutePath);
+					if (buffer.includes(0)) {
+						diff = `diff --git a/${normalized} b/${normalized}\nnew file mode 100644\nBinary files /dev/null and b/${normalized} differ`;
+					} else {
+						const source = buffer.toString('utf8');
+						const sourceLines = source.split(/\r?\n/).slice(0, 500);
+						const body = sourceLines.map((line) => `+${line}`).join('\n');
+						diff = `diff --git a/${normalized} b/${normalized}\nnew file mode 100644\n--- /dev/null\n+++ b/${normalized}\n@@ -0,0 +1,${sourceLines.length} @@\n${body}`;
+					}
 				}
 			}
 		} catch (error) {

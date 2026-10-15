@@ -1,4 +1,4 @@
 import type { ImagesFunction, ImagesOptions } from "../types.ts";
-export declare const generateImages: ImagesFunction<"openrouter-images", ImagesOptions>;
+/** Image generation over OpenRouter's chat completions endpoint. */
+export declare const generateImages: ImagesFunction<ImagesOptions>;
 //# sourceMappingURL=openrouter-images.d.ts.map
-

@@ -3,6 +3,7 @@ import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { calculateCost } from "../models.js";
+import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.js";
 import { normalizeProviderError } from "../utils/error-body.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { providerHeadersToRecord } from "../utils/headers.js";
@@ -10,11 +11,19 @@ import { parseStreamingJson } from "../utils/json-parse.js";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.js";
 import { getProviderEnvValue } from "../utils/provider-env.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { getSystemMessageText } from "../utils/text.js";
+import { collapseSystemMessages, getCurrentTools, getInitialSystemMessage, withoutInitialSystemMessage, } from "../utils/transcript.js";
+import { getJsonSchemaToolParameters, resolveJsonSchemaStrictSampling } from "./constrained-sampling.js";
 import { adjustMaxTokensForThinking, buildBaseOptions, clampMaxTokensToContext, clampReasoning, } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 const EMPTY_TEXT_PLACEHOLDER = "<empty>";
+const THINKING_BINDING_CONTROLS_BETA = "thinking-binding-controls-2026-08-01";
+/** Matches the placeholder the Anthropic API path uses for redacted thinking. */
+const REDACTED_THINKING_PLACEHOLDER = "[Reasoning redacted]";
 export const stream = (model, context, options = {}) => {
     const stream = new AssistantMessageEventStream();
+    // Bedrock has no mid-conversation system messages; fold them into the leading prompt.
+    const normalizedContext = collapseSystemMessages(context);
     (async () => {
         const output = {
             role: "assistant",
@@ -30,12 +39,18 @@ export const stream = (model, context, options = {}) => {
                 totalTokens: 0,
                 cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
             },
-            stopReason: "stop",
+            stopReason: "pending",
             timestamp: Date.now(),
         };
         const blocks = output.content;
+        // A profile explicitly configured through pi's auth flow (the `profile`
+        // option or scoped `AWS_PROFILE` on the stored credential's env) must win
+        // over ambient AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY. The SDK default
+        // chain already prefers a configured profile over env keys, but only when
+        // `credentials` is not set on the client config. See #6957.
+        const optionsProfile = options.profile || options.env?.AWS_PROFILE;
         const config = {
-            profile: options.profile || getProviderEnvValue("AWS_PROFILE", options.env),
+            profile: optionsProfile || getProviderEnvValue("AWS_PROFILE", options.env),
         };
         const configuredRegion = getConfiguredBedrockRegion(options);
         const hasAmbientConfiguredProfile = Boolean(getProviderEnvValue("AWS_PROFILE"));
@@ -49,7 +64,10 @@ export const stream = (model, context, options = {}) => {
         }
         // Resolve bearer token for Bedrock API key auth.
         const skipAuth = getProviderEnvValue("AWS_BEDROCK_SKIP_AUTH", options.env) === "1";
-        const bearerToken = options.bearerToken || getProviderEnvValue("AWS_BEARER_TOKEN_BEDROCK", options.env) || undefined;
+        const bearerToken = options.bearerToken ||
+            options.apiKey ||
+            getProviderEnvValue("AWS_BEARER_TOKEN_BEDROCK", options.env) ||
+            undefined;
         const useBearerToken = bearerToken !== undefined && !skipAuth;
         // in Node.js/Bun environment only
         if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
@@ -77,7 +95,7 @@ export const stream = (model, context, options = {}) => {
                 };
             }
             const credentials = getConfiguredBedrockCredentials(options.env);
-            if (!skipAuth && credentials) {
+            if (!skipAuth && credentials && !optionsProfile) {
                 config.credentials = credentials;
             }
             const proxyUrl = resolveHttpProxyUrlForTarget(model.baseUrl, options.env);
@@ -105,23 +123,35 @@ export const stream = (model, context, options = {}) => {
             config.token = { token: bearerToken };
             config.authSchemePreference = ["httpBearerAuth"];
         }
+        // Kept outside the try so the catch can still correlate a mid-stream failure:
+        // exceptions delivered as stream events carry no HTTP metadata of their own.
+        let responseRequestId;
         try {
+            const supportsStrictMode = model.compat?.supportsStrictMode ?? false;
             const client = new BedrockRuntimeClient(config);
+            let observedRawResponse = false;
+            if (options.onResponse) {
+                addResponseHeadersMiddleware(client, options.onResponse, model, () => {
+                    observedRawResponse = true;
+                });
+            }
             const customHeaders = providerHeadersToRecord(options.headers);
             if (customHeaders) {
                 addCustomHeadersMiddleware(client, customHeaders);
             }
             const cacheRetention = resolveCacheRetention(options.cacheRetention, options.env);
             const inferenceMaxTokens = options.maxTokens ?? (isAnthropicClaudeModel(model) ? model.maxTokens : undefined);
+            const initialSystemMessage = getInitialSystemMessage(normalizedContext.messages);
+            const initialSystemPrompt = initialSystemMessage ? getSystemMessageText(initialSystemMessage) : undefined;
             let commandInput = {
                 modelId: model.id,
-                messages: convertMessages(context, model, cacheRetention, options.env),
-                system: buildSystemPrompt(context.systemPrompt, model, cacheRetention, options.env),
+                messages: convertMessages(normalizedContext, model, cacheRetention, options.env),
+                system: buildSystemPrompt(initialSystemPrompt, model, cacheRetention, options.env),
                 inferenceConfig: {
                     ...(inferenceMaxTokens !== undefined && { maxTokens: inferenceMaxTokens }),
                     ...(options.temperature !== undefined && { temperature: options.temperature }),
                 },
-                toolConfig: convertToolConfig(context.tools, options.toolChoice),
+                toolConfig: convertToolConfig(getCurrentTools(normalizedContext.messages), options.toolChoice, supportsStrictMode),
                 additionalModelRequestFields: buildAdditionalModelRequestFields(model, options),
                 ...(options.requestMetadata !== undefined && { requestMetadata: options.requestMetadata }),
             };
@@ -131,7 +161,8 @@ export const stream = (model, context, options = {}) => {
             }
             const command = new ConverseStreamCommand(commandInput);
             const response = await client.send(command, { abortSignal: options.signal });
-            if (response.$metadata.httpStatusCode !== undefined) {
+            responseRequestId = normalizeDiagnosticValue(response.$metadata.requestId);
+            if (!observedRawResponse && response.$metadata.httpStatusCode !== undefined) {
                 const responseHeaders = {};
                 if (response.$metadata.requestId) {
                     responseHeaders["x-amzn-requestid"] = response.$metadata.requestId;
@@ -139,6 +170,7 @@ export const stream = (model, context, options = {}) => {
                 await options?.onResponse?.({ status: response.$metadata.httpStatusCode, headers: responseHeaders }, model);
             }
             for await (const item of response.stream) {
+                await options.onProviderStreamEvent?.(item, model);
                 if (item.messageStart) {
                     if (item.messageStart.role !== ConversationRole.ASSISTANT) {
                         throw new Error("Unexpected assistant message start but got user message start instead");
@@ -155,7 +187,12 @@ export const stream = (model, context, options = {}) => {
                     handleContentBlockStop(item.contentBlockStop, blocks, output, stream);
                 }
                 else if (item.messageStop) {
-                    output.stopReason = mapStopReason(item.messageStop.stopReason);
+                    output.rawStopReason = item.messageStop.stopReason;
+                    const { stopReason, errorMessage } = mapStopReason(item.messageStop.stopReason);
+                    output.stopReason = stopReason;
+                    if (errorMessage) {
+                        output.errorMessage = errorMessage;
+                    }
                 }
                 else if (item.metadata) {
                     handleMetadata(item.metadata, model, output);
@@ -179,20 +216,27 @@ export const stream = (model, context, options = {}) => {
             if (options.signal?.aborted) {
                 throw new Error("Request was aborted");
             }
-            if (output.stopReason === "error" || output.stopReason === "aborted") {
-                throw new Error("An unknown error occurred");
+            if (output.stopReason === "pending") {
+                throw new Error("Bedrock stream ended without a stop reason");
             }
+            if (output.stopReason === "error" || output.stopReason === "aborted") {
+                throw new Error(output.errorMessage || "An unknown error occurred");
+            }
+            // A stream can settle without stopping every block, so finalize here too.
+            for (const block of output.content)
+                finalizeStreamingBlock(block);
             stream.push({ type: "done", reason: output.stopReason, message: output });
             stream.end();
         }
         catch (error) {
             for (const block of output.content) {
-                delete block.index;
-                // partialJson is only a streaming scratch buffer; never persist it.
-                delete block.partialJson;
+                finalizeStreamingBlock(block);
             }
             output.stopReason = options.signal?.aborted ? "aborted" : "error";
             output.errorMessage = formatBedrockError(error);
+            if (output.stopReason === "error") {
+                appendBedrockFailureDiagnostic(output, error, responseRequestId);
+            }
             stream.push({ type: "error", reason: output.stopReason, error: output });
             stream.end();
         }
@@ -242,6 +286,46 @@ function formatBedrockError(error) {
     }
     return `${core}${dataRetentionHint}`;
 }
+/** Over-long header values are dropped rather than truncated: a truncated request id is not a request id. */
+const MAX_BEDROCK_DIAGNOSTIC_VALUE_CHARS = 200;
+function normalizeDiagnosticValue(value) {
+    if (typeof value !== "string")
+        return undefined;
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || trimmed.length > MAX_BEDROCK_DIAGNOSTIC_VALUE_CHARS)
+        return undefined;
+    return trimmed;
+}
+/**
+ * The SDK puts the modeled code on `error.name` for service exceptions and unmodeled stream errors alike, so
+ * do not narrow to `BedrockRuntimeServiceException`. Modeled Bedrock errors all end in `Exception`, unlike
+ * transport names such as `TimeoutError`.
+ */
+function extractBedrockErrorCode(error) {
+    if (!(error instanceof Error) || !error.name.endsWith("Exception"))
+        return undefined;
+    return normalizeDiagnosticValue(error.name);
+}
+/**
+ * Structured metadata alongside `errorMessage`, which stays byte-identical because `isRetryableAssistantError`
+ * matches against it. Unknown fields are omitted, never guessed: a modeled mid-stream exception reaches us as
+ * a bare object literal, leaving only `fallbackRequestId`. `details` only, as the throw is not always `Error`.
+ */
+function appendBedrockFailureDiagnostic(output, error, fallbackRequestId) {
+    const metadata = error?.$metadata;
+    const details = {};
+    if (typeof metadata?.httpStatusCode === "number")
+        details.status = metadata.httpStatusCode;
+    const errorCode = extractBedrockErrorCode(error);
+    if (errorCode !== undefined)
+        details.errorCode = errorCode;
+    const requestId = normalizeDiagnosticValue(metadata?.requestId) ?? fallbackRequestId;
+    if (requestId !== undefined)
+        details.requestId = requestId;
+    if (Object.keys(details).length === 0)
+        return;
+    appendAssistantMessageDiagnostic(output, { type: "bedrock_response_failure", timestamp: Date.now(), details });
+}
 /**
  * Header keys that must never be overwritten by caller-supplied headers.
  * `host` and `x-amz-*` participate in the SigV4 canonical request; `authorization`
@@ -275,8 +359,40 @@ function addCustomHeadersMiddleware(client, headers) {
     };
     client.middlewareStack.add(middleware, { step: "build", name: "pi-ai-custom-headers", priority: "low" });
 }
+function isSmithyHttpResponse(response) {
+    if (!response || typeof response !== "object")
+        return false;
+    const candidate = response;
+    return typeof candidate.statusCode === "number" && !!candidate.headers && typeof candidate.headers === "object";
+}
+function toProviderResponse(response) {
+    if (!isSmithyHttpResponse(response))
+        return undefined;
+    return { status: response.statusCode, headers: { ...response.headers } };
+}
+/**
+ * Bedrock's modeled `$metadata` only preserves selected HTTP metadata (for example
+ * requestId), so custom gateway headers are otherwise lost before callers see
+ * `onResponse`. Capture the raw Smithy HTTP response at the deserialize step,
+ * after the SDK receives the response but before the event stream is consumed.
+ */
+function addResponseHeadersMiddleware(client, onResponse, model, onObserved) {
+    const middleware = (next) => async (args) => {
+        const result = await next(args);
+        const providerResponse = toProviderResponse(result.response);
+        if (providerResponse) {
+            onObserved();
+            await onResponse(providerResponse, model);
+        }
+        return result;
+    };
+    client.middlewareStack.add(middleware, { step: "deserialize", name: "pi-ai-response-headers" });
+}
 export const streamSimple = (model, context, options) => {
-    const base = buildBaseOptions(model, context, options, undefined);
+    const base = {
+        ...buildBaseOptions(model, context, options, undefined),
+        toolChoice: options?.toolChoice,
+    };
     if (!options?.reasoning) {
         return stream(model, context, { ...base, reasoning: undefined });
     }
@@ -368,12 +484,53 @@ function handleContentBlockDelta(event, blocks, output, stream) {
                     partial: output,
                 });
             }
-            if (delta.reasoningContent.signature) {
+            // `thinkingSignature` holds either an Anthropic signature or an opaque redacted
+            // payload, never both: mixing them would corrupt whichever arrived first.
+            if (delta.reasoningContent.signature && !thinkingBlock.redacted) {
                 thinkingBlock.thinkingSignature =
                     (thinkingBlock.thinkingSignature || "") + delta.reasoningContent.signature;
             }
+            if (delta.reasoningContent.redactedContent?.length) {
+                // Encrypted reasoning from non-Anthropic models on Bedrock (e.g. OpenAI GPT-5.6).
+                // The payload is opaque, so keep it verbatim in `thinkingSignature` the way the
+                // Anthropic path stores redacted thinking, and replay it on the next turn.
+                if (!thinkingBlock.redacted) {
+                    thinkingBlock.redacted = true;
+                    thinkingBlock.thinkingSignature = "";
+                    thinkingBlock.thinking += REDACTED_THINKING_PLACEHOLDER;
+                    stream.push({
+                        type: "thinking_delta",
+                        contentIndex: thinkingIndex,
+                        delta: REDACTED_THINKING_PLACEHOLDER,
+                        partial: output,
+                    });
+                }
+                thinkingBlock.redactedChunks ??= [];
+                thinkingBlock.redactedChunks.push(delta.reasoningContent.redactedContent);
+            }
         }
     }
+}
+/**
+ * Encodes buffered encrypted reasoning into `thinkingSignature` and drops the scratch
+ * buffer, which must never reach a persisted message: `Uint8Array` serializes to an
+ * index-keyed object roughly ten times the size of the base64 payload.
+ */
+function flushRedactedContent(block) {
+    if (block.type !== "thinking" || !block.redactedChunks)
+        return;
+    block.thinkingSignature = bytesToBase64(block.redactedChunks);
+    delete block.redactedChunks;
+}
+/**
+ * Strips every streaming scratch field. Runs from the terminal paths as well as
+ * `contentBlockStop`, because a stream can settle without stopping each block.
+ */
+function finalizeStreamingBlock(block) {
+    delete block.index;
+    // partialJson is only a streaming scratch buffer; never persist it.
+    delete block.partialJson;
+    flushRedactedContent(block);
 }
 function handleMetadata(event, model, output) {
     if (event.usage) {
@@ -381,6 +538,7 @@ function handleMetadata(event, model, output) {
         output.usage.output = event.usage.outputTokens || 0;
         output.usage.cacheRead = event.usage.cacheReadInputTokens || 0;
         output.usage.cacheWrite = event.usage.cacheWriteInputTokens || 0;
+        output.usage.cacheWrite1h = event.usage.cacheDetails?.reduce((total, detail) => total + (detail.ttl === CacheTTL.ONE_HOUR ? (detail.inputTokens ?? 0) : 0), 0);
         output.usage.totalTokens = event.usage.totalTokens || output.usage.input + output.usage.output;
         calculateCost(model, output.usage);
     }
@@ -396,6 +554,7 @@ function handleContentBlockStop(event, blocks, output, stream) {
             stream.push({ type: "text_end", contentIndex: index, content: block.text, partial: output });
             break;
         case "thinking":
+            flushRedactedContent(block);
             stream.push({ type: "thinking_end", contentIndex: index, content: block.thinking, partial: output });
             break;
         case "toolCall":
@@ -424,13 +583,33 @@ function supportsAdaptiveThinking(modelId, modelName) {
     return candidates.some((s) => s.includes("opus-4-6") ||
         s.includes("opus-4-7") ||
         s.includes("opus-4-8") ||
+        s.includes("opus-5") ||
         s.includes("sonnet-4-6") ||
         s.includes("sonnet-5") ||
+        s.includes("haiku-5") ||
         s.includes("fable-5"));
 }
 function supportsNativeXhighEffort(model) {
     const candidates = getModelMatchCandidates(model.id, model.name);
-    return candidates.some((s) => s.includes("opus-4-7") || s.includes("opus-4-8") || s.includes("fable-5"));
+    return candidates.some((s) => s.includes("opus-4-7") ||
+        s.includes("opus-4-8") ||
+        s.includes("opus-5") ||
+        s.includes("sonnet-5") ||
+        s.includes("haiku-5") ||
+        s.includes("fable-5"));
+}
+/**
+ * Check if the model accepts `thinking.block_binding`. Opus 4.6 and Sonnet 4.6 reject it with
+ * "thinking.adaptive.block_binding: Extra inputs are not permitted".
+ */
+function supportsThinkingBlockBinding(model) {
+    const candidates = getModelMatchCandidates(model.id, model.name);
+    return candidates.some((s) => s.includes("opus-4-7") ||
+        s.includes("opus-4-8") ||
+        s.includes("opus-5") ||
+        s.includes("sonnet-5") ||
+        s.includes("haiku-5") ||
+        s.includes("fable-5"));
 }
 function mapThinkingLevelToEffort(model, level) {
     if (level === "xhigh" && supportsNativeXhighEffort(model))
@@ -479,7 +658,7 @@ function isAnthropicClaudeModel(model) {
 }
 /**
  * Check if the model supports prompt caching.
- * Supported: Claude 3.5 Haiku, Claude 3.7 Sonnet, Claude 4.x models
+ * Supported: Claude 3.5 Haiku, Claude 3.7 Sonnet, Claude 4.x models, Claude 5 models
  *
  * For base models and system-defined inference profiles the model ID / ARN
  * contains the model name, so we can decide locally.
@@ -499,6 +678,9 @@ function supportsPromptCaching(model, env) {
             return true;
         return false;
     }
+    // Claude 5 models (fable-5, opus-5, sonnet-5, haiku-5)
+    if (candidates.some((s) => s.includes("fable-5") || s.includes("opus-5") || s.includes("sonnet-5") || s.includes("haiku-5")))
+        return true;
     // Claude 4.x models (opus-4, sonnet-4, haiku-4)
     if (candidates.some((s) => s.includes("-4-")))
         return true;
@@ -544,6 +726,17 @@ function createNonBlankTextBlock(text) {
 function createRequiredTextBlock(text) {
     return createNonBlankTextBlock(text) ?? { text: EMPTY_TEXT_PLACEHOLDER };
 }
+function sanitizeBedrockDocument(value) {
+    if (Array.isArray(value)) {
+        return value.map(sanitizeBedrockDocument);
+    }
+    if (value !== null && typeof value === "object") {
+        return Object.fromEntries(Object.entries(value)
+            .filter(([key]) => key.length > 0)
+            .map(([key, nestedValue]) => [key, sanitizeBedrockDocument(nestedValue)]));
+    }
+    return value;
+}
 function convertToolResultContent(content) {
     const result = [];
     for (const c of content) {
@@ -562,7 +755,7 @@ function convertToolResultContent(content) {
 }
 function convertMessages(context, model, cacheRetention, env) {
     const result = [];
-    const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
+    const transformedMessages = transformMessages(withoutInitialSystemMessage(context.messages), model, normalizeToolCallId);
     for (let i = 0; i < transformedMessages.length; i++) {
         const m = transformedMessages[i];
         switch (m.role) {
@@ -590,10 +783,7 @@ function convertMessages(context, model, cacheRetention, env) {
                     if (content.length === 0)
                         content.push({ text: EMPTY_TEXT_PLACEHOLDER });
                 }
-                result.push({
-                    role: ConversationRole.USER,
-                    content,
-                });
+                result.push({ role: ConversationRole.USER, content });
                 break;
             }
             case "assistant": {
@@ -615,10 +805,19 @@ function convertMessages(context, model, cacheRetention, env) {
                         }
                         case "toolCall":
                             contentBlocks.push({
-                                toolUse: { toolUseId: c.id, name: c.name, input: c.arguments },
+                                toolUse: { toolUseId: c.id, name: c.name, input: sanitizeBedrockDocument(c.arguments) },
                             });
                             break;
                         case "thinking": {
+                            // Encrypted reasoning is opaque: replay the stored payload as the
+                            // `redactedContent` member instead of lowering it to reasoning text.
+                            if (c.redacted) {
+                                const redactedContent = decodeRedactedContent(c.thinkingSignature);
+                                if (redactedContent?.length) {
+                                    contentBlocks.push({ reasoningContent: { redactedContent } });
+                                }
+                                continue;
+                            }
                             // Skip empty thinking blocks
                             const thinking = sanitizeSurrogates(c.thinking);
                             if (thinking.trim().length === 0)
@@ -694,10 +893,7 @@ function convertMessages(context, model, cacheRetention, env) {
                 }
                 // Skip the messages we've already processed
                 i = j - 1;
-                result.push({
-                    role: ConversationRole.USER,
-                    content: toolResults,
-                });
+                result.push({ role: ConversationRole.USER, content: toolResults });
                 break;
             }
             default:
@@ -718,16 +914,22 @@ function convertMessages(context, model, cacheRetention, env) {
     }
     return result;
 }
-function convertToolConfig(tools, toolChoice) {
-    if (!tools?.length || toolChoice === "none")
+function convertToolConfig(tools, toolChoice, supportsStrictMode) {
+    if (!tools?.length)
         return undefined;
-    const bedrockTools = tools.map((tool) => ({
-        toolSpec: {
-            name: tool.name,
-            description: tool.description,
-            inputSchema: { json: tool.parameters },
-        },
-    }));
+    if (toolChoice === "none")
+        return undefined;
+    const bedrockTools = tools.map((tool) => {
+        const strict = resolveJsonSchemaStrictSampling(tool, supportsStrictMode);
+        return {
+            toolSpec: {
+                name: tool.name,
+                description: tool.description,
+                inputSchema: { json: getJsonSchemaToolParameters(tool, strict) },
+                ...(strict === true ? { strict: true } : {}),
+            },
+        };
+    });
     let bedrockToolChoice;
     switch (toolChoice) {
         case "auto":
@@ -747,14 +949,16 @@ function mapStopReason(reason) {
     switch (reason) {
         case BedrockStopReason.END_TURN:
         case BedrockStopReason.STOP_SEQUENCE:
-            return "stop";
+            return { stopReason: "stop" };
         case BedrockStopReason.MAX_TOKENS:
         case BedrockStopReason.MODEL_CONTEXT_WINDOW_EXCEEDED:
-            return "length";
+            return { stopReason: "length" };
         case BedrockStopReason.TOOL_USE:
-            return "toolUse";
+            return { stopReason: "toolUse" };
         default:
-            return "error";
+            return reason
+                ? { stopReason: "error", errorMessage: `Provider stopped with: ${reason}` }
+                : { stopReason: "error" };
     }
 }
 function getConfiguredBedrockRegion(options) {
@@ -811,11 +1015,21 @@ function buildAdditionalModelRequestFields(model, options) {
     if (isAnthropicClaudeModel(model)) {
         // GovCloud Bedrock currently rejects the Claude thinking.display field.
         // Omit it there until the GovCloud Converse schema catches up.
-        const display = isGovCloudBedrockTarget(model, options) ? undefined : (options.thinkingDisplay ?? "summarized");
+        const isGovCloud = isGovCloudBedrockTarget(model, options);
+        const display = isGovCloud ? undefined : (options.thinkingDisplay ?? "summarized");
+        // Replayed signed thinking blocks are bound to the system prompt and tools they were
+        // created with. Bedrock 400s on replay after either changes unless stale blocks are
+        // dropped, matching the Anthropic provider. Skipped on GovCloud like display.
+        const useBlockBinding = !isGovCloud && supportsThinkingBlockBinding(model);
         const result = supportsAdaptiveThinking(model.id, model.name)
             ? {
-                thinking: { type: "adaptive", ...(display !== undefined ? { display } : {}) },
+                thinking: {
+                    type: "adaptive",
+                    ...(display !== undefined ? { display } : {}),
+                    ...(useBlockBinding ? { block_binding: { prefix_mismatch_behavior: "drop_block" } } : {}),
+                },
                 output_config: { effort: mapThinkingLevelToEffort(model, options.reasoning) },
+                ...(useBlockBinding ? { anthropic_beta: [THINKING_BINDING_CONTROLS_BETA] } : {}),
             }
             : (() => {
                 const defaultBudgets = {
@@ -823,10 +1037,11 @@ function buildAdditionalModelRequestFields(model, options) {
                     low: 2048,
                     medium: 8192,
                     high: 16384,
-                    xhigh: 16384, // Claude doesn't support xhigh, clamp to high
+                    xhigh: 16384, // Budget-based Claude clamps extended levels to high
+                    max: 16384,
                 };
-                // Custom budgets override defaults (xhigh not in ThinkingBudgets, use high)
-                const level = options.reasoning === "xhigh" ? "high" : options.reasoning;
+                // Custom budgets only cover token-based levels through high.
+                const level = options.reasoning === "xhigh" || options.reasoning === "max" ? "high" : options.reasoning;
                 const budget = options.thinkingBudgets?.[level] ?? defaultBudgets[options.reasoning];
                 return {
                     thinking: {
@@ -841,8 +1056,36 @@ function buildAdditionalModelRequestFields(model, options) {
         }
         return result;
     }
+    const candidates = getModelMatchCandidates(model.id, model.name);
+    if (candidates.some((s) => s.includes("gpt-oss"))) {
+        return { reasoning_effort: OPENAI_GPT_OSS_EFFORT[options.reasoning] };
+    }
+    if (candidates.some((s) => s.includes("gpt-"))) {
+        const mapped = model.thinkingLevelMap?.[options.reasoning];
+        return {
+            reasoning: { effort: typeof mapped === "string" ? mapped : OPENAI_GPT_EFFORT[options.reasoning] },
+        };
+    }
     return undefined;
 }
+/** OpenAI GPT models (GPT-5.x, GPT-6) take a nested `reasoning.effort` and reject `minimal`. */
+const OPENAI_GPT_EFFORT = {
+    minimal: "low",
+    low: "low",
+    medium: "medium",
+    high: "high",
+    xhigh: "xhigh",
+    max: "max",
+};
+/** gpt-oss takes a flat `reasoning_effort` and only accepts low, medium and high. */
+const OPENAI_GPT_OSS_EFFORT = {
+    minimal: "low",
+    low: "low",
+    medium: "medium",
+    high: "high",
+    xhigh: "high",
+    max: "high",
+};
 function createImageBlock(mimeType, data) {
     let format;
     switch (mimeType) {
@@ -862,12 +1105,43 @@ function createImageBlock(mimeType, data) {
         default:
             throw new Error(`Unknown image type: ${mimeType}`);
     }
+    return { source: { bytes: base64ToBytes(data) }, format };
+}
+function base64ToBytes(data) {
     const binaryString = atob(data);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
     }
-    return { source: { bytes }, format };
+    return bytes;
+}
+/**
+ * Decodes a stored redacted payload. The AWS SDK hands the blob over as bytes, but a
+ * persisted session carries it as base64. A hand-edited or externally produced session
+ * can hold a signature that is not base64; drop that block instead of failing the
+ * whole request.
+ */
+function decodeRedactedContent(signature) {
+    if (!signature)
+        return undefined;
+    try {
+        return base64ToBytes(signature);
+    }
+    catch {
+        return undefined;
+    }
+}
+function bytesToBase64(chunks) {
+    // Encrypted reasoning runs to tens of KB, so build the binary string in slices
+    // rather than one concatenation per byte. The window stays under the engine's
+    // argument-count limit for spread calls.
+    const WINDOW = 0x8000;
+    let binary = "";
+    for (const chunk of chunks) {
+        for (let i = 0; i < chunk.length; i += WINDOW) {
+            binary += String.fromCharCode(...chunk.subarray(i, i + WINDOW));
+        }
+    }
+    return btoa(binary);
 }
 //# sourceMappingURL=bedrock-converse-stream.js.map
-

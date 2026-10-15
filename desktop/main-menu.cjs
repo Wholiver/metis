@@ -17,6 +17,20 @@ function createApplicationMenuTemplate(platform, appName = "Metis", text = engli
 		],
 	};
 	if (platform !== "darwin") return [editMenu];
+	const viewMenu = {
+		label: text("menuView"),
+		submenu: [
+			menuRole("reload", "menuReload", text),
+			menuRole("forceReload", "menuForceReload", text),
+			menuRole("toggleDevTools", "menuToggleDevTools", text),
+			{ type: "separator" },
+			menuRole("resetZoom", "menuActualSize", text),
+			menuRole("zoomIn", "menuZoomIn", text),
+			menuRole("zoomOut", "menuZoomOut", text),
+			{ type: "separator" },
+			menuRole("togglefullscreen", "menuToggleFullScreen", text),
+		],
+	};
 	return [
 		{ label: appName, submenu: [
 			{ role: "about", label: text("menuAbout", { appName }) }, { type: "separator" },
@@ -25,6 +39,7 @@ function createApplicationMenuTemplate(platform, appName = "Metis", text = engli
 			{ type: "separator" }, { role: "quit", label: text("menuQuit", { appName }) },
 		] },
 		editMenu,
+		viewMenu,
 		{ role: "windowMenu", label: text("menuWindow") },
 	];
 }

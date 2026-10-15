@@ -97,6 +97,7 @@ export function AddModelModal({
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [modelRows, setModelRows] = useState<ModelRow[]>([emptyModelRow()]);
+  const [discoveredModels, setDiscoveredModels] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [error, setError] = useState('');
@@ -120,6 +121,7 @@ export function AddModelModal({
     setApiKey('');
     setShowApiKey(false);
     setModelRows([emptyModelRow()]);
+    setDiscoveredModels([]);
     setSaving(false);
     setDiscovering(false);
     setError('');
@@ -275,6 +277,7 @@ export function AddModelModal({
       if (!Array.isArray(results) || results.length === 0) {
         throw new Error(translate('No models were returned. Enter model IDs manually.'));
       }
+      setDiscoveredModels(results);
       setModelRows(
         results.map((model) => ({
           id: String(model?.id || '').trim(),
@@ -314,6 +317,17 @@ export function AddModelModal({
         .map((row) => ({ id: row.id.trim(), name: row.name.trim() || undefined }))
         .filter((row) => row.id);
       const baseUrl = String(currentProvider.baseUrl || BUILTIN_DISCOVER_BASE_URLS[currentProvider.id] || '').trim();
+      const discoveredMap = new Map((discoveredModels || []).map((m: any) => [m?.id, m]));
+      const enrichedModels = models.map((m) => {
+        const disc = discoveredMap.get(m.id);
+        if (!disc) return m;
+        return {
+          ...disc,
+          ...m,
+          ...(disc.thinkingOptions ? { thinkingOptions: disc.thinkingOptions } : {}),
+          ...(typeof disc.contextWindow === 'number' ? { contextWindow: disc.contextWindow } : {}),
+        };
+      });
       if (models.length > 0) {
         await onSave({
           name: currentProvider.name,
@@ -321,8 +335,8 @@ export function AddModelModal({
           apiKey: key,
           providerId: currentProvider.id,
           modelIds: models.map((model) => model.id),
-          models,
-          discoveredModels: models,
+          models: enrichedModels,
+          discoveredModels: discoveredModels.length > 0 ? discoveredModels : undefined,
           builtin: true,
         });
       } else {
@@ -349,14 +363,25 @@ export function AddModelModal({
       if (!providerId) throw new Error(translate('Use lowercase letters, numbers, hyphens, or underscores'));
       if (!name) throw new Error(translate('Provider name is required'));
       if (!baseUrl) throw new Error(translate('Base URL is required'));
+      const discoveredMap = new Map((discoveredModels || []).map((m: any) => [m?.id, m]));
+      const enrichedModels = models.map((m) => {
+        const disc = discoveredMap.get(m.id);
+        if (!disc) return m;
+        return {
+          ...disc,
+          ...m,
+          ...(disc.thinkingOptions ? { thinkingOptions: disc.thinkingOptions } : {}),
+          ...(typeof disc.contextWindow === 'number' ? { contextWindow: disc.contextWindow } : {}),
+        };
+      });
       await onSave({
         name,
         baseUrl,
         apiKey: apiKey.trim() || undefined,
         providerId,
         modelIds: models.map((model) => model.id),
-        models,
-        discoveredModels: models,
+        models: enrichedModels,
+        discoveredModels: discoveredModels.length > 0 ? discoveredModels : undefined,
       });
       onClose();
     } catch (cause) {

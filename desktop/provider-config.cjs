@@ -96,6 +96,16 @@ function extractProviderThinkingOptions(item) {
 		}
 		if (byId.size > 0) return [...byId.values()];
 	}
+	if ([item.reasoning, item.supports_reasoning, item.capabilities?.reasoning,
+		item.reasoning?.supported, item.thinking?.supported,
+		item.capabilities?.reasoning?.supported, item.capabilities?.thinking?.supported].includes(true)) {
+		return [
+			{ id: "off", label: "Off", value: "off" },
+			{ id: "low", label: "Low", value: "low" },
+			{ id: "medium", label: "Medium", value: "medium" },
+			{ id: "high", label: "High", value: "high" },
+		];
+	}
 	return [];
 }
 
@@ -333,7 +343,10 @@ async function saveCustomProviderConfig(agentDir, config = {}, options = {}) {
 		if (thinkingOptions && thinkingOptions.length > 0) {
 			model.reasoning = thinkingOptions.some((option) => option.id !== "off");
 			model.thinkingOptions = thinkingOptions;
-			model.thinkingLevelMap = Object.fromEntries(thinkingOptions.map((option) => [option.id, option.value]));
+			model.thinkingLevelMap = Object.fromEntries([
+				...["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((l) => [l, null]),
+				...thinkingOptions.map((option) => [option.id, option.value]),
+			]);
 		} else if (Array.isArray(existingModel.thinkingOptions) && existingModel.thinkingOptions.length === 0
 			&& existingModel.thinkingLevelMap === undefined) {
 			delete model.thinkingOptions;

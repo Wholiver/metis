@@ -7,6 +7,8 @@ import { MessageList } from './MessageList';
 import { Composer } from './Composer';
 import { SkillCommand } from './SkillPicker';
 import { UserInputCard } from './UserInputCard';
+import { ComponentErrorBoundary } from '../common/ComponentErrorBoundary';
+import { useI18n } from '../../i18n';
 import type { LearningProgressState } from '../../hooks/useMetisServer';
 
 interface ChatAreaProps {
@@ -104,6 +106,7 @@ export const ChatArea = React.memo<ChatAreaProps>(({
   onOpenSettingsTab,
   onDismissLearningProgress,
 }) => {
+  const { t } = useI18n();
   const [composerActivity, setComposerActivity] = useState(IDLE_COMPOSER_ACTIVITY);
 
   useEffect(() => {
@@ -143,23 +146,28 @@ export const ChatArea = React.memo<ChatAreaProps>(({
         onOpenSettingsTab={onOpenSettingsTab}
         onDismissLearningProgress={onDismissLearningProgress}
       />
-      <MessageList
-        sessionId={agent.id}
-        messages={messages}
-        workspacePath={workspacePath}
-        projectName={projectName}
-        isLoading={isLoading}
-        isStreaming={showActiveProgress}
-        isCompacting={isCompacting}
-        isHomeEmpty={isHomeEmpty}
-        workflowProposal={workflowProposal}
-        onOpenPlan={onOpenPlan}
-        pendingUserInput={pendingUserInput}
-        onSendMessage={handleSendMessage}
-        collaborationMode={collaborationMode}
-        model={activeModel}
-        onOpenSubagent={onOpenSubagent}
-      />
+      <ComponentErrorBoundary
+        title={t('chatAreaErrorTitle') || '当前会话渲染异常'}
+        description={t('chatAreaErrorDesc') || '渲染此会话中的消息时遇到意外错误。'}
+      >
+        <MessageList
+          sessionId={agent.id}
+          messages={messages}
+          workspacePath={workspacePath}
+          projectName={projectName}
+          isLoading={isLoading}
+          isStreaming={showActiveProgress}
+          isCompacting={isCompacting}
+          isHomeEmpty={isHomeEmpty}
+          workflowProposal={workflowProposal}
+          onOpenPlan={onOpenPlan}
+          pendingUserInput={pendingUserInput}
+          onSendMessage={handleSendMessage}
+          collaborationMode={collaborationMode}
+          model={activeModel}
+          onOpenSubagent={onOpenSubagent}
+        />
+      </ComponentErrorBoundary>
       {pendingUserInput ? (
         <UserInputCard
           request={pendingUserInput}

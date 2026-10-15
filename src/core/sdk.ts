@@ -288,7 +288,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	if (!model) {
 		thinkingLevel = "off";
 	} else {
-		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
+		thinkingLevel = clampThinkingLevel(model, thinkingLevel as any) as ThinkingLevel;
 	}
 
 	const defaultActiveToolNames: ToolName[] = ["read", "grep", "ls", "bash", "edit", "write", "spawn_agent", "websearch", "webfetch", "video", "update_plan", "ask_user", "read_plan", "performance_admit", "performance_gate"];

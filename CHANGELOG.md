@@ -2,6 +2,17 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [2.0.1] - 2026-10-15
+
+### Global & Component Error Boundaries, Starter Prompts, Process Crash Recovery, Large File Diff Protection & Model Catalog 1.2.0
+
+- **Global & Component Error Boundaries**: Add top-level `GlobalErrorBoundary` and modular `ComponentErrorBoundary` layers to catch rendering faults in transcript, inspector, and chat views with localized error details, crash isolation, and one-click session reload and state reset affordances.
+- **Desktop Process Lifecycle & Crash Recovery**: Add Electron `render-process-gone` crash handler with interactive reload dialog, child process monitoring, hardware acceleration toggles (`METIS_DISABLE_GPU`, `--disable-gpu`), and standard developer shortcuts (`Cmd+R` / `Ctrl+R` / `F5` for reload, `Cmd+Alt+I` / `Ctrl+Shift+I` / `F12` for detached DevTools).
+- **Interactive Quick Starter Prompts**: Introduce `StarterPrompts` pills on empty conversation sessions to trigger one-click exploratory tasks (architecture analysis, bug finding, test design, refactoring) tailored to the active workspace.
+- **Large & Binary File VCS Diff Protection**: Filter out binary assets and files exceeding 300KB during working tree and branch diff scanning in `workspace-git.cjs` to eliminate UI stutter, high memory allocations, and diff panel freezes.
+- **Model Catalog 1.2.0 & Enhanced Reasoning Protocols**: Synchronize upstream model catalog to `pi-ai` 1.2.0; expand dynamic thinking/reasoning protocol detection to Step (`step-3.5+`), Codex, Astra/Luna/Sol, Qwen, DeepSeek, GLM-5.3 variants, and OpenAI-compatible aggregators with robust compatibility merging.
+- **Desktop i18n & Add Model Polish**: Update English, Chinese, and multi-language catalogs with localized error boundary prompts and refine model configuration dialogs.
+
 ## [2.0.0] - 2026-10-14
 
 ### Project Agent Harness Architecture, Visual Graph Editor, Sidebar Code Tree & Runtime Isolation

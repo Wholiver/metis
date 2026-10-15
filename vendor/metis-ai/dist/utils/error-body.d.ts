@@ -23,4 +23,3 @@ export declare function formatProviderError(norm: NormalizedProviderError, prefi
 export declare function truncateErrorText(text: string, maxChars: number): string;
 export declare function safeJsonStringify(value: unknown): string;
 //# sourceMappingURL=error-body.d.ts.map
-

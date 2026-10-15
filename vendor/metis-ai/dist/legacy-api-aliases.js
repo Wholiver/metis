@@ -14,37 +14,36 @@ const mistralConversationsStreams = mistralConversationsApi();
 const openAICodexResponsesStreams = openAICodexResponsesApi();
 const openAICompletionsStreams = openAICompletionsApi();
 const openAIResponsesStreams = openAIResponsesApi();
-/** @deprecated Use `stream` from `@earendil-works/metis-ai/api/anthropic-messages` or `anthropicMessagesApi().stream`. */
+/** @deprecated Use `stream` from `@earendil-works/pi-ai/api/anthropic-messages` or `anthropicMessagesApi().stream`. */
 export const streamAnthropic = anthropicMessagesStreams.stream;
-/** @deprecated Use `streamSimple` from `@earendil-works/metis-ai/api/anthropic-messages` or `anthropicMessagesApi().streamSimple`. */
+/** @deprecated Use `streamSimple` from `@earendil-works/pi-ai/api/anthropic-messages` or `anthropicMessagesApi().streamSimple`. */
 export const streamSimpleAnthropic = anthropicMessagesStreams.streamSimple;
-/** @deprecated Use `stream` from `@earendil-works/metis-ai/api/azure-openai-responses` or `azureOpenAIResponsesApi().stream`. */
+/** @deprecated Use `stream` from `@earendil-works/pi-ai/api/azure-openai-responses` or `azureOpenAIResponsesApi().stream`. */
 export const streamAzureOpenAIResponses = azureOpenAIResponsesStreams.stream;
-/** @deprecated Use `streamSimple` from `@earendil-works/metis-ai/api/azure-openai-responses` or `azureOpenAIResponsesApi().streamSimple`. */
+/** @deprecated Use `streamSimple` from `@earendil-works/pi-ai/api/azure-openai-responses` or `azureOpenAIResponsesApi().streamSimple`. */
 export const streamSimpleAzureOpenAIResponses = azureOpenAIResponsesStreams.streamSimple;
-/** @deprecated Use `stream` from `@earendil-works/metis-ai/api/google-generative-ai` or `googleGenerativeAIApi().stream`. */
+/** @deprecated Use `stream` from `@earendil-works/pi-ai/api/google-generative-ai` or `googleGenerativeAIApi().stream`. */
 export const streamGoogle = googleGenerativeAIStreams.stream;
-/** @deprecated Use `streamSimple` from `@earendil-works/metis-ai/api/google-generative-ai` or `googleGenerativeAIApi().streamSimple`. */
+/** @deprecated Use `streamSimple` from `@earendil-works/pi-ai/api/google-generative-ai` or `googleGenerativeAIApi().streamSimple`. */
 export const streamSimpleGoogle = googleGenerativeAIStreams.streamSimple;
-/** @deprecated Use `stream` from `@earendil-works/metis-ai/api/google-vertex` or `googleVertexApi().stream`. */
+/** @deprecated Use `stream` from `@earendil-works/pi-ai/api/google-vertex` or `googleVertexApi().stream`. */
 export const streamGoogleVertex = googleVertexStreams.stream;
-/** @deprecated Use `streamSimple` from `@earendil-works/metis-ai/api/google-vertex` or `googleVertexApi().streamSimple`. */
+/** @deprecated Use `streamSimple` from `@earendil-works/pi-ai/api/google-vertex` or `googleVertexApi().streamSimple`. */
 export const streamSimpleGoogleVertex = googleVertexStreams.streamSimple;
-/** @deprecated Use `stream` from `@earendil-works/metis-ai/api/mistral-conversations` or `mistralConversationsApi().stream`. */
+/** @deprecated Use `stream` from `@earendil-works/pi-ai/api/mistral-conversations` or `mistralConversationsApi().stream`. */
 export const streamMistral = mistralConversationsStreams.stream;
-/** @deprecated Use `streamSimple` from `@earendil-works/metis-ai/api/mistral-conversations` or `mistralConversationsApi().streamSimple`. */
+/** @deprecated Use `streamSimple` from `@earendil-works/pi-ai/api/mistral-conversations` or `mistralConversationsApi().streamSimple`. */
 export const streamSimpleMistral = mistralConversationsStreams.streamSimple;
-/** @deprecated Use `stream` from `@earendil-works/metis-ai/api/openai-codex-responses` or `openAICodexResponsesApi().stream`. */
+/** @deprecated Use `stream` from `@earendil-works/pi-ai/api/openai-codex-responses` or `openAICodexResponsesApi().stream`. */
 export const streamOpenAICodexResponses = openAICodexResponsesStreams.stream;
-/** @deprecated Use `streamSimple` from `@earendil-works/metis-ai/api/openai-codex-responses` or `openAICodexResponsesApi().streamSimple`. */
+/** @deprecated Use `streamSimple` from `@earendil-works/pi-ai/api/openai-codex-responses` or `openAICodexResponsesApi().streamSimple`. */
 export const streamSimpleOpenAICodexResponses = openAICodexResponsesStreams.streamSimple;
-/** @deprecated Use `stream` from `@earendil-works/metis-ai/api/openai-completions` or `openAICompletionsApi().stream`. */
+/** @deprecated Use `stream` from `@earendil-works/pi-ai/api/openai-completions` or `openAICompletionsApi().stream`. */
 export const streamOpenAICompletions = openAICompletionsStreams.stream;
-/** @deprecated Use `streamSimple` from `@earendil-works/metis-ai/api/openai-completions` or `openAICompletionsApi().streamSimple`. */
+/** @deprecated Use `streamSimple` from `@earendil-works/pi-ai/api/openai-completions` or `openAICompletionsApi().streamSimple`. */
 export const streamSimpleOpenAICompletions = openAICompletionsStreams.streamSimple;
-/** @deprecated Use `stream` from `@earendil-works/metis-ai/api/openai-responses` or `openAIResponsesApi().stream`. */
+/** @deprecated Use `stream` from `@earendil-works/pi-ai/api/openai-responses` or `openAIResponsesApi().stream`. */
 export const streamOpenAIResponses = openAIResponsesStreams.stream;
-/** @deprecated Use `streamSimple` from `@earendil-works/metis-ai/api/openai-responses` or `openAIResponsesApi().streamSimple`. */
+/** @deprecated Use `streamSimple` from `@earendil-works/pi-ai/api/openai-responses` or `openAIResponsesApi().streamSimple`. */
 export const streamSimpleOpenAIResponses = openAIResponsesStreams.streamSimple;
 //# sourceMappingURL=legacy-api-aliases.js.map
-

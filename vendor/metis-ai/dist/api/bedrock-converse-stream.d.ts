@@ -36,4 +36,3 @@ export interface BedrockOptions extends StreamOptions {
 export declare const stream: StreamFunction<"bedrock-converse-stream", BedrockOptions>;
 export declare const streamSimple: StreamFunction<"bedrock-converse-stream", SimpleStreamOptions>;
 //# sourceMappingURL=bedrock-converse-stream.d.ts.map
-

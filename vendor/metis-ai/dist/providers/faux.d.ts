@@ -1,10 +1,11 @@
 import { type Provider } from "../models.ts";
-import type { AssistantMessage, Context, Model, SimpleStreamOptions, StreamFunction, StreamOptions, TextContent, ThinkingContent, ToolCall } from "../types.ts";
+import type { AssistantMessage, AssistantMessageEventStream, DeferredCancelOptions, DeferredFetchOptions, DeferredHandle, Model, SimpleStreamOptions, StreamFunction, TextContent, ThinkingContent, ToolCall, TranscriptContext } from "../types.ts";
 export interface FauxModelDefinition {
     id: string;
     name?: string;
     reasoning?: boolean;
     input?: ("text" | "image")[];
+    inputLimits?: Model<string>["inputLimits"];
     cost?: {
         input: number;
         output: number;
@@ -22,18 +23,27 @@ export declare function fauxToolCall(name: string, arguments_: ToolCall["argumen
 }): ToolCall;
 export declare function fauxAssistantMessage(content: string | FauxContentBlock | FauxContentBlock[], options?: {
     stopReason?: AssistantMessage["stopReason"];
+    deferred?: DeferredHandle;
     errorMessage?: string;
     responseId?: string;
     timestamp?: number;
 }): AssistantMessage;
-export type FauxResponseFactory = (context: Context, options: StreamOptions | undefined, state: {
+export interface FauxProviderState {
     callCount: number;
-}, model: Model<string>) => AssistantMessage | Promise<AssistantMessage>;
+    deferredFetchCount: number;
+    cancelledDeferred: DeferredHandle[];
+}
+export type FauxResponseFactory = (context: TranscriptContext, options: SimpleStreamOptions | undefined, state: FauxProviderState, model: Model<string>) => AssistantMessage | Promise<AssistantMessage>;
 export type FauxResponseStep = AssistantMessage | FauxResponseFactory;
 export interface RegisterFauxProviderOptions {
     api?: string;
     provider?: string;
     models?: FauxModelDefinition[];
+    deferred?: {
+        /** Number of fetches that return the original handle before the scripted response becomes ready. */
+        pendingFetches?: number;
+        pollAfterMs?: number;
+    };
     tokensPerSecond?: number;
     tokenSize?: {
         min?: number;
@@ -45,9 +55,7 @@ export interface FauxProviderRegistration {
     models: [Model<string>, ...Model<string>[]];
     getModel(): Model<string>;
     getModel(modelId: string): Model<string> | undefined;
-    state: {
-        callCount: number;
-    };
+    state: FauxProviderState;
     setResponses: (responses: FauxResponseStep[]) => void;
     appendResponses: (responses: FauxResponseStep[]) => void;
     getPendingResponseCount: () => number;
@@ -59,9 +67,7 @@ export interface FauxProviderHandle {
     models: [Model<string>, ...Model<string>[]];
     getModel(): Model<string>;
     getModel(modelId: string): Model<string> | undefined;
-    state: {
-        callCount: number;
-    };
+    state: FauxProviderState;
     setResponses: (responses: FauxResponseStep[]) => void;
     appendResponses: (responses: FauxResponseStep[]) => void;
     getPendingResponseCount: () => number;
@@ -70,15 +76,15 @@ export declare function createFauxCore(options: RegisterFauxProviderOptions): {
     api: string;
     provider: string;
     models: [Model<string>, ...Model<string>[]];
-    stream: StreamFunction<string, StreamOptions>;
+    stream: StreamFunction<string, SimpleStreamOptions>;
     streamSimple: StreamFunction<string, SimpleStreamOptions>;
+    fetchDeferred: (requestModel: Model<string>, handle: DeferredHandle, fetchOptions?: DeferredFetchOptions) => AssistantMessageEventStream;
+    cancelDeferred: (requestModel: Model<string>, handle: DeferredHandle, cancelOptions?: DeferredCancelOptions) => Promise<void>;
     getModel: {
         (): Model<string>;
         (requestedModelId: string): Model<string> | undefined;
     };
-    state: {
-        callCount: number;
-    };
+    state: FauxProviderState;
     setResponses(responses: FauxResponseStep[]): void;
     appendResponses(responses: FauxResponseStep[]): void;
     getPendingResponseCount(): number;
@@ -95,4 +101,3 @@ export declare function createFauxCore(options: RegisterFauxProviderOptions): {
  */
 export declare function fauxProvider(options?: RegisterFauxProviderOptions): FauxProviderHandle;
 //# sourceMappingURL=faux.d.ts.map
-

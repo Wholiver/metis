@@ -1,20 +1,3 @@
-var __rewriteRelativeImportExtension = (this && this.__rewriteRelativeImportExtension) || function (path, preserveJsx) {
-    if (typeof path === "string" && /^\.\.?\//.test(path)) {
-        return path.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function (m, tsx, d, ext, cm) {
-            return tsx ? preserveJsx ? ".jsx" : ".js" : d && (!ext || !cm) ? m : (d + ext + "." + cm.toLowerCase() + "js");
-        });
-    }
-    return path;
-};
-// NEVER convert to top-level runtime imports - breaks browser/Vite builds
-let _os = null;
-const dynamicImport = (specifier) => import(__rewriteRelativeImportExtension(specifier));
-const NODE_OS_SPECIFIER = "node:" + "os";
-if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-    dynamicImport(NODE_OS_SPECIFIER).then((m) => {
-        _os = m;
-    });
-}
 import { clampThinkingLevel } from "../models.js";
 import { registerSessionResourceCleanup } from "../session-resources.js";
 import { combineAbortSignals } from "../utils/abort-signals.js";
@@ -23,6 +6,11 @@ import { formatProviderError, normalizeProviderError } from "../utils/error-body
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.js";
+import { getPiUserAgent } from "../utils/pi-user-agent.js";
+import { getSystemMessageText } from "../utils/text.js";
+import { getDeclaredTools, getInitialSystemMessage, normalizeContext, resolveTranscript, resolveTranscriptTools, } from "../utils/transcript.js";
+import { uuidv7 } from "../utils/uuid.js";
+import { createGrammarToolInputProperties } from "./constrained-sampling.js";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
@@ -35,9 +23,13 @@ const DEFAULT_MAX_RETRIES = 0;
 const BASE_DELAY_MS = 1000;
 const DEFAULT_MAX_RETRY_DELAY_MS = 60_000;
 const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS = 15_000;
+// The Codex backend accepts zstd-compressed request bodies on the SSE responses
+// endpoint (the same endpoint the official Codex client compresses against).
+const REQUEST_COMPRESSION_ZSTD_LEVEL = 3;
 const CODEX_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 const WEBSOCKET_MESSAGE_TOO_BIG_CLOSE_CODE = 1009;
 const WEBSOCKET_CONNECTION_LIMIT_REACHED_CODE = "websocket_connection_limit_reached";
+const PREVIOUS_RESPONSE_NOT_FOUND_CODE = "previous_response_not_found";
 const CODEX_RESPONSE_STATUSES = new Set([
     "completed",
     "incomplete",
@@ -46,6 +38,14 @@ const CODEX_RESPONSE_STATUSES = new Set([
     "queued",
     "in_progress",
 ]);
+function assertSuccessfulOutput(output) {
+    if (output.stopReason === "pending") {
+        throw new Error("Codex stream ended without a stop reason");
+    }
+    if (output.stopReason === "error" || output.stopReason === "aborted") {
+        throw new Error(output.errorMessage || "An unknown error occurred");
+    }
+}
 // ============================================================================
 // Retry Helpers
 // ============================================================================
@@ -83,9 +83,14 @@ function getRetryAfterDelayMs(headers) {
     }
     return undefined;
 }
-function capRetryDelayMs(delayMs, options) {
+class RetryDelayExceededError extends Error {
+}
+function validateRetryDelayMs(delayMs, options) {
     const maxRetryDelayMs = options?.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
-    return maxRetryDelayMs > 0 ? Math.min(delayMs, maxRetryDelayMs) : delayMs;
+    if (maxRetryDelayMs > 0 && delayMs > maxRetryDelayMs) {
+        throw new RetryDelayExceededError(`Server requested ${Math.ceil(delayMs / 1000)}s retry delay (max: ${Math.ceil(maxRetryDelayMs / 1000)}s)`);
+    }
+    return delayMs;
 }
 function sleep(ms, signal) {
     return new Promise((resolve, reject) => {
@@ -108,11 +113,37 @@ function normalizeTimeoutMs(value) {
     }
     return Math.floor(value);
 }
+function loadNodeZlib() {
+    if (typeof process === "undefined" || !(process.versions?.node || process.versions?.bun)) {
+        return null;
+    }
+    return process.getBuiltinModule?.("node:zlib") ?? null;
+}
+// Returns the zstd-compressed body bytes, or null when compression is
+// unavailable (browser/Vite builds). Callers fall back to sending the
+// uncompressed JSON when this returns null.
+function compressRequestBodyZstd(bodyJson) {
+    const zlib = loadNodeZlib();
+    if (!zlib || typeof zlib.zstdCompressSync !== "function") {
+        return null;
+    }
+    try {
+        const compressed = zlib.zstdCompressSync(bodyJson, {
+            params: { [zlib.constants.ZSTD_c_compressionLevel]: REQUEST_COMPRESSION_ZSTD_LEVEL },
+        });
+        // A copy owns a plain ArrayBuffer, which fetch accepts as a body under every lib.
+        return new Uint8Array(compressed);
+    }
+    catch {
+        return null;
+    }
+}
 // ============================================================================
 // Main Stream Function
 // ============================================================================
 export const stream = (model, context, options) => {
     const stream = new AssistantMessageEventStream();
+    const normalizedContext = resolveTranscript(context, model.compat?.supportsMidConvoSystemMessages);
     (async () => {
         const output = {
             role: "assistant",
@@ -128,7 +159,7 @@ export const stream = (model, context, options) => {
                 totalTokens: 0,
                 cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
             },
-            stopReason: "stop",
+            stopReason: "pending",
             timestamp: Date.now(),
         };
         try {
@@ -137,34 +168,44 @@ export const stream = (model, context, options) => {
                 throw new Error(`No API key for provider: ${model.provider}`);
             }
             const accountId = extractAccountId(apiKey);
-            let body = buildRequestBody(model, context, options);
+            const grammarToolInputProperties = createGrammarToolInputProperties(getDeclaredTools(normalizedContext.messages), model.compat?.supportsOpenAIGrammarTools ?? false);
+            const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
+            const codexSessionId = clampOpenAIPromptCacheKey(cacheSessionId);
+            let body = buildRequestBody(model, normalizedContext, options, codexSessionId, grammarToolInputProperties);
             const nextBody = await options?.onPayload?.(body, model);
             if (nextBody !== undefined) {
                 body = nextBody;
             }
-            const websocketRequestId = options?.sessionId || createCodexRequestId();
-            const sseHeaders = buildSSEHeaders(model.headers, options?.headers, accountId, apiKey, options?.sessionId);
+            const websocketRequestId = codexSessionId || uuidv7();
+            const sseHeaders = buildSSEHeaders(model.headers, options?.headers, accountId, apiKey, codexSessionId);
             const websocketHeaders = buildWebSocketHeaders(model.headers, options?.headers, accountId, apiKey, websocketRequestId);
             const bodyJson = JSON.stringify(body);
             const httpTimeoutMs = normalizeTimeoutMs(options?.timeoutMs);
             const websocketConnectTimeoutMs = normalizeTimeoutMs(options?.websocketConnectTimeoutMs);
             const transport = options?.transport || "auto";
-            const websocketDisabledForSession = transport !== "sse" && isWebSocketSseFallbackActive(options?.sessionId);
+            let startEmitted = false;
+            const websocketDisabledForSession = transport !== "sse" && isWebSocketSseFallbackActive(cacheSessionId);
             if (websocketDisabledForSession) {
-                recordWebSocketSseFallback(options?.sessionId);
+                recordWebSocketSseFallback(cacheSessionId);
             }
             if (transport !== "sse" && !websocketDisabledForSession) {
                 let websocketStarted = false;
                 let retriedWebSocketConnectionLimit = false;
+                let retriedMissingWebSocketContinuation = false;
                 while (true) {
                     websocketStarted = false;
                     try {
                         await processWebSocketStream(resolveCodexWebSocketUrl(model.baseUrl), body, websocketHeaders, output, stream, model, () => {
                             websocketStarted = true;
-                        }, httpTimeoutMs, websocketConnectTimeoutMs, options);
+                            if (!startEmitted) {
+                                startEmitted = true;
+                                stream.push({ type: "start", partial: output });
+                            }
+                        }, httpTimeoutMs, websocketConnectTimeoutMs, cacheSessionId, accountId, grammarToolInputProperties, options);
                         if (options?.signal?.aborted) {
                             throw new Error("Request was aborted");
                         }
+                        assertSuccessfulOutput(output);
                         stream.push({
                             type: "done",
                             reason: output.stopReason,
@@ -176,6 +217,11 @@ export const stream = (model, context, options) => {
                     catch (error) {
                         const aborted = options?.signal?.aborted;
                         const connectionLimitBeforeStart = !websocketStarted && isWebSocketConnectionLimitReachedError(error);
+                        const previousResponseNotFound = isPreviousResponseNotFoundError(error);
+                        if (!aborted && previousResponseNotFound && !retriedMissingWebSocketContinuation) {
+                            retriedMissingWebSocketContinuation = true;
+                            continue;
+                        }
                         if (!aborted && connectionLimitBeforeStart && !retriedWebSocketConnectionLimit) {
                             retriedWebSocketConnectionLimit = true;
                             continue;
@@ -185,20 +231,28 @@ export const stream = (model, context, options) => {
                         }
                         appendAssistantMessageDiagnostic(output, createAssistantMessageDiagnostic("provider_transport_failure", error, {
                             configuredTransport: transport,
-                            fallbackTransport: websocketStarted ? undefined : "sse",
+                            ...(websocketStarted ? {} : { fallbackTransport: "sse" }),
                             eventsEmitted: websocketStarted,
                             phase: websocketStarted ? "after_message_stream_start" : "before_message_stream_start",
                             requestBytes: new TextEncoder().encode(bodyJson).byteLength,
                         }));
-                        recordWebSocketFailure(options?.sessionId, error);
+                        recordWebSocketFailure(cacheSessionId, error);
                         if (websocketStarted) {
                             throw error;
                         }
-                        recordWebSocketSseFallback(options?.sessionId);
+                        recordWebSocketSseFallback(cacheSessionId);
                         break;
                     }
                 }
             }
+            // Compress the request body once for the SSE path. The Codex backend
+            // decodes Content-Encoding: zstd; the WebSocket transport above sends the
+            // uncompressed JSON frame, matching the official Codex client.
+            const compressedBody = compressRequestBodyZstd(bodyJson);
+            if (compressedBody) {
+                sseHeaders.set("content-encoding", "zstd");
+            }
+            const sseBody = compressedBody ?? bodyJson;
             // Fetch with retry logic for rate limits and transient errors
             let response;
             let lastError;
@@ -211,10 +265,10 @@ export const stream = (model, context, options) => {
                     const headerTimeoutSignal = httpTimeoutMs !== undefined && httpTimeoutMs > 0 ? AbortSignal.timeout(httpTimeoutMs) : undefined;
                     const combinedSignal = combineAbortSignals([options?.signal, headerTimeoutSignal]);
                     try {
-                        response = await fetch(resolveCodexUrl(model.baseUrl), {
+                        response = await (options?.fetch ?? globalThis.fetch)(resolveCodexUrl(model.baseUrl), {
                             method: "POST",
                             headers: sseHeaders,
-                            body: bodyJson,
+                            body: sseBody,
                             signal: combinedSignal.signal,
                         });
                     }
@@ -236,9 +290,7 @@ export const stream = (model, context, options) => {
                         const retryAfterDelayMs = getRetryAfterDelayMs(response.headers);
                         const delayMs = retryAfterDelayMs === undefined
                             ? BASE_DELAY_MS * 2 ** attempt
-                            : response.status === 429
-                                ? capRetryDelayMs(retryAfterDelayMs, options)
-                                : retryAfterDelayMs;
+                            : validateRetryDelayMs(retryAfterDelayMs, options);
                         await sleep(delayMs, options?.signal);
                         continue;
                     }
@@ -258,7 +310,9 @@ export const stream = (model, context, options) => {
                     }
                     lastError = error instanceof Error ? error : new Error(String(error));
                     // Network errors are retryable
-                    if (attempt < maxRetries && !lastError.message.includes("usage limit")) {
+                    if (attempt < maxRetries &&
+                        !(lastError instanceof RetryDelayExceededError) &&
+                        !lastError.message.includes("usage limit")) {
                         const delayMs = BASE_DELAY_MS * 2 ** attempt;
                         await sleep(delayMs, options?.signal);
                         continue;
@@ -272,18 +326,23 @@ export const stream = (model, context, options) => {
             if (!response.body) {
                 throw new Error("No response body");
             }
-            stream.push({ type: "start", partial: output });
-            await processStream(response, output, stream, model, options);
+            if (!startEmitted) {
+                startEmitted = true;
+                stream.push({ type: "start", partial: output });
+            }
+            await processStream(response, output, stream, model, grammarToolInputProperties, options);
             if (options?.signal?.aborted) {
                 throw new Error("Request was aborted");
             }
+            assertSuccessfulOutput(output);
             stream.push({ type: "done", reason: output.stopReason, message: output });
             stream.end();
         }
         catch (error) {
             for (const block of output.content) {
-                // partialJson is only a streaming scratch buffer; never persist it.
+                // Streaming scratch buffers are only used during parsing; never persist them.
                 delete block.partialJson;
+                delete block.customInput;
             }
             output.stopReason = options?.signal?.aborted ? "aborted" : "error";
             output.errorMessage = formatProviderError(normalizeProviderError(error));
@@ -298,7 +357,10 @@ export const streamSimple = (model, context, options) => {
     if (!apiKey) {
         throw new Error(`No API key for provider: ${model.provider}`);
     }
-    const base = buildBaseOptions(model, context, options, apiKey);
+    const base = {
+        ...buildBaseOptions(model, context, options, apiKey),
+        toolChoice: options?.toolChoice,
+    };
     const clampedReasoning = options?.reasoning ? clampThinkingLevel(model, options.reasoning) : undefined;
     const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
     return stream(model, context, {
@@ -309,20 +371,32 @@ export const streamSimple = (model, context, options) => {
 // ============================================================================
 // Request Building
 // ============================================================================
-function buildRequestBody(model, context, options) {
+function buildRequestBody(model, context, options, cacheSessionId, grammarToolInputProperties = createGrammarToolInputProperties(getDeclaredTools(context.messages), model.compat?.supportsOpenAIGrammarTools ?? false)) {
+    const supportsStrictMode = model.compat?.supportsStrictMode ?? true;
+    const supportsOpenAIGrammarTools = model.compat?.supportsOpenAIGrammarTools ?? false;
+    const supportsAdditionalTools = model.compat?.supportsAdditionalTools ?? false;
+    const supportsToolSearch = model.compat?.supportsToolSearch ?? false;
+    const transcriptTools = resolveTranscriptTools(context.messages, supportsAdditionalTools || supportsToolSearch);
     const messages = convertResponsesMessages(model, context, CODEX_TOOL_CALL_PROVIDERS, {
         includeSystemPrompt: false,
+        grammarToolInputProperties,
+        supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
+        supportsAdditionalTools,
+        supportsToolSearch,
+        toolOptions: { strict: null, supportsStrictMode, supportsOpenAIGrammarTools },
     });
+    const initialSystemMessage = getInitialSystemMessage(context.messages);
+    const instructions = initialSystemMessage ? getSystemMessageText(initialSystemMessage) : "";
     const body = {
         model: model.id,
         store: false,
         stream: true,
-        instructions: context.systemPrompt || "You are a helpful assistant.",
+        instructions: instructions || "You are a helpful assistant.",
         input: messages,
         text: { verbosity: options?.textVerbosity || "low" },
         include: ["reasoning.encrypted_content"],
-        prompt_cache_key: clampOpenAIPromptCacheKey(options?.sessionId),
-        tool_choice: "auto",
+        prompt_cache_key: cacheSessionId,
+        tool_choice: options?.toolChoice ?? "auto",
         parallel_tool_calls: true,
     };
     if (options?.temperature !== undefined) {
@@ -331,12 +405,18 @@ function buildRequestBody(model, context, options) {
     if (options?.serviceTier !== undefined) {
         body.service_tier = options.serviceTier;
     }
-    if (context.tools && context.tools.length > 0) {
-        body.tools = convertResponsesTools(context.tools, { strict: null });
+    if (transcriptTools.requestTools.length > 0) {
+        body.tools = convertResponsesTools(transcriptTools.requestTools, {
+            strict: null,
+            supportsStrictMode,
+            supportsOpenAIGrammarTools,
+        });
     }
     if (options?.reasoningEffort !== undefined) {
         const effort = options.reasoningEffort === "none"
-            ? (model.thinkingLevelMap?.off ?? "none")
+            ? model.thinkingLevelMap?.off === undefined
+                ? "none"
+                : model.thinkingLevelMap.off
             : (model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort);
         if (effort !== null) {
             body.reasoning = {
@@ -344,6 +424,9 @@ function buildRequestBody(model, context, options) {
                 summary: options.reasoningSummary ?? "auto",
             };
         }
+    }
+    else if (model.reasoning && model.thinkingLevelMap?.off !== null) {
+        body.reasoning = { effort: model.thinkingLevelMap?.off ?? "none" };
     }
     return body;
 }
@@ -393,9 +476,10 @@ function resolveCodexWebSocketUrl(baseUrl) {
 // ============================================================================
 // Response Processing
 // ============================================================================
-async function processStream(response, output, stream, model, options) {
-    await processResponsesStream(mapCodexEvents(parseSSE(response, options?.signal)), output, stream, model, {
+async function processStream(response, output, stream, model, grammarToolInputProperties, options) {
+    await processResponsesStream(mapCodexEvents(parseSSE(response, options?.signal), output, model, options?.onProviderStreamEvent), output, stream, model, {
         serviceTier: options?.serviceTier,
+        grammarToolInputProperties,
         resolveServiceTier: resolveCodexServiceTier,
         applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
     });
@@ -420,11 +504,23 @@ class CodexProtocolError extends Error {
         this.cause = options?.cause;
     }
 }
+class ProviderStreamEventCallbackError extends Error {
+    constructor(cause) {
+        super(formatThrownValue(cause));
+        this.name = "ProviderStreamEventCallbackError";
+        this.cause = cause;
+    }
+}
 function isCodexNonTransportError(error) {
-    return error instanceof CodexApiError || error instanceof CodexProtocolError;
+    return (error instanceof CodexApiError ||
+        error instanceof CodexProtocolError ||
+        error instanceof ProviderStreamEventCallbackError);
 }
 function isWebSocketConnectionLimitReachedError(error) {
     return error instanceof CodexApiError && error.code === WEBSOCKET_CONNECTION_LIMIT_REACHED_CODE;
+}
+function isPreviousResponseNotFoundError(error) {
+    return error instanceof CodexApiError && error.code === PREVIOUS_RESPONSE_NOT_FOUND_CODE;
 }
 function extractCodexEventError(event) {
     const nested = event.error && typeof event.error === "object" ? event.error : undefined;
@@ -437,8 +533,15 @@ function extractCodexEventError(event) {
                 : undefined,
     };
 }
-async function* mapCodexEvents(events) {
+async function* mapCodexEvents(events, output, model, onProviderStreamEvent) {
     for await (const event of events) {
+        try {
+            await onProviderStreamEvent?.(event, model);
+        }
+        catch (error) {
+            // Keep callback failures out of Codex's WebSocket retry and SSE fallback path.
+            throw new ProviderStreamEventCallbackError(error);
+        }
         const type = typeof event.type === "string" ? event.type : undefined;
         if (!type)
             continue;
@@ -457,6 +560,9 @@ async function* mapCodexEvents(events) {
         }
         if (type === "response.done" || type === "response.completed" || type === "response.incomplete") {
             const response = event.response;
+            if (typeof response?.end_turn === "boolean") {
+                output.endTurn = response.end_turn;
+            }
             const normalizedResponse = response
                 ? { ...response, status: normalizeCodexStatus(response.status) }
                 : response;
@@ -493,9 +599,10 @@ async function* parseSSE(response, signal) {
             if (signal?.aborted) {
                 throw new Error("Request was aborted");
             }
-            if (done)
-                break;
-            buffer += decoder.decode(value, { stream: true });
+            buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+            // Treat EOF as terminating the residual SSE frame.
+            if (done && buffer.trim())
+                buffer += "\n\n";
             let idx = buffer.indexOf("\n\n");
             while (idx !== -1) {
                 const chunk = buffer.slice(0, idx);
@@ -520,6 +627,8 @@ async function* parseSSE(response, signal) {
                 }
                 idx = buffer.indexOf("\n\n");
             }
+            if (done)
+                break;
         }
     }
     finally {
@@ -539,6 +648,7 @@ async function* parseSSE(response, signal) {
 // ============================================================================
 const OPENAI_BETA_RESPONSES_WEBSOCKETS = "responses_websockets=2026-02-06";
 const SESSION_WEBSOCKET_CACHE_TTL_MS = 5 * 60 * 1000;
+const SESSION_WEBSOCKET_MAX_AGE_MS = 55 * 60 * 1000;
 const websocketSessionCache = new Map();
 const websocketDebugStats = new Map();
 const websocketSseFallbackSessions = new Set();
@@ -581,14 +691,14 @@ export function closeOpenAICodexWebSocketSessions(sessionId) {
         closeWebSocketSilently(entry.socket, 1000, "debug_close");
     };
     if (sessionId) {
-        const entry = websocketSessionCache.get(sessionId);
-        if (entry)
+        for (const entry of websocketSessionCache.get(sessionId)?.values() ?? [])
             closeEntry(entry);
         websocketSessionCache.delete(sessionId);
         return;
     }
-    for (const entry of websocketSessionCache.values()) {
-        closeEntry(entry);
+    for (const accountEntries of websocketSessionCache.values()) {
+        for (const entry of accountEntries.values())
+            closeEntry(entry);
     }
     websocketSessionCache.clear();
 }
@@ -663,13 +773,16 @@ function isWebSocketReusable(socket) {
     // If readyState is unavailable, assume the runtime keeps it open/reusable.
     return readyState === undefined || readyState === 1;
 }
+function isWebSocketSessionExpired(entry) {
+    return Date.now() - entry.createdAt >= SESSION_WEBSOCKET_MAX_AGE_MS;
+}
 function closeWebSocketSilently(socket, code = 1000, reason = "done") {
     try {
         socket.close(code, reason);
     }
     catch { }
 }
-function scheduleSessionWebSocketExpiry(sessionId, entry) {
+function scheduleSessionWebSocketExpiry(sessionId, accountId, entry) {
     if (entry.idleTimer) {
         clearTimeout(entry.idleTimer);
     }
@@ -677,7 +790,11 @@ function scheduleSessionWebSocketExpiry(sessionId, entry) {
         if (entry.busy)
             return;
         closeWebSocketSilently(entry.socket, 1000, "idle_timeout");
-        websocketSessionCache.delete(sessionId);
+        const accountEntries = websocketSessionCache.get(sessionId);
+        if (accountEntries?.get(accountId) === entry)
+            accountEntries.delete(accountId);
+        if (accountEntries?.size === 0)
+            websocketSessionCache.delete(sessionId);
     }, SESSION_WEBSOCKET_CACHE_TTL_MS);
 }
 async function connectWebSocket(url, headers, signal, connectTimeoutMs = DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS, env) {
@@ -748,7 +865,7 @@ async function connectWebSocket(url, headers, signal, connectTimeoutMs = DEFAULT
         }
     });
 }
-async function acquireWebSocket(url, headers, sessionId, signal, connectTimeoutMs, env) {
+async function acquireWebSocket(url, headers, sessionId, accountId, signal, connectTimeoutMs, env) {
     if (!sessionId) {
         const socket = await connectWebSocket(url, headers, signal, connectTimeoutMs, env);
         return {
@@ -757,13 +874,20 @@ async function acquireWebSocket(url, headers, sessionId, signal, connectTimeoutM
             release: () => closeWebSocketSilently(socket),
         };
     }
-    const cached = websocketSessionCache.get(sessionId);
+    let accountEntries = websocketSessionCache.get(sessionId);
+    const cached = accountEntries?.get(accountId);
     if (cached) {
         if (cached.idleTimer) {
             clearTimeout(cached.idleTimer);
             cached.idleTimer = undefined;
         }
-        if (!cached.busy && isWebSocketReusable(cached.socket)) {
+        if (!cached.busy && isWebSocketSessionExpired(cached)) {
+            closeWebSocketSilently(cached.socket, 1000, "connection_age_limit");
+            accountEntries?.delete(accountId);
+            if (accountEntries?.size === 0)
+                websocketSessionCache.delete(sessionId);
+        }
+        else if (!cached.busy && isWebSocketReusable(cached.socket)) {
             cached.busy = true;
             return {
                 socket: cached.socket,
@@ -772,11 +896,15 @@ async function acquireWebSocket(url, headers, sessionId, signal, connectTimeoutM
                 release: ({ keep } = {}) => {
                     if (!keep || !isWebSocketReusable(cached.socket)) {
                         closeWebSocketSilently(cached.socket);
-                        websocketSessionCache.delete(sessionId);
+                        const currentEntries = websocketSessionCache.get(sessionId);
+                        if (currentEntries?.get(accountId) === cached)
+                            currentEntries.delete(accountId);
+                        if (currentEntries?.size === 0)
+                            websocketSessionCache.delete(sessionId);
                         return;
                     }
                     cached.busy = false;
-                    scheduleSessionWebSocketExpiry(sessionId, cached);
+                    scheduleSessionWebSocketExpiry(sessionId, accountId, cached);
                 },
             };
         }
@@ -792,12 +920,19 @@ async function acquireWebSocket(url, headers, sessionId, signal, connectTimeoutM
         }
         if (!isWebSocketReusable(cached.socket)) {
             closeWebSocketSilently(cached.socket);
-            websocketSessionCache.delete(sessionId);
+            accountEntries?.delete(accountId);
+            if (accountEntries?.size === 0)
+                websocketSessionCache.delete(sessionId);
         }
     }
     const socket = await connectWebSocket(url, headers, signal, connectTimeoutMs, env);
-    const entry = { socket, busy: true };
-    websocketSessionCache.set(sessionId, entry);
+    const entry = { socket, busy: true, createdAt: Date.now() };
+    accountEntries = websocketSessionCache.get(sessionId);
+    if (!accountEntries) {
+        accountEntries = new Map();
+        websocketSessionCache.set(sessionId, accountEntries);
+    }
+    accountEntries.set(accountId, entry);
     return {
         socket,
         entry,
@@ -807,13 +942,15 @@ async function acquireWebSocket(url, headers, sessionId, signal, connectTimeoutM
                 closeWebSocketSilently(entry.socket);
                 if (entry.idleTimer)
                     clearTimeout(entry.idleTimer);
-                if (websocketSessionCache.get(sessionId) === entry) {
+                const currentEntries = websocketSessionCache.get(sessionId);
+                if (currentEntries?.get(accountId) === entry)
+                    currentEntries.delete(accountId);
+                if (currentEntries?.size === 0)
                     websocketSessionCache.delete(sessionId);
-                }
                 return;
             }
             entry.busy = false;
-            scheduleSessionWebSocketExpiry(sessionId, entry);
+            scheduleSessionWebSocketExpiry(sessionId, accountId, entry);
         },
     };
 }
@@ -1023,26 +1160,25 @@ function buildCachedWebSocketRequestBody(entry, body) {
         input: delta,
     };
 }
-async function* startWebSocketOutputOnFirstEvent(events, output, stream, onStart) {
+async function* startWebSocketOutputOnFirstEvent(events, onStart) {
     let started = false;
     for await (const event of events) {
         if (!started) {
             started = true;
             onStart();
-            stream.push({ type: "start", partial: output });
         }
         yield event;
     }
 }
-async function processWebSocketStream(url, body, headers, output, stream, model, onStart, idleTimeoutMs, websocketConnectTimeoutMs, options) {
-    const { socket, entry, reused, release } = await acquireWebSocket(url, headers, options?.sessionId, options?.signal, websocketConnectTimeoutMs, options?.env);
+async function processWebSocketStream(url, body, headers, output, stream, model, onStart, idleTimeoutMs, websocketConnectTimeoutMs, cacheSessionId, accountId, grammarToolInputProperties, options) {
+    const { socket, entry, reused, release } = await acquireWebSocket(url, headers, cacheSessionId, accountId, options?.signal, websocketConnectTimeoutMs, options?.env);
     let keepConnection = true;
     const useCachedContext = options?.transport === "websocket-cached" || options?.transport === "auto";
     // ChatGPT Codex Responses rejects `store: true` ("Store must be set to false").
     // WebSocket continuation still works via connection-scoped previous_response_id state.
     const fullBody = body;
     const requestBody = useCachedContext && entry ? buildCachedWebSocketRequestBody(entry, fullBody) : fullBody;
-    const stats = options?.sessionId ? getOrCreateWebSocketDebugStats(options.sessionId) : undefined;
+    const stats = cacheSessionId ? getOrCreateWebSocketDebugStats(cacheSessionId) : undefined;
     if (stats) {
         stats.requests++;
         if (reused)
@@ -1067,8 +1203,9 @@ async function processWebSocketStream(url, body, headers, output, stream, model,
     }
     try {
         socket.send(JSON.stringify({ type: "response.create", ...requestBody }));
-        await processResponsesStream(startWebSocketOutputOnFirstEvent(mapCodexEvents(parseWebSocket(socket, options?.signal, idleTimeoutMs)), output, stream, onStart), output, stream, model, {
+        await processResponsesStream(startWebSocketOutputOnFirstEvent(mapCodexEvents(parseWebSocket(socket, options?.signal, idleTimeoutMs), output, model, options?.onProviderStreamEvent), onStart), output, stream, model, {
             serviceTier: options?.serviceTier,
+            grammarToolInputProperties,
             resolveServiceTier: resolveCodexServiceTier,
             applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
         });
@@ -1076,9 +1213,10 @@ async function processWebSocketStream(url, body, headers, output, stream, model,
             keepConnection = false;
         }
         else if (useCachedContext && entry && output.responseId) {
-            const responseItems = convertResponsesMessages(model, { messages: [output] }, CODEX_TOOL_CALL_PROVIDERS, {
+            const responseItems = convertResponsesMessages(model, normalizeContext({ messages: [output] }), CODEX_TOOL_CALL_PROVIDERS, {
                 includeSystemPrompt: false,
-            }).filter((item) => item.type !== "function_call_output");
+                grammarToolInputProperties,
+            }).filter((item) => item.type !== "function_call_output" && item.type !== "custom_tool_call_output");
             entry.continuation = {
                 lastRequestBody: fullBody,
                 lastResponseId: output.responseId,
@@ -1141,14 +1279,12 @@ function extractAccountId(token) {
         throw new Error("Failed to extract accountId from token");
     }
 }
-function createCodexRequestId() {
-    if (typeof globalThis.crypto?.randomUUID === "function") {
-        return globalThis.crypto.randomUUID();
-    }
-    return `codex_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
 function buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token) {
-    const headers = new Headers(initHeaders);
+    // Defaults first so model and caller headers can override them, matching the other providers.
+    const headers = new Headers({ originator: "pi", "User-Agent": getPiUserAgent() });
+    for (const [key, value] of Object.entries(initHeaders || {})) {
+        headers.set(key, value);
+    }
     for (const [key, value] of Object.entries(additionalHeaders || {})) {
         if (value === null) {
             headers.delete(key);
@@ -1159,9 +1295,6 @@ function buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token)
     }
     headers.set("Authorization", `Bearer ${token}`);
     headers.set("chatgpt-account-id", accountId);
-    headers.set("originator", "pi");
-    const userAgent = _os ? `pi (${_os.platform()} ${_os.release()}; ${_os.arch()})` : "pi (browser)";
-    headers.set("User-Agent", userAgent);
     return headers;
 }
 function buildSSEHeaders(initHeaders, additionalHeaders, accountId, token, sessionId) {
@@ -1187,4 +1320,3 @@ function buildWebSocketHeaders(initHeaders, additionalHeaders, accountId, token,
     return headers;
 }
 //# sourceMappingURL=openai-codex-responses.js.map
-

@@ -22,11 +22,19 @@ const { createRoutineHostController } = require("./routine-host.cjs");
 const { WorkspaceCreateError, createWorkspaceDirectory } = require("./workspace-create.cjs");
 const workspaceGit = require("./workspace-git.cjs");
 
-app.commandLine.appendSwitch("log-level", "3");
-app.commandLine.appendSwitch("enable-gpu-rasterization");
-app.commandLine.appendSwitch("enable-zero-copy");
-app.commandLine.appendSwitch("ignore-gpu-blocklist");
-app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+if (process.env.METIS_DISABLE_GPU || process.argv.includes("--disable-gpu")) {
+	app.disableHardwareAcceleration();
+} else {
+	app.commandLine.appendSwitch("log-level", "3");
+	app.commandLine.appendSwitch("enable-gpu-rasterization");
+	app.commandLine.appendSwitch("enable-zero-copy");
+	app.commandLine.appendSwitch("ignore-gpu-blocklist");
+	app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+}
+
+app.on("child-process-gone", (_event, details) => {
+	console.warn(`[desktop] Child process gone: type=${details.type}, reason=${details.reason}, exitCode=${details.exitCode}`);
+});
 
 const execFileAsync = promisify(execFile);
 const MAX_TREE_ITEMS = 600;
@@ -501,6 +509,63 @@ function createWindow() {
 	mainWindow.webContents.on("did-finish-load", () => {
 		if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
 			mainWindow.show();
+		}
+	});
+
+	mainWindow.webContents.on("render-process-gone", (_event, details) => {
+		console.error(`[desktop] Render process gone: reason=${details.reason}, exitCode=${details.exitCode}`);
+		if (details.reason === "clean-exit" || appIsQuitting) return;
+		if (mainWindow && !mainWindow.isDestroyed()) {
+			try {
+				const choice = dialog.showMessageBoxSync(mainWindow, {
+					type: "error",
+					title: nativeText("renderProcessCrashedTitle") || "Metis - Page Crashed",
+					message: nativeText("renderProcessCrashedMessage") || "The window encountered an unexpected crash.",
+					detail: `${nativeText("crashReason") || "Reason"}: ${details.reason} (${details.exitCode})\n\n${nativeText("crashReloadPrompt") || "Click Reload to restore the window."}`,
+					buttons: [nativeText("reload") || "Reload", nativeText("menuQuit", { appName: "Metis" }) || "Quit"],
+					defaultId: 0,
+					cancelId: 1,
+				});
+				if (choice === 0) {
+					mainWindow.webContents.reload();
+				} else {
+					app.quit();
+				}
+			} catch (err) {
+				console.error("[desktop] Failed to display crash dialog, auto-reloading:", err);
+				try {
+					mainWindow.webContents.reload();
+				} catch {}
+			}
+		}
+	});
+
+	mainWindow.on("unresponsive", () => {
+		console.warn("[desktop] Main window became unresponsive.");
+	});
+
+	mainWindow.webContents.on("before-input-event", (event, input) => {
+		if (input.type !== "keyDown") return;
+		const isCmdOrCtrl = process.platform === "darwin" ? input.meta : input.control;
+		const key = String(input.key || "").toLowerCase();
+		// Reload: Cmd+R / Ctrl+R or F5
+		if ((isCmdOrCtrl && key === "r" && !input.alt) || input.key === "F5") {
+			if (input.shift) {
+				mainWindow.webContents.reloadIgnoringCache();
+			} else {
+				mainWindow.webContents.reload();
+			}
+			event.preventDefault();
+			return;
+		}
+		// DevTools: Cmd+Alt+I / Ctrl+Shift+I or F12
+		if (
+			((process.platform === "darwin" ? (input.meta && input.alt) : (input.control && input.shift)) && key === "i")
+			|| input.key === "F12"
+		) {
+			mainWindow.webContents.toggleDevTools();
+			event.preventDefault();
+			return;
 		}
 	});
 	mainWindow.once("ready-to-show", () => {
@@ -2148,6 +2213,20 @@ function registerIpc() {
 		return { preference: desktopTheme, resolved: nativeTheme.shouldUseDarkColors ? "dark" : "light" };
 	});
 	ipcMain.handle("app:quit", () => app.quit());
+	ipcMain.handle("app:reload", () => {
+		if (mainWindow && !mainWindow.isDestroyed()) {
+			mainWindow.webContents.reload();
+			return true;
+		}
+		return false;
+	});
+	ipcMain.handle("app:open-devtools", () => {
+		if (mainWindow && !mainWindow.isDestroyed()) {
+			mainWindow.webContents.openDevTools({ mode: "detach" });
+			return true;
+		}
+		return false;
+	});
 	ipcMain.handle("clipboard:write-text", (_event, text) => clipboard.writeText(String(text ?? "")));
 	ipcMain.handle("attachment:save", async (_event, input = {}) => {
 		const encoded = String(input.data || "");

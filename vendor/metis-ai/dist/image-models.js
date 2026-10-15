@@ -1,24 +1,24 @@
-import { IMAGE_MODELS } from "./image-models.generated.js";
-const imageModelRegistry = new Map();
+import { IMAGE_MODELS } from "./models.generated.js";
+const imageModelsByProvider = new Map();
 for (const [provider, models] of Object.entries(IMAGE_MODELS)) {
-    const providerModels = new Map();
-    for (const [id, model] of Object.entries(models)) {
-        providerModels.set(id, model);
+    const imageModels = new Map();
+    for (const model of Object.values(models)) {
+        imageModels.set(model.id, model);
     }
-    imageModelRegistry.set(provider, providerModels);
+    if (imageModels.size > 0)
+        imageModelsByProvider.set(provider, imageModels);
 }
+/** @deprecated Static catalog read. Use `getBuiltinImageModel` from "@earendil-works/pi-ai/providers/all" or `Models.getModelOfType("image", ...)`. */
 export function getImageModel(provider, modelId) {
-    const providerModels = imageModelRegistry.get(provider);
-    return providerModels?.get(modelId);
+    return imageModelsByProvider.get(provider)?.get(modelId);
 }
+/** @deprecated Static catalog read. Use `Models.getProviders()`. */
 export function getImageProviders() {
-    return Array.from(imageModelRegistry.keys());
+    return Array.from(imageModelsByProvider.keys());
 }
+/** @deprecated Static catalog read. Use `getBuiltinImageModels` from "@earendil-works/pi-ai/providers/all" or `Models.getModelsOfType("image")`. */
 export function getImageModels(provider) {
-    const models = imageModelRegistry.get(provider);
-    return models
-        ? Array.from(models.values())
-        : [];
+    const models = imageModelsByProvider.get(provider);
+    return models ? Array.from(models.values()) : [];
 }
 //# sourceMappingURL=image-models.js.map
-

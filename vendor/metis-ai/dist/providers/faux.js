@@ -1,5 +1,6 @@
 import { createProvider } from "../models.js";
 import { createAssistantMessageEventStream } from "../utils/event-stream.js";
+import { getSystemMessageText } from "../utils/text.js";
 const DEFAULT_API = "faux";
 const DEFAULT_PROVIDER = "faux";
 const DEFAULT_MODEL_ID = "faux-1";
@@ -44,8 +45,9 @@ export function fauxAssistantMessage(content, options = {}) {
         model: DEFAULT_MODEL_ID,
         usage: DEFAULT_USAGE,
         stopReason: options.stopReason ?? "stop",
-        errorMessage: options.errorMessage,
-        responseId: options.responseId,
+        ...(options.deferred === undefined ? {} : { deferred: options.deferred }),
+        ...(options.errorMessage === undefined ? {} : { errorMessage: options.errorMessage }),
+        ...(options.responseId === undefined ? {} : { responseId: options.responseId }),
         timestamp: options.timestamp ?? Date.now(),
     };
 }
@@ -85,6 +87,15 @@ function toolResultToText(message) {
     return [message.toolName, ...message.content.map((block) => contentToText([block]))].join("\n");
 }
 function messageToText(message) {
+    if (message.role === "system") {
+        return [
+            getSystemMessageText(message),
+            ...(message.toolsRemoved?.map((tool) => `tool-:${JSON.stringify(tool)}`) ?? []),
+            ...(message.toolsAdded?.map((tool) => `tool+:${JSON.stringify(tool)}`) ?? []),
+        ]
+            .filter((part) => part.length > 0)
+            .join("\n");
+    }
     if (message.role === "user") {
         return contentToText(message.content);
     }
@@ -93,18 +104,23 @@ function messageToText(message) {
     }
     return toolResultToText(message);
 }
-function serializeContext(context) {
-    const parts = [];
-    if (context.systemPrompt) {
-        parts.push(`system:${context.systemPrompt}`);
-    }
-    for (const message of context.messages) {
-        parts.push(`${message.role}:${messageToText(message)}`);
-    }
-    if (context.tools?.length) {
-        parts.push(`tools:${JSON.stringify(context.tools)}`);
-    }
-    return parts.join("\n\n");
+/** Length of the prompt text that joins `messages` with blank lines. */
+function joinedLength(messages, count = messages.length) {
+    let length = count > 0 ? (count - 1) * 2 : 0;
+    for (let index = 0; index < count; index++)
+        length += messages[index].length;
+    return length;
+}
+/**
+ * Length of the common prefix of the two joined prompts. Equal messages are compared whole; characters are compared
+ * only from the first message that differs.
+ */
+function commonPromptPrefixLength(previous, current) {
+    let index = 0;
+    while (index < previous.length && index < current.length && previous[index] === current[index])
+        index++;
+    const rest = (messages) => index === messages.length ? "" : (index > 0 ? "\n\n" : "") + messages.slice(index).join("\n\n");
+    return joinedLength(previous, index) + commonPrefixLength(rest(previous), rest(current));
 }
 function commonPrefixLength(a, b) {
     const length = Math.min(a.length, b.length);
@@ -115,8 +131,10 @@ function commonPrefixLength(a, b) {
     return index;
 }
 function withUsageEstimate(message, context, options, promptCache) {
-    const promptText = serializeContext(context);
-    const promptTokens = estimateTokens(promptText);
+    // One text per message; the whole prompt joins them with blank lines.
+    const prompt = context.messages.map((message) => `${message.role}:${messageToText(message)}`);
+    const promptLength = joinedLength(prompt);
+    const promptTokens = Math.ceil(promptLength / 4);
     const outputTokens = estimateTokens(assistantContentToText(message.content));
     let input = promptTokens;
     let cacheRead = 0;
@@ -125,15 +143,15 @@ function withUsageEstimate(message, context, options, promptCache) {
     if (sessionId && options?.cacheRetention !== "none") {
         const previousPrompt = promptCache.get(sessionId);
         if (previousPrompt) {
-            const cachedChars = commonPrefixLength(previousPrompt, promptText);
-            cacheRead = estimateTokens(previousPrompt.slice(0, cachedChars));
-            cacheWrite = estimateTokens(promptText.slice(cachedChars));
+            const cachedChars = commonPromptPrefixLength(previousPrompt, prompt);
+            cacheRead = Math.ceil(cachedChars / 4);
+            cacheWrite = Math.ceil((promptLength - cachedChars) / 4);
             input = Math.max(0, promptTokens - cacheRead);
         }
         else {
             cacheWrite = promptTokens;
         }
-        promptCache.set(sessionId, promptText);
+        promptCache.set(sessionId, prompt);
     }
     return {
         ...message,
@@ -169,6 +187,19 @@ function cloneMessage(message, api, provider, modelId) {
         usage: cloned.usage ?? DEFAULT_USAGE,
     };
 }
+function createDeferredMessage(model, handle) {
+    return {
+        role: "assistant",
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: DEFAULT_USAGE,
+        stopReason: "deferred",
+        deferred: handle,
+        timestamp: Date.now(),
+    };
+}
 function createErrorMessage(error, api, provider, modelId) {
     return {
         role: "assistant",
@@ -198,7 +229,7 @@ function scheduleChunk(chunk, tokensPerSecond) {
     return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 async function streamWithDeltas(stream, message, minTokenSize, maxTokenSize, tokensPerSecond, signal) {
-    const partial = { ...message, content: [] };
+    const partial = { ...message, content: [], stopReason: "pending" };
     if (signal?.aborted) {
         const aborted = createAbortedMessage(partial);
         stream.push({ type: "error", reason: "aborted", error: aborted });
@@ -268,6 +299,9 @@ async function streamWithDeltas(stream, message, minTokenSize, maxTokenSize, tok
         partial.content[index].arguments = block.arguments;
         stream.push({ type: "toolcall_end", contentIndex: index, toolCall: block, partial: { ...partial } });
     }
+    if (message.stopReason === "pending") {
+        throw new Error("Faux response ended without a stop reason");
+    }
     if (message.stopReason === "error" || message.stopReason === "aborted") {
         stream.push({ type: "error", reason: message.stopReason, error: message });
         stream.end(message);
@@ -283,8 +317,9 @@ export function createFauxCore(options) {
     const maxTokenSize = Math.max(minTokenSize, options.tokenSize?.max ?? DEFAULT_MAX_TOKEN_SIZE);
     let pendingResponses = [];
     const tokensPerSecond = options.tokensPerSecond;
-    const state = { callCount: 0 };
+    const state = { callCount: 0, deferredFetchCount: 0, cancelledDeferred: [] };
     const promptCache = new Map();
+    const deferredResponses = new Map();
     const modelDefinitions = options.models?.length
         ? options.models
         : [
@@ -306,10 +341,15 @@ export function createFauxCore(options) {
         baseUrl: DEFAULT_BASE_URL,
         reasoning: definition.reasoning ?? false,
         input: definition.input ?? ["text", "image"],
+        inputLimits: definition.inputLimits,
         cost: definition.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: definition.contextWindow ?? 128000,
         maxTokens: definition.maxTokens ?? 16384,
     }));
+    const resolveResponse = async (step, context, streamOptions, requestModel) => {
+        const resolved = typeof step === "function" ? await step(context, streamOptions, state, requestModel) : step;
+        return withUsageEstimate(cloneMessage(resolved, api, provider, requestModel.id), context, streamOptions, promptCache);
+    };
     const stream = (requestModel, context, streamOptions) => {
         const outer = createAssistantMessageEventStream();
         const step = pendingResponses.shift();
@@ -324,9 +364,27 @@ export function createFauxCore(options) {
                     outer.end(message);
                     return;
                 }
-                const resolved = typeof step === "function" ? await step(context, streamOptions, state, requestModel) : step;
-                let message = cloneMessage(resolved, api, provider, requestModel.id);
-                message = withUsageEstimate(message, context, streamOptions, promptCache);
+                if (streamOptions?.deferred) {
+                    const handle = {
+                        provider: requestModel.provider,
+                        modelId: requestModel.id,
+                        api: requestModel.api,
+                        id: randomId("deferred"),
+                        ...(options.deferred?.pollAfterMs !== undefined ? { pollAfterMs: options.deferred.pollAfterMs } : {}),
+                    };
+                    deferredResponses.set(handle.id, {
+                        handle,
+                        step,
+                        context,
+                        options: streamOptions,
+                        model: requestModel,
+                        pendingFetches: Math.max(0, Math.floor(options.deferred?.pendingFetches ?? 0)),
+                        cancelled: false,
+                    });
+                    await streamWithDeltas(outer, createDeferredMessage(requestModel, handle), minTokenSize, maxTokenSize, tokensPerSecond, streamOptions.signal);
+                    return;
+                }
+                const message = await resolveResponse(step, context, streamOptions, requestModel);
                 await streamWithDeltas(outer, message, minTokenSize, maxTokenSize, tokensPerSecond, streamOptions?.signal);
             }
             catch (error) {
@@ -338,6 +396,52 @@ export function createFauxCore(options) {
         return outer;
     };
     const streamSimple = (streamModel, context, streamOptions) => stream(streamModel, context, streamOptions);
+    const fetchDeferred = (requestModel, handle, fetchOptions) => {
+        const outer = createAssistantMessageEventStream();
+        state.deferredFetchCount++;
+        queueMicrotask(async () => {
+            try {
+                await fetchOptions?.onResponse?.({ status: 200, headers: {} }, requestModel);
+                const entry = deferredResponses.get(handle.id);
+                if (!entry ||
+                    entry.handle.provider !== handle.provider ||
+                    entry.handle.modelId !== handle.modelId ||
+                    entry.handle.api !== handle.api) {
+                    throw new Error(`Unknown faux deferred response: ${handle.id}`);
+                }
+                if (entry.cancelled)
+                    throw new Error(`Faux deferred response was cancelled: ${handle.id}`);
+                if (entry.pendingFetches > 0) {
+                    entry.pendingFetches--;
+                    await streamWithDeltas(outer, createDeferredMessage(requestModel, entry.handle), minTokenSize, maxTokenSize, tokensPerSecond, fetchOptions?.signal);
+                    return;
+                }
+                if (!entry.final) {
+                    const { deferred: _deferred, signal: _submissionSignal, onResponse: _submissionOnResponse, ...submissionOptions } = entry.options ?? {};
+                    try {
+                        entry.final = await resolveResponse(entry.step, entry.context, submissionOptions, entry.model);
+                    }
+                    catch (error) {
+                        entry.final = createErrorMessage(error, api, provider, entry.model.id);
+                    }
+                }
+                await streamWithDeltas(outer, entry.final, minTokenSize, maxTokenSize, tokensPerSecond, fetchOptions?.signal);
+            }
+            catch (error) {
+                const message = createErrorMessage(error, api, provider, requestModel.id);
+                outer.push({ type: "error", reason: "error", error: message });
+                outer.end(message);
+            }
+        });
+        return outer;
+    };
+    const cancelDeferred = async (requestModel, handle, cancelOptions) => {
+        state.cancelledDeferred.push(structuredClone(handle));
+        const entry = deferredResponses.get(handle.id);
+        if (entry)
+            entry.cancelled = true;
+        await cancelOptions?.onResponse?.({ status: 200, headers: {} }, requestModel);
+    };
     function getModel(requestedModelId) {
         if (!requestedModelId) {
             return models[0];
@@ -350,6 +454,8 @@ export function createFauxCore(options) {
         models,
         stream,
         streamSimple,
+        fetchDeferred,
+        cancelDeferred,
         getModel,
         state,
         setResponses(responses) {
@@ -379,7 +485,12 @@ export function fauxProvider(options = {}) {
         id: core.provider,
         auth: { apiKey: { name: "Faux", resolve: async () => ({ auth: {} }) } },
         models: core.models,
-        api: { stream: core.stream, streamSimple: core.streamSimple },
+        api: {
+            stream: core.stream,
+            streamSimple: core.streamSimple,
+            fetchDeferred: core.fetchDeferred,
+            cancelDeferred: core.cancelDeferred,
+        },
     });
     return {
         provider,
@@ -393,4 +504,3 @@ export function fauxProvider(options = {}) {
     };
 }
 //# sourceMappingURL=faux.js.map
-

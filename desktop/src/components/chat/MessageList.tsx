@@ -3,6 +3,7 @@ import { CollaborationMode, Message, ModelOption, PendingUserInput, SendMessageO
 import { UserBubble } from './UserBubble';
 import { AssistantTurn } from './AssistantTurn';
 import LoadingState from '../primitives/LoadingState';
+import { ComponentErrorBoundary } from '../common/ComponentErrorBoundary';
 import { useI18n } from '../../i18n';
 import { useAutoScroll } from '../../hooks/useAutoScroll';
 
@@ -282,37 +283,47 @@ export const MessageList = React.memo<MessageListProps>(({
               return <UserBubble key={group.key} message={group.message} />;
             }
             return (
-              <AssistantTurn
+              <ComponentErrorBoundary
                 key={group.key}
-                messages={group.messages}
-                startedAt={group.startedAt}
-                streaming={Boolean(isStreaming && group === activeAssistantGroup)}
-                isCompacting={Boolean(isCompacting && group === activeAssistantGroup)}
-                showProgress={group === progressGroup}
-                workflowProposal={workflowProposal}
-                onOpenPlan={onOpenPlan}
-                pendingUserInput={group === progressGroup ? pendingUserInput : undefined}
-                onRetry={group.promptText ? handleRetry : undefined}
-                retryPrompt={group.promptText}
+                compact
+                title={t('turnRenderError') || '此条回答渲染遇到错误'}
+              >
+                <AssistantTurn
+                  messages={group.messages}
+                  startedAt={group.startedAt}
+                  streaming={Boolean(isStreaming && group === activeAssistantGroup)}
+                  isCompacting={Boolean(isCompacting && group === activeAssistantGroup)}
+                  showProgress={group === progressGroup}
+                  workflowProposal={workflowProposal}
+                  onOpenPlan={onOpenPlan}
+                  pendingUserInput={group === progressGroup ? pendingUserInput : undefined}
+                  onRetry={group.promptText ? handleRetry : undefined}
+                  retryPrompt={group.promptText}
+                  collaborationMode={collaborationMode}
+                  model={model}
+                  onOpenSubagent={onOpenSubagent}
+                />
+              </ComponentErrorBoundary>
+            );
+          })}
+          {showEmptyActiveTurn && (
+            <ComponentErrorBoundary
+              key="active-assistant-turn"
+              compact
+              title={t('turnRenderError') || '此条回答渲染遇到错误'}
+            >
+              <AssistantTurn
+                messages={[]}
+                startedAt={latestUserTimestamp}
+                streaming={isStreaming}
+                isCompacting={isCompacting}
+                showProgress
+                pendingUserInput={pendingUserInput}
                 collaborationMode={collaborationMode}
                 model={model}
                 onOpenSubagent={onOpenSubagent}
               />
-            );
-          })}
-          {showEmptyActiveTurn && (
-            <AssistantTurn
-              key="active-assistant-turn"
-              messages={[]}
-              startedAt={latestUserTimestamp}
-              streaming={isStreaming}
-              isCompacting={isCompacting}
-              showProgress
-              pendingUserInput={pendingUserInput}
-              collaborationMode={collaborationMode}
-              model={model}
-              onOpenSubagent={onOpenSubagent}
-            />
+            </ComponentErrorBoundary>
           )}
           {!isHomeEmpty ? (
             <div

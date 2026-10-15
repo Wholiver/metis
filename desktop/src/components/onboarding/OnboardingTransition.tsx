@@ -283,7 +283,7 @@ export const OnboardingTransition: React.FC<OnboardingTransitionProps> = ({
 
           <p className="text-[12px] leading-relaxed text-ink-2 mb-3">
             {t('onboardingTourSidebarDesc') ||
-              '快速管理多个代码工程、查看 Git 代码树与变更、编排 Agent 架构并随时切换会话。'}
+              'Browse projects, Git file trees, and routines, or orchestrate Agent harnesses and switch sessions.'}
           </p>
 
           <div className="flex flex-wrap gap-1.5 mb-3.5">
@@ -406,7 +406,7 @@ export const OnboardingTransition: React.FC<OnboardingTransitionProps> = ({
 
           <p className="text-[12px] leading-relaxed text-ink-2 mb-3">
             {t('onboardingTourInspectorDesc') ||
-              '实时比对代码变更 Diff、追踪任务执行计划 (Plan)、监视子智能体多线程并发，并提供内置安全浏览器预览。'}
+              'Review code diffs, track workflow plans, inspect subagents, and preview in the sandbox browser.'}
           </p>
 
           <div className="flex flex-wrap gap-1.5 mb-3.5">

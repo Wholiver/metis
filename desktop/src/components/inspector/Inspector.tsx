@@ -18,6 +18,7 @@ import { InspectorPlanPanel } from './InspectorPlanPanel';
 import { SubagentsList } from './SubagentsList';
 import { SubagentDetailView } from './SubagentDetailView';
 import { InspectorBrowserPanel } from './InspectorBrowserPanel';
+import { ComponentErrorBoundary } from '../common/ComponentErrorBoundary';
 
 interface InspectorProps {
   tabs: InspectorTab[];
@@ -356,17 +357,19 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
               data-inspector-panel="plan"
               data-plan-section=""
             >
-              <InspectorPlanPanel
-                viewedProposalMarkdown={tab.viewedProposalMarkdown}
-                viewedProposalSessionId={tab.viewedProposalSessionId}
-                activeSessionId={activeSessionId}
-                workflowProposal={workflowProposal}
-                workflowPlan={workflowPlan}
-                planActionsEnabled={planActionsEnabled}
-                onProcessProposal={onProcessProposal}
-                onRefineProposal={onRefineProposal}
-                contentScrollRef={selected ? contentScrollRef : undefined}
-              />
+              <ComponentErrorBoundary title={t('panelRenderError') || '此面板渲染遇到错误'}>
+                <InspectorPlanPanel
+                  viewedProposalMarkdown={tab.viewedProposalMarkdown}
+                  viewedProposalSessionId={tab.viewedProposalSessionId}
+                  activeSessionId={activeSessionId}
+                  workflowProposal={workflowProposal}
+                  workflowPlan={workflowPlan}
+                  planActionsEnabled={planActionsEnabled}
+                  onProcessProposal={onProcessProposal}
+                  onRefineProposal={onRefineProposal}
+                  contentScrollRef={selected ? contentScrollRef : undefined}
+                />
+              </ComponentErrorBoundary>
             </div>
           );
         }
@@ -388,22 +391,24 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
               data-inspector-panel="subagents"
               data-subagents-section=""
             >
-              {selectedSubagent ? (
-                <SubagentDetailView
-                  subagent={selectedSubagent}
-                  onOpenSubagent={onOpenSubagent}
-                  onStop={onStopSubagent}
-                  collaborationMode={collaborationMode}
-                  model={model}
-                  contentRef={selected ? contentScrollRef : undefined}
-                />
-              ) : (
-                <SubagentsList
-                  subagents={subagents}
-                  onSelect={(item) => onOpenSubagent?.(item.id)}
-                  onStop={onStopSubagent}
-                />
-              )}
+              <ComponentErrorBoundary title={t('panelRenderError') || '此面板渲染遇到错误'}>
+                {selectedSubagent ? (
+                  <SubagentDetailView
+                    subagent={selectedSubagent}
+                    onOpenSubagent={onOpenSubagent}
+                    onStop={onStopSubagent}
+                    collaborationMode={collaborationMode}
+                    model={model}
+                    contentRef={selected ? contentScrollRef : undefined}
+                  />
+                ) : (
+                  <SubagentsList
+                    subagents={subagents}
+                    onSelect={(item) => onOpenSubagent?.(item.id)}
+                    onStop={onStopSubagent}
+                  />
+                )}
+              </ComponentErrorBoundary>
             </div>
           );
         }
@@ -418,11 +423,13 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
               className="flex min-h-0 flex-1 flex-col overflow-hidden no-drag"
               data-inspector-panel="browser"
             >
-              <InspectorBrowserPanel
-                tab={tab}
-                modelControlled={browserModelControlled}
-                onUpdateTab={onUpdateTab}
-              />
+              <ComponentErrorBoundary title={t('panelRenderError') || '此面板渲染遇到错误'}>
+                <InspectorBrowserPanel
+                  tab={tab}
+                  modelControlled={browserModelControlled}
+                  onUpdateTab={onUpdateTab}
+                />
+              </ComponentErrorBoundary>
             </div>
           );
         }
@@ -438,12 +445,14 @@ export const Inspector = memo(forwardRef<HTMLElement, InspectorProps>(({
             data-changed-files-section=""
             data-review-section=""
           >
-            <ReviewPanel
-              sessionId={activeSessionId}
-              workspacePath={workspacePath}
-              toolParts={toolParts}
-              enabled
-            />
+            <ComponentErrorBoundary title={t('panelRenderError') || '此面板渲染遇到错误'}>
+              <ReviewPanel
+                sessionId={activeSessionId}
+                workspacePath={workspacePath}
+                toolParts={toolParts}
+                enabled
+              />
+            </ComponentErrorBoundary>
           </div>
         );
       })}

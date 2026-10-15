@@ -13,4 +13,3 @@ export function minimaxProvider() {
     });
 }
 //# sourceMappingURL=minimax.js.map
-

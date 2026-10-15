@@ -1,3 +1,4 @@
+import { clampThinkingLevel } from "../models.js";
 import { estimateContextTokens } from "../utils/estimate.js";
 const CONTEXT_SAFETY_TOKENS = 4096;
 const MIN_MAX_TOKENS = 1;
@@ -7,18 +8,30 @@ export function clampMaxTokensToContext(model, context, maxTokens) {
     const available = model.contextWindow - estimateContextTokens(context).tokens - CONTEXT_SAFETY_TOKENS;
     return Math.min(maxTokens, Math.max(MIN_MAX_TOKENS, available));
 }
+export function resolveSamplingParams(model, thinkingLevel, requestParams) {
+    const effectiveThinkingLevel = clampThinkingLevel(model, thinkingLevel);
+    const thinkingLevelParams = model.samplingParamsByThinkingLevel?.[effectiveThinkingLevel];
+    return model.samplingParams || thinkingLevelParams || requestParams
+        ? { ...model.samplingParams, ...thinkingLevelParams, ...requestParams }
+        : undefined;
+}
 export function buildBaseOptions(model, context, options, apiKey) {
+    const samplingParams = resolveSamplingParams(model, options?.reasoning ?? "off", options?.samplingParams);
     return {
         temperature: options?.temperature,
+        samplingParams,
         maxTokens: clampMaxTokensToContext(model, context, options?.maxTokens ?? model.maxTokens),
         signal: options?.signal,
+        telemetryContext: options?.telemetryContext,
         apiKey: apiKey || options?.apiKey,
+        fetch: options?.fetch,
         transport: options?.transport,
         cacheRetention: options?.cacheRetention,
         sessionId: options?.sessionId,
         headers: options?.headers,
         onPayload: options?.onPayload,
         onResponse: options?.onResponse,
+        onProviderStreamEvent: options?.onProviderStreamEvent,
         timeoutMs: options?.timeoutMs,
         websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs,
         maxRetries: options?.maxRetries,
@@ -27,27 +40,34 @@ export function buildBaseOptions(model, context, options, apiKey) {
         env: options?.env,
     };
 }
+/** Tokens always left for the answer when a thinking budget shares the response ceiling. */
+export const MIN_ANSWER_TOKENS = 1024;
+export const DEFAULT_THINKING_BUDGETS = {
+    minimal: 1024,
+    low: 2048,
+    medium: 8192,
+    high: 16384,
+};
 export function clampReasoning(effort) {
-    return effort === "xhigh" ? "high" : effort;
+    return effort === "xhigh" || effort === "max" ? "high" : effort;
+}
+export function thinkingBudgetForLevel(reasoningLevel, customBudgets) {
+    const budgets = { ...DEFAULT_THINKING_BUDGETS, ...customBudgets };
+    const level = clampReasoning(reasoningLevel);
+    return budgets[level];
+}
+/** Cap a thinking budget so at least MIN_ANSWER_TOKENS remain under a shared response ceiling. */
+export function clampThinkingBudgetToAnswerRoom(thinkingBudget, ceiling) {
+    return Math.min(thinkingBudget, Math.max(0, ceiling - MIN_ANSWER_TOKENS));
 }
 export function adjustMaxTokensForThinking(
 // Undefined means no explicit caller cap. Use the model cap and fit thinking inside it.
 baseMaxTokens, modelMaxTokens, reasoningLevel, customBudgets) {
-    const defaultBudgets = {
-        minimal: 1024,
-        low: 2048,
-        medium: 8192,
-        high: 16384,
-    };
-    const budgets = { ...defaultBudgets, ...customBudgets };
-    const minOutputTokens = 1024;
-    const level = clampReasoning(reasoningLevel);
-    let thinkingBudget = budgets[level];
+    let thinkingBudget = thinkingBudgetForLevel(reasoningLevel, customBudgets);
     const maxTokens = baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
     if (maxTokens <= thinkingBudget) {
-        thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
+        thinkingBudget = clampThinkingBudgetToAnswerRoom(thinkingBudget, maxTokens);
     }
     return { maxTokens, thinkingBudget };
 }
 //# sourceMappingURL=simple-options.js.map
-

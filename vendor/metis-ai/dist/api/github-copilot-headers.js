@@ -27,4 +27,3 @@ export function buildCopilotDynamicHeaders(params) {
     return headers;
 }
 //# sourceMappingURL=github-copilot-headers.js.map
-

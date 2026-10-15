@@ -44,11 +44,14 @@ function downgradeUnsupportedImages(messages, model) {
 export function transformMessages(messages, model, normalizeToolCallId) {
     // Build a map of original tool call IDs to normalized IDs
     const toolCallIdMap = new Map();
-    const imageAwareMessages = downgradeUnsupportedImages(messages, model);
+    // Normalize null/undefined content from untyped callers (custom tools, hand-built
+    // histories, old session files) so downstream code can rely on the type contract.
+    const normalizedMessages = messages.map((msg) => (msg.content == null ? { ...msg, content: [] } : msg));
+    const imageAwareMessages = downgradeUnsupportedImages(normalizedMessages, model);
     // First pass: transform messages (unsupported image downgrade, thinking blocks, tool call ID normalization)
     const transformed = imageAwareMessages.map((msg) => {
-        // User messages pass through unchanged
-        if (msg.role === "user") {
+        // System and user messages pass through unchanged
+        if (msg.role === "system" || msg.role === "user") {
             return msg;
         }
         // Handle toolResult messages - normalize toolCallId if we have a mapping
@@ -124,7 +127,11 @@ export function transformMessages(messages, model, normalizeToolCallId) {
     const result = [];
     let pendingToolCalls = [];
     let existingToolResultIds = new Set();
-    const insertSyntheticToolResults = () => {
+    // System messages are transparent to tool-call accounting: one that lands between a tool
+    // call and its results is held back and emitted after the results (synthetic ones
+    // included), so it never causes a duplicate result for a call that is answered later.
+    const heldSystemMessages = [];
+    const closePendingToolCalls = () => {
         if (pendingToolCalls.length > 0) {
             for (const tc of pendingToolCalls) {
                 if (!existingToolResultIds.has(tc.id)) {
@@ -141,12 +148,14 @@ export function transformMessages(messages, model, normalizeToolCallId) {
             pendingToolCalls = [];
             existingToolResultIds = new Set();
         }
+        result.push(...heldSystemMessages);
+        heldSystemMessages.length = 0;
     };
     for (let i = 0; i < transformed.length; i++) {
         const msg = transformed[i];
         if (msg.role === "assistant") {
             // If we have pending orphaned tool calls from a previous assistant, insert synthetic results now
-            insertSyntheticToolResults();
+            closePendingToolCalls();
             // Skip errored/aborted assistant messages entirely.
             // These are incomplete turns that shouldn't be replayed:
             // - May have partial content (reasoning without message, incomplete tool calls)
@@ -168,9 +177,17 @@ export function transformMessages(messages, model, normalizeToolCallId) {
             existingToolResultIds.add(msg.toolCallId);
             result.push(msg);
         }
+        else if (msg.role === "system") {
+            if (pendingToolCalls.length > 0) {
+                heldSystemMessages.push(msg);
+            }
+            else {
+                result.push(msg);
+            }
+        }
         else if (msg.role === "user") {
-            // User message interrupts tool flow - insert synthetic results for orphaned calls
-            insertSyntheticToolResults();
+            // A new user turn interrupts tool flow - insert synthetic results for orphaned calls
+            closePendingToolCalls();
             result.push(msg);
         }
         else {
@@ -178,8 +195,7 @@ export function transformMessages(messages, model, normalizeToolCallId) {
         }
     }
     // If the conversation ends with unresolved tool calls, synthesize results now.
-    insertSyntheticToolResults();
+    closePendingToolCalls();
     return result;
 }
 //# sourceMappingURL=transform-messages.js.map
-

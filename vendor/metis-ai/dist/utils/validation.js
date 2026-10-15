@@ -2,15 +2,6 @@ import { Compile } from "typebox/compile";
 import { Value } from "typebox/value";
 const validatorCache = new WeakMap();
 const TYPEBOX_KIND = Symbol.for("TypeBox.Kind");
-function isRecord(value) {
-    return typeof value === "object" && value !== null;
-}
-function isJsonSchemaObject(value) {
-    return isRecord(value);
-}
-function hasTypeBoxMetadata(schema) {
-    return isRecord(schema) && Object.getOwnPropertySymbols(schema).includes(TYPEBOX_KIND);
-}
 function getSchemaTypes(schema) {
     if (typeof schema.type === "string") {
         return [schema.type];
@@ -35,18 +26,12 @@ function matchesJsonType(value, type) {
         case "array":
             return Array.isArray(value);
         case "object":
-            return isRecord(value) && !Array.isArray(value);
+            return typeof value === "object" && value !== null && !Array.isArray(value);
         default:
             return false;
     }
 }
-function isValidatorSchema(value) {
-    return isRecord(value);
-}
 function getSubSchemaValidator(schema) {
-    if (!isValidatorSchema(schema)) {
-        return undefined;
-    }
     try {
         return getValidator(schema);
     }
@@ -138,7 +123,7 @@ function applySchemaObjectCoercion(value, schema) {
             value[key] = coerceWithJsonSchema(value[key], propertySchema);
         }
     }
-    if (schema.additionalProperties && isJsonSchemaObject(schema.additionalProperties)) {
+    if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
         for (const [key, propertyValue] of Object.entries(value)) {
             if (definedKeys.has(key)) {
                 continue;
@@ -158,13 +143,19 @@ function applySchemaArrayCoercion(value, schema) {
         }
         return;
     }
-    if (isJsonSchemaObject(schema.items)) {
+    if (schema.items && typeof schema.items === "object") {
         for (let index = 0; index < value.length; index++) {
             value[index] = coerceWithJsonSchema(value[index], schema.items);
         }
     }
 }
 function coerceWithUnionSchema(value, schemas) {
+    for (const schema of schemas) {
+        const validator = getSubSchemaValidator(schema);
+        if (validator?.Check(value)) {
+            return value;
+        }
+    }
     for (const schema of schemas) {
         const candidate = structuredClone(value);
         const coerced = coerceWithJsonSchema(candidate, schema);
@@ -199,13 +190,49 @@ function coerceWithJsonSchema(value, schema) {
             }
         }
     }
-    if (schemaTypes.includes("object") && isRecord(nextValue) && !Array.isArray(nextValue)) {
+    if (schemaTypes.includes("object") &&
+        typeof nextValue === "object" &&
+        nextValue !== null &&
+        !Array.isArray(nextValue)) {
         applySchemaObjectCoercion(nextValue, schema);
     }
     if (schemaTypes.includes("array") && Array.isArray(nextValue)) {
         applySchemaArrayCoercion(nextValue, schema);
     }
     return nextValue;
+}
+function normalizeOptionalNulls(value, schema) {
+    if (Array.isArray(value)) {
+        if (Array.isArray(schema.items)) {
+            for (let index = 0; index < value.length; index++) {
+                const itemSchema = schema.items[index];
+                if (itemSchema)
+                    normalizeOptionalNulls(value[index], itemSchema);
+            }
+        }
+        else if (schema.items) {
+            for (const item of value)
+                normalizeOptionalNulls(item, schema.items);
+        }
+        return;
+    }
+    if (typeof value !== "object" || value === null || !schema.properties)
+        return;
+    const object = value;
+    const required = new Set(schema.required ?? []);
+    for (const [key, propertySchema] of Object.entries(schema.properties)) {
+        if (!(key in object))
+            continue;
+        if (object[key] === null &&
+            !required.has(key) &&
+            typeof propertySchema.$ref !== "string" &&
+            getSubSchemaValidator(propertySchema)?.Check(null) === false) {
+            delete object[key];
+        }
+        else {
+            normalizeOptionalNulls(object[key], propertySchema);
+        }
+    }
 }
 function getValidator(schema) {
     const key = schema;
@@ -252,12 +279,13 @@ export function validateToolCall(tools, toolCall) {
  */
 export function validateToolArguments(tool, toolCall) {
     const args = structuredClone(toolCall.arguments);
+    normalizeOptionalNulls(args, tool.parameters);
     Value.Convert(tool.parameters, args);
     const validator = getValidator(tool.parameters);
-    if (!hasTypeBoxMetadata(tool.parameters) && isJsonSchemaObject(tool.parameters)) {
+    if (!Object.getOwnPropertySymbols(tool.parameters).includes(TYPEBOX_KIND)) {
         const coerced = coerceWithJsonSchema(args, tool.parameters);
         if (coerced !== args) {
-            if (isRecord(args) && isRecord(coerced)) {
+            if (typeof args === "object" && args !== null && typeof coerced === "object" && coerced !== null) {
                 for (const key of Object.keys(args)) {
                     delete args[key];
                 }
@@ -279,4 +307,3 @@ export function validateToolArguments(tool, toolCall) {
     throw new Error(errorMessage);
 }
 //# sourceMappingURL=validation.js.map
-

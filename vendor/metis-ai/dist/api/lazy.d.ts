@@ -11,6 +11,9 @@ export declare function lazyStream(model: Model<Api>, setup: () => Promise<Async
  * The module loads on first stream call; the host's import cache deduplicates
  * loads. Load failures terminate the returned stream with an error event.
  */
-export declare function lazyApi(load: () => Promise<ProviderStreams>): ProviderStreams;
+export interface LazyApiCapabilities {
+    fetchDeferred?: boolean;
+    cancelDeferred?: boolean;
+}
+export declare function lazyApi(load: () => Promise<ProviderStreams>, capabilities?: LazyApiCapabilities): ProviderStreams;
 //# sourceMappingURL=lazy.d.ts.map
-

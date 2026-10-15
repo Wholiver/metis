@@ -1,14 +1,26 @@
 /**
  * Shared utilities for Google Generative AI and Google Vertex providers.
  */
-import { type Content, FinishReason, FunctionCallingConfigMode, type Part } from "@google/genai";
-import type { Context, Model, StopReason, Tool } from "../types.ts";
+import { type Content, FinishReason, FunctionCallingConfigMode, ThinkingLevel as GoogleSdkThinkingLevel, type Part, type ThinkingConfig } from "@google/genai";
+import type { Model, StopReason, StreamOptions, ThinkingLevel, Tool, TranscriptContext } from "../types.ts";
 type GoogleApiType = "google-generative-ai" | "google-vertex";
 /**
  * Thinking level for Gemini 3 models.
  * Mirrors Google's ThinkingLevel enum values.
  */
-export type GoogleThinkingLevel = "THINKING_LEVEL_UNSPECIFIED" | "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
+export type GoogleApiThinkingLevel = "THINKING_LEVEL_UNSPECIFIED" | "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
+export type ResolvedGoogleThinkingLevel = Exclude<ThinkingLevel, "xhigh" | "max">;
+/** Resolve a supported pi level or model-specific Google mapping to a standard Google level. */
+export declare function resolveGoogleThinkingLevel<T extends GoogleApiType>(model: Model<T>, level: ThinkingLevel): ResolvedGoogleThinkingLevel;
+/**
+ * Whether this model uses Gemini's discrete `thinkingLevel` control instead of
+ * the token-based `thinkingBudget` control. Supported levels come from the
+ * model's `thinkingLevelMap`; this only selects the Google wire format.
+ */
+export declare function usesGoogleThinkingLevel<T extends GoogleApiType>(model: Model<T>): boolean;
+export declare function toGoogleThinkingLevel(level: ResolvedGoogleThinkingLevel): GoogleApiThinkingLevel;
+export declare function toGoogleSdkThinkingLevel(level: GoogleApiThinkingLevel): GoogleSdkThinkingLevel;
+export declare function getDisabledGoogleThinkingConfig<T extends GoogleApiType>(model: Model<T>): ThinkingConfig;
 /**
  * Determines whether a streamed Gemini `Part` should be treated as "thinking".
  *
@@ -42,7 +54,7 @@ export declare function requiresToolCallId(modelId: string): boolean;
 /**
  * Convert internal messages to Gemini Content[] format.
  */
-export declare function convertMessages<T extends GoogleApiType>(model: Model<T>, context: Context): Content[];
+export declare function convertMessages<T extends GoogleApiType>(model: Model<T>, context: TranscriptContext): Content[];
 /**
  * Convert tools to Gemini function declarations format.
  *
@@ -51,13 +63,14 @@ export declare function convertMessages<T extends GoogleApiType>(model: Model<T>
  * field instead (OpenAPI 3.03 Schema). This is needed for Cloud Code Assist with Claude
  * models, where the API translates `parameters` into Anthropic's `input_schema`.
  */
-export declare function convertTools(tools: Tool[], useParameters?: boolean): {
+export declare function convertTools(tools: Tool[], useParameters?: boolean, supportsStrictMode?: boolean): {
     functionDeclarations: Record<string, unknown>[];
 }[] | undefined;
-/**
- * Map tool choice string to Gemini FunctionCallingConfigMode.
- */
+/** Gemini 3+ enforces required function parameters in validated tool-calling modes. */
+export declare function supportsGoogleStrictToolSampling(modelId: string): boolean;
+/** Map tool choice string to Gemini FunctionCallingConfigMode. */
 export declare function mapToolChoice(choice: string): FunctionCallingConfigMode;
+export declare function resolveGoogleFunctionCallingMode(tools: Tool[], toolChoice: string | undefined, supportsStrictMode: boolean): FunctionCallingConfigMode | undefined;
 /**
  * Map Gemini FinishReason to our StopReason.
  */
@@ -66,6 +79,15 @@ export declare function mapStopReason(reason: FinishReason): StopReason;
  * Map string finish reason to our StopReason (for raw API responses).
  */
 export declare function mapStopReasonString(reason: string): StopReason;
+/**
+ * Run a Google GenAI SDK request with the shared provider retry policy
+ * (408/409/429/5xx with backoff, honoring retry-after), mirroring how the
+ * Anthropic and OpenAI adapters wrap their initial request in
+ * retryProviderRequest. The SDK's ApiError has a `status` property but no
+ * `headers` property, and retryProviderRequest only retries errors that carry
+ * both, so normalize the error by adding the missing `headers` before
+ * rethrowing.
+ */
+export declare function retryGoogleRequest<T>(request: () => Promise<T>, options?: Pick<StreamOptions, "maxRetries" | "maxRetryDelayMs" | "signal">): Promise<T>;
 export {};
 //# sourceMappingURL=google-shared.d.ts.map
-

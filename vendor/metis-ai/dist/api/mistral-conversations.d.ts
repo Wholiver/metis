@@ -2,7 +2,7 @@ import type { SimpleStreamOptions, StreamFunction, StreamOptions } from "../type
 /**
  * Provider-specific options for the Mistral API.
  */
-type MistralReasoningEffort = "none" | "high";
+type MistralReasoningEffort = "none" | "low" | "medium" | "high" | "max";
 export interface MistralOptions extends StreamOptions {
     toolChoice?: "auto" | "none" | "any" | "required" | {
         type: "function";
@@ -14,7 +14,7 @@ export interface MistralOptions extends StreamOptions {
     reasoningEffort?: MistralReasoningEffort;
 }
 /**
- * Stream responses from Mistral using `chat.stream`.
+ * Stream responses from the native Mistral Chat Completions endpoint.
  */
 export declare const stream: StreamFunction<"mistral-conversations", MistralOptions>;
 /**
@@ -23,4 +23,3 @@ export declare const stream: StreamFunction<"mistral-conversations", MistralOpti
 export declare const streamSimple: StreamFunction<"mistral-conversations", SimpleStreamOptions>;
 export {};
 //# sourceMappingURL=mistral-conversations.d.ts.map
-

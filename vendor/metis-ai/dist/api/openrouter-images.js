@@ -1,7 +1,9 @@
 import OpenAI from "openai";
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.js";
 import { headersToRecord, providerHeadersToRecord } from "../utils/headers.js";
+import { retryProviderRequest } from "../utils/provider-retry.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+/** Image generation over OpenRouter's chat completions endpoint. */
 export const generateImages = async (model, context, options) => {
     const output = {
         api: model.api,
@@ -16,7 +18,7 @@ export const generateImages = async (model, context, options) => {
         if (!apiKey) {
             throw new Error(`No API key for provider: ${model.provider}`);
         }
-        const client = createClient(model, apiKey, options?.headers);
+        const client = createClient(model, apiKey, options?.headers, options?.fetch);
         let params = buildParams(model, context);
         const nextParams = await options?.onPayload?.(params, model);
         if (nextParams !== undefined) {
@@ -25,11 +27,15 @@ export const generateImages = async (model, context, options) => {
         const requestOptions = {
             ...(options?.signal ? { signal: options.signal } : {}),
             ...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
-            maxRetries: options?.maxRetries ?? 0,
+            maxRetries: 0,
         };
-        const { data: response, response: rawResponse } = await client.chat.completions
+        const { data: response, response: rawResponse } = await retryProviderRequest(() => client.chat.completions
             .create(params, requestOptions)
-            .withResponse();
+            .withResponse(), {
+            maxRetries: options?.maxRetries,
+            maxRetryDelayMs: options?.maxRetryDelayMs,
+            signal: options?.signal,
+        });
         await options?.onResponse?.({ status: rawResponse.status, headers: headersToRecord(rawResponse.headers) }, model);
         const imageResponse = response;
         output.responseId = imageResponse.id;
@@ -64,11 +70,12 @@ export const generateImages = async (model, context, options) => {
         return output;
     }
 };
-function createClient(model, apiKey, optionsHeaders) {
+function createClient(model, apiKey, optionsHeaders, fetch) {
     return new OpenAI({
         apiKey,
         baseURL: model.baseUrl,
         dangerouslyAllowBrowser: true,
+        fetch,
         defaultHeaders: providerHeadersToRecord({ ...model.headers, ...optionsHeaders }),
     });
 }
@@ -124,4 +131,3 @@ function parseUsage(rawUsage, model) {
     return usage;
 }
 //# sourceMappingURL=openrouter-images.js.map
-

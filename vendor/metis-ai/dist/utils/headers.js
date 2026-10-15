@@ -5,15 +5,16 @@ export function headersToRecord(headers) {
     }
     return result;
 }
-export function providerHeadersToRecord(headers) {
-    if (!headers)
-        return undefined;
-    const result = {};
-    for (const [key, value] of Object.entries(headers)) {
-        if (value !== null)
-            result[key] = value;
+export function providerHeadersToRecord(...headerSources) {
+    const merged = new Map();
+    for (const source of headerSources) {
+        for (const [name, value] of Object.entries(source ?? {})) {
+            const normalizedName = name.toLowerCase();
+            merged.delete(normalizedName);
+            if (value !== null)
+                merged.set(normalizedName, [name, value]);
+        }
     }
-    return Object.keys(result).length > 0 ? result : undefined;
+    return merged.size > 0 ? Object.fromEntries(merged.values()) : undefined;
 }
 //# sourceMappingURL=headers.js.map
-

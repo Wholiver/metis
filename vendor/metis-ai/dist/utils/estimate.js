@@ -1,4 +1,5 @@
-const CHARS_PER_TOKEN = 4;
+import { getSystemMessageText } from "./text.js";
+const CHARS_PER_TOKEN = 3.5;
 const ESTIMATED_IMAGE_CHARS = 4800;
 export function calculateContextTokens(usage) {
     return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
@@ -27,6 +28,11 @@ export function estimateTextAndImageContentTokens(content) {
 }
 export function estimateMessageTokens(message) {
     let chars = 0;
+    if (message.role === "system") {
+        return (estimateTextTokens(getSystemMessageText(message)) +
+            estimateToolsTokens(message.toolsAdded) +
+            estimateToolsTokens(message.toolsRemoved));
+    }
     if (message.role === "user")
         return estimateTextAndImageContentTokens(message.content);
     if (message.role === "toolResult")
@@ -45,19 +51,28 @@ export function estimateMessageTokens(message) {
     return Math.ceil(chars / CHARS_PER_TOKEN);
 }
 function getLastAssistantUsageInfo(messages) {
-    for (let i = messages.length - 1; i >= 0; i--) {
+    let latestPrefixTimestamp = Number.NEGATIVE_INFINITY;
+    let usageInfo;
+    for (let i = 0; i < messages.length; i++) {
         const message = messages[i];
-        if (message.role !== "assistant")
-            continue;
-        const assistant = message;
-        if (assistant.stopReason === "aborted" || assistant.stopReason === "error")
-            continue;
-        if (calculateContextTokens(assistant.usage) > 0)
-            return { usage: assistant.usage, index: i };
+        if (message.role === "assistant") {
+            const assistant = message;
+            // A newer prefix message was inserted after this response (for example, a
+            // compaction summary), so its usage cannot describe the current prefix.
+            const usageAppliesToPrefix = assistant.timestamp >= latestPrefixTimestamp;
+            if (usageAppliesToPrefix &&
+                assistant.stopReason !== "aborted" &&
+                assistant.stopReason !== "error" &&
+                calculateContextTokens(assistant.usage) > 0) {
+                usageInfo = { usage: assistant.usage, index: i };
+            }
+        }
+        latestPrefixTimestamp = Math.max(latestPrefixTimestamp, message.timestamp);
     }
-    return undefined;
+    return usageInfo;
 }
-function estimateMessages(messages) {
+export function estimateContextTokens(context) {
+    const messages = "messages" in context ? context.messages : context;
     const usageInfo = getLastAssistantUsageInfo(messages);
     if (usageInfo) {
         const usageTokens = calculateContextTokens(usageInfo.usage);
@@ -72,25 +87,9 @@ function estimateMessages(messages) {
         tokens += estimateMessageTokens(message);
     return { tokens, usageTokens: 0, trailingTokens: tokens, lastUsageIndex: null };
 }
-function isMessageArray(value) {
-    return Array.isArray(value);
-}
-export function estimateContextTokens(context) {
-    if (isMessageArray(context))
-        return estimateMessages(context);
-    const estimate = estimateMessages(context.messages);
-    if (estimate.lastUsageIndex !== null)
-        return estimate;
-    let prefixTokens = context.systemPrompt ? estimateTextTokens(context.systemPrompt) : 0;
-    if (context.tools && context.tools.length > 0) {
-        prefixTokens += estimateTextTokens(safeJsonStringify(context.tools));
-    }
-    return {
-        tokens: estimate.tokens + prefixTokens,
-        usageTokens: estimate.usageTokens,
-        trailingTokens: estimate.trailingTokens + prefixTokens,
-        lastUsageIndex: estimate.lastUsageIndex,
-    };
+function estimateToolsTokens(tools) {
+    if (!tools || tools.length === 0)
+        return 0;
+    return estimateTextTokens(safeJsonStringify(tools));
 }
 //# sourceMappingURL=estimate.js.map
-

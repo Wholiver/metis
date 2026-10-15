@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 	setUiLanguage: (language) => ipcRenderer.invoke("app:set-language", language),
 	setUiTheme: (theme) => ipcRenderer.invoke("app:set-theme", theme),
 	quit: () => ipcRenderer.invoke("app:quit"),
+	reload: () => ipcRenderer.invoke("app:reload"),
+	openDevTools: () => ipcRenderer.invoke("app:open-devtools"),
 	clipboard: {
 		writeText: (text) => ipcRenderer.invoke("clipboard:write-text", text),
 	},

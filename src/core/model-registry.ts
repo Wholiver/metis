@@ -292,13 +292,13 @@ function emptyCustomModelsResult(error?: string): CustomModelsResult {
 
 function mergeCompat(
 	baseCompat: Model<Api>["compat"],
-	overrideCompat: ModelOverride["compat"],
+	overrideCompat: ModelOverride["compat"] | Model<Api>["compat"],
 ): Model<Api>["compat"] | undefined {
 	if (!overrideCompat) return baseCompat;
 
-	const base = baseCompat as OpenAICompletionsCompat | OpenAIResponsesCompat | AnthropicMessagesCompat | undefined;
-	const override = overrideCompat as OpenAICompletionsCompat | OpenAIResponsesCompat | AnthropicMessagesCompat;
-	const merged = { ...base, ...override } as OpenAICompletionsCompat | OpenAIResponsesCompat | AnthropicMessagesCompat;
+	const base = baseCompat as any;
+	const override = overrideCompat as any;
+	const merged = { ...base, ...override } as any;
 
 	const baseCompletions = base as OpenAICompletionsCompat | undefined;
 	const overrideCompletions = override as OpenAICompletionsCompat;
@@ -404,19 +404,41 @@ function endpointHost(baseUrl: string): string | undefined {
 	try { return new URL(baseUrl).hostname; } catch { return undefined; }
 }
 
+function isOpenAICompatibleProtocol(api?: Api): boolean {
+	return api === "openai-completions"
+		|| api === "openai-responses"
+		|| api === "openai-codex-responses"
+		|| api === "azure-openai-responses";
+}
+
+function normalizeBaseModelId(id: string): string {
+	let normalized = id.toLowerCase().trim();
+	normalized = normalized.split("/").at(-1) ?? normalized;
+	normalized = normalized.replace(/:+(?:free|paid|latest|batch)$/i, "");
+	// Strip minor version bumps: gpt-6.1-luna -> gpt-6-luna, gpt-6.1-sol -> gpt-6-sol
+	normalized = normalized.replace(/^([a-z0-9_-]+-[a-z]+|\b[a-z]+-\d+)\.\d+([-_].*)$/i, "$1$2");
+	// Strip proxy/deployment suffixes
+	normalized = normalized.replace(/[-_](?:pro|max|mini|turbo|flash|fast|preview|chat|spark|vip|online|search|highspeed)(?:[-_].*)?$/i, "");
+	// Normalize dot-dash numbers: claude-3-7 -> claude-3.7
+	normalized = normalized.replace(/([a-z])-(\d+)-(\d+)/gi, "$1-$2.$3");
+	return normalized;
+}
+
 function findCatalogThinkingCandidate(modelId: string, api?: Api, baseUrl?: string): CatalogThinkingCandidate | undefined {
 	const fullId = normalizeCapabilityModelId(modelId);
 	const tailId = fullId.split("/").at(-1) ?? fullId;
 	const host = baseUrl ? endpointHost(baseUrl) : undefined;
+	const baseTailId = normalizeBaseModelId(tailId);
 	let best: { candidate: CatalogThinkingCandidate; score: number } | undefined;
 	for (const candidate of getThinkingCatalog()) {
-		// Only transfer capabilities across the two OpenAI protocols. Native
-		// Anthropic/Google controls cannot be assumed on an OpenAI-compatible proxy.
+		// Only transfer capabilities across compatible protocols.
 		if (api && candidate.model.api !== api
-			&& !(api === "openai-completions" && candidate.model.api === "openai-responses" && candidate.provider === "openai")) continue;
+			&& !(isOpenAICompatibleProtocol(api) && isOpenAICompatibleProtocol(candidate.model.api))) continue;
 		let score = -1;
 		if (candidate.fullId === fullId) score = 1000;
 		else if (candidate.tailId === tailId) score = 700;
+		else if (candidate.tailId === baseTailId) score = 600;
+		else if (normalizeBaseModelId(candidate.tailId) === baseTailId) score = 500;
 		if (score < 0) continue;
 		if (candidate.model.reasoning) score += 250;
 		score += preferredProviderScore(candidate.provider, modelId);
@@ -429,8 +451,7 @@ function findCatalogThinkingCandidate(modelId: string, api?: Api, baseUrl?: stri
 function inferReasoningFromModelId(modelId: string): boolean {
 	const id = normalizeCapabilityModelId(modelId);
 	return [
-		/(?:^|[\/_-])glm-(?:4\.[5-9]|[5-9])(?:[.\/_-]|$)/,
-		/(?:^|[\/_-])deepseek-(?:r1|reasoner|v[3-9])(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])deepseek-(?:r1|reasoner|flash|v[3-9])(?:[.\/_-]|$)/,
 		/(?:^|[\/_-])qwq(?:[.\/_-]|$)/,
 		/(?:^|[\/_-])qwen3(?:\.[5-9])?(?:[.\/_-]|$)/,
 		/(?:^|[\/_-])gpt-[5-9](?:[.\/_-]|$)/,
@@ -441,6 +462,9 @@ function inferReasoningFromModelId(modelId: string): boolean {
 		/(?:^|[\/_-])kimi-(?:k2[.-](?:5|6|7)|k3|.*thinking)(?:[.\/_-]|$)/,
 		/(?:^|[\/_-])minimax-m(?:2[.-][5-9]|[3-9])(?:[.\/_-]|$)/,
 		/(?:^|[\/_-])magistral(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])step-(?:3\.[5-9]|[4-9]|.*thinking)(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])(?:codex|reasoner|reasoning|thinking)(?:[.\/_-]|$)/,
+		/(?:^|[\/_-])(?:astra|luna|sol)(?:[.\/_-]|$)/,
 	].some((pattern) => pattern.test(id));
 }
 
@@ -466,34 +490,56 @@ function selectThinkingCompat(candidate: Model<Api> | undefined, api: Api, model
 				&& (candidate?.compat as OpenAICompletionsCompat | undefined)?.supportsReasoningEffort === true,
 		};
 	}
+	const host = baseUrl ? endpointHost(baseUrl) : undefined;
+	const candidateHost = candidate?.baseUrl ? endpointHost(candidate.baseUrl) : undefined;
+	const hostMatches = Boolean(host && candidateHost && host === candidateHost);
+
+	const id = normalizeCapabilityModelId(modelId);
+	const isQwenFamily = /qwen|qwq/.test(id);
+	const isDeepSeekOrKimiFamily = /deepseek|(?:^|\/)r1(?:-|$)|kimi/.test(id);
+	const isGlmFamily = /glm/.test(id);
+
 	if (candidate?.api === api && candidate.compat) {
-		const source = candidate.compat as Record<string, unknown>;
-		const selected: Record<string, unknown> = {};
-		for (const key of [
-			"supportsReasoningEffort",
-			"requiresThinkingAsText",
-			"requiresReasoningContentOnAssistantMessages",
-			"thinkingFormat",
-			"forceReasoning",
-			"forceAdaptiveThinking",
-		]) {
-			if (source[key] !== undefined) selected[key] = source[key];
+		const isAggregator = candidate.provider.startsWith("qwen-token-plan") || candidate.provider === "openrouter" || candidate.provider === "vercel-ai-gateway";
+		if (hostMatches || (!isAggregator && (
+			(isQwenFamily && candidate.provider.includes("qwen")) ||
+			(isDeepSeekOrKimiFamily && (candidate.provider.includes("deepseek") || candidate.provider.includes("moonshot"))) ||
+			(isGlmFamily && candidate.provider.includes("zai"))
+		))) {
+			const source = candidate.compat as Record<string, unknown>;
+			const selected: Record<string, unknown> = {};
+			for (const key of [
+				"supportsReasoningEffort",
+				"requiresThinkingAsText",
+				"requiresReasoningContentOnAssistantMessages",
+				"thinkingFormat",
+				"forceReasoning",
+				"forceAdaptiveThinking",
+			]) {
+				if (source[key] !== undefined) selected[key] = source[key];
+			}
+			if (Object.keys(selected).length > 0) return selected as Model<Api>["compat"];
 		}
-		if (Object.keys(selected).length > 0) return selected as Model<Api>["compat"];
 	}
 
 	if (api !== "openai-completions") return undefined;
 	const url = baseUrl.toLowerCase();
 	if (/openrouter|together\.ai|api\.z\.ai|open\.bigmodel\.cn/.test(url)) return undefined;
-	const id = normalizeCapabilityModelId(modelId);
-	if (/glm/.test(id)) return { thinkingFormat: "zai" } as Model<Api>["compat"];
-	if (/deepseek|(?:^|\/)r1(?:-|$)|kimi/.test(id)) {
+	if (isGlmFamily) return { thinkingFormat: "zai" } as Model<Api>["compat"];
+	if (/kimi/.test(id)) {
+		return {
+			thinkingFormat: "deepseek",
+			supportsReasoningEffort: false,
+			requiresReasoningContentOnAssistantMessages: true,
+		} as Model<Api>["compat"];
+	}
+	if (/deepseek|(?:^|\/)r1(?:-|$)/.test(id)) {
 		return {
 			thinkingFormat: "deepseek",
 			requiresReasoningContentOnAssistantMessages: true,
 		} as Model<Api>["compat"];
 	}
-	if (/qwen|qwq/.test(id)) return { thinkingFormat: "qwen" } as Model<Api>["compat"];
+	if (isQwenFamily) return { thinkingFormat: "qwen", supportsReasoningEffort: false } as Model<Api>["compat"];
 	return undefined;
 }
 
@@ -503,7 +549,7 @@ function selectThinkingCompat(candidate: Model<Api> | undefined, api: Api, model
 function documentedGlmThinking(modelId: string, api: Api, baseUrl: string): ResolvedThinkingCapabilities | undefined {
 	if (api !== "openai-completions") return undefined;
 	const id = normalizeCapabilityModelId(modelId).split("/").at(-1)!;
-	const is53 = /^glm-5\.3(?:-flash)?$/.test(id);
+	const is53 = /^glm-5\.3(?:-(?:flash|highspeed))?$/.test(id);
 	const is52 = /^glm-5\.2(?:-highspeed)?$/.test(id);
 	const isToggleOnly = /^(?:glm-4\.5(?:v|-(?:air|airx|x|flash))?|glm-4\.6|glm-4\.7(?:-flashx?)?|glm-5(?:-turbo|\.1)?)$/.test(id);
 	if (!is53 && !is52 && !isToggleOnly) return undefined;
@@ -530,6 +576,77 @@ function documentedGlmThinking(modelId: string, api: Api, baseUrl: string): Reso
 	};
 }
 
+function defaultReasoningThinkingCapabilities(modelId: string, api?: Api): {
+	thinkingOptions: NonNullable<Model<Api>["thinkingOptions"]>;
+	thinkingLevelMap: Model<Api>["thinkingLevelMap"];
+	compat?: Model<Api>["compat"];
+} {
+	const id = normalizeCapabilityModelId(modelId);
+	if (/qwen|qwq/i.test(id)) {
+		return {
+			thinkingOptions: [
+				{ id: "off", label: "Off", value: "off" },
+				{ id: "high", label: "On", value: "high" },
+			],
+			thinkingLevelMap: { off: "off", high: "high" } as Model<Api>["thinkingLevelMap"],
+			compat: { thinkingFormat: "qwen", supportsReasoningEffort: false } as Model<Api>["compat"],
+		};
+	}
+	if (/kimi/i.test(id)) {
+		return {
+			thinkingOptions: [
+				{ id: "off", label: "Off", value: "off" },
+				{ id: "high", label: "On", value: "high" },
+			],
+			thinkingLevelMap: { off: "off", high: "high" } as Model<Api>["thinkingLevelMap"],
+			compat: { thinkingFormat: "deepseek" } as Model<Api>["compat"],
+		};
+	}
+	if (/deepseek|(?:^|\/)r1(?:-|$)/i.test(id)) {
+		return {
+			thinkingOptions: [
+				{ id: "off", label: "Off", value: "off" },
+				{ id: "low", label: "Low", value: "low" },
+				{ id: "high", label: "High", value: "high" },
+				{ id: "max", label: "Max", value: "max" },
+			],
+			thinkingLevelMap: { off: "off", minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max" } as Model<Api>["thinkingLevelMap"],
+			compat: { thinkingFormat: "deepseek", requiresReasoningContentOnAssistantMessages: true } as Model<Api>["compat"],
+		};
+	}
+	if (/claude/i.test(id)) {
+		return {
+			thinkingOptions: [
+				{ id: "off", label: "Off", value: "off" },
+				{ id: "low", label: "Low", value: "low" },
+				{ id: "medium", label: "Medium", value: "medium" },
+				{ id: "high", label: "High", value: "high" },
+			],
+			thinkingLevelMap: { off: "off", minimal: null, low: "low", medium: "medium", high: "high", xhigh: null, max: null } as Model<Api>["thinkingLevelMap"],
+		};
+	}
+	return {
+		thinkingOptions: [
+			{ id: "off", label: "None", value: "none" },
+			{ id: "low", label: "Low", value: "low" },
+			{ id: "medium", label: "Medium", value: "medium" },
+			{ id: "high", label: "High", value: "high" },
+			{ id: "xhigh", label: "Xhigh", value: "xhigh" },
+			{ id: "max", label: "Max", value: "max" },
+		],
+		thinkingLevelMap: {
+			off: "none",
+			minimal: null,
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: "max",
+		} as Model<Api>["thinkingLevelMap"],
+		compat: { supportsReasoningEffort: true } as Model<Api>["compat"],
+	};
+}
+
 function resolveThinkingCapabilities(options: {
 	modelId: string;
 	api: Api;
@@ -549,7 +666,10 @@ function resolveThinkingCapabilities(options: {
 
 	if (options.isCustomProvider) {
 		const documented = documentedGlmThinking(options.modelId, options.api, options.baseUrl);
-		const candidate = findCatalogThinkingCandidate(options.modelId, options.api, options.baseUrl)?.model;
+		const tailModelId = normalizeCapabilityModelId(options.modelId).split("/").at(-1)!;
+		const candidate = (documented || !/^glm-/i.test(tailModelId))
+			? findCatalogThinkingCandidate(options.modelId, options.api, options.baseUrl)?.model
+			: undefined;
 		// Older discovery saved missing metadata as false + []. Only that exact
 		// generated shape is unknown; an explicit false without [] stays disabled.
 		const legacyEmptyDiscovery = options.modelReasoning === false
@@ -572,7 +692,10 @@ function resolveThinkingCapabilities(options: {
 		if (modelThinkingOptions || configuredMap) {
 			const thinkingLevelMap =
 				configuredMap ??
-				Object.fromEntries(modelThinkingOptions!.map((option) => [option.id, option.value]));
+				Object.fromEntries([
+					...[...THINKING_LEVEL_NAMES, "max"].map((level) => [level, null]),
+					...modelThinkingOptions!.map((option) => [option.id, option.value]),
+				]);
 			return {
 				reasoning: modelThinkingOptions ? modelThinkingOptions.some((option) => option.id !== "off") : true,
 				thinkingLevelMap,
@@ -583,27 +706,42 @@ function resolveThinkingCapabilities(options: {
 		if (documented) {
 			return { ...documented, compat };
 		}
-		const reasoning = modelReasoning ?? options.providerReasoning ?? candidate?.reasoning ?? false;
-		let catalogOptions = reasoning && candidate?.reasoning ? getThinkingOptions(candidate) : undefined;
+		const reasoning = modelReasoning ?? options.providerReasoning ?? candidate?.reasoning ?? inferReasoningFromModelId(options.modelId);
+		let catalogOptions = candidate?.reasoning ? getThinkingOptions(candidate) : undefined;
+		let effectiveLevelMap = candidate?.thinkingLevelMap;
+		let effectiveCompat = compat;
+		if (reasoning && (!catalogOptions || catalogOptions.length === 0)) {
+			const defaults = defaultReasoningThinkingCapabilities(options.modelId, options.api);
+			catalogOptions = defaults.thinkingOptions;
+			effectiveLevelMap = defaults.thinkingLevelMap;
+			effectiveCompat = mergeCompat(compat, defaults.compat);
+		}
 		// A native switch is not a set of effort grades. Preserve its supported
 		// off/on boundary without displaying multiple equivalent levels.
-		const completionsCompat = compat as OpenAICompletionsCompat | undefined;
+		const completionsCompat = effectiveCompat as OpenAICompletionsCompat | undefined;
 		if (catalogOptions && options.api === "openai-completions"
 			&& (completionsCompat?.supportsReasoningEffort === false
 				|| completionsCompat?.thinkingFormat === "qwen" || completionsCompat?.thinkingFormat === "qwen-chat-template")) {
-			const off = catalogOptions.find((option) => option.id === "off");
-			const on = catalogOptions.find((option) => option.id === "high") ?? catalogOptions.find((option) => option.id !== "off");
-			catalogOptions = [...(off ? [off] : []), ...(on ? [{ ...on, label: "On" }] : [])];
+			const off = catalogOptions.find((option) => option.id === "off") ?? { id: "off", label: "Off", value: "off" };
+			const on = catalogOptions.find((option) => option.id === "high") ?? catalogOptions.find((option) => option.id !== "off") ?? { id: "high", label: "On", value: "high" };
+			catalogOptions = [off, { ...on, label: "On" }];
 		}
+		const defaultLevelMap = catalogOptions
+			? Object.fromEntries(catalogOptions.map((option) => [option.id, option.value]))
+			: undefined;
 		return {
 			reasoning,
-			thinkingLevelMap: catalogOptions ? { ...candidate?.thinkingLevelMap, ...Object.fromEntries(catalogOptions.map((option) => [option.id, option.value])) } : undefined,
+			thinkingLevelMap: catalogOptions
+				? (completionsCompat?.thinkingFormat === "qwen" && !completionsCompat?.supportsReasoningEffort
+					? defaultLevelMap
+					: { ...effectiveLevelMap, ...defaultLevelMap })
+				: undefined,
 			thinkingOptions: catalogOptions,
-			compat,
+			compat: effectiveCompat,
 		};
 	}
 
-	const candidate = findCatalogThinkingCandidate(options.modelId);
+	const candidate = findCatalogThinkingCandidate(options.modelId, options.api, options.baseUrl);
 	// Desktop versions before capability fallback persisted an absent /models
 	// capability as an explicit opt-out. Treat that exact generated shape as
 	// unknown; a deliberate opt-out remains `reasoning: false` without `[]`.
@@ -619,14 +757,21 @@ function resolveThinkingCapabilities(options: {
 		modelReasoning ??
 		options.providerReasoning ??
 		(modelThinkingOptions ? modelThinkingOptions.some((option) => option.id !== "off") : configuredMap ? true : candidate?.model.reasoning ?? inferReasoningFromModelId(options.modelId));
-	const inferredMap = reasoning && candidate ? adaptThinkingLevelMap(candidate.model, options.api) : undefined;
-	const inferredCompat = reasoning
+	let inferredMap = reasoning && candidate ? adaptThinkingLevelMap(candidate.model, options.api) : undefined;
+	let inferredCompat = reasoning
 		? selectThinkingCompat(candidate?.model, options.api, options.modelId, options.baseUrl)
 		: undefined;
+	let resolvedThinkingOptions = modelThinkingOptions;
+	if (reasoning && !resolvedThinkingOptions && !configuredMap && !inferredMap) {
+		const defaults = defaultReasoningThinkingCapabilities(options.modelId, options.api);
+		resolvedThinkingOptions = defaults.thinkingOptions;
+		inferredMap = defaults.thinkingLevelMap;
+		inferredCompat = mergeCompat(inferredCompat, defaults.compat);
+	}
 	return {
 		reasoning,
 		thinkingLevelMap: configuredMap ?? inferredMap,
-		thinkingOptions: modelThinkingOptions,
+		thinkingOptions: resolvedThinkingOptions,
 		compat: mergeCompat(mergeCompat(inferredCompat, options.providerCompat), options.modelCompat),
 	};
 }
@@ -1007,7 +1152,13 @@ export class ModelRegistry {
 			}
 			const builtIn = getModels(providerName as KnownProvider) as Model<Api>[];
 			if (builtIn.length === 0) return undefined;
-			const defaults = { api: builtIn[0].api, baseUrl: builtIn[0].baseUrl };
+			const apiCounts = new Map<string, number>();
+			for (const model of builtIn) {
+				apiCounts.set(model.api, (apiCounts.get(model.api) ?? 0) + 1);
+			}
+			const mostFrequentApi = [...apiCounts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+			const representative = builtIn.find((m) => m.api === mostFrequentApi && m.baseUrl) ?? builtIn[0];
+			const defaults = { api: mostFrequentApi, baseUrl: representative.baseUrl };
 			builtInDefaultsCache.set(providerName, defaults);
 			return defaults;
 		};

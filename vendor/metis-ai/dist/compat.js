@@ -4,8 +4,8 @@
  * the api-registry, generated catalog reads (`getModel`/`getModels`/
  * `getProviders`), per-API lazy stream wrappers, and image generation.
  *
- * Existing apps switch imports from "@earendil-works/metis-ai" to
- * "@earendil-works/metis-ai/compat" unchanged; new code uses `createModels()`
+ * Existing apps switch imports from "@earendil-works/pi-ai" to
+ * "@earendil-works/pi-ai/compat" unchanged; new code uses `createModels()`
  * and the provider factories. This module is deleted with the coding-agent
  * ModelManager migration.
  */
@@ -18,6 +18,7 @@ export * from "./api/mistral-conversations.lazy.js";
 export * from "./api/openai-codex-responses.lazy.js";
 export * from "./api/openai-completions.lazy.js";
 export * from "./api/openai-responses.lazy.js";
+export * from "./api/pi-messages.lazy.js";
 export * from "./env-api-keys.js";
 export * from "./image-models.js";
 export * from "./images.js";
@@ -34,14 +35,16 @@ import { mistralConversationsApi } from "./api/mistral-conversations.lazy.js";
 import { openAICodexResponsesApi } from "./api/openai-codex-responses.lazy.js";
 import { openAICompletionsApi } from "./api/openai-completions.lazy.js";
 import { openAIResponsesApi } from "./api/openai-responses.lazy.js";
+import { piMessagesApi } from "./api/pi-messages.lazy.js";
 import { getEnvApiKey } from "./env-api-keys.js";
 import { builtinModels, getBuiltinModel, getBuiltinModels, getBuiltinProviders } from "./providers/all.js";
 import { createFauxCore } from "./providers/faux.js";
-/** @deprecated Static catalog read. Use `getBuiltinModel` from "@earendil-works/metis-ai/providers/all" or `Models.getModel()`. */
+import { normalizeContext } from "./utils/transcript.js";
+/** @deprecated Static catalog read. Use `getBuiltinModel` from "@earendil-works/pi-ai/providers/all" or `Models.getModel()`. */
 export const getModel = getBuiltinModel;
-/** @deprecated Static catalog read. Use `getBuiltinModels` from "@earendil-works/metis-ai/providers/all" or `Models.getModels()`. */
+/** @deprecated Static catalog read. Use `getBuiltinModels` from "@earendil-works/pi-ai/providers/all" or `Models.getModels()`. */
 export const getModels = getBuiltinModels;
-/** @deprecated Static catalog read. Use `getBuiltinProviders` from "@earendil-works/metis-ai/providers/all" or `Models.getProviders()`. */
+/** @deprecated Static catalog read. Use `getBuiltinProviders` from "@earendil-works/pi-ai/providers/all" or `Models.getProviders()`. */
 export const getProviders = getBuiltinProviders;
 const apiProviderRegistry = new Map();
 function wrapStream(api, stream) {
@@ -113,6 +116,7 @@ const BUILTIN_APIS = [
     ["google-vertex", googleVertexApi()],
     ["mistral-conversations", mistralConversationsApi()],
     ["bedrock-converse-stream", bedrockConverseStreamApi()],
+    ["pi-messages", piMessagesApi()],
 ];
 const builtinApiProviderInstances = new Map();
 /**
@@ -135,6 +139,7 @@ export function resetApiProviders() {
 }
 registerBuiltInApiProviders();
 const compatModels = builtinModels();
+const AMBIENT_AUTH_MARKER = "<authenticated>";
 function hasExplicitApiKey(apiKey) {
     return typeof apiKey === "string" && apiKey.trim().length > 0;
 }
@@ -142,13 +147,18 @@ function withEnvApiKey(model, options) {
     if (hasExplicitApiKey(options?.apiKey))
         return options;
     const apiKey = getEnvApiKey(model.provider, options?.env);
-    if (!apiKey)
+    if (!apiKey || apiKey === AMBIENT_AUTH_MARKER)
         return options;
     return { ...options, apiKey };
 }
-function shouldUseBuiltinModels(model) {
-    const builtin = compatModels.getModel(model.provider, model.id);
-    return builtin?.api === model.api && getApiProvider(model.api) === builtinApiProviderInstances.get(model.api);
+function hasResolvedCloudflareAuth(options) {
+    return hasExplicitApiKey(options?.apiKey) || typeof options?.headers?.["cf-aig-authorization"] === "string";
+}
+function getBuiltinProviderForModel(model) {
+    if (getApiProvider(model.api) !== builtinApiProviderInstances.get(model.api))
+        return undefined;
+    const provider = compatModels.getProvider(model.provider);
+    return provider?.getModels().some((candidate) => candidate.api === model.api) ? provider : undefined;
 }
 function resolveApiProvider(api) {
     const provider = getApiProvider(api);
@@ -158,26 +168,36 @@ function resolveApiProvider(api) {
     return provider;
 }
 export function stream(model, context, options) {
-    if (shouldUseBuiltinModels(model)) {
-        return compatModels.stream(model, context, options);
+    const transcript = normalizeContext(context);
+    const builtinProvider = getBuiltinProviderForModel(model);
+    if (builtinProvider) {
+        if (model.provider.startsWith("cloudflare-") && !hasResolvedCloudflareAuth(options)) {
+            return compatModels.stream(model, transcript, options);
+        }
+        return builtinProvider.stream(model, transcript, withEnvApiKey(model, options));
     }
     const provider = resolveApiProvider(model.api);
-    return provider.stream(model, context, withEnvApiKey(model, options));
+    return provider.stream(model, transcript, withEnvApiKey(model, options));
 }
 export async function complete(model, context, options) {
     const s = stream(model, context, options);
     return s.result();
 }
 export function streamSimple(model, context, options) {
-    if (shouldUseBuiltinModels(model)) {
-        return compatModels.streamSimple(model, context, options);
+    const transcript = normalizeContext(context);
+    const builtinProvider = getBuiltinProviderForModel(model);
+    if (builtinProvider) {
+        if (model.provider.startsWith("cloudflare-") && !hasResolvedCloudflareAuth(options)) {
+            return compatModels.streamSimple(model, transcript, options);
+        }
+        return builtinProvider.streamSimple(model, transcript, withEnvApiKey(model, options));
     }
     const provider = resolveApiProvider(model.api);
-    return provider.streamSimple(model, context, withEnvApiKey(model, options));
+    return provider.streamSimple(model, transcript, withEnvApiKey(model, options));
 }
 export async function completeSimple(model, context, options) {
     const s = streamSimple(model, context, options);
     return s.result();
 }
 //# sourceMappingURL=compat.js.map
-
+export { getThinkingOptions, getSupportedThinkingLevels, clampThinkingLevel } from "./models.js";

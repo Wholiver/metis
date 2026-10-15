@@ -1,5 +1,5 @@
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
-function createSetupErrorMessage(model, error) {
+function createSetupErrorMessage(model, error, timestamp) {
     return {
         role: "assistant",
         content: [],
@@ -16,16 +16,17 @@ function createSetupErrorMessage(model, error) {
         },
         stopReason: "error",
         errorMessage: error instanceof Error ? error.message : String(error),
-        timestamp: Date.now(),
+        timestamp,
     };
 }
-function forwardStream(target, source) {
-    (async () => {
-        for await (const event of source) {
-            target.push(event);
-        }
-        target.end();
-    })();
+function hasResult(source) {
+    return typeof source.result === "function";
+}
+async function forwardStream(target, source) {
+    for await (const event of source) {
+        target.push(event);
+    }
+    target.end(hasResult(source) ? await source.result() : undefined);
 }
 /**
  * Returns a stream synchronously while running async setup (auth resolution,
@@ -33,28 +34,38 @@ function forwardStream(target, source) {
  * error event.
  */
 export function lazyStream(model, setup) {
+    const startedAt = Date.now();
     const outer = new AssistantMessageEventStream();
     setup()
-        .then((inner) => {
-        forwardStream(outer, inner);
-    })
+        .then((inner) => forwardStream(outer, inner))
         .catch((error) => {
-        const message = createSetupErrorMessage(model, error);
+        const message = createSetupErrorMessage(model, error, startedAt);
         outer.push({ type: "error", reason: "error", error: message });
         outer.end(message);
     });
     return outer;
 }
-/**
- * Wraps a dynamically imported API implementation module as `ProviderStreams`.
- * The module loads on first stream call; the host's import cache deduplicates
- * loads. Load failures terminate the returned stream with an error event.
- */
-export function lazyApi(load) {
-    return {
+export function lazyApi(load, capabilities) {
+    const api = {
         stream: (model, context, options) => lazyStream(model, async () => (await load()).stream(model, context, options)),
         streamSimple: (model, context, options) => lazyStream(model, async () => (await load()).streamSimple(model, context, options)),
     };
+    if (capabilities?.fetchDeferred) {
+        api.fetchDeferred = (model, handle, options) => lazyStream(model, async () => {
+            const implementation = await load();
+            if (!implementation.fetchDeferred)
+                throw new Error("API does not support deferred responses");
+            return implementation.fetchDeferred(model, handle, options);
+        });
+    }
+    if (capabilities?.cancelDeferred) {
+        api.cancelDeferred = async (model, handle, options) => {
+            const implementation = await load();
+            if (!implementation.cancelDeferred)
+                throw new Error("API cannot cancel deferred responses");
+            await implementation.cancelDeferred(model, handle, options);
+        };
+    }
+    return api;
 }
 //# sourceMappingURL=lazy.js.map
-

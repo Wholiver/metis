@@ -28,4 +28,3 @@ export function setBedrockProviderModule(module) {
 }
 export const bedrockConverseStreamApi = () => lazyApi(async () => bedrockModuleOverride ?? (await importNodeOnlyApi("./bedrock-converse-stream.ts")));
 //# sourceMappingURL=bedrock-converse-stream.lazy.js.map
-

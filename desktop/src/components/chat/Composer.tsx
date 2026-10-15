@@ -21,6 +21,7 @@ import { RateLimitWindow } from '../inspector/UsageQuotaCard';
 import { ComposerUsageFooter } from './ComposerUsageFooter';
 import { HomeProjectSwitcher } from './HomeProjectSwitcher';
 import { MetisCloudMark } from './MetisCloudMark';
+import { StarterPrompts } from './StarterPrompts';
 import PromptBar from '../primitives/PromptBar';
 import { cleanPastedText } from '../../lib/composer';
 
@@ -167,7 +168,39 @@ export const Composer = React.memo<ComposerProps>(({
   const stackRef = useRef<HTMLDivElement>(null);
   const homeRectRef = useRef<DOMRect | null>(null);
   const prevIsHomeRef = useRef(isHomeEmpty);
+  const [hasGitChanges, setHasGitChanges] = useState(false);
   void agent;
+
+  useEffect(() => {
+    if (!isHomeEmpty) return;
+    const workspace = (window as any).metisDesktop?.workspace;
+    if (!workspace?.gitStatus) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await workspace.gitStatus('git', activeProject?.path);
+        if (!cancelled && res?.files) {
+          setHasGitChanges(res.files.length > 0);
+        }
+      } catch {
+        if (!cancelled) setHasGitChanges(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isHomeEmpty, activeProject?.path]);
+
+  const handleSelectStarterPrompt = (promptText: string) => {
+    setText(promptText);
+    requestAnimationFrame(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        const len = promptText.length;
+        inputRef.current.setSelectionRange(len, len);
+      }
+    });
+  };
 
   const chooseSkill = (skill: SkillCommand) => {
     setText(`/${skill.name} `);
@@ -536,12 +569,20 @@ export const Composer = React.memo<ComposerProps>(({
       >
         {isHomeEmpty && showHomeLogo ? (
           <div
-            className="mb-5 flex shrink-0 select-none items-center justify-center"
+            className="mb-4 flex shrink-0 select-none items-center justify-center"
             data-home-cloud-slot=""
             aria-hidden="true"
           >
-            <MetisCloudMark size={68} />
+            <MetisCloudMark size={64} />
           </div>
+        ) : null}
+
+        {isHomeEmpty ? (
+          <StarterPrompts
+            hasGitChanges={hasGitChanges}
+            visible={isHomeEmpty && text.trim().length === 0}
+            onSelectPrompt={handleSelectStarterPrompt}
+          />
         ) : null}
 
         {modeSwitcherRow}

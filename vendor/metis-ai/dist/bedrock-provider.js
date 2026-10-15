@@ -4,4 +4,3 @@ export const bedrockProviderModule = {
     streamSimple,
 };
 //# sourceMappingURL=bedrock-provider.js.map
-

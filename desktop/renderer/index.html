@@ -4,11 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Metis</title>
-  <script type="module" crossorigin src="./assets/index-CodWeXQZ.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-CjIySHWz.css">
+  <script type="module" crossorigin src="./assets/index-Dq6DvWR8.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-1l8iCvdT.css">
 </head>
 <body class="h-full overflow-hidden select-none">
   <div id="root" class="h-full"></div>
+  <script>
+    window.addEventListener('error', function (e) {
+      var root = document.getElementById('root');
+      if (root && (!root.firstElementChild || root.innerHTML.trim() === '')) {
+        root.innerHTML = '<div style="display:flex;height:100%;width:100%;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;background:#18181b;color:#f4f4f5;padding:24px;box-sizing:border-box;"><div style="max-width:440px;width:100%;background:#27272a;border:1px solid #3f3f46;border-radius:14px;padding:24px;text-align:center;box-shadow:0 10px 25px -5px rgba(0,0,0,0.5);"><h2 style="margin:0 0 8px;font-size:16px;font-weight:600;">Metis 界面加载异常</h2><p style="margin:0 0 16px;font-size:13px;color:#a1a1aa;line-height:1.5;">界面启动未能正常完成。请点击下方按钮重新加载。<br><span style="font-size:11.5px;color:#71717a;">Failed to bootstrap UI components.</span></p><button onclick="window.location.reload()" style="background:#2563eb;color:#ffffff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:500;cursor:pointer;">重新加载 (Reload)</button></div></div>';
+      }
+    });
+  </script>
 </body>
 </html>
 

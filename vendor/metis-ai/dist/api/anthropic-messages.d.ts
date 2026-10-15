@@ -69,4 +69,3 @@ export interface AnthropicOptions extends StreamOptions {
 export declare const stream: StreamFunction<"anthropic-messages", AnthropicOptions>;
 export declare const streamSimple: StreamFunction<"anthropic-messages", SimpleStreamOptions>;
 //# sourceMappingURL=anthropic-messages.d.ts.map
-
