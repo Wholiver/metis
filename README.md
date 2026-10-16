@@ -19,6 +19,25 @@
   <a href="https://siliconflow.cn"><img alt="Powered by 硅基流动" src="https://img.shields.io/badge/Powered_by-%E7%A1%85%E5%9F%BA%E6%B5%81%E5%8A%A8-2563eb" /></a>
 </p>
 
+<p align="center"><img src="docs/images/readme/en/sections/quickstart.png" alt="Quick start" width="100%"></p>
+
+**Desktop (recommended):** download the installer from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest): `.dmg` for macOS, `.exe` for Windows. The runtime is bundled, so you don't need Node.js.
+
+**Terminal** (requires [Node.js 22.19.0 or newer](https://nodejs.org/)):
+
+```bash
+npm install -g @wholiver_hu/metis
+```
+
+**Skill:**
+
+```bash
+npm install -g metis-skill
+metis-plugin install codex
+```
+
+For OpenCode or DeepSeek Harness, replace `codex` with `opencode` or `deepseek`. See the [Quickstart](docs/quickstart.md) for details.
+
 ## Desktop app
 
 <img src="docs/images/readme/en/desktop.png" alt="Desktop app" />
@@ -55,32 +74,13 @@ Metis drafts your commit messages, and you can see every changed file at a glanc
 
 Prefer the terminal? Use it there. You can also install it into Codex, OpenCode and DeepSeek Harness.
 
-## Quick start
-
-**Desktop (recommended):** download the installer from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest): `.dmg` for macOS, `.exe` for Windows. The runtime is bundled, so you don't need Node.js.
-
-**Terminal** (requires [Node.js 22.19.0 or newer](https://nodejs.org/)):
-
-```bash
-npm install -g @wholiver_hu/metis
-```
-
-**Skill:**
-
-```bash
-npm install -g metis-skill
-metis-plugin install codex
-```
-
-For OpenCode or DeepSeek Harness, replace `codex` with `opencode` or `deepseek`. See the [Quickstart](docs/quickstart.md) for details.
-
-## Partners
+<p align="center"><img src="docs/images/readme/en/sections/partners.png" alt="Partners" width="100%"></p>
 
 | Logo | Partner | Link |
 | :---: | :--- | :--- |
 | <img src="docs/images/siliconflow-logo.png" alt="SiliconFlow" height="36" /> | **SiliconFlow (硅基流动)** — China's leading independent ecosystem token supply platform, providing Metis with efficient and flexible model inference. | [siliconflow.cn](https://siliconflow.cn) |
 
-## Community
+<p align="center"><img src="docs/images/readme/en/sections/community.png" alt="Community" width="100%"></p>
 
 <p align="center">
   <img src="docs/images/metis-community-qq.png" width="220" alt="Metis QQ group QR code" /><br />
@@ -89,17 +89,17 @@ For OpenCode or DeepSeek Harness, replace `codex` with `opencode` or `deepseek`.
 
 Found a bug or have an idea? Open an [issue](https://github.com/Wholiver/metis/issues) or start a [discussion](https://github.com/Wholiver/metis/discussions).
 
-## Documentation
+<p align="center"><img src="docs/images/readme/en/sections/docs.png" alt="Documentation" width="100%"></p>
 
 Every guide is listed in the [documentation index](docs/index.md). Start with the [Quickstart](docs/quickstart.md).
 
-## Contributing
+<p align="center"><img src="docs/images/readme/en/sections/contributing.png" alt="Contributing" width="100%"></p>
 
 PRs are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and testing.
 
 Metis builds on [pi](https://github.com/earendil-works/pi) by Mario Zechner.
 
-## License
+<p align="center"><img src="docs/images/readme/en/sections/license.png" alt="License" width="100%"></p>
 
 [MIT](LICENSE)
 

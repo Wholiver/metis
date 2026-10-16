@@ -19,6 +19,25 @@
   <a href="https://siliconflow.cn"><img alt="Powered by 硅基流动" src="https://img.shields.io/badge/Powered_by-%E7%A1%85%E5%9F%BA%E6%B5%81%E5%8A%A8-2563eb" /></a>
 </p>
 
+<p align="center"><img src="docs/images/readme/zh/sections/quickstart.png" alt="快速开始" width="100%"></p>
+
+**桌面版（推荐）**：到 [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) 下载安装包，macOS 选 `.dmg`，Windows 选 `.exe`。桌面版自带运行环境，不用另装 Node.js。
+
+**终端版**（需要 [Node.js 22.19.0 或更新版本](https://nodejs.org/)）：
+
+```bash
+npm install -g @wholiver_hu/metis
+```
+
+**Skill 版**：
+
+```bash
+npm install -g metis-skill
+metis-plugin install codex
+```
+
+想装进 OpenCode 或 DeepSeek Harness，把最后的 `codex` 换成 `opencode` 或 `deepseek`。更多说明见 [Quickstart](docs/quickstart.md)。
+
 ## 桌面版
 
 <img src="docs/images/readme/zh/desktop.png" alt="桌面版" />
@@ -55,32 +74,13 @@
 
 不想开桌面版就在终端里用，也能装进 Codex、OpenCode 和 DeepSeek Harness。
 
-## 快速开始
-
-**桌面版（推荐）**：到 [GitHub Releases](https://github.com/Wholiver/metis/releases/latest) 下载安装包，macOS 选 `.dmg`，Windows 选 `.exe`。桌面版自带运行环境，不用另装 Node.js。
-
-**终端版**（需要 [Node.js 22.19.0 或更新版本](https://nodejs.org/)）：
-
-```bash
-npm install -g @wholiver_hu/metis
-```
-
-**Skill 版**：
-
-```bash
-npm install -g metis-skill
-metis-plugin install codex
-```
-
-想装进 OpenCode 或 DeepSeek Harness，把最后的 `codex` 换成 `opencode` 或 `deepseek`。更多说明见 [Quickstart](docs/quickstart.md)。
-
-## 合作伙伴
+<p align="center"><img src="docs/images/readme/zh/sections/partners.png" alt="合作伙伴" width="100%"></p>
 
 | 商标 | 合作方 | 链接 |
 | :---: | :--- | :--- |
 | <img src="docs/images/siliconflow-logo.png" alt="SiliconFlow" height="36" /> | **SiliconFlow (硅基流动)** — China's leading independent ecosystem token supply platform, providing Metis with efficient and flexible model inference. | [siliconflow.cn](https://siliconflow.cn) |
 
-## 交流群
+<p align="center"><img src="docs/images/readme/zh/sections/community.png" alt="交流群" width="100%"></p>
 
 <p align="center">
   <img src="docs/images/metis-community-qq.png" width="220" alt="Metis 交流群二维码" /><br />
@@ -89,17 +89,17 @@ metis-plugin install codex
 
 遇到问题或有新想法，也可以到 [Issues](https://github.com/Wholiver/metis/issues) 或 [Discussions](https://github.com/Wholiver/metis/discussions) 留言。
 
-## 文档
+<p align="center"><img src="docs/images/readme/zh/sections/docs.png" alt="文档" width="100%"></p>
 
 所有使用说明都在 [文档目录](docs/index.md)，从 [Quickstart](docs/quickstart.md) 开始看就行。
 
-## 参与贡献
+<p align="center"><img src="docs/images/readme/zh/sections/contributing.png" alt="参与贡献" width="100%"></p>
 
 欢迎提 PR，开发和测试方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 Metis 基于 Mario Zechner 的 [pi](https://github.com/earendil-works/pi) 开发，感谢原作者。
 
-## License
+<p align="center"><img src="docs/images/readme/zh/sections/license.png" alt="License" width="100%"></p>
 
 [MIT](LICENSE)
 
