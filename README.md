@@ -1,9 +1,13 @@
 <p align="center">
-  <img src="docs/images/metis-readme-icon.png" width="144" alt="Metis app icon" />
+  <img src="docs/images/readme/en/banner.png" alt="Metis 2.0" />
 </p>
 
 <p align="center">
-  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+  <a href="README.zh-CN.md">简体中文</a> · <strong>English</strong>
+</p>
+
+<p align="center">
+  Metis is an open-source coding agent that runs as a desktop app, in the terminal, or as a Skill, and every project can shape its own agent architecture.
 </p>
 
 <p align="center">
@@ -15,35 +19,60 @@
   <a href="https://siliconflow.cn"><img alt="Powered by 硅基流动" src="https://img.shields.io/badge/Powered_by-%E7%A1%85%E5%9F%BA%E6%B5%81%E5%8A%A8-2563eb" /></a>
 </p>
 
-<p align="center">
-  <strong>The self-adaptive coding agent with evidence-backed verification gates.</strong><br />
-  <em>From terminal TUI to React desktop workspace — eliminating AI hallucinations with a 5-role recursive team and physical verification receipts.</em>
-</p>
+## Desktop app
 
-<p align="center">
-  <a href="#why-metis">Why Metis</a> ·
-  <a href="#partners">Partners</a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#flagship-capabilities">Flagship Capabilities</a> ·
-  <a href="#community--feedback">Community & Feedback</a> ·
-  <a href="#documentation">Documentation</a>
-</p>
+<img src="docs/images/readme/en/desktop.png" alt="Desktop app" />
 
-## Why Metis?
+Chat, routines, Git and your agent architecture, all in one window.
 
-Most AI coding assistants operate in a fragile loop: **single-thread chat → untested code edits → prematurely claiming "it is fixed" → forgetting everything next session**.
+## Task tiers
 
-Metis replaces this with engineering-grade rigor:
+<img src="docs/images/readme/en/tiers.png" alt="Task tiers" />
 
-```text
-Typical Agent:  Ask ──> Blind write ──> Hallucinate fixes ──> Claim "done" without tests ──> Forgotten next time
-Metis:          Read-only Plan ──> 5-Role Recursive Team (Git Worktrees) ──> G0-G7 Gate Receipts (Block Fake Done) ──> Evolve
+Just describe the task. Metis picks one of five tiers on its own, from quick questions to work that spans multiple interfaces.
+
+## Roles
+
+<img src="docs/images/readme/en/roles.png" alt="Roles" />
+
+Planning, coding, code review and testing are each handled by a different role.
+
+## Agent architecture editor
+
+<img src="docs/images/readme/en/arch.png" alt="Agent architecture editor" />
+
+The workflow is a graph you can edit. Each project keeps its own copy in `.metis/harness.json`.
+
+## Git
+
+<img src="docs/images/readme/en/git.png" alt="Git" />
+
+Metis drafts your commit messages, and you can see every changed file at a glance.
+
+## Terminal and Skill
+
+<img src="docs/images/readme/en/terminal.png" alt="Terminal and Skill" />
+
+Prefer the terminal? Use it there. You can also install it into Codex, OpenCode and DeepSeek Harness.
+
+## Quick start
+
+**Desktop (recommended):** download the installer from [GitHub Releases](https://github.com/Wholiver/metis/releases/latest): `.dmg` for macOS, `.exe` for Windows. The runtime is bundled, so you don't need Node.js.
+
+**Terminal** (requires [Node.js 22.19.0 or newer](https://nodejs.org/)):
+
+```bash
+npm install -g @wholiver_hu/metis
 ```
 
-1. **No False Completion (`FALSE_COMPLETION_BLOCKED`)**: Built-in G0–G7 verification state machine. Agents cannot declare victory without actual test outputs and exit-code-0 receipts.
-2. **Autonomous Self-Learning**: Silently distills your code diffs, recurring pitfalls, and domain skills in the background. Transparent, revisable, and roll-backable.
-3. **True Multi-Role Agent Team**: Dedicated roles (`coordinator`, `planner`, `implementer`, `reviewer`, `verifier`) isolated in clean Git Worktrees.
-4. **Dual Interfaces, Zero Setup**: Lightweight terminal TUI and standalone React/Vite Desktop application with bundled runtimes (no Node.js required).
+**Skill:**
+
+```bash
+npm install -g metis-skill
+metis-plugin install codex
+```
+
+For OpenCode or DeepSeek Harness, replace `codex` with `opencode` or `deepseek`. See the [Quickstart](docs/quickstart.md) for details.
 
 ## Partners
 
@@ -51,149 +80,27 @@ Metis:          Read-only Plan ──> 5-Role Recursive Team (Git Worktrees) ─
 | :---: | :--- | :--- |
 | <img src="docs/images/siliconflow-logo.png" alt="SiliconFlow" height="36" /> | **SiliconFlow (硅基流动)** — China's leading independent ecosystem token supply platform, providing Metis with efficient and flexible model inference. | [siliconflow.cn](https://siliconflow.cn) |
 
-## Quick start
-
-### Desktop
-
-Standalone application with built-in Metis CLI and Server runtime (no Node.js required):
-
-- **macOS (Apple Silicon)**: Download `Metis-*-macos-arm64.dmg` from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest) and drag to **Applications**.
-- **Windows (x64)**: Download `Metis-*-win-x64-setup.exe` or `.zip` from the [latest GitHub Release](https://github.com/Wholiver/metis/releases/latest).
-
-### Skill
-
-Metis for Codex / OpenCode / DeepSeek Harness ([Node.js >= 22.19.0](https://nodejs.org/)):
-
-```bash
-npm install -g metis-skill
-metis-plugin
-```
-
-Run `metis-plugin` to pick a host, or `metis-plugin install codex|opencode|deepseek`. Verify with `metis-plugin doctor`.
-
-<details>
-<summary><strong>CLI installation (Node.js &gt;= 22.19.0)</strong></summary>
-
-```bash
-npm install -g @wholiver_hu/metis
-metis
-```
-
-Run in any repository or directory:
-
-```bash
-metis "Explain this repository"
-metis @src/main.ts "Review this file"
-git diff | metis -p "Review this diff"
-```
-
-Use `/login` for subscription providers or configure an API key. See [Quickstart](docs/quickstart.md) for the complete guide.
-
-</details>
-
-## Flagship Capabilities
-
-### 1. 🛡️ Evidence-Backed G0–G7 Verification Gates
-- **Eliminate AI Hallucinations**: Every task execution runs on an immutable performance state machine. Each milestone requires a structured governance receipt.
-- **Strict Anti-Premature-Exit**: Even if an LLM outputs "all tests passed", Metis verifies the exit code, test stdout, and diff boundaries. If receipts are missing, `FALSE_COMPLETION_BLOCKED` intercepts the completion and forces repair.
-- **Multimodal Proof**: Includes bundled ffmpeg/ffprobe video inspection and screenshot assertion tools to verify visual animations and interactive states objectively.
-
-### 2. 🧠 Autonomous Self-Learning Closed Loop
-- **Zero-Token Implicit Learning**: Learns your coding style, conventions, and recurring project architecture without nagging or tedious prompt injection.
-- **Local Profile & Skill Distillation**: Stored safely on disk under `~/.metis/agent/adaptations/`. Metis automatically creates, tests, and decays custom skills.
-- **Auditable & Reversible**: Review learned behaviors directly in the desktop settings panel, with complete history and one-click rollback.
-
-### 3. 👥 Recursive 5-Role Multi-Agent Architecture
-- **Purpose-Built Roles**: `coordinator` oversees strategy, `planner` computes roadmaps, `implementer` writes minimal diffs, `reviewer` conducts peer review, and `verifier` runs automated proof.
-- **Physical Git Worktree Isolation**: Subagents run inside temporary worktrees, preventing simultaneous edits from corrupting your branch.
-- **Bound Recursion Depth (L0→L4)**: Strict budget, spawn depth, and timeout enforcement avoid runaway token burns.
-
-<details>
-<summary><strong>Benchmark &amp; Comparison Matrix</strong></summary>
-
-### Terminal-Bench 2.1 Benchmark Results
-
-In a controlled benchmark run using the same model (**DeepSeek V4 Flash**), same 89 real-world tasks, identical budget, and environment:
-
-| Agent Framework | Model | Benchmark | Solved (Accuracy) | Architecture & Harness Advantage |
-| :--- | :--- | :--- | :---: | :--- |
-| 🏆 **Metis** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | **73 / 89 (82.02%)** | ✅ Recursive 5-role agents + Self-learning adaptations + Plan/Build |
-| **OpenCode** | DeepSeek V4 Flash | Terminal-Bench 2.1 (89 tasks) | 60 / 89 (67.42%) | ⚠️ Single-thread flat tool execution |
-| 📈 *Improvement* | *Same Model & Budget* | *Same Environment* | **+14.6% (+13 tasks)** | 🚀 *Harness, adaptations, and verification gates alone* |
-
-### Feature Comparison Matrix
-
-| Capability | Metis | Claude Code | OpenCode | Cursor / Cline |
-| :--- | :---: | :---: | :---: | :---: |
-| **License & Pricing** | ✅ **MIT ($0 Free)** | ❌ Proprietary | ✅ MIT ($0 Free) | ⚠️ Commercial |
-| **Model Freedom** | ✅ **Any Model / OrcaRouter** | ❌ Anthropic Only | ✅ Multi-Provider | ⚠️ Limited / BYOK |
-| **User Interfaces** | ✅ **TUI + React Desktop** | ⚠️ Terminal Only | ⚠️ Terminal Only | ⚠️ IDE Only |
-| **Workflow Mode** | ✅ **Plan ↔ Build Dual-Mode** | ⚠️ Single Flow | ⚠️ Single Flow | ⚠️ Chat / Inline |
-| **Multi-Agent System** | ✅ **Recursive L0→L4 (5 Roles)** | ⚠️ Flat Subagents | ⚠️ Basic | ❌ None |
-| **Self-Learning Adaptations** | ✅ **Filesystem Profile & Workflow Evolution** | ❌ Ephemeral | ❌ Ephemeral | ⚠️ Code Embeddings |
-| **Verification Gates** | ✅ **Test Gates + Video Evidence** | ⚠️ Manual Bash | ⚠️ Manual Bash | ⚠️ Basic Linter |
-| **Headless Benchmark** | ✅ **Python Adapter + Trace** | ❌ None | ⚠️ Partial | ❌ None |
-
-</details>
-
-## Community & Feedback
-
-Join the Metis developer community! Whether discussing use cases, reporting bugs, proposing new features, or sharing multi-agent ideas, everyone is welcome:
+## Community
 
 <p align="center">
-  <img src="docs/images/metis-community-qq.png" width="220" alt="Metis QQ Group" /><br />
-  <strong>Metis Community Group (QQ): 801193315</strong>
+  <img src="docs/images/metis-community-qq.png" width="220" alt="Metis QQ group QR code" /><br />
+  <strong>Metis Community (QQ): 801193315</strong>
 </p>
 
-- 🐛 **Bug Reports & Feature Requests**: Open an issue on [GitHub Issues](https://github.com/Wholiver/metis/issues).
-- 💡 **Discussions & Ideas**: Join conversations on [GitHub Discussions](https://github.com/Wholiver/metis/discussions).
+Found a bug or have an idea? Open an [issue](https://github.com/Wholiver/metis/issues) or start a [discussion](https://github.com/Wholiver/metis/discussions).
 
 ## Documentation
 
-| Topic | Guide |
-| --- | --- |
-| Install, authenticate, and start | [Quickstart](docs/quickstart.md) |
-| Commands and terminal UI | [Using Metis](docs/usage.md) · [TUI](docs/tui.md) |
-| Autonomous Self-Learning | [Autonomous Self-Learning](docs/self-learning.md) |
-| Multi-Agent System | [Named Agents & Delegation](docs/agents.md) |
-| Benchmark & Evaluation | [TerminalBench & Harbor](docs/terminalbench.md) |
-| Providers and custom models | [Providers](docs/providers.md) · [Use SiliconFlow in Metis](docs/use-siliconcloud-in-metis.md) · [Custom models](docs/models.md) · [Custom providers](docs/custom-provider.md) |
-| Sessions and compaction | [Sessions](docs/sessions.md) · [Compaction](docs/compaction.md) |
-| Extensions, skills, and packages | [Extensions](docs/extensions.md) · [Skills](docs/skills.md) · [Packages](docs/packages.md) |
-| Prompt 与界面定制 | [Prompt templates](docs/prompt-templates.md) · [Themes](docs/themes.md) · [Keybindings](docs/keybindings.md) |
-| Programmatic integration | [SDK](docs/sdk.md) · [RPC](docs/rpc.md) · [JSON](docs/json.md) |
-| Video inspection | [Video tool](docs/video.md) |
-| Security and configuration | [Security](docs/security.md) · [Settings](docs/settings.md) |
-| Platforms and isolation | [Windows](docs/windows.md) · [Termux](docs/termux.md) · [tmux](docs/tmux.md) · [Containers](docs/containerization.md) |
-
-See the [documentation index](docs/index.md) for every guide.
-
-<details>
-<summary><strong>Developer information</strong></summary>
-
-```bash
-npm run build                 # Compile TypeScript and copy runtime assets
-npm test                      # Run the Vitest suite
-npm run clean                 # Remove compiled output
-npm run build:binary          # Build the standalone binary
-npm --prefix desktop run dev  # Start the React/Vite Desktop app in development
-npm --prefix desktop run build # Build the renderer and Electron artifact
-```
-
-The package exports the Node.js SDK from `@wholiver_hu/metis` and the RPC entry point from `@wholiver_hu/metis/rpc-entry`.
-
-</details>
+Every guide is listed in the [documentation index](docs/index.md). Start with the [Quickstart](docs/quickstart.md).
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development, Extension and Package integration, testing, and AI-assisted contribution guidance.
+PRs are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and testing.
 
-## Acknowledgements
-
-Metis builds upon and is inspired by [pi](https://github.com/earendil-works/pi) by Mario Zechner.
+Metis builds on [pi](https://github.com/earendil-works/pi) by Mario Zechner.
 
 ## License
 
-Distributed under the [MIT License](LICENSE).
+[MIT](LICENSE)
 
-本项目认可 [LINUX DO](https://linux.do) 社区。
+This project supports the [LINUX DO](https://linux.do) community.
