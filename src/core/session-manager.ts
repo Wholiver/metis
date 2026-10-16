@@ -16,7 +16,7 @@ import {
 	writeFileSync,
 } from "fs";
 import { readdir, stat } from "fs/promises";
-import { join, resolve } from "path";
+import { basename, join, resolve } from "path";
 import { createInterface } from "readline";
 import { StringDecoder } from "string_decoder";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.ts";
@@ -1868,26 +1868,96 @@ export class SessionManager {
 		if (isDefaultDir) {
 			const primaryDir = getDefaultSessionDir(cwd);
 			const altDir = getDefaultSessionDir(canonicalCwd);
-			const dirsToScan = new Set([primaryDir, altDir]);
+			const sessionsDir = getSessionsDir();
+			const rawSafeBase = `--${resolvedCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`.toLowerCase();
+			const isCaseInsensitive = process.platform === "darwin" || process.platform === "win32";
+
+			const dirsToScan = new Set<string>();
+			const addDir = (d: string) => {
+				if (!existsSync(d)) return;
+				const normD = isCaseInsensitive ? d.toLowerCase() : d;
+				for (const existing of dirsToScan) {
+					if (existing === d) return;
+					if (isCaseInsensitive && existing.toLowerCase() === normD) return;
+					try {
+						const s1 = statSync(existing);
+						const s2 = statSync(d);
+						if (s1.ino !== 0 && s1.dev === s2.dev && s1.ino === s2.ino) return;
+					} catch {}
+				}
+				dirsToScan.add(d);
+			};
+
+			addDir(primaryDir);
+			addDir(altDir);
+
 			const allSessions: SessionInfo[] = [];
 			const seenPaths = new Set<string>();
+			const seenIds = new Set<string>();
 
 			for (const dir of dirsToScan) {
 				const list = await listSessionsFromDir(dir, onProgress, 0, undefined, options);
 				for (const s of list) {
-					if (!seenPaths.has(s.path) && sessionCwdMatches(s.cwd, resolvedCwd)) {
-						seenPaths.add(s.path);
+					const normPath = isCaseInsensitive ? s.path.toLowerCase() : s.path;
+					if (s.id && seenIds.has(s.id)) continue;
+					if (seenPaths.has(normPath)) continue;
+					if (sessionCwdMatches(s.cwd, resolvedCwd)) {
+						if (s.id) seenIds.add(s.id);
+						seenPaths.add(normPath);
 						allSessions.push(s);
 					}
 				}
 			}
 
 			if (allSessions.length === 0) {
-				const globalSessions = await SessionManager.listAll(onProgress, options);
-				for (const s of globalSessions) {
-					if (!seenPaths.has(s.path) && sessionCwdMatches(s.cwd, resolvedCwd)) {
-						seenPaths.add(s.path);
-						allSessions.push(s);
+				const rawDir = join(sessionsDir, rawSafeBase);
+				addDir(rawDir);
+
+				if (existsSync(sessionsDir)) {
+					try {
+						const entries = await readdir(sessionsDir, { withFileTypes: true });
+						const safeBase = basename(primaryDir).toLowerCase();
+						for (const entry of entries) {
+							const entryName = entry.name.toLowerCase();
+							if (entry.isDirectory() && (entryName === safeBase || entryName === rawSafeBase)) {
+								const matchedDir = join(sessionsDir, entry.name);
+								const beforeCount = dirsToScan.size;
+								addDir(matchedDir);
+								if (dirsToScan.size > beforeCount) {
+									const list = await listSessionsFromDir(matchedDir, onProgress, 0, undefined, options);
+									for (const s of list) {
+										const normPath = isCaseInsensitive ? s.path.toLowerCase() : s.path;
+										if (s.id && seenIds.has(s.id)) continue;
+										if (seenPaths.has(normPath)) continue;
+										if (sessionCwdMatches(s.cwd, resolvedCwd)) {
+											if (s.id) seenIds.add(s.id);
+											seenPaths.add(normPath);
+											allSessions.push(s);
+										}
+									}
+								}
+							}
+						}
+
+						if (allSessions.length === 0) {
+							const flatFiles = entries
+								.filter((e) => !e.isDirectory() && e.name.endsWith(".jsonl"))
+								.map((e) => join(sessionsDir, e.name));
+							for (const file of flatFiles) {
+								const header = readSessionHeader(file);
+								const normPath = isCaseInsensitive ? file.toLowerCase() : file;
+								if (header && sessionCwdMatches(header.cwd, resolvedCwd) && !seenPaths.has(normPath)) {
+									const info = await buildSessionInfo(file, options);
+									if (info && (!info.id || !seenIds.has(info.id))) {
+										if (info.id) seenIds.add(info.id);
+										seenPaths.add(normPath);
+										allSessions.push(info);
+									}
+								}
+							}
+						}
+					} catch {
+						// ignore filesystem read error
 					}
 				}
 			}
@@ -1898,9 +1968,20 @@ export class SessionManager {
 
 		const dir = normalizePath(sessionDir);
 		const filterCwd = dir !== getDefaultSessionDirPath(cwd);
-		const sessions = (await listSessionsFromDir(dir, onProgress, 0, undefined, options)).filter(
-			(session) => !filterCwd || sessionCwdMatches(session.cwd, resolvedCwd),
-		);
+		const rawSessions = await listSessionsFromDir(dir, onProgress, 0, undefined, options);
+		const isCaseInsensitive = process.platform === "darwin" || process.platform === "win32";
+		const seenIds = new Set<string>();
+		const seenPaths = new Set<string>();
+		const sessions: SessionInfo[] = [];
+		for (const session of rawSessions) {
+			const normPath = isCaseInsensitive ? session.path.toLowerCase() : session.path;
+			if (filterCwd && !sessionCwdMatches(session.cwd, resolvedCwd)) continue;
+			if (session.id && seenIds.has(session.id)) continue;
+			if (seenPaths.has(normPath)) continue;
+			if (session.id) seenIds.add(session.id);
+			seenPaths.add(normPath);
+			sessions.push(session);
+		}
 		sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 		return sessions;
 	}
@@ -1973,8 +2054,16 @@ export class SessionManager {
 				listOptions,
 			);
 
+			const isCaseInsensitive = process.platform === "darwin" || process.platform === "win32";
+			const seenIds = new Set<string>();
+			const seenPaths = new Set<string>();
 			for (const info of results) {
 				if (info) {
+					const normPath = isCaseInsensitive ? info.path.toLowerCase() : info.path;
+					if (info.id && seenIds.has(info.id)) continue;
+					if (seenPaths.has(normPath)) continue;
+					if (info.id) seenIds.add(info.id);
+					seenPaths.add(normPath);
 					sessions.push(info);
 				}
 			}

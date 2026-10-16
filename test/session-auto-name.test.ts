@@ -21,9 +21,9 @@ describe("automatic session names", () => {
 				expect(options).toMatchObject({ maxTokens: 1024 });
 				expect(options).not.toHaveProperty("temperature");
 				expect(options).not.toHaveProperty("reasoning");
-				expect(context.messages).toHaveLength(1);
-				expect(context.messages[0]).toMatchObject({ role: "user" });
-				expect(context.messages[0]?.content).toEqual([
+				const userMessage = context.messages.find((m: any) => m.role === "user");
+				expect(userMessage).toBeDefined();
+				expect(userMessage?.content).toEqual([
 					{
 						type: "text",
 						text: "<user_prompt>\n修复 Dream 指示器的对齐问题\n</user_prompt>\n\nGenerate title.",

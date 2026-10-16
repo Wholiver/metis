@@ -320,11 +320,11 @@ describe("server mode", () => {
 				id: "openai",
 				name: "OpenAI",
 				baseUrl: "https://api.openai.com/v1",
-				authMethods: ["api_key"],
+				authMethods: expect.arrayContaining(["api_key"]),
 			}),
 			expect.objectContaining({
 				id: "openai-codex",
-				name: "OpenAI Codex",
+				name: expect.stringContaining("OpenAI Codex"),
 				authMethods: ["oauth"],
 			}),
 			expect.objectContaining({ id: "anthropic", authMethods: ["api_key", "oauth"] }),

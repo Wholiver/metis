@@ -40,9 +40,9 @@ type PanelPersist = {
 
 function desktopWorkspace() {
   return (window as any).metisDesktop?.workspace as {
-    gitInfo?: () => Promise<ReviewGitInfo>;
-    gitStatus?: (mode?: string) => Promise<{ info: ReviewGitInfo; files: ReviewFileDiff[] }>;
-    gitDiff?: (path: string, mode?: string) => Promise<{ path: string; diff: string; truncated?: boolean }>;
+    gitInfo?: (targetDir?: string) => Promise<ReviewGitInfo>;
+    gitStatus?: (mode?: string, targetDir?: string) => Promise<{ info: ReviewGitInfo; files: ReviewFileDiff[] }>;
+    gitDiff?: (path: string, mode?: string, targetDir?: string) => Promise<{ path: string; diff: string; truncated?: boolean }>;
     gitInit?: () => Promise<ReviewGitInfo>;
     diff?: (path: string) => Promise<{ path: string; diff: string; truncated?: boolean }>;
   } | undefined;
@@ -194,7 +194,7 @@ export function useWorkspaceReview({
     let cancelled = false;
     (async () => {
       try {
-        const nextInfo = await workspace.gitInfo();
+        const nextInfo = await workspace.gitInfo(workspacePath);
         if (cancelled) return;
         setInfo((current) => (
           current.isRepo === nextInfo.isRepo
@@ -230,7 +230,7 @@ export function useWorkspaceReview({
       try {
         let list: ReviewFileDiff[] = [];
         if (workspace?.gitStatus) {
-          const result = await workspace.gitStatus(resolvedMode);
+          const result = await workspace.gitStatus(resolvedMode, workspacePath);
           if (cancelled || requestId !== requestIdRef.current) return;
           setInfo((current) => (
             current.isRepo === result.info.isRepo
@@ -280,7 +280,7 @@ export function useWorkspaceReview({
     (async () => {
       try {
         if (workspace?.gitDiff) {
-          const result = await workspace.gitDiff(selectedFile, resolvedMode);
+          const result = await workspace.gitDiff(selectedFile, resolvedMode, workspacePath);
           if (!cancelled) {
             setRows([]);
             setPatch(result.diff || '');

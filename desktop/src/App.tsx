@@ -36,6 +36,7 @@ import { useUpdateCheck } from './hooks/useUpdateCheck';
 import { useSystemTheme } from './hooks/useSystemTheme';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { ExtensionUiDialog } from './components/ExtensionUiDialog';
+import { RemotePathModal } from './components/workspace/RemotePathModal';
 import { Onboarding, shouldShowOnboarding } from './components/onboarding/Onboarding';
 import { OnboardingTransition, type OnboardingTransitionStage } from './components/onboarding/OnboardingTransition';
 import { SkillCommand } from './components/chat/SkillPicker';
@@ -297,6 +298,8 @@ export function App() {
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [activeProjectId, setActiveProjectId] = useState('');
   const [projectsReady, setProjectsReady] = useState(false);
+  const [isRemoteServer, setIsRemoteServer] = useState(false);
+  const [isRemoteModalOpen, setIsRemoteModalOpen] = useState(false);
   const [archivedSessions, setArchivedSessions] = useState<ArchivedSessionsMap>(() => loadArchivedSessions());
   const activeProject = projects.find((project) => project.id === activeProjectId);
   const {
@@ -338,7 +341,7 @@ export function App() {
     request,
     refresh,
     removeConversation,
-    connectServer,
+    connectServer: baseConnectServer,
     selectConversation,
     selectProject,
     newConversation,
@@ -794,6 +797,8 @@ export function App() {
 
     const restore = async () => {
       try {
+        const isRemote = Boolean(await desktop?.workspace?.isRemote?.());
+        setIsRemoteServer(isRemote);
         const workspace = await desktop?.workspace?.get?.();
         const isAppPath = (p?: string) => {
           if (!p) return true;
@@ -805,15 +810,22 @@ export function App() {
               id: workspace.path,
               name: workspace.name || workspace.path.split(/[/\\]/).filter(Boolean).pop() || 'Project',
               path: workspace.path,
+              isRemote: Boolean(workspace.isRemote || isRemote),
             }
           : undefined;
         const merged = storedProjects.length > 0
           ? (current && !storedProjects.some((project) => pathsEqual(project.path, current.path))
               ? [...storedProjects, current]
-              : storedProjects)
+              : storedProjects.map((p) => (current && pathsEqual(p.path, current.path) ? { ...p, isRemote: Boolean(current.isRemote || p.isRemote) } : p)))
           : (current ? [current] : []);
         const storedActive = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-        const nextActive = merged.find((project) => project.id === storedActive || pathsEqual(project.path, storedActive || '')) || current || merged[0];
+        let nextActive: ProjectItem | undefined;
+        if (isRemote) {
+          const storedRemote = merged.find((project) => (project.id === storedActive || pathsEqual(project.path, storedActive || '')) && project.isRemote);
+          nextActive = current || storedRemote || merged.find((p) => p.isRemote) || merged[0];
+        } else {
+          nextActive = merged.find((project) => project.id === storedActive || pathsEqual(project.path, storedActive || '')) || current || merged[0];
+        }
         setProjects(merged);
         setActiveProjectId(nextActive?.id || '');
       } catch (error) {
@@ -946,7 +958,61 @@ export function App() {
     });
   }, [activeProject?.path, agents, clearFollowedSubagent, projectAgentsByPath, projects, runIfHarnessAllows, selectConversation]);
 
+  const handleSelectRemotePath = useCallback(async (remotePath: string) => {
+    const desktop = (window as any).metisDesktop;
+    const name = remotePath.split(/[/\\]/).filter(Boolean).pop() || 'Project';
+    const project: ProjectItem = {
+      id: remotePath,
+      name,
+      path: remotePath,
+      isRemote: true,
+    };
+    setProjects((current) => [project, ...current.filter((item) => !pathsEqual(item.path, project.path))]);
+    if (desktop?.workspace?.set) {
+      await desktop.workspace.set(project.path).catch((err: unknown) => {
+        console.warn('[desktop] Failed to set remote workspace:', err);
+      });
+    }
+    setActiveProjectId(project.id);
+    void selectProject(project);
+  }, [selectProject]);
+
+  const connectServer = useCallback(async (options: { baseUrl: string; username: string; password?: string }) => {
+    const ok = await baseConnectServer(options);
+    if (!ok) return false;
+    const desktop = (window as any).metisDesktop;
+    try {
+      const isRemote = Boolean(await desktop?.workspace?.isRemote?.());
+      setIsRemoteServer(isRemote);
+      const workspace = await desktop?.workspace?.get?.();
+      if (workspace?.path) {
+        const project: ProjectItem = {
+          id: workspace.path,
+          name: workspace.name || workspace.path.split(/[/\\]/).filter(Boolean).pop() || 'Project',
+          path: workspace.path,
+          isRemote,
+        };
+        setProjects((current) => {
+          const exists = current.some((p) => pathsEqual(p.path, project.path));
+          if (exists) {
+            return current.map((p) => (pathsEqual(p.path, project.path) ? { ...p, isRemote } : p));
+          }
+          return [project, ...current];
+        });
+        setActiveProjectId(project.id);
+        void selectProject(project);
+      }
+    } catch (err) {
+      console.warn('[desktop] Failed to sync workspace after connecting server:', err);
+    }
+    return true;
+  }, [baseConnectServer, selectProject]);
+
   const handleAddProject = async () => {
+    if (isRemoteServer) {
+      setIsRemoteModalOpen(true);
+      return;
+    }
     const desktop = (window as any).metisDesktop;
     if (!desktop?.workspace) return;
     try {
@@ -975,6 +1041,10 @@ export function App() {
   };
 
   const handleChangeWorkspace = async () => {
+    if (isRemoteServer) {
+      setIsRemoteModalOpen(true);
+      return true;
+    }
     const desktop = (window as any).metisDesktop;
     if (!desktop?.workspace?.select) return false;
     try {
@@ -1566,6 +1636,12 @@ export function App() {
         archivedSessions={archivedSessionList}
         onRestoreArchivedSession={handleRestoreArchivedSession}
         onDeleteArchivedSession={handleDeleteArchivedSession}
+      />
+      <RemotePathModal
+        isOpen={isRemoteModalOpen}
+        onClose={() => setIsRemoteModalOpen(false)}
+        onSelect={handleSelectRemotePath}
+        initialPath={activeProject?.path}
       />
       <Onboarding
         open={isOnboardingOpen}

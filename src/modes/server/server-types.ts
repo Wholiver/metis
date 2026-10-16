@@ -12,6 +12,8 @@ import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "../rpc/rpc-t
 export interface ServerModeOptions {
 	hostname?: string;
 	port?: number;
+	webPort?: number;
+	noWeb?: boolean;
 	cors?: string[];
 	username?: string;
 	password?: string;
@@ -27,6 +29,7 @@ export interface ServerAddress {
 
 export interface ServerHandle {
 	address: ServerAddress;
+	webAddress?: ServerAddress;
 	closed: Promise<void>;
 	close(): Promise<void>;
 }

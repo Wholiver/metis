@@ -92,8 +92,57 @@ describe('desktop workspace-git helpers', () => {
       expect(diffClean).not.toContain('commit ' + history[0].hash);
       expect(diffClean).not.toContain('Author:');
       expect(diffClean).toContain('diff --git');
+
+      // 12. In-flight deduplication: concurrent calls share the exact same promise
+      const p1 = workspaceGit.readGitStatus(tempDir, 'git');
+      const p2 = workspaceGit.readGitStatus(tempDir, 'git');
+      expect(p1).toBe(p2);
+      const [res1, res2] = await Promise.all([p1, p2]);
+      expect(res1).toBe(res2);
+
+      const infoP1 = workspaceGit.readGitInfo(tempDir);
+      const infoP2 = workspaceGit.readGitInfo(tempDir);
+      expect(infoP1).toBe(infoP2);
+      const [infoRes1, infoRes2] = await Promise.all([infoP1, infoP2]);
+      expect(infoRes1).toBe(infoRes2);
+
+      // 13. Combined staged and unstaged line count verification
+      fs.writeFileSync(path.join(tempDir, 'combo.txt'), 'base\n');
+      await workspaceGit.stageFiles(tempDir, ['combo.txt']);
+      await workspaceGit.commit(tempDir, 'add combo');
+      fs.writeFileSync(path.join(tempDir, 'combo.txt'), 'base\nstaged1\nstaged2\n');
+      await workspaceGit.stageFiles(tempDir, ['combo.txt']);
+      fs.writeFileSync(path.join(tempDir, 'combo.txt'), 'base\nstaged1\nstaged2\nunstaged1\n');
+      const comboStatus = await workspaceGit.readGitStatus(tempDir, 'git');
+      const comboFile = comboStatus.files.find((f: any) => f.file === 'combo.txt');
+      expect(comboFile?.additions).toBe(3);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('limits untracked file inspection without hanging on large sets', async () => {
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'metis-git-large-'));
+
+    try {
+      await workspaceGit.initGitRepo(tempDir);
+      // Create 60 untracked files
+      for (let i = 0; i < 60; i++) {
+        fs.writeFileSync(path.join(tempDir, `file_${i}.txt`), `line1\nline2\n`);
+      }
+
+      const status = await workspaceGit.readGitStatus(tempDir, 'git');
+      expect(status.files.length).toBe(60);
+      const counted = status.files.filter((f: any) => f.additions === 2);
+      expect(counted.length).toBe(50);
+      const uncounted = status.files.filter((f: any) => f.additions === 0);
+      expect(uncounted.length).toBe(10);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 });
+

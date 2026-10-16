@@ -339,8 +339,20 @@ describe('desktop React session sidebar', () => {
     expect(pathsEqual('/tmp/project', '/tmp/project/')).toBe(true);
     expect(pathsEqual('/tmp/project//', '/tmp/project')).toBe(true);
     expect(pathsEqual('C:\\Users\\test\\proj', 'c:/users/test/proj/')).toBe(true);
+    expect(pathsEqual('/Users/test/proj', '/users/test/proj')).toBe(true);
     expect(pathsEqual('/tmp/projA', '/tmp/projB')).toBe(false);
     expect(pathsEqual(undefined, '/tmp/proj')).toBe(false);
+  });
+
+  it('deduplicates duplicate session entries in reconcileSessionAgents', () => {
+    const dup1 = { ...session, id: 'dup-id', path: '/tmp/project/dup-1.jsonl' };
+    const dup2 = { ...session, id: 'dup-id', path: '/tmp/project/dup-2.jsonl' };
+    const agents = reconcileSessionAgents([dup1, dup2], {
+      sessionId: 'dup-id',
+      sessionFile: dup1.path,
+    }, '/tmp/project');
+    expect(agents).toHaveLength(1);
+    expect(agents[0].id).toBe('dup-id');
   });
 
 

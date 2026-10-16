@@ -37,6 +37,7 @@ async function runGit(cwd, args, options = {}) {
 		const result = await execFileAsync('git', args, {
 			cwd,
 			maxBuffer: options.maxBuffer || 16 * 1024 * 1024,
+			timeout: options.timeout || 15_000,
 			env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
 		});
 		return { stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
@@ -57,7 +58,7 @@ function isGitRepoSync(cwd) {
 async function isGitRepo(cwd) {
 	if (isGitRepoSync(cwd)) return true;
 	try {
-		const result = await runGit(cwd, ['rev-parse', '--is-inside-work-tree']);
+		const result = await runGit(cwd, ['rev-parse', '--is-inside-work-tree'], { timeout: 5_000 });
 		return result.stdout.trim() === 'true';
 	} catch {
 		return false;
@@ -66,7 +67,7 @@ async function isGitRepo(cwd) {
 
 async function readDefaultBranch(cwd, translate) {
 	try {
-		const symbolic = await runGit(cwd, ['symbolic-ref', 'refs/remotes/origin/HEAD'], { translate });
+		const symbolic = await runGit(cwd, ['symbolic-ref', 'refs/remotes/origin/HEAD'], { translate, timeout: 5_000 });
 		const match = symbolic.stdout.trim().match(/refs\/remotes\/origin\/(.+)$/);
 		if (match?.[1]) return match[1];
 	} catch {
@@ -74,7 +75,7 @@ async function readDefaultBranch(cwd, translate) {
 	}
 	for (const candidate of ['main', 'master']) {
 		try {
-			await runGit(cwd, ['rev-parse', '--verify', candidate], { translate });
+			await runGit(cwd, ['rev-parse', '--verify', candidate], { translate, timeout: 5_000 });
 			return candidate;
 		} catch {
 			// try next
@@ -83,21 +84,40 @@ async function readDefaultBranch(cwd, translate) {
 	return null;
 }
 
-async function readGitInfo(cwd, translate) {
-	const isRepo = await isGitRepo(cwd);
-	if (!isRepo) {
-		return { isRepo: false, branch: null, defaultBranch: null };
-	}
-	let branch = null;
-	try {
-		const result = await runGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], { translate });
-		branch = result.stdout.trim() || null;
-		if (branch === 'HEAD') branch = null;
-	} catch {
-		branch = null;
-	}
-	const defaultBranch = await readDefaultBranch(cwd, translate);
-	return { isRepo: true, branch, defaultBranch };
+function normalizeKeyPath(p) {
+	if (!p || typeof p !== 'string') return '';
+	const resolved = path.resolve(p).replace(/\\/g, '/');
+	return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+const inflightGitInfo = new Map();
+
+function readGitInfo(cwd, translate) {
+	const key = normalizeKeyPath(cwd);
+	const existing = inflightGitInfo.get(key);
+	if (existing) return existing;
+	const promise = (async () => {
+		try {
+			const isRepo = await isGitRepo(cwd);
+			if (!isRepo) {
+				return { isRepo: false, branch: null, defaultBranch: null };
+			}
+			let branch = null;
+			try {
+				const result = await runGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], { translate, timeout: 5_000 });
+				branch = result.stdout.trim() || null;
+				if (branch === 'HEAD') branch = null;
+			} catch {
+				branch = null;
+			}
+			const defaultBranch = await readDefaultBranch(cwd, translate);
+			return { isRepo: true, branch, defaultBranch };
+		} finally {
+			inflightGitInfo.delete(key);
+		}
+	})();
+	inflightGitInfo.set(key, promise);
+	return promise;
 }
 
 function parsePorcelainPath(raw) {
@@ -116,46 +136,71 @@ function statusKind(xy) {
 }
 
 async function numstatMap(cwd, args, translate) {
-	const result = await runGit(cwd, ['diff', '--numstat', ...args], { translate, maxBuffer: MAX_DIFF_BYTES });
 	const map = new Map();
-	for (const line of result.stdout.split('\n')) {
-		if (!line.trim()) continue;
-		const parts = line.split('\t');
-		if (parts.length < 3) continue;
-		const additions = parts[0] === '-' ? 0 : Number(parts[0]) || 0;
-		const deletions = parts[1] === '-' ? 0 : Number(parts[1]) || 0;
-		const file = parts.slice(2).join('\t');
-		map.set(file, { additions, deletions });
+	try {
+		const result = await runGit(cwd, ['diff', '--numstat', ...args], { translate, maxBuffer: MAX_DIFF_BYTES, timeout: 10_000 });
+		for (const line of result.stdout.split('\n')) {
+			if (!line.trim()) continue;
+			const parts = line.split('\t');
+			if (parts.length < 3) continue;
+			const additions = parts[0] === '-' ? 0 : Number(parts[0]) || 0;
+			const deletions = parts[1] === '-' ? 0 : Number(parts[1]) || 0;
+			const file = parts.slice(2).join('\t');
+			map.set(file, { additions, deletions });
+		}
+	} catch {
+		// Return empty map on failure or timeout
 	}
 	return map;
 }
 
 async function listWorkingTreeDiffs(cwd, translate) {
-	const status = await runGit(cwd, ['status', '--porcelain', '-uall'], { translate });
-	const unstaged = await numstatMap(cwd, ['--no-ext-diff'], translate);
-	const staged = await numstatMap(cwd, ['--cached', '--no-ext-diff'], translate);
+	let status;
+	try {
+		status = await runGit(cwd, ['status', '--porcelain', '-uall'], { translate, timeout: 10_000 });
+	} catch {
+		// If -uall timed out or failed on a large repository, fall back to fast -unormal
+		status = await runGit(cwd, ['status', '--porcelain', '-unormal'], { translate, timeout: 10_000 }).catch(() => ({ stdout: '', stderr: '' }));
+	}
+	const [unstaged, staged] = await Promise.all([
+		numstatMap(cwd, ['--no-ext-diff'], translate),
+		numstatMap(cwd, ['--cached', '--no-ext-diff'], translate),
+	]);
 	const files = [];
 	const seen = new Set();
+	let untrackedInspectionCount = 0;
+	const MAX_UNTRACKED_INSPECTION = 50;
+	const MAX_DIFF_FILES = 2000;
 
 	for (const line of status.stdout.split('\n')) {
 		if (!line || line.length < 3) continue;
+		if (files.length >= MAX_DIFF_FILES) break;
 		const xy = line.slice(0, 2);
 		const file = parsePorcelainPath(line.slice(3));
 		if (!file || seen.has(file)) continue;
 		seen.add(file);
-		const stats = unstaged.get(file) || staged.get(file) || { additions: 0, deletions: 0 };
-		if (xy === '??' && stats.additions === 0 && stats.deletions === 0) {
-			const ext = path.extname(file).toLowerCase();
-			if (!BINARY_EXTENSIONS.has(ext)) {
-				try {
-					const absolute = path.join(cwd, file);
-					const st = await fsp.stat(absolute);
-					if (st.isFile() && st.size <= MAX_DIFF_BYTES) {
-						const content = await fsp.readFile(absolute, 'utf8');
-						stats.additions = content.length === 0 ? 0 : content.split(/\r?\n/).length;
+		const u = unstaged.get(file);
+		const s = staged.get(file);
+		const stats = {
+			additions: (u?.additions || 0) + (s?.additions || 0),
+			deletions: (u?.deletions || 0) + (s?.deletions || 0),
+		};
+		if (xy === '??' && stats.additions === 0 && stats.deletions === 0 && !file.endsWith('/')) {
+			if (untrackedInspectionCount < MAX_UNTRACKED_INSPECTION) {
+				untrackedInspectionCount++;
+				const ext = path.extname(file).toLowerCase();
+				if (!BINARY_EXTENSIONS.has(ext)) {
+					try {
+						const absolute = path.join(cwd, file);
+						const st = await fsp.stat(absolute);
+						if (st.isFile() && st.size <= MAX_DIFF_BYTES) {
+							const content = await fsp.readFile(absolute, 'utf8');
+							const trimmed = content.replace(/\r?\n$/, '');
+							stats.additions = trimmed.length === 0 ? 0 : trimmed.split(/\r?\n/).length;
+						}
+					} catch {
+						// ignore unreadable
 					}
-				} catch {
-					// ignore unreadable
 				}
 			}
 		}
@@ -176,14 +221,14 @@ async function listBranchDiffs(cwd, defaultBranch, translate) {
 	if (!defaultBranch) return [];
 	let mergeBase;
 	try {
-		const result = await runGit(cwd, ['merge-base', 'HEAD', defaultBranch], { translate });
+		const result = await runGit(cwd, ['merge-base', 'HEAD', defaultBranch], { translate, timeout: 5_000 });
 		mergeBase = result.stdout.trim();
 	} catch {
 		return [];
 	}
 	if (!mergeBase) return [];
 	const range = `${mergeBase}...HEAD`;
-	const nameStatus = await runGit(cwd, ['diff', '--name-status', range], { translate });
+	const nameStatus = await runGit(cwd, ['diff', '--name-status', range], { translate, timeout: 10_000 });
 	const stats = await numstatMap(cwd, ['--no-ext-diff', range], translate);
 	const files = [];
 	for (const line of nameStatus.stdout.split('\n')) {
@@ -203,13 +248,26 @@ async function listBranchDiffs(cwd, defaultBranch, translate) {
 	return files.sort((a, b) => a.file.localeCompare(b.file));
 }
 
-async function readGitStatus(cwd, mode, translate) {
-	const info = await readGitInfo(cwd, translate);
-	if (!info.isRepo) return { info, files: [] };
-	if (mode === 'branch') {
-		return { info, files: await listBranchDiffs(cwd, info.defaultBranch, translate) };
-	}
-	return { info, files: await listWorkingTreeDiffs(cwd, translate) };
+const inflightGitStatus = new Map();
+
+function readGitStatus(cwd, mode, translate) {
+	const key = `${normalizeKeyPath(cwd)}:${mode || 'git'}`;
+	const existing = inflightGitStatus.get(key);
+	if (existing) return existing;
+	const promise = (async () => {
+		try {
+			const info = await readGitInfo(cwd, translate);
+			if (!info.isRepo) return { info, files: [] };
+			if (mode === 'branch') {
+				return { info, files: await listBranchDiffs(cwd, info.defaultBranch, translate) };
+			}
+			return { info, files: await listWorkingTreeDiffs(cwd, translate) };
+		} finally {
+			inflightGitStatus.delete(key);
+		}
+	})();
+	inflightGitStatus.set(key, promise);
+	return promise;
 }
 
 async function readFileDiff(cwd, relativePath, mode, translate) {

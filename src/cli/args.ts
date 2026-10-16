@@ -31,6 +31,8 @@ export interface Args {
 	mode?: Mode;
 	hostname?: string;
 	port?: number;
+	webPort?: number;
+	noWeb?: boolean;
 	cors?: string[];
 	name?: string;
 	noSession?: boolean;
@@ -132,6 +134,16 @@ export function parseArgs(args: string[]): Args {
 			} else {
 				result.port = parsedPort;
 			}
+		} else if (arg === "--web-port" && i + 1 < args.length) {
+			const rawPort = args[++i];
+			const parsedPort = parseInt(rawPort, 10);
+			if (Number.isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+				result.diagnostics.push({ type: "error", message: `Invalid web port: ${rawPort}` });
+			} else {
+				result.webPort = parsedPort;
+			}
+		} else if (arg === "--no-web") {
+			result.noWeb = true;
 		} else if (arg === "--cors" && i + 1 < args.length) {
 			result.cors = result.cors ?? [];
 			result.cors.push(args[++i]);
@@ -375,6 +387,7 @@ ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
 
 ${chalk.bold("Commands:")}
+  ${APP_NAME} server                    Start HTTP/SSE API and Web UI server
   ${APP_NAME} install <source> [-l]     Install extension source and add to settings
   ${APP_NAME} remove <source> [-l]      Remove extension source from settings
   ${APP_NAME} uninstall <source> [-l]   Alias for remove
@@ -384,6 +397,9 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
 
 ${chalk.bold("Options:")}
+  --port <port>                  Server port for API service (default: 4096)
+  --web-port <port>              Server port for Web UI (default: port + 1)
+  --no-web                       Disable Web UI hosting in server mode
   --provider <name>              Provider name (default: google)
   --model <pattern>              Model pattern or ID (supports "provider/id" and optional ":<thinking>")
   --base-url <url>               Base URL for OpenAI-compatible endpoint (e.g. http://localhost:8000/v1)

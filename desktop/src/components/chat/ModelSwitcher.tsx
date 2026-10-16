@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, LoaderCircle } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, LoaderCircle, Search, X } from 'lucide-react';
 import { ModelOption, ThinkingOption } from '../../types';
 import ProviderIcon from '../providers/ProviderIcon';
+import { filterVisibleModels, loadHiddenModelKeys } from '../../lib/model-selection';
+import { useI18n } from '../../i18n';
 
 interface ModelSwitcherProps {
   models: ModelOption[];
@@ -44,6 +46,36 @@ function sameModel(first?: ModelOption, second?: ModelOption): boolean {
   return Boolean(first && second && first.provider === second.provider && first.id === second.id);
 }
 
+export function formatProviderName(providerId: string): string {
+  const map: Record<string, string> = {
+    openai: 'OpenAI',
+    anthropic: 'Anthropic',
+    google: 'Google',
+    gemini: 'Google Gemini',
+    openrouter: 'OpenRouter',
+    deepseek: 'DeepSeek',
+    groq: 'Groq',
+    siliconflow: 'SiliconFlow',
+    'siliconflow-cn': 'SiliconFlow',
+    ollama: 'Ollama',
+    mistral: 'Mistral',
+    xai: 'xAI',
+    together: 'Together AI',
+    fireworks: 'Fireworks AI',
+    cerebras: 'Cerebras',
+    cohere: 'Cohere',
+    bedrock: 'Amazon Bedrock',
+    'amazon-bedrock': 'Amazon Bedrock',
+  };
+  const key = String(providerId || '').toLowerCase().trim();
+  if (map[key]) return map[key];
+  if (key.startsWith('custom-')) {
+    const raw = key.slice(7).replace(/-/g, ' ');
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+  return key ? key.charAt(0).toUpperCase() + key.slice(1) : 'Provider';
+}
+
 /**
  * Session snapshots identify the selected model, while the provider catalog owns
  * its display metadata. Prefer that catalog entry so a stale session `name`
@@ -81,6 +113,40 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
   const reasoningMenuRefState = useRef<ReasoningMenuState>();
   reasoningMenuRefState.current = reasoningMenu;
   const menuId = useId();
+  const { t } = useI18n();
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const hiddenKeys = useMemo(() => (isOpen ? loadHiddenModelKeys() : new Set<string>()), [isOpen]);
+  const visibleModels = useMemo(() => {
+    return filterVisibleModels(models, hiddenKeys);
+  }, [models, hiddenKeys]);
+
+  const filteredModels = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return visibleModels;
+    return visibleModels.filter((model) => {
+      const name = (model.name || '').toLowerCase();
+      const id = (model.id || '').toLowerCase();
+      const provider = (model.provider || '').toLowerCase();
+      return name.includes(query) || id.includes(query) || provider.includes(query);
+    });
+  }, [visibleModels, searchQuery]);
+
+  const providerGroups = useMemo(() => {
+    const groups: Array<{ provider: string; models: ModelOption[] }> = [];
+    const map = new Map<string, ModelOption[]>();
+    for (const model of filteredModels) {
+      const list = map.get(model.provider) || [];
+      list.push(model);
+      map.set(model.provider, list);
+    }
+    for (const [provider, list] of map.entries()) {
+      groups.push({ provider, models: list });
+    }
+    return groups;
+  }, [filteredModels]);
+
   const displayModel = resolveDisplayModel(activeModel, models);
   const currentLabel = modelLabel(displayModel);
   const activeThinkingOptions = thinkingOptions || thinkingLevels.map((id) => ({ id, label: id, value: id }));
@@ -95,7 +161,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
     const menu = menuRef.current;
     if (!trigger || !menu) return;
     const triggerRect = trigger.getBoundingClientRect();
-    const width = Math.min(292, window.innerWidth - 24);
+    const width = Math.min(340, window.innerWidth - 24);
     const left = Math.min(
       window.innerWidth - width - 12,
       Math.max(12, triggerRect.right - width),
@@ -211,7 +277,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
     requestAnimationFrame(() => {
       positionModelIndicator(activeModel, false);
     });
-  }, [isOpen, activeModel, models.length, activeThinkingOptions.length, updateMenuPosition, positionModelIndicator]);
+  }, [isOpen, activeModel, models.length, activeThinkingOptions.length, filteredModels.length, searchQuery, updateMenuPosition, positionModelIndicator]);
 
   useLayoutEffect(() => {
     if (!reasoningMenu) {
@@ -266,6 +332,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
 
   useEffect(() => {
     if (!isOpen) {
+      setSearchQuery('');
       setReasoningMenu(undefined);
       reasoningMenuRefState.current = undefined;
     }
@@ -279,9 +346,31 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
     const options = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') || []);
     if (event.key === 'Escape') {
       event.preventDefault();
+      if (searchQuery) {
+        setSearchQuery('');
+        return;
+      }
       setIsOpen(false);
       triggerRef.current?.focus();
       return;
+    }
+    if (event.target === searchInputRef.current) {
+      if (event.key === 'ArrowDown' && options.length > 0) {
+        event.preventDefault();
+        options[0]?.focus();
+      } else if (event.key === 'Enter' && options.length > 0) {
+        event.preventDefault();
+        options[0]?.click();
+      }
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      const currentIndex = options.indexOf(document.activeElement as HTMLButtonElement);
+      if (currentIndex === 0 && searchInputRef.current) {
+        event.preventDefault();
+        searchInputRef.current.focus();
+        return;
+      }
     }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || options.length === 0) return;
     event.preventDefault();
@@ -385,7 +474,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
         animation: 'pop-in 180ms cubic-bezier(0.23,1,0.32,1) both',
         transformOrigin: 'bottom left',
       } : { visibility: 'hidden' }}
-      className="fixed z-[100] max-h-[300px] overflow-y-auto rounded-[10px] bg-surface p-1 shadow-overlay border border-line"
+      className="fixed z-[100] max-h-[380px] overflow-y-auto rounded-[10px] bg-surface p-1 shadow-overlay border border-line"
     >
       {/* Floating unified indicator (smooth sliding cover) */}
       <div
@@ -394,40 +483,113 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
         className="absolute left-1 right-1 top-0 rounded-[6px] bg-hover pointer-events-none z-0 will-change-transform transition-[transform,height,opacity] duration-[150ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
         style={{ opacity: 0 }}
       />
-      <p className="relative z-[1] px-2 pb-1 pt-0.5 text-[11px] font-medium text-ink-3">Model</p>
-      {models.map((model) => {
-        const selected = sameModel(model, activeModel);
-        const modelThinkingOptions = optionsForModel(model);
-        const showReasoning = modelThinkingOptions.length > 1 && Boolean(onSelectThinkingLevel);
-        return (
-          <React.Fragment key={`${model.provider}/${model.id}`}>
-            <button
-              type="button"
-              role="option"
-              aria-selected={selected}
-              data-model-option={`${model.provider}/${model.id}`}
-              data-model-reasoning={showReasoning ? '' : undefined}
-              onMouseEnter={(event) => showReasoning ? showReasoningMenu(model, event.currentTarget) : scheduleReasoningMenuClose()}
-              onClick={() => {
-                if (showReasoning) return;
-                setIsOpen(false);
-                void onSelectModel(model);
-                requestAnimationFrame(() => triggerRef.current?.focus());
-              }}
-              className="group relative z-[1] flex min-h-8 w-full items-center gap-2 rounded-[6px] px-2 py-1 text-left transition-colors focus-visible:outline-none"
-              title={showReasoning ? undefined : `${model.provider} · ${model.id}`}
-            >
-              <ProviderIcon providerId={model.provider} className="h-3.5 w-3.5 shrink-0 text-ink-2" />
-              <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">{modelLabel(model)}</span>
-              {showReasoning && selected && <span className="shrink-0 text-[11px] font-medium text-ink-2">{currentThinkingLabel}</span>}
-              <span className="shrink-0 text-[11px] text-ink-3">{model.provider}</span>
-              {selected ? <Check className="h-3.5 w-3.5 flex-none text-ink" /> : showReasoning
-                ? <ChevronRight className="h-3.5 w-3.5 flex-none text-ink-3" />
-                : <span className="h-3.5 w-3.5 flex-none" />}
-            </button>
-          </React.Fragment>
-        );
-      })}
+      {visibleModels.length >= 4 && (
+        <div className="relative z-[1] px-1 pb-1.5 pt-0.5">
+          <div className="relative flex items-center">
+            <Search className="absolute left-2 h-3.5 w-3.5 text-ink-3 pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('searchModels') || 'Search models...'}
+              className="h-7 w-full rounded-[6px] bg-field pl-7 pr-7 text-[12px] text-ink placeholder:text-ink-3 outline-none border border-line-strong focus:border-focus"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-ink-3 hover:text-ink"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {providerGroups.length === 0 ? (
+        <div className="px-3 py-4 text-center text-[12px] text-ink-3">
+          {t('noModelsFound') || 'No models found'}
+        </div>
+      ) : (
+        providerGroups.map((group) => (
+          <div key={group.provider} className="mb-1.5 last:mb-0">
+            <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-[11px] font-semibold text-ink-3">
+              <ProviderIcon providerId={group.provider} className="h-3 w-3 shrink-0 text-ink-3" />
+              <span className="truncate">{formatProviderName(group.provider)}</span>
+            </div>
+            {group.models.map((model) => {
+              const selected = sameModel(model, activeModel);
+              const modelThinkingOptions = optionsForModel(model);
+              const showReasoning = modelThinkingOptions.length > 1 && Boolean(onSelectThinkingLevel);
+              return (
+                <button
+                  key={`${model.provider}/${model.id}`}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  data-model-option={`${model.provider}/${model.id}`}
+                  data-model-reasoning={showReasoning ? '' : undefined}
+                  onFocus={(e) => {
+                    const indicator = modelIndicatorRef.current;
+                    if (!indicator) return;
+                    indicator.style.transition = '';
+                    indicator.style.transform = `translate3d(0, ${e.currentTarget.offsetTop}px, 0)`;
+                    indicator.style.height = `${e.currentTarget.offsetHeight}px`;
+                    indicator.style.opacity = '1';
+                  }}
+                  onMouseEnter={(event) => showReasoning ? showReasoningMenu(model, event.currentTarget) : scheduleReasoningMenuClose()}
+                  onClick={() => {
+                    setIsOpen(false);
+                    setReasoningMenu(undefined);
+                    void onSelectModel(model);
+                    requestAnimationFrame(() => triggerRef.current?.focus());
+                  }}
+                  className="group relative z-[1] flex min-h-8 w-full items-center gap-2 rounded-[6px] px-2 py-1 text-left transition-colors focus-visible:outline-none"
+                  title={showReasoning ? undefined : `${model.provider} · ${model.id}`}
+                >
+                  <ProviderIcon providerId={model.provider} className="h-3.5 w-3.5 shrink-0 text-ink-2" />
+                  <span
+                    className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink"
+                    title={model.name && model.name !== model.id ? `${model.name} (${model.id})` : model.id}
+                  >
+                    {modelLabel(model)}
+                  </span>
+                  {showReasoning && selected && (
+                    <span
+                      role="button"
+                      tabIndex={-1}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        showReasoningMenu(model, e.currentTarget);
+                      }}
+                      className="shrink-0 rounded px-1 text-[11px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors cursor-pointer"
+                      title={currentThinkingLabel}
+                    >
+                      {currentThinkingLabel}
+                    </span>
+                  )}
+                  {selected ? <Check className="h-3.5 w-3.5 flex-none text-ink" /> : showReasoning ? (
+                    <span
+                      role="button"
+                      tabIndex={-1}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        showReasoningMenu(model, e.currentTarget);
+                      }}
+                      className="h-3.5 w-3.5 flex-none flex items-center justify-center text-ink-3 hover:text-ink transition-colors cursor-pointer"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </span>
+                  ) : (
+                    <span className="h-3.5 w-3.5 flex-none" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))
+      )}
     </div>,
     document.body,
   ) : null;
@@ -467,6 +629,14 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
             aria-checked={selectedLevel}
             data-reasoning-option={option.id}
             disabled={thinkingLoading || disabled}
+            onFocus={(e) => {
+              const indicator = reasoningIndicatorRef.current;
+              if (!indicator) return;
+              indicator.style.transition = '';
+              indicator.style.transform = `translate3d(0, ${e.currentTarget.offsetTop}px, 0)`;
+              indicator.style.height = `${e.currentTarget.offsetHeight}px`;
+              indicator.style.opacity = '1';
+            }}
             onClick={async () => {
               if (!sameModel(reasoningMenu.model, activeModel)) await onSelectModel(reasoningMenu.model);
               await onSelectThinkingLevel?.(option.id);
@@ -503,7 +673,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
             setIsOpen(true);
           }
         }}
-        className="flex h-7 min-w-0 max-w-[220px] items-center gap-1 rounded-[8px] px-2 text-[13px] font-medium leading-7 text-ink-2 hover:bg-hover hover:text-ink active:scale-[0.98] transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none"
+        className="flex h-7 min-w-0 max-w-[260px] sm:max-w-[320px] items-center gap-1 rounded-[8px] px-2 text-[13px] font-medium leading-7 text-ink-2 hover:bg-hover hover:text-ink active:scale-[0.98] transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none"
       >
         <span className="truncate" data-model-trigger-label="">{triggerLabel}</span>
         {loading ? (

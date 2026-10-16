@@ -40,7 +40,31 @@ const execFileAsync = promisify(execFile);
 const MAX_TREE_ITEMS = 600;
 const MAX_DIFF_BYTES = 300_000;
 const MAX_BUFFERED_ATTACHMENT_BYTES = 128 * 1024 * 1024;
-const IGNORED_DIRECTORIES = new Set([".git", ".codegraph", ".sessions", "node_modules", "dist", "coverage"]);
+const IGNORED_DIRECTORIES = new Set([
+	".git",
+	".codegraph",
+	".sessions",
+	".metis",
+	"node_modules",
+	"dist",
+	"build",
+	"out",
+	"coverage",
+	".next",
+	".turbo",
+	".nuxt",
+	".svelte-kit",
+	"target",
+	"bin",
+	"obj",
+	".vs",
+	".idea",
+	".gradle",
+	".venv",
+	"venv",
+	"__pycache__",
+	".cache",
+]);
 
 let mainWindow;
 let desktopLanguage = "auto";
@@ -2264,20 +2288,52 @@ function registerIpc() {
 	ipcMain.handle("session-tokens:activity", (_event, sessionPaths) => readSessionTokenActivity(sessionPaths));
 	ipcMain.handle("session-tokens:cost-activity", (_event, sessionPaths) => readSessionCostActivity(sessionPaths));
 
-	ipcMain.handle("workspace:get", () => workspaceSummary());
-	ipcMain.handle("workspace:set", (_event, workspacePath) => {
+	const isRemoteServer = () => !localServerTarget(metisServer.baseUrl);
+	ipcMain.handle("workspace:is-remote", () => isRemoteServer());
+	ipcMain.handle("workspace:validate", async (_event, targetPath) => {
+		if (isRemoteServer()) {
+			const res = await metisRequest("/workspace/validate", { method: "POST", body: { path: targetPath } });
+			return res.data || { valid: false, error: res.error || "Validation failed" };
+		}
+		if (!targetPath || typeof targetPath !== "string" || !targetPath.trim()) return { valid: false, error: nativeText("invalidWorkspacePath") };
+		const resolved = path.resolve(targetPath.trim());
+		if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+			return { valid: false, error: nativeText("workspaceMissing", { path: resolved }) };
+		}
+		return { valid: true, resolved, name: path.basename(resolved), isGitRepo: workspaceGit.isGitRepoSync(resolved) };
+	});
+	ipcMain.handle("workspace:get", async () => {
+		if (isRemoteServer()) {
+			try {
+				const res = await metisRequest("/workspace/summary");
+				if (res.ok && res.data) {
+					return { ...res.data, isRemote: true };
+				}
+			} catch {}
+			return { name: path.basename(workspaceRoot), path: workspaceRoot, isProjectRepo: false, isGitRepo: false, isRemote: true };
+		}
+		return { ...workspaceSummary(), isRemote: false };
+	});
+	ipcMain.handle("workspace:set", async (_event, workspacePath) => {
+		if (isRemoteServer()) {
+			if (typeof workspacePath === "string" && workspacePath.trim()) {
+				workspaceRoot = workspacePath.trim();
+			}
+			return { name: path.basename(workspaceRoot), path: workspaceRoot, isGitRepo: false, isRemote: true };
+		}
 		try {
 			return setWorkspaceRoot(workspacePath);
 		} catch (error) {
 			const message = String(error?.message || "");
 			if (!message.includes("Workspace directory does not exist")) throw error;
-			// Stale workspace paths can be restored from renderer local state.
-			// Keep current workspace instead of surfacing a hard IPC failure.
 			console.warn("[desktop] Ignored stale workspace path:", workspacePath);
 			return workspaceSummary();
 		}
 	});
 	ipcMain.handle("workspace:select", async () => {
+		if (isRemoteServer()) {
+			return { isRemote: true };
+		}
 		const result = await dialog.showOpenDialog(mainWindow, { buttonLabel: nativeText("dialogSelectFolder"), properties: ["openDirectory", "createDirectory"] });
 		if (result.canceled || result.filePaths.length === 0) return undefined;
 		return setWorkspaceRoot(result.filePaths[0]);
@@ -2310,33 +2366,70 @@ function registerIpc() {
 		});
 	});
 	const resolveGitCwd = (targetDir) => (typeof targetDir === "string" && targetDir.trim() ? path.resolve(targetDir) : workspaceRoot);
-	ipcMain.handle("workspace:tree", (_event, targetDir) => readWorkspaceTree(targetDir));
-	ipcMain.handle("workspace:diff", (_event, relativePath) => readGitDiff(relativePath));
-	ipcMain.handle("workspace:git-info", (_event, targetDir) => workspaceGit.readGitInfo(resolveGitCwd(targetDir), nativeText));
-	ipcMain.handle("workspace:git-status", (_event, mode = "git", targetDir) =>
-		workspaceGit.readGitStatus(resolveGitCwd(targetDir), mode === "branch" ? "branch" : "git", nativeText),
-	);
-	ipcMain.handle("workspace:git-diff", (_event, relativePath, mode = "git", targetDir) =>
-		workspaceGit.readFileDiff(
+	ipcMain.handle("workspace:tree", async (_event, targetDir) => {
+		if (isRemoteServer()) {
+			const query = targetDir ? `?targetDir=${encodeURIComponent(targetDir)}&cwd=${encodeURIComponent(targetDir)}` : "";
+			const res = await metisRequest(`/workspace/tree${query}`);
+			return res.data || { root: { name: "", path: "", isGitRepo: false }, nodes: [], truncated: false };
+		}
+		return readWorkspaceTree(targetDir);
+	});
+	ipcMain.handle("workspace:diff", async (_event, relativePath) => {
+		if (isRemoteServer()) {
+			const res = await metisRequest(`/workspace/git-diff?path=${encodeURIComponent(relativePath)}&mode=git`);
+			return res.data || { path: relativePath, diff: "", truncated: false };
+		}
+		return readGitDiff(relativePath);
+	});
+	ipcMain.handle("workspace:git-info", async (_event, targetDir) => {
+		if (isRemoteServer()) {
+			const query = targetDir ? `?cwd=${encodeURIComponent(targetDir)}` : "";
+			const res = await metisRequest(`/workspace/git-info${query}`);
+			return res.data || { isRepo: false, branch: null, defaultBranch: null };
+		}
+		return workspaceGit.readGitInfo(resolveGitCwd(targetDir), nativeText);
+	});
+	ipcMain.handle("workspace:git-status", async (_event, mode = "git", targetDir) => {
+		if (isRemoteServer()) {
+			const cwdParam = targetDir ? `&cwd=${encodeURIComponent(targetDir)}` : "";
+			const res = await metisRequest(`/workspace/git-status?mode=${mode}${cwdParam}`);
+			return res.data || { info: { isRepo: false, branch: null, defaultBranch: null }, files: [] };
+		}
+		return workspaceGit.readGitStatus(resolveGitCwd(targetDir), mode === "branch" ? "branch" : "git", nativeText);
+	});
+	ipcMain.handle("workspace:git-diff", async (_event, relativePath, mode = "git", targetDir) => {
+		if (isRemoteServer()) {
+			const cwdParam = targetDir ? `&cwd=${encodeURIComponent(targetDir)}` : "";
+			const res = await metisRequest(`/workspace/git-diff?path=${encodeURIComponent(relativePath)}&mode=${mode}${cwdParam}`);
+			return res.data || { path: relativePath, diff: "", truncated: false };
+		}
+		return workspaceGit.readFileDiff(
 			resolveGitCwd(targetDir),
 			relativePath,
 			mode === "branch" ? "branch" : "git",
 			nativeText,
-		),
-	);
+		);
+	});
 	ipcMain.handle("workspace:git-init", (_event, targetDir) => workspaceGit.initGitRepo(resolveGitCwd(targetDir), nativeText));
 	ipcMain.handle("workspace:git-stage", (_event, files, targetDir) => workspaceGit.stageFiles(resolveGitCwd(targetDir), files, nativeText));
 	ipcMain.handle("workspace:git-unstage", (_event, files, targetDir) => workspaceGit.unstageFiles(resolveGitCwd(targetDir), files, nativeText));
 	ipcMain.handle("workspace:git-discard", (_event, files, targetDir) => workspaceGit.discardFiles(resolveGitCwd(targetDir), files, nativeText));
 	ipcMain.handle("workspace:git-commit", (_event, message, targetDir) => workspaceGit.commit(resolveGitCwd(targetDir), message, nativeText));
-	ipcMain.handle("workspace:git-history", (_event, limit, targetDir) => workspaceGit.readCommitHistory(resolveGitCwd(targetDir), limit, nativeText));
+	ipcMain.handle("workspace:git-history", async (_event, limit, targetDir) => {
+		if (isRemoteServer()) return [];
+		return workspaceGit.readCommitHistory(resolveGitCwd(targetDir), limit, nativeText);
+	});
 	ipcMain.handle("workspace:git-commit-detail", (_event, hash, targetDir) => workspaceGit.readCommitDetail(resolveGitCwd(targetDir), hash, nativeText));
 	ipcMain.handle("workspace:git-commit-file-diff", (_event, hash, relativePath, targetDir) =>
 		workspaceGit.readCommitFileDiff(resolveGitCwd(targetDir), hash, relativePath, nativeText),
 	);
-	ipcMain.handle("workspace:git-branches", (_event, targetDir) => workspaceGit.readBranches(resolveGitCwd(targetDir), nativeText));
+	ipcMain.handle("workspace:git-branches", async (_event, targetDir) => {
+		if (isRemoteServer()) return { current: "", branches: [] };
+		return workspaceGit.readBranches(resolveGitCwd(targetDir), nativeText);
+	});
 	ipcMain.handle("workspace:git-checkout", (_event, branch, targetDir) => workspaceGit.checkoutBranch(resolveGitCwd(targetDir), branch, nativeText));
 	ipcMain.handle("workspace:reveal", async (_event, relativePath, targetDir) => {
+		if (isRemoteServer()) return;
 		const absolutePath = resolveWorkspacePath(relativePath, targetDir);
 		if (fs.existsSync(absolutePath)) {
 			shell.showItemInFolder(absolutePath);
@@ -2346,11 +2439,17 @@ function registerIpc() {
 		}
 	});
 	ipcMain.handle("workspace:open-path", async (_event, relativePath, targetDir) => {
+		if (isRemoteServer()) return false;
 		const absolutePath = resolveWorkspacePath(relativePath, targetDir);
 		await shell.openPath(absolutePath);
 		return true;
 	});
 	ipcMain.handle("workspace:read-file", async (_event, relativePath, targetDir) => {
+		if (isRemoteServer()) {
+			const cwdParam = targetDir ? `&cwd=${encodeURIComponent(targetDir)}` : "";
+			const res = await metisRequest(`/workspace/file?path=${encodeURIComponent(relativePath)}${cwdParam}`);
+			return res.data?.content ?? "";
+		}
 		const absolutePath = resolveWorkspacePath(relativePath, targetDir);
 		const stat = await fsp.stat(absolutePath);
 		if (!stat.isFile()) throw new Error("Target is not a file");
@@ -2363,6 +2462,7 @@ function registerIpc() {
 	ipcMain.handle("provider-config:discover-models", (_event, config) => discoverCustomProviderModels(config));
 	ipcMain.handle("provider-config:save-custom", (_event, config) => saveCustomProviderConfig(config));
 	ipcMain.handle("provider-config:delete-custom", (_event, providerId) => deleteCustomProvider(providerId));
+	ipcMain.handle("provider-config:delete-model", (_event, providerId, modelId) => deleteCustomProviderModel(providerId, modelId));
 
 	let cachedFallbackBuiltinHarness = null;
 	function getFallbackBuiltinHarness() {
@@ -2561,6 +2661,14 @@ async function deleteCustomProvider(providerId) {
 	return { provider: providerId, deleted: true };
 }
 
+async function deleteCustomProviderModel(providerId, modelId) {
+	const deleted = await customProviderConfig.deleteCustomProviderModel(resolveAgentDir(), providerId, modelId, customProviderOptions());
+	if (deleted) {
+		await metisRequest("/session/command", { method: "POST", body: { command: "/reload" } });
+	}
+	return { provider: providerId, modelId, deleted: Boolean(deleted) };
+}
+
 function workspaceSummary() {
 	const isGitRepo = workspaceGit.isGitRepoSync(workspaceRoot);
 	return {
@@ -2625,13 +2733,18 @@ async function readWorkspaceTree(targetDir) {
 
 	async function walk(directory, depth) {
 		if (depth > 6 || count >= MAX_TREE_ITEMS) return [];
-		const entries = await fsp.readdir(directory, { withFileTypes: true });
+		let entries;
+		try {
+			entries = await fsp.readdir(directory, { withFileTypes: true });
+		} catch {
+			return [];
+		}
 		entries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
 		const nodes = [];
 		for (const entry of entries) {
 			if (count >= MAX_TREE_ITEMS) break;
 			if (entry.name === ".DS_Store") continue;
-			if (entry.isDirectory() && IGNORED_DIRECTORIES.has(entry.name)) continue;
+			if (entry.isDirectory() && IGNORED_DIRECTORIES.has(entry.name.toLowerCase())) continue;
 			if (entry.isSymbolicLink()) continue;
 			const absolutePath = path.join(directory, entry.name);
 			const relativePath = path.relative(currentRoot, absolutePath).replace(/\\/g, '/');
@@ -2665,17 +2778,20 @@ async function readGitDiff(relativePath) {
 		const status = await execFileAsync("git", ["status", "--porcelain", "--", normalized], {
 			cwd: workspaceRoot,
 			maxBuffer: 16_384,
+			timeout: 10_000,
 		});
 		isUntracked = status.stdout.startsWith("??");
 		const result = await execFileAsync("git", ["diff", "--no-ext-diff", "--unified=4", "--", normalized], {
 			cwd: workspaceRoot,
 			maxBuffer: MAX_DIFF_BYTES,
+			timeout: 10_000,
 		});
 		diff = result.stdout;
 		if (!diff) {
 			const staged = await execFileAsync("git", ["diff", "--cached", "--no-ext-diff", "--unified=4", "--", normalized], {
 				cwd: workspaceRoot,
 				maxBuffer: MAX_DIFF_BYTES,
+				timeout: 10_000,
 			});
 			diff = staged.stdout;
 		}

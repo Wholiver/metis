@@ -931,6 +931,8 @@ export async function main(args: string[], options?: MainOptions) {
 		await runServerMode(runtime, {
 			hostname: parsed.hostname || "127.0.0.1",
 			port: parsed.port || 4096,
+			webPort: parsed.webPort,
+			noWeb: parsed.noWeb,
 			adaptations: parsed.adaptations,
 			executionProfile: parsed.executionProfile,
 		});

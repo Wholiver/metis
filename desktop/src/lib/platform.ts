@@ -5,6 +5,9 @@ export const isMac = (() => {
   if (typeof document !== 'undefined' && document.body?.classList?.contains('platform-darwin')) {
     return true;
   }
+  if (typeof process !== 'undefined' && process.platform) {
+    return process.platform === 'darwin';
+  }
   if (typeof navigator !== 'undefined') {
     return /Mac/i.test(navigator.userAgent || '');
   }
@@ -18,8 +21,12 @@ export const isWindows = (() => {
   if (typeof document !== 'undefined' && document.body?.classList?.contains('platform-win32')) {
     return true;
   }
+  if (typeof process !== 'undefined' && process.platform) {
+    return process.platform === 'win32';
+  }
   if (typeof navigator !== 'undefined') {
     return /Win/i.test(navigator.userAgent || '');
   }
   return false;
 })();
+

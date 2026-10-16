@@ -31,6 +31,7 @@ import {
 } from '../lib/extension-ui';
 import { applyToolExecutionEnd, applyToolExecutionUpdate, extractToolResultText } from '../lib/tool-execution-update';
 import { workflowPlanFromCustomEntry } from '../lib/workflow-plan';
+import { isMac, isWindows } from '../lib/platform';
 
 type MetisResponse<T> = {
   ok: boolean;
@@ -229,8 +230,8 @@ export function pathsEqual(a?: string, b?: string): boolean {
   if (!a || !b) return false;
   const normA = normalizePath(a);
   const normB = normalizePath(b);
-  const isWindows = /^[a-z]:\//i.test(normA) || /^[a-z]:\//i.test(normB);
-  return isWindows ? normA.toLowerCase() === normB.toLowerCase() : normA === normB;
+  const isCaseInsensitive = isWindows || isMac || /^[a-z]:\//i.test(normA) || /^[a-z]:\//i.test(normB);
+  return isCaseInsensitive ? normA.toLowerCase() === normB.toLowerCase() : normA === normB;
 }
 
 export function isSessionOwnedByProject(
@@ -244,9 +245,9 @@ export function isSessionOwnedByProject(
   if (state.sessionFile) {
     const normFile = normalizePath(state.sessionFile);
     const normWorkspace = normalizePath(projectPath);
-    const isWindows = /^[a-z]:\//i.test(normFile) || /^[a-z]:\//i.test(normWorkspace);
-    const file = isWindows ? normFile.toLowerCase() : normFile;
-    const workspace = isWindows ? normWorkspace.toLowerCase() : normWorkspace;
+    const isCaseInsensitive = isWindows || isMac || /^[a-z]:\//i.test(normFile) || /^[a-z]:\//i.test(normWorkspace);
+    const file = isCaseInsensitive ? normFile.toLowerCase() : normFile;
+    const workspace = isCaseInsensitive ? normWorkspace.toLowerCase() : normWorkspace;
     if (file === workspace || file.startsWith(`${workspace}/`)) {
       return true;
     }
@@ -289,7 +290,23 @@ export function reconcileSessionAgents(
       projectPath,
     }, ...nextAgents];
   }
-  return nextAgents;
+
+  const isCaseInsensitive = isWindows || isMac;
+  const seenIds = new Set<string>();
+  const seenPaths = new Set<string>();
+  const deduped: Agent[] = [];
+  for (const agent of nextAgents) {
+    if (!agent.id || seenIds.has(agent.id)) continue;
+    if (agent.sessionPath) {
+      const norm = normalizePath(agent.sessionPath);
+      const pathKey = isCaseInsensitive ? norm.toLowerCase() : norm;
+      if (seenPaths.has(pathKey)) continue;
+      seenPaths.add(pathKey);
+    }
+    seenIds.add(agent.id);
+    deduped.push(agent);
+  }
+  return deduped;
 }
 
 
@@ -1451,8 +1468,15 @@ export function useMetisServer(activeProject?: ProjectItem) {
     if (!hasCachedList) setIsLoadingSessions(true);
     setSessionError('');
     try {
-      const result = await request<SessionListResponse>(`/sessions?cwd=${encodeURIComponent(project.path)}`, 'GET', undefined, 60_000);
-      if (!Array.isArray(result.sessions)) throw new Error('Invalid session list response');
+      let result: SessionListResponse = { cwd: project.path, sessions: [] };
+      try {
+        const fetched = await request<SessionListResponse>(`/sessions?cwd=${encodeURIComponent(project.path)}`, 'GET', undefined, 60_000);
+        if (Array.isArray(fetched?.sessions)) {
+          result = fetched;
+        }
+      } catch (listError) {
+        console.warn('[desktop] Failed to load session list for project:', listError);
+      }
       if (version !== loadVersionRef.current) return;
 
       let state = await request<SessionState>('/session');
@@ -1464,9 +1488,9 @@ export function useMetisServer(activeProject?: ProjectItem) {
       if (switchWhenNeeded && (!pathsEqual(state.cwd, project.path) || !current || preferredMismatch)) {
         const destination = preferredPath || result.sessions[0]?.path;
         if (destination) {
-          await request('/session/switch', 'POST', { sessionPath: destination });
+          await request('/session/switch', 'POST', { sessionPath: destination }, 120_000);
         } else {
-          await request('/session/new', 'POST', { cwd: project.path, collaborationMode: 'build' });
+          await request('/session/new', 'POST', { cwd: project.path, collaborationMode: 'build' }, 120_000);
         }
         state = await request<SessionState>('/session');
       }

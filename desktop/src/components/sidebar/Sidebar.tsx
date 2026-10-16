@@ -193,8 +193,14 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
     } else {
       list = cached || [];
     }
-    if (!archivedSessionIds || archivedSessionIds.size === 0) return list;
-    return list.filter((agent) => !archivedSessionIds.has(agent.id));
+    const seenIds = new Set<string>();
+    const unique = list.filter((agent) => {
+      if (!agent.id || seenIds.has(agent.id)) return false;
+      seenIds.add(agent.id);
+      return true;
+    });
+    if (!archivedSessionIds || archivedSessionIds.size === 0) return unique;
+    return unique.filter((agent) => !archivedSessionIds.has(agent.id));
   }, [activeProjectId, agents, agentsByProject, archivedSessionIds]);
 
 
@@ -589,7 +595,12 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
                   data-project-expanded={isExpanded ? 'true' : 'false'}
                 >
                   <Folder className="w-3.5 h-3.5 stroke-[1.7] text-ink-2 shrink-0" />
-                  <span className="truncate text-left">{project.name}</span>
+                  <span className="truncate text-left flex-1">{project.name}</span>
+                  {project.isRemote && (
+                    <span className="shrink-0 text-[10px] font-mono px-1 py-0.5 rounded bg-surface text-ink-3 border border-line leading-none">
+                      {t('remoteTag') || 'Remote'}
+                    </span>
+                  )}
                 </button>
 
                 {isExpanded && (
@@ -610,9 +621,17 @@ export const Sidebar = memo(forwardRef<HTMLElement, SidebarProps>(({
         {projects.length === 0 && (
           <div className="mt-1" data-project-conversations="">
             {renderConversationList(
-              archivedSessionIds && archivedSessionIds.size > 0
-                ? agents.filter((agent) => !archivedSessionIds.has(agent.id))
-                : agents,
+              (() => {
+                const pool = archivedSessionIds && archivedSessionIds.size > 0
+                  ? agents.filter((agent) => !archivedSessionIds.has(agent.id))
+                  : agents;
+                const seenIds = new Set<string>();
+                return pool.filter((agent) => {
+                  if (!agent.id || seenIds.has(agent.id)) return false;
+                  seenIds.add(agent.id);
+                  return true;
+                });
+              })(),
               {
                 attachIndicator: true,
                 showActiveLoading: true,

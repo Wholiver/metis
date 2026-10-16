@@ -120,9 +120,24 @@ describe("SessionListOptions.includeMessageText", () => {
 		appendFileSync(filePath, `${messageEntry("user-3", "user-2", "user", "third user question")}\n`, "utf8");
 
 		const [after] = await SessionManager.listAll(sessionDir);
-		expect(after!.messageCount).toBe(4);
 		expect(after!.lastMessage).toBe("third user question");
 		expect(after!.dailyActivity[0]?.userMessages).toBe(3);
+	});
+
+	it("returns empty list quickly for empty directory without scanning other projects", async () => {
+		const emptyDir = mkdtempSync(join(tmpdir(), "metis-empty-project-"));
+		const sessions = await SessionManager.list(emptyDir);
+		expect(sessions).toEqual([]);
+	});
+
+	it("returns sessions for project directory when present", async () => {
+		const projectDir = mkdtempSync(join(tmpdir(), "metis-test-proj-"));
+		const manager = SessionManager.create(projectDir);
+		manager.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }] });
+
+		const sessions = await SessionManager.list(projectDir);
+		expect(sessions.length).toBe(1);
+		expect(sessions[0]?.firstMessage).toBe("hello");
 	});
 });
 

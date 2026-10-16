@@ -10,6 +10,7 @@ import { ModelRegistry } from "../src/core/model-registry.ts";
 const require = createRequire(import.meta.url);
 const providerConfig = require("../desktop/provider-config.cjs") as {
 	deleteCustomProviderConfig(agentDir: string, providerId: string): Promise<boolean>;
+	deleteCustomProviderModel(agentDir: string, providerId: string, modelId: string): Promise<boolean>;
 	discoverCustomProviderModels(baseUrl: string, apiKey: string, options?: { fetchImpl?: typeof fetch }): Promise<Array<{ id: string; thinkingOptions: Array<{ id: string; label: string; value: string }> }>>;
 	listCustomProviderConfigs(agentDir: string): Promise<Array<Record<string, unknown>>>;
 	saveCustomProviderConfig(
@@ -337,5 +338,32 @@ describe("Desktop custom Provider configuration", () => {
 		const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: "native", ...metadata as object }] }) });
 		const models = await providerConfig.discoverCustomProviderModels("https://proxy.example/v1", "test-key", { fetchImpl });
 		expect(models[0]?.thinkingOptions[0]).toMatchObject({ id, value });
+	});
+
+	it("deletes a single model from a provider without deleting other models", async () => {
+		const created = await providerConfig.saveCustomProviderConfig(agentDir, {
+			name: "Multi Model Provider",
+			baseUrl: "https://multi.example/v1",
+			modelIds: ["model-one", "model-two", "model-three"],
+		});
+
+		expect(created.modelIds).toEqual(["model-one", "model-two", "model-three"]);
+
+		const deleted = await providerConfig.deleteCustomProviderModel(agentDir, created.provider as string, "model-two");
+		expect(deleted).toBe(true);
+
+		const models = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
+		const remaining = models.providers[created.provider as string].models.map((m: { id: string }) => m.id);
+		expect(remaining).toEqual(["model-one", "model-three"]);
+
+		// Deleting a non-existent model returns false
+		const deletedAgain = await providerConfig.deleteCustomProviderModel(agentDir, created.provider as string, "non-existent");
+		expect(deletedAgain).toBe(false);
+
+		// Deleting remaining models removes the custom provider from configuration
+		expect(await providerConfig.deleteCustomProviderModel(agentDir, created.provider as string, "model-one")).toBe(true);
+		expect(await providerConfig.deleteCustomProviderModel(agentDir, created.provider as string, "model-three")).toBe(true);
+		const modelsAfterAllDeleted = JSON.parse(fs.readFileSync(path.join(agentDir, "models.json"), "utf8"));
+		expect(modelsAfterAllDeleted.providers[created.provider as string]).toBeUndefined();
 	});
 });

@@ -259,7 +259,7 @@ describe("Desktop translation coverage", () => {
 		const intentionallyStable = new Set([
 			"简体中文", "https://api.example.com/v1", "⌘ N", "Enter", "Shift Enter", "Esc", "Ctrl↵", "HTML", "JSONL",
 			"Metis Desktop", "Metis", "·", "%", "+", "—", "PDF", "ID #", "calendar.google.com", "M", "HEAD",
-			"bloub 动画头像", "my-awesome-project", "model-id", "myprovider",
+			"bloub 动画头像", "my-awesome-project", "model-id", "myprovider", "/home/username/my-project",
 		]);
 		const english = new Set(Object.values(i18n.catalogs.en));
 		const missing = [...values].filter((value) => !intentionallyStable.has(value) && /[A-Za-z]/.test(value) && !english.has(value)).sort();

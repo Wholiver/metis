@@ -386,9 +386,37 @@ async function deleteCustomProviderConfig(agentDir, providerId, options = {}) {
 	return true;
 }
 
+async function deleteCustomProviderModel(agentDir, providerId, modelId, options = {}) {
+	const modelsPath = path.join(agentDir, "models.json");
+	const modelsConfig = await readModelsConfig(modelsPath, options.translate);
+	const provider = modelsConfig.providers[providerId];
+	if (!provider || typeof provider !== "object") return false;
+	const existingModels = Array.isArray(provider.models) ? provider.models : [];
+	const existingModelIds = Array.isArray(provider.modelIds) ? provider.modelIds : [];
+	const targetId = String(modelId || "").trim();
+	const updatedModels = existingModels.filter((m) => {
+		const id = typeof m === "string" ? m.trim() : typeof m?.id === "string" ? m.id.trim() : "";
+		return id !== targetId;
+	});
+	const updatedModelIds = existingModelIds.filter((id) => String(id).trim() !== targetId);
+	if (updatedModels.length === existingModels.length && updatedModelIds.length === existingModelIds.length) {
+		return false;
+	}
+	provider.models = updatedModels;
+	if (Array.isArray(provider.modelIds)) {
+		provider.modelIds = updatedModelIds;
+	}
+	if (isCustomProviderId(providerId) && updatedModels.length === 0 && updatedModelIds.length === 0) {
+		delete modelsConfig.providers[providerId];
+	}
+	await writeModelsConfig(agentDir, modelsPath, modelsConfig);
+	return true;
+}
+
 module.exports = {
 	CUSTOM_PROVIDER_ID_PREFIX,
 	deleteCustomProviderConfig,
+	deleteCustomProviderModel,
 	discoverCustomProviderModels,
 	extractProviderThinkingOptions,
 	isCustomProviderId,

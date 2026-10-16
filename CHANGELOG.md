@@ -2,6 +2,21 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [2.0.2] - 2026-10-16
+
+### Windows Large Repo Git Diff Protection, Session List Deduplication, Model Selector Polish & Remote Server Workspace
+
+- **Windows Large Repo Git Diff Protection (Fixes #45)**: Optimize Git diff parsing and branch comparisons in `workspace-git.cjs` using chunked asynchronous processing with timeout safeguards, avoiding process deadlocks and abort errors on large Windows repositories.
+- **Session List Deduplication (Fixes #45)**: Standardize cross-platform session path comparisons and keying in `src/core/session-manager.ts` and sidebar state to completely eliminate duplicate conversation entries across Windows drive letters and relative paths.
+- **Model Selector & Custom Model Polish (Fixes #47)**:
+  - Expand model dropdown width and add full-name tooltips to prevent long model names from truncating.
+  - Pin custom models to the top without redundant `Custom` prefix labels.
+  - Unfold models by provider so multiple models from the same vendor are cleanly presented.
+  - Add one-click deletion for custom models directly in Settings.
+- **Remote Workspace & Server Mode Git Inspection (Fixes #44)**:
+  - Add workspace service endpoints (`/workspace/tree`, `/workspace/git-status`, `/workspace/git-diff`, `/workspace/file`) to Metis Server mode.
+  - Add `RemotePathModal` and remote workspace bridge for Desktop clients connecting to remote servers, enabling remote file picking, directory tree exploration, and Git review.
+
 ## [2.0.1] - 2026-10-15
 
 ### Global & Component Error Boundaries, Starter Prompts, Process Crash Recovery, Large File Diff Protection & Model Catalog 1.2.0

@@ -52,6 +52,14 @@ import { SelfLearningBadge } from '../atoms/SelfLearningBadge';
 import ApprovalDialog from '../primitives/ApprovalDialog';
 import GlideMenu from '../primitives/GlideMenu';
 import { AddModelModal } from './AddModelModal';
+import ProviderIcon from '../providers/ProviderIcon';
+import {
+  hideModel,
+  loadHiddenModelKeys,
+  modelKey,
+  restoreAllHiddenModels,
+  unhideModel,
+} from '../../lib/model-selection';
 
 type Request = <T>(path: string, method?: string, body?: unknown, timeoutMs?: number) => Promise<T>;
 
@@ -284,6 +292,20 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [credentialInfo, setCredentialInfo] = useState<Record<string, any>>({});
   const [customProviders, setCustomProviders] = useState<ProviderConfig[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => loadHiddenModelKeys());
+  const [showHiddenModels, setShowHiddenModels] = useState(false);
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(() => new Set());
+  const toggleProviderExpanded = (providerId: string) => {
+    setExpandedProviders((prev) => {
+      const next = new Set(prev);
+      if (next.has(providerId)) {
+        next.delete(providerId);
+      } else {
+        next.add(providerId);
+      }
+      return next;
+    });
+  };
   const [providerForm, setProviderForm] = useState<ProviderConfig>({});
   const [serverUrl, setServerUrl] = useState('http://127.0.0.1:4096');
   const [serverUsername, setServerUsername] = useState('metis');
@@ -452,7 +474,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
     if (oauthProvider && !oauthProviders.includes(oauthProvider)) setOauthProvider(oauthProviders[0] || '');
   }, [oauthProvider, oauthProviders]);
 
-  useEffect(() => { if (props.open) void load(); }, [props.open, props.isConnected]);
+  useEffect(() => {
+    if (props.open) {
+      void load();
+      setHiddenKeys(loadHiddenModelKeys());
+      setExpandedProviders(new Set());
+    }
+  }, [props.open, props.isConnected]);
   useEffect(() => {
     if (!props.open) return;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') props.onClose(); };
@@ -616,10 +644,62 @@ export function SettingsDialog(props: SettingsDialogProps) {
           isOAuth,
           tag: isOAuth ? 'OAuth' : 'API Key',
           modelsSummary: modelNames,
+          associatedModels,
           baseUrl: catalog?.baseUrl || (isOAuth ? translate('OAuth authorized account') : translate('API key authorized')),
         };
       });
   }, [credentialProviders, customProviders, props.providerCatalog, props.models, oauthProviders, translate]);
+
+  const handleDeleteCustomModel = async (providerId: string, modelId: string, name?: string) => {
+    const approved = await requestApproval({
+      title: translate('deleteModelTitle') || translate('Delete model'),
+      message: translate('deleteSingleModelConfirm', { name: name || modelId }) || `Delete model ${name || modelId}?`,
+      confirmLabel: translate('Delete'),
+      danger: true,
+    });
+    if (approved !== null) {
+      await run(async () => {
+        await requireDesktop(
+          desktop?.providerConfig?.deleteModel
+            ? () => desktop.providerConfig.deleteModel(providerId, modelId)
+            : undefined,
+          'Provider settings'
+        );
+        unhideModel(providerId, modelId);
+        setHiddenKeys(loadHiddenModelKeys());
+        await refreshProviderState();
+      }, translate('modelDeletedSuccess') || 'Custom model deleted successfully.');
+    }
+  };
+
+  const handleHideBuiltinModel = async (providerId: string, modelId: string, name?: string) => {
+    const approved = await requestApproval({
+      title: translate('deleteModelTitle') || translate('Delete model'),
+      message: translate('deleteSingleModelConfirm', { name: name || modelId }) || `Delete model ${name || modelId}?`,
+      confirmLabel: translate('Delete'),
+      danger: true,
+    });
+    if (approved !== null) {
+      hideModel(providerId, modelId);
+      setHiddenKeys(loadHiddenModelKeys());
+      setFeedback(translate('modelDeletedSuccess') || 'Model removed successfully.');
+      if (props.isConnected) await props.refresh();
+    }
+  };
+
+  const handleRestoreModel = async (providerId: string, modelId: string) => {
+    unhideModel(providerId, modelId);
+    setHiddenKeys(loadHiddenModelKeys());
+    setFeedback(translate('modelsRestoredSuccess') || 'Models restored successfully.');
+    if (props.isConnected) await props.refresh();
+  };
+
+  const handleRestoreAllModels = async () => {
+    restoreAllHiddenModels();
+    setHiddenKeys(new Set());
+    setFeedback(translate('modelsRestoredSuccess') || 'Models restored successfully.');
+    if (props.isConnected) await props.refresh();
+  };
 
   const model = (
     <>
@@ -658,95 +738,267 @@ export function SettingsDialog(props: SettingsDialogProps) {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-line/60 overflow-hidden rounded-card border border-line/50 bg-surface shadow-card">
-              {customProviders.map((provider) => {
-                const modelNames =
-                  provider.modelIds && provider.modelIds.length > 0
-                    ? provider.modelIds.join(', ')
-                    : provider.models && provider.models.length > 0
-                    ? provider.models.map((m) => m.id).join(', ')
-                    : 'Auto';
-                return (
-                  <div
-                    key={provider.providerId}
-                    className="flex items-center justify-between px-4 py-3.5 transition-colors hover:bg-hover"
-                  >
-                    <div className="min-w-0 pr-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="truncate text-[14px] font-medium text-ink">
-                          {provider.name || provider.providerId}
-                        </span>
-                        <ValuePill className="text-[11px]">{modelNames}</ValuePill>
-                      </div>
-                      <p className="mt-0.5 truncate text-[13px] text-ink-3">
-                        {provider.baseUrl}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        type="button"
-                        title={translate('Delete')}
-                        onClick={async () => {
-                          const approved = await requestApproval({
-                            title: translate('Delete custom model'),
-                            message: translate(`Delete custom model ${provider.name || provider.providerId || ''}?`),
-                            confirmLabel: translate('Delete'),
-                            danger: true,
-                          });
-                          if (approved !== null) {
-                            void run(async () => {
-                              await requireDesktop(
-                                desktop?.providerConfig?.deleteCustom
-                                  ? () => desktop.providerConfig.deleteCustom(provider.providerId!)
-                                  : undefined,
-                                'Provider settings'
-                              );
-                            }, translate('Custom model deleted successfully.'));
+            <>
+              <div className="divide-y divide-line/60 overflow-hidden rounded-card border border-line/50 bg-surface shadow-card">
+                {customProviders.map((provider) => {
+                  const providerKey = provider.providerId || provider.provider || '';
+                  const customModels = (provider.models && provider.models.length > 0)
+                    ? provider.models.map((m) => ({ id: m.id, name: m.id }))
+                    : (provider.modelIds && provider.modelIds.length > 0)
+                    ? provider.modelIds.map((id) => ({ id, name: id }))
+                    : [];
+                  const isExpanded = expandedProviders.has(providerKey);
+                  return (
+                    <div key={providerKey} className="transition-colors">
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleProviderExpanded(providerKey)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleProviderExpanded(providerKey);
                           }
                         }}
-                        className={dangerIconButtonClass}
-                        aria-label="Delete"
+                        className="group/provider flex items-center justify-between px-3.5 py-3 bg-surface hover:bg-hover/60 transition-colors cursor-pointer select-none"
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                        <div className="flex items-center gap-3 min-w-0 pr-3">
+                          <ChevronRight
+                            className={`h-4 w-4 shrink-0 text-ink-3 group-hover/provider:text-ink transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                              isExpanded ? 'rotate-90 text-ink' : ''
+                            }`}
+                          />
+                          <ProviderIcon providerId={providerKey} className="h-4 w-4 shrink-0 text-ink-2" />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="truncate text-[13.5px] font-semibold text-ink">
+                                {provider.name || providerKey}
+                              </span>
+                              <ValuePill tone="accent" className="text-[10.5px] px-1.5 py-0.5 leading-none font-medium">{translate('customGroup') || 'Custom'}</ValuePill>
+                              <ValuePill className="text-[10.5px] tabular-nums font-mono px-1.5 py-0.5 leading-none text-ink-3">{customModels.length}</ValuePill>
+                            </div>
+                            <p className="mt-0.5 truncate font-mono text-[11.5px] text-ink-3">
+                              {provider.baseUrl}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            title={translate('deleteProviderConfirm', { name: provider.name || providerKey }) || translate('Delete')}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const approved = await requestApproval({
+                                title: translate('deleteModelTitle') || translate('Delete model'),
+                                message: translate('deleteProviderConfirm', { name: provider.name || providerKey }) || `Delete provider ${provider.name || providerKey} and all its models?`,
+                                confirmLabel: translate('Delete'),
+                                danger: true,
+                              });
+                              if (approved !== null) {
+                                void run(async () => {
+                                  await requireDesktop(
+                                    desktop?.providerConfig?.deleteCustom
+                                      ? () => desktop.providerConfig.deleteCustom(provider.providerId!)
+                                      : undefined,
+                                    'Provider settings'
+                                  );
+                                  await refreshProviderState();
+                                }, translate('Custom model deleted successfully.'));
+                              }
+                            }}
+                            className={`${dangerIconButtonClass} opacity-70 hover:opacity-100 transition-opacity`}
+                            aria-label="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                      {isExpanded && (
+                        <div className="border-t border-line/40 bg-surface-2/30 divide-y divide-line/30">
+                          {customModels.length === 0 ? (
+                            <div className="py-2.5 pl-11 pr-4 text-[12px] text-ink-3 italic">
+                              {translate('No models configured') || 'No models configured'}
+                            </div>
+                          ) : (
+                            customModels.map((m) => (
+                              <div
+                                key={m.id}
+                                className="group/item flex items-center justify-between pl-11 pr-4 py-2 text-[13px] hover:bg-hover/60 transition-colors"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0 pr-3">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-ink-3/40 shrink-0 group-hover/item:bg-accent transition-colors" />
+                                  <span className="font-mono text-[12px] font-medium text-ink truncate" title={m.id}>
+                                    {m.id}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  title={translate('Delete')}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleDeleteCustomModel(provider.providerId!, m.id, m.name);
+                                  }}
+                                  className={`${dangerIconButtonClass} h-7 w-7 opacity-0 group-hover/item:opacity-100 hover:opacity-100 focus:opacity-100 transition-opacity`}
+                                  aria-label={`Delete ${m.id}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
 
-              {savedOAuthAndBuiltinProviders.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between px-4 py-3.5 transition-colors hover:bg-hover"
-                >
-                  <div className="min-w-0 pr-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-[14px] font-medium text-ink">
-                        {item.name}
-                      </span>
-                      <ValuePill tone="accent" className="text-[11px]">{item.tag}</ValuePill>
-                      {item.modelsSummary && item.modelsSummary !== item.tag ? (
-                        <ValuePill className="text-[11px]">{item.modelsSummary}</ValuePill>
-                      ) : null}
+                {savedOAuthAndBuiltinProviders.map((item) => {
+                  const associated = (item.associatedModels || props.models.filter((m) => m.provider === item.id));
+                  const visibleAssociated = associated.filter((m) => !hiddenKeys.has(modelKey(item.id, m.id)));
+                  const isExpanded = expandedProviders.has(item.id);
+                  return (
+                    <div key={item.id} className="transition-colors">
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleProviderExpanded(item.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleProviderExpanded(item.id);
+                          }
+                        }}
+                        className="group/provider flex items-center justify-between px-3.5 py-3 bg-surface hover:bg-hover/60 transition-colors cursor-pointer select-none"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 pr-3">
+                          <ChevronRight
+                            className={`h-4 w-4 shrink-0 text-ink-3 group-hover/provider:text-ink transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                              isExpanded ? 'rotate-90 text-ink' : ''
+                            }`}
+                          />
+                          <ProviderIcon providerId={item.id} className="h-4 w-4 shrink-0 text-ink-2" />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="truncate text-[13.5px] font-semibold text-ink">
+                                {item.name}
+                              </span>
+                              <ValuePill tone="accent" className="text-[10.5px] px-1.5 py-0.5 leading-none font-medium">{item.tag}</ValuePill>
+                              <ValuePill className="text-[10.5px] tabular-nums font-mono px-1.5 py-0.5 leading-none text-ink-3">{visibleAssociated.length}</ValuePill>
+                            </div>
+                            <p className="mt-0.5 truncate text-[12px] text-ink-3">
+                              {item.baseUrl}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            title={translate('Sign out')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleRemoveCredential(item.id, item.name);
+                            }}
+                            className={`${dangerIconButtonClass} opacity-70 hover:opacity-100 transition-opacity`}
+                            aria-label="Sign out"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                      {isExpanded && (
+                        <div className="border-t border-line/40 bg-surface-2/30 divide-y divide-line/30">
+                          {visibleAssociated.length === 0 ? (
+                            <div className="py-2.5 pl-11 pr-4 text-[12px] text-ink-3 italic">
+                              {translate('All models hidden') || 'All models hidden'}
+                            </div>
+                          ) : (
+                            visibleAssociated.map((m) => (
+                              <div
+                                key={m.id}
+                                className="group/item flex items-center justify-between pl-11 pr-4 py-2 text-[13px] hover:bg-hover/60 transition-colors"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0 pr-3">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-ink-3/40 shrink-0 group-hover/item:bg-accent transition-colors" />
+                                  <span className="text-[12.5px] font-medium text-ink truncate" title={m.name || m.id}>
+                                    {m.name || m.id}
+                                  </span>
+                                  {m.name && m.name !== m.id && (
+                                    <span className="font-mono text-[11px] text-ink-3 bg-surface px-1.5 py-0.5 rounded border border-line/40 truncate" title={m.id}>
+                                      {m.id}
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  title={translate('Delete')}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleHideBuiltinModel(item.id, m.id, m.name || m.id);
+                                  }}
+                                  className={`${dangerIconButtonClass} h-7 w-7 opacity-0 group-hover/item:opacity-100 hover:opacity-100 focus:opacity-100 transition-opacity`}
+                                  aria-label={`Remove ${m.name || m.id}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <p className="mt-0.5 truncate text-[13px] text-ink-3">
-                      {item.baseUrl}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  );
+                })}
+              </div>
+
+              {hiddenKeys.size > 0 && (
+                <div className="mt-3 overflow-hidden rounded-card border border-line/50 bg-surface shadow-card">
+                  <div className="flex items-center justify-between px-4 py-2.5 bg-surface/70">
                     <button
                       type="button"
-                      title={translate('Sign out')}
-                      onClick={() => void handleRemoveCredential(item.id, item.name)}
-                      className={dangerIconButtonClass}
-                      aria-label="Sign out"
+                      onClick={() => setShowHiddenModels((prev) => !prev)}
+                      className="flex items-center gap-2 text-[13px] font-medium text-ink hover:text-ink-2 focus-visible:outline-none"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <ChevronRight className={`h-4 w-4 text-ink-3 transition-transform duration-150 ${showHiddenModels ? 'rotate-90' : ''}`} />
+                      <span>{translate('hiddenModelsNotice', { count: hiddenKeys.size }) || `Hidden models (${hiddenKeys.size})`}</span>
                     </button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void handleRestoreAllModels()}
+                    >
+                      <span>{translate('restoreAllModels') || 'Restore all'}</span>
+                    </Button>
                   </div>
+                  {showHiddenModels && (
+                    <div className="divide-y divide-line/40 border-t border-line/40 bg-surface/40">
+                      {Array.from(hiddenKeys).map((key) => {
+                        const slashIndex = key.indexOf('/');
+                        const providerId = slashIndex >= 0 ? key.slice(0, slashIndex) : key;
+                        const modelId = slashIndex >= 0 ? key.slice(slashIndex + 1) : '';
+                        return (
+                          <div key={key} className="flex items-center justify-between px-4 py-2 text-[12.5px] hover:bg-hover transition-colors">
+                            <div className="flex items-center gap-2 min-w-0 pr-3">
+                              <ValuePill className="text-[10px] uppercase">{providerId}</ValuePill>
+                              <span className="font-mono text-[12px] text-ink truncate">{modelId}</span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => void handleRestoreModel(providerId, modelId)}
+                              className="text-accent text-[12px]"
+                            >
+                              <span>{translate('restoreModel') || 'Restore'}</span>
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -791,7 +1043,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
     setMaxLearnedSkills(clamped);
     await run(async () => {
       await props.request('/self-learning', 'PUT', { maxLearnedSkills: clamped });
-    });
+    }, '');
   };
 
   const handleRollbackAdaptation = async (item: AdaptationSummaryItem) => {
@@ -1031,7 +1283,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                             >
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                  <span className="text-[14px] font-medium text-ink">{pref.key || key}</span>
+                                  <span className="text-[14px] font-medium text-ink">{pref.id || key}</span>
                                   <span className="text-[12px] tabular-nums text-ink-3">{`${confidence}%`}</span>
                                 </div>
                                 <p className="mt-1 text-[13.5px] leading-6 text-ink-3">{pref.value}</p>

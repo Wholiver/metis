@@ -241,6 +241,7 @@ export interface ProjectItem {
   name: string;
   path: string;
   color?: string;
+  isRemote?: boolean;
 }
 
 export interface ServerSessionItem {

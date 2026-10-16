@@ -265,4 +265,28 @@ describe('desktop React settings', () => {
     expect(getLearningProgressKey(runningIdleState)).toBe('selfLearningConsolidating');
     expect(getLearningProgressKey(runningIdleState)).not.toBe('selfLearningReviewingTurn');
   });
+
+  it('supports individual model deletion, hiding, and restoring hidden models', () => {
+    const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
+    expect(settings).toContain('handleDeleteCustomModel');
+    expect(settings).toContain('handleHideBuiltinModel');
+    expect(settings).toContain('handleRestoreModel');
+    expect(settings).toContain('handleRestoreAllModels');
+    expect(settings).toContain('desktop?.providerConfig?.deleteModel');
+    expect(settings).toContain("translate('deleteSingleModelConfirm'");
+    expect(settings).toContain("translate('hiddenModelsNotice'");
+    expect(settings).toContain("translate('restoreModel'");
+    expect(settings).toContain("translate('restoreAllModels'");
+  });
+
+  it('collapses saved model lists by default and renders beautified provider rows with icons', () => {
+    const settings = source('desktop/src/components/settings/SettingsDialog.tsx');
+    expect(settings).toContain('const [expandedProviders, setExpandedProviders] = useState<Set<string>>(() => new Set());');
+    expect(settings).toContain('const toggleProviderExpanded = (providerId: string) =>');
+    expect(settings).toContain('setExpandedProviders(new Set());');
+    expect(settings).toContain('<ProviderIcon providerId=');
+    expect(settings).toContain('toggleProviderExpanded(providerKey)');
+    expect(settings).toContain('toggleProviderExpanded(item.id)');
+    expect(settings).toContain('group-hover/item:opacity-100');
+  });
 });

@@ -1,10 +1,20 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import {
+	isGitRepoSync,
+	readDefaultBranch,
+	readGitInfo,
+	readGitStatus,
+	readFileDiff,
+	readWorkspaceFileContent,
+	readWorkspaceTree,
+	validateWorkspaceDirectory,
+} from "./workspace-service.ts";
 import type { ImageContent } from "@earendil-works/metis-ai";
 import { getSupportedThinkingLevels, getThinkingOptions } from "@earendil-works/metis-ai/compat";
 import { builtinProviders } from "@earendil-works/metis-ai/providers/all";
@@ -86,6 +96,11 @@ export async function runServerMode(
 	const handle = await startServerMode(runtimeHost, options);
 	console.error(`${APP_NAME} server listening on ${handle.address.url}`);
 	console.error(`OpenAPI: ${handle.address.url}/openapi.json`);
+	if (handle.webAddress) {
+		console.error(`${APP_NAME} Web UI available on ${handle.webAddress.url}`);
+	} else if (!options.noWeb) {
+		console.error(`${APP_NAME} Web UI assets not found. Run 'npm --prefix desktop run build' to build them.`);
+	}
 
 	const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
 	if (process.platform !== "win32") signals.push("SIGHUP");
@@ -155,16 +170,17 @@ export async function startServerMode(
 			throw new HttpError(409, "session_busy", SESSION_REPLACEMENT_BUSY_MESSAGE);
 		}
 	};
+	const isCaseInsensitiveFs = process.platform === "win32" || process.platform === "darwin";
 	const sessionPathKey = (sessionPath: string | undefined): string | undefined => {
 		if (!sessionPath) return undefined;
 		const resolved = path.resolve(sessionPath);
-		return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+		return isCaseInsensitiveFs ? resolved.toLowerCase() : resolved;
 	};
 	const pathsMatch = (a?: string, b?: string): boolean => {
 		if (!a || !b) return false;
 		const normA = path.resolve(a);
 		const normB = path.resolve(b);
-		return process.platform === "win32" ? normA.toLowerCase() === normB.toLowerCase() : normA === normB;
+		return isCaseInsensitiveFs ? normA.toLowerCase() === normB.toLowerCase() : normA === normB;
 	};
 	const rememberDesktopRuntime = (host: AgentSessionRuntime): void => {
 		const key = sessionPathKey(host.session.sessionFile);
@@ -439,7 +455,7 @@ export async function startServerMode(
 			document.servers = [{ url: `http://${formatHostname(hostname)}:${advertisedPort}` }];
 			return sendJson(response, 200, document);
 		}
-		if (method === "GET" && url.pathname === "/event") {
+		if (method === "GET" && (url.pathname === "/event" || url.pathname === "/events")) {
 			response.writeHead(200, {
 				"Content-Type": "text/event-stream; charset=utf-8",
 				"Cache-Control": "no-cache, no-transform",
@@ -612,6 +628,90 @@ export async function startServerMode(
 				harness: getBuiltinHarness(),
 			});
 		}
+		if (method === "GET" && url.pathname === "/workspace/summary") {
+			const requestedCwd = url.searchParams.get("cwd") || session.sessionManager.getCwd() || runtimeHost.cwd;
+			const cwd = path.resolve(requestedCwd);
+			const isRepo = isGitRepoSync(cwd);
+			return sendJson(response, 200, {
+				name: path.basename(cwd),
+				path: cwd,
+				isGitRepo: isRepo,
+			});
+		}
+		if (method === "POST" && url.pathname === "/workspace/validate") {
+			const body = await readJsonBody<{ path?: string }>(request, true);
+			const targetPath = body?.path ?? "";
+			const validation = validateWorkspaceDirectory(targetPath);
+			if (!validation.valid) {
+				return sendJson(response, 200, { valid: false, error: validation.error });
+			}
+			return sendJson(response, 200, {
+				valid: true,
+				resolved: validation.resolved,
+				name: path.basename(validation.resolved!),
+				isGitRepo: isGitRepoSync(validation.resolved!),
+			});
+		}
+		if (method === "GET" && url.pathname === "/workspace/tree") {
+			const targetDirParam = url.searchParams.get("targetDir") || url.searchParams.get("path") || undefined;
+			const requestedCwd = url.searchParams.get("cwd") || (targetDirParam && path.isAbsolute(targetDirParam) ? targetDirParam : session.sessionManager.getCwd() || runtimeHost.cwd);
+			const cwd = path.resolve(requestedCwd);
+			try {
+				const result = await readWorkspaceTree(cwd, targetDirParam);
+				return sendJson(response, 200, result);
+			} catch (err: any) {
+				return sendError(response, 400, "workspace_tree_error", err?.message || String(err));
+			}
+		}
+		if (method === "GET" && url.pathname === "/workspace/file") {
+			const requestedCwd = url.searchParams.get("cwd") || url.searchParams.get("root") || session.sessionManager.getCwd() || runtimeHost.cwd;
+			const cwd = path.resolve(requestedCwd);
+			const relativePath = url.searchParams.get("path");
+			if (!relativePath) return sendError(response, 400, "invalid_request", "path parameter is required");
+			try {
+				const result = await readWorkspaceFileContent(cwd, relativePath);
+				return sendJson(response, 200, result);
+			} catch (err: any) {
+				const statusCode = err?.code === "ENOENT" ? 404 : 400;
+				return sendError(response, statusCode, "workspace_file_error", err?.message || String(err));
+			}
+		}
+		if (method === "GET" && url.pathname === "/workspace/git-info") {
+			const requestedCwd = url.searchParams.get("cwd") || url.searchParams.get("path") || session.sessionManager.getCwd() || runtimeHost.cwd;
+			const cwd = path.resolve(requestedCwd);
+			try {
+				const result = await readGitInfo(cwd);
+				return sendJson(response, 200, result);
+			} catch (err: any) {
+				return sendError(response, 500, "git_info_error", err?.message || String(err));
+			}
+		}
+		if (method === "GET" && url.pathname === "/workspace/git-status") {
+			const requestedCwd = url.searchParams.get("cwd") || url.searchParams.get("path") || session.sessionManager.getCwd() || runtimeHost.cwd;
+			const cwd = path.resolve(requestedCwd);
+			const rawMode = url.searchParams.get("mode");
+			const mode = rawMode === "branch" ? "branch" : "git";
+			try {
+				const result = await readGitStatus(cwd, mode);
+				return sendJson(response, 200, result);
+			} catch (err: any) {
+				return sendError(response, 500, "git_status_error", err?.message || String(err));
+			}
+		}
+		if (method === "GET" && url.pathname === "/workspace/git-diff") {
+			const requestedCwd = url.searchParams.get("cwd") || session.sessionManager.getCwd() || runtimeHost.cwd;
+			const cwd = path.resolve(requestedCwd);
+			const filePath = url.searchParams.get("path");
+			if (!filePath) return sendError(response, 400, "invalid_request", "path parameter is required");
+			const rawMode = url.searchParams.get("mode");
+			const mode = rawMode === "branch" ? "branch" : "git";
+			try {
+				const result = await readFileDiff(cwd, filePath, mode);
+				return sendJson(response, 200, result);
+			} catch (err: any) {
+				return sendError(response, 500, "git_diff_error", err?.message || String(err));
+			}
+		}
 		if (method === "GET" && url.pathname === "/sessions") {
 			const requestedCwd = url.searchParams.get("cwd") || runtimeHost.cwd;
 			const cwd = path.resolve(requestedCwd);
@@ -623,8 +723,15 @@ export async function startServerMode(
 			// Desktop's sidebar only needs the listing fields — not the full text of every
 			// message or the daily token rollups, which would be re-read from every JSONL
 			// file on every sync (and bloated the payload to ~1.6 MB at ~380 sessions).
-			const sessions = (await SessionManager.list(cwd, sessionDir, undefined, { includeMessageText: false }))
-				.map(({ allMessagesText, dailyActivity, ...rest }) => rest);
+			const rawSessions = await SessionManager.list(cwd, sessionDir, undefined, { includeMessageText: false });
+			const seenIds = new Set<string>();
+			const sessions = [];
+			for (const s of rawSessions) {
+				if (s.id && seenIds.has(s.id)) continue;
+				if (s.id) seenIds.add(s.id);
+				const { allMessagesText, dailyActivity, ...rest } = s;
+				sessions.push(rest);
+			}
 			return sendJson(response, 200, { cwd, sessions });
 		}
 		if (method === "GET" && url.pathname === "/session/messages") {
@@ -1468,9 +1575,9 @@ export async function startServerMode(
 
 	function getDefaultsState(): ServerDefaultsState {
 		return {
-			provider: session.settingsManager.getDefaultProvider(),
-			modelId: session.settingsManager.getDefaultModel(),
-			thinkingLevel: session.settingsManager.getDefaultThinkingLevel(),
+			provider: session.settingsManager?.getDefaultProvider?.(),
+			modelId: session.settingsManager?.getDefaultModel?.(),
+			thinkingLevel: session.settingsManager?.getDefaultThinkingLevel?.(),
 		};
 	}
 
@@ -1616,6 +1723,9 @@ export async function startServerMode(
 	}, HEARTBEAT_MS);
 	heartbeat.unref();
 
+	let webServer: Server | undefined;
+	let webAddress: ServerAddress | undefined;
+
 	async function close(): Promise<void> {
 		if (closing) return closed;
 		closing = true;
@@ -1630,6 +1740,11 @@ export async function startServerMode(
 		await new Promise<void>((resolve, reject) => {
 			server.close((cause) => (cause ? reject(cause) : resolve()));
 		});
+		if (webServer) {
+			await new Promise<void>((resolve) => {
+				webServer!.close(() => resolve());
+			});
+		}
 		await Promise.all([...retainedDesktopRuntimes].map((host) => host.dispose()));
 		resolveClosed();
 	}
@@ -1644,7 +1759,36 @@ export async function startServerMode(
 		port: info.port,
 		url: `http://${formatHostname(hostname)}:${info.port}`,
 	};
-	return { address, closed, close };
+
+	if (options.noWeb !== true) {
+		const webRendererDir = findWebRendererDir();
+		const webPort = options.webPort ?? (options.port === 0 ? 0 : info.port + 1);
+		if (webRendererDir) {
+			webServer = createServer((req, res) => {
+				const reqUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? hostname}`);
+				if (isApiRoute(reqUrl.pathname)) {
+					proxyRequestToApi(req, res, advertisedPort, hostname);
+				} else {
+					serveStaticFile(webRendererDir, reqUrl.pathname, res);
+				}
+			});
+			webServer.on("clientError", (_cause, socket) => socket.end("HTTP/1.1 400 Bad Request\r\n\r\n"));
+			try {
+				await listen(webServer, webPort, hostname);
+				const webInfo = webServer.address() as AddressInfo;
+				webAddress = {
+					hostname,
+					port: webInfo.port,
+					url: `http://${formatHostname(hostname)}:${webInfo.port}`,
+				};
+			} catch (err) {
+				console.error(`[server] Failed to start Web UI on port ${webPort}:`, err);
+				webServer = undefined;
+			}
+		}
+	}
+
+	return { address, webAddress, closed, close };
 }
 
 function normalizeImageContents(value: unknown): ImageContent[] | undefined {
@@ -1787,4 +1931,145 @@ function listen(server: Server, port: number, hostname: string): Promise<void> {
 		server.once("listening", onListening);
 		server.listen(port, hostname);
 	});
+}
+
+const STATIC_MIME_TYPES: Record<string, string> = {
+	".html": "text/html; charset=utf-8",
+	".js": "text/javascript; charset=utf-8",
+	".mjs": "text/javascript; charset=utf-8",
+	".css": "text/css; charset=utf-8",
+	".json": "application/json; charset=utf-8",
+	".svg": "image/svg+xml",
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif": "image/gif",
+	".webp": "image/webp",
+	".ico": "image/x-icon",
+	".woff": "font/woff",
+	".woff2": "font/woff2",
+	".ttf": "font/ttf",
+	".wasm": "application/wasm",
+	".txt": "text/plain; charset=utf-8",
+};
+
+export function findWebRendererDir(): string | undefined {
+	const candidates = [
+		process.env.METIS_WEB_RENDERER_DIR,
+		path.resolve(__dirname, "../../desktop/renderer"),
+		path.resolve(__dirname, "../desktop/renderer"),
+		(process as any).resourcesPath ? path.join((process as any).resourcesPath, "renderer") : undefined,
+		path.resolve(process.cwd(), "desktop/renderer"),
+	].filter(Boolean) as string[];
+
+	for (const candidate of candidates) {
+		if (fs.existsSync(path.join(candidate, "index.html"))) {
+			return candidate;
+		}
+	}
+	return undefined;
+}
+
+function isApiRoute(pathname: string): boolean {
+	return (
+		pathname === "/event" ||
+		pathname === "/events" ||
+		pathname === "/sessions" ||
+		pathname === "/commands" ||
+		pathname === "/self-learning" ||
+		pathname === "/adaptations" ||
+		pathname === "/doc" ||
+		pathname === "/openapi.json" ||
+		pathname.startsWith("/session") ||
+		pathname.startsWith("/workspace") ||
+		pathname.startsWith("/config") ||
+		pathname.startsWith("/global") ||
+		pathname.startsWith("/desktop") ||
+		pathname.startsWith("/settings") ||
+		pathname.startsWith("/adaptations/") ||
+		pathname.startsWith("/harness") ||
+		pathname.startsWith("/extension")
+	);
+}
+
+function proxyRequestToApi(
+	request: IncomingMessage,
+	response: ServerResponse,
+	targetPort: number,
+	targetHostname: string,
+): void {
+	const proxyReq = httpRequest(
+		{
+			hostname: isLoopbackHostname(targetHostname) ? "127.0.0.1" : targetHostname,
+			port: targetPort,
+			path: request.url,
+			method: request.method,
+			headers: {
+				...request.headers,
+				host: `127.0.0.1:${targetPort}`,
+				"x-forwarded-for": request.socket.remoteAddress,
+				"x-forwarded-proto": "http",
+			},
+		},
+		(proxyRes) => {
+			response.writeHead(proxyRes.statusCode || 500, proxyRes.headers);
+			proxyRes.pipe(response);
+		},
+	);
+	proxyReq.on("error", (err) => {
+		if (!response.headersSent) {
+			response.writeHead(502, { "Content-Type": "application/json" });
+			response.end(JSON.stringify({ error: { code: "bad_gateway", message: err.message } }));
+		}
+	});
+	request.pipe(proxyReq);
+}
+
+function serveStaticFile(
+	rendererDir: string,
+	requestPath: string,
+	response: ServerResponse,
+): void {
+	let sanitized: string;
+	try {
+		sanitized = decodeURIComponent(requestPath.split("?")[0] || "/");
+	} catch {
+		response.writeHead(400, { "Content-Type": "text/plain" });
+		response.end("Bad Request");
+		return;
+	}
+	const safeRel = path.normalize(sanitized).replace(/^(\.\.[\/\\])+/, "").replace(/^[/\\]+/, "");
+	let filePath = path.resolve(rendererDir, safeRel);
+	const rel = path.relative(rendererDir, filePath);
+	if (rel.startsWith("..") || path.isAbsolute(rel)) {
+		response.writeHead(403, { "Content-Type": "text/plain" });
+		response.end("Forbidden");
+		return;
+	}
+
+	try {
+		if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+			filePath = path.join(filePath, "index.html");
+		}
+	} catch {}
+
+	if (!fs.existsSync(filePath)) {
+		if (!path.extname(safeRel)) {
+			filePath = path.join(rendererDir, "index.html");
+		} else {
+			response.writeHead(404, { "Content-Type": "text/plain" });
+			response.end("Not Found");
+			return;
+		}
+	}
+
+	const ext = path.extname(filePath).toLowerCase();
+	const contentType = STATIC_MIME_TYPES[ext] || "application/octet-stream";
+	const cacheControl = ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable";
+
+	response.writeHead(200, {
+		"Content-Type": contentType,
+		"Cache-Control": cacheControl,
+	});
+	fs.createReadStream(filePath).pipe(response);
 }

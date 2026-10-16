@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		reveal: (relativePath, targetDir) => ipcRenderer.invoke("workspace:reveal", relativePath, targetDir),
 		openPath: (relativePath, targetDir) => ipcRenderer.invoke("workspace:open-path", relativePath, targetDir),
 		readFile: (relativePath, targetDir) => ipcRenderer.invoke("workspace:read-file", relativePath, targetDir),
+		isRemote: () => ipcRenderer.invoke("workspace:is-remote"),
+		validate: (targetPath) => ipcRenderer.invoke("workspace:validate", targetPath),
 	},
 	providerConfig: {
 		getCustom: () => ipcRenderer.invoke("provider-config:get-custom"),
@@ -56,6 +58,7 @@ contextBridge.exposeInMainWorld("metisDesktop", {
 		discoverModels: (config) => ipcRenderer.invoke("provider-config:discover-models", config),
 		saveCustom: (config) => ipcRenderer.invoke("provider-config:save-custom", config),
 		deleteCustom: (providerId) => ipcRenderer.invoke("provider-config:delete-custom", providerId),
+		deleteModel: (providerId, modelId) => ipcRenderer.invoke("provider-config:delete-model", providerId, modelId),
 	},
 	metis: {
 		getConnection: () => ipcRenderer.invoke("metis:get-connection"),

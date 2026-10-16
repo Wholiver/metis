@@ -98,4 +98,20 @@ describe('desktop React model switcher', () => {
     expect(switcher).toContain('sameModel(reasoningMenuRefState.current.model, activeModel)');
     expect(switcher).toContain('title={showReasoning ? undefined : `${model.provider} · ${model.id}`}');
   });
+
+  it('groups models by provider, provides a search filter, and allows clicking reasoning models directly', () => {
+    const switcher = readFileSync(resolve(process.cwd(), 'desktop/src/components/chat/ModelSwitcher.tsx'), 'utf8');
+    expect(switcher).toContain('providerGroups.map((group)');
+    expect(switcher).toContain('formatProviderName(group.provider)');
+    expect(switcher).toContain('Search models...');
+    expect(switcher).toContain("t('searchModels')");
+    expect(switcher).toContain("t('noModelsFound')");
+    expect(switcher).toContain('Math.min(340, window.innerWidth - 24)');
+    expect(switcher).toContain('onFocus=');
+    expect(switcher).toContain('modelIndicatorRef.current');
+    // Ensures clicking the model row always triggers onSelectModel even if showReasoning is true
+    expect(switcher).not.toContain('if (showReasoning) return;');
+    expect(switcher).toContain('void onSelectModel(model);');
+    expect(switcher).toContain('showReasoningMenu(model, e.currentTarget)');
+  });
 });

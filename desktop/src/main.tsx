@@ -3,7 +3,10 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { DesktopI18nProvider } from './i18n';
 import { GlobalErrorBoundary } from './components/common/GlobalErrorBoundary';
+import { initWebDesktopBridge } from './lib/web-bridge';
 import './index.css';
+
+initWebDesktopBridge();
 
 // Safety net for unhandled async exceptions and rejections
 window.addEventListener('error', (event) => {
