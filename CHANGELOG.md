@@ -2,6 +2,12 @@
 
 This changelog starts with the Metis `1.0.0-rc.1` release candidate. Earlier development history is available through Git.
 
+## [2.0.3] - 2026-10-29
+
+### Server Mode ESM __dirname Crash (Fixes #50)
+
+- **Server Web Renderer Path (Fixes #50)**: In ESM builds, `findWebRendererDir` no longer uses `__dirname` (which throws `ReferenceError` under `metis server`). Resolve the module directory with `fileURLToPath(import.meta.url)` so Desktop renderer static files resolve correctly.
+
 ## [2.0.2] - 2026-10-16
 
 ### Windows Large Repo Git Diff Protection, Session List Deduplication, Model Selector Polish & Remote Server Workspace
