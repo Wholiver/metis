@@ -4,6 +4,7 @@ import { createServer, request as httpRequest, type IncomingMessage, type Server
 import type { AddressInfo } from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import {
 	isGitRepoSync,
@@ -1954,10 +1955,11 @@ const STATIC_MIME_TYPES: Record<string, string> = {
 };
 
 export function findWebRendererDir(): string | undefined {
+	const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 	const candidates = [
 		process.env.METIS_WEB_RENDERER_DIR,
-		path.resolve(__dirname, "../../desktop/renderer"),
-		path.resolve(__dirname, "../desktop/renderer"),
+		path.resolve(moduleDir, "../../desktop/renderer"),
+		path.resolve(moduleDir, "../desktop/renderer"),
 		(process as any).resourcesPath ? path.join((process as any).resourcesPath, "renderer") : undefined,
 		path.resolve(process.cwd(), "desktop/renderer"),
 	].filter(Boolean) as string[];
